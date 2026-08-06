@@ -50,8 +50,11 @@ def test_free_packet_energy_matches_analytic(grid):
 
 
 def test_probability_beyond_splits_symmetric_packet_in_half(grid):
-    psi = gaussian_packet(grid, x0=0.0, k0=0.0, sigma=5.0)
-    assert tdse_obs.probability_beyond(psi, grid, boundary=0.0) == pytest.approx(0.5, abs=1e-6)
+    # Paketin merkezi ızgara noktasında yer alırsa, o hücre iki taraf arasında
+    # bölünemez ve simetrik bölünme sağlanamaz. Bu nedenle paketin merkezini
+    # iki ızgara noktası arasındaki orta noktaya yerleştiriyoruz.
+    psi = gaussian_packet(grid, x0=grid.dx / 2, k0=0.0, sigma=5.0)
+    assert tdse_obs.probability_beyond(psi, grid, boundary=grid.dx / 2) == pytest.approx(0.5, abs=1e-12)
 
 
 def test_probability_beyond_does_not_renormalise(grid, packet):
