@@ -55,3 +55,48 @@ def test_packet_2d_is_normalised():
     grid2d = Grid2D(nx=256, ny=256, lx=60.0, ly=60.0)
     psi = gaussian_packet_2d(grid2d, x0=-10.0, y0=0.0, kx0=1.0, ky0=0.0, sigma=3.0)
     assert np.sum(np.abs(psi) ** 2) * grid2d.cell_area == pytest.approx(1.0, abs=1e-12)
+
+
+# Anizotropik ızgara: dx = 200/32 = 6.25 (kaba eksen), dy = 60/256 = 0.234375
+# (ince eksen) — oran ~26.7x, bağlayıcı eksen açıkça dx'tir. `_validate`
+# eşikleri: çözünürlük tabanı 2*dx_kullanılan, Nyquist sınırı
+# 0.8*pi/dx_kullanılan; k_needed = |k0| + 2/sigma.
+@pytest.fixture
+def anisotropic_grid2d():
+    return Grid2D(nx=32, ny=256, lx=200.0, ly=60.0)
+
+
+def test_packet_2d_rejects_momentum_beyond_coarse_axis_nyquist(anisotropic_grid2d):
+    # kx0=0.5, sigma=15 -> k_needed = 0.5 + 2/15 = 0.6333.
+    # Kaba eksen (dx=6.25) Nyquist sınırı: 0.8*pi/6.25 = 0.4021 -> 0.6333 AŞAR.
+    # İnce eksen (dy=0.234375) Nyquist sınırı: 0.8*pi/0.234375 = 10.723 -> AŞMAZ.
+    # min(dx, dy) kullanan eski kodda bu paket sessizce kabul edilirdi;
+    # max(dx, dy) kullanan düzeltmede kaba eksene göre reddedilmeli.
+    with pytest.raises(InvalidInputError, match="momentum"):
+        gaussian_packet_2d(
+            anisotropic_grid2d, x0=0.0, y0=0.0, kx0=0.5, ky0=0.0, sigma=15.0
+        )
+
+
+def test_packet_2d_rejects_sigma_unresolved_on_coarse_axis(anisotropic_grid2d):
+    # sigma=5.0: kaba eksende (2*dx=12.5) 5.0 < 12.5 -> ÇÖZÜNMEZ.
+    # İnce eksende (2*dy=0.46875) 5.0 >= 0.46875 -> çözünür, sorun yok.
+    # min(dx, dy) kullanan eski kodda bu paket sessizce kabul edilirdi;
+    # max(dx, dy) kullanan düzeltmede kaba eksene göre reddedilmeli.
+    with pytest.raises(InvalidInputError, match="çözünmez"):
+        gaussian_packet_2d(
+            anisotropic_grid2d, x0=0.0, y0=0.0, kx0=0.0, ky0=0.0, sigma=5.0
+        )
+
+
+def test_packet_2d_accepts_packet_valid_on_both_axes(anisotropic_grid2d):
+    # kx0=0.05, sigma=20 -> k_needed = 0.05 + 2/20 = 0.15, kaba eksen
+    # Nyquist sınırı 0.4021'in rahatça altında; sigma=20 kaba eksen
+    # çözünürlük tabanı 2*dx=12.5'in de rahatça üstünde. Düzeltme paketi
+    # aşırı reddetmiyor — geçerli bir paket hâlâ kabul ediliyor.
+    psi = gaussian_packet_2d(
+        anisotropic_grid2d, x0=0.0, y0=0.0, kx0=0.05, ky0=0.0, sigma=20.0
+    )
+    assert np.sum(np.abs(psi) ** 2) * anisotropic_grid2d.cell_area == pytest.approx(
+        1.0, abs=1e-12
+    )

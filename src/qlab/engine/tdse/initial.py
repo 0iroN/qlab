@@ -50,7 +50,9 @@ def gaussian_packet(grid: Grid1D, x0: float, k0: float, sigma: float) -> np.ndar
 def gaussian_packet_2d(
     grid: Grid2D, x0: float, y0: float, kx0: float, ky0: float, sigma: float
 ) -> np.ndarray:
-    _validate(sigma, float(np.hypot(kx0, ky0)), min(grid.dx, grid.dy))
+    # Anizotropik ızgarada bağlayıcı eksen daha kaba olandır: hem çözünürlük
+    # tabanı hem de Nyquist sınırı en dar haliyle o eksende belirlenir.
+    _validate(sigma, float(np.hypot(kx0, ky0)), max(grid.dx, grid.dy))
     envelope = np.exp(
         -(((grid.X - x0) ** 2) + ((grid.Y - y0) ** 2)) / (4.0 * sigma**2)
     )
