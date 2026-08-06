@@ -3,8 +3,8 @@ import pytest
 from hypothesis import given, settings, strategies as st
 
 from qlab.engine.tdse import potentials
-from qlab.engine.tdse.grid import Grid1D
-from qlab.engine.tdse.initial import gaussian_packet
+from qlab.engine.tdse.grid import Grid1D, Grid2D
+from qlab.engine.tdse.initial import gaussian_packet, gaussian_packet_2d
 from qlab.engine.tdse.propagator import SplitOperatorPropagator, evolve
 from qlab.errors import InvalidInputError, UnitarityViolationError
 
@@ -14,8 +14,19 @@ def grid():
     return Grid1D(n=1024, length=100.0)
 
 
+@pytest.fixture
+def grid2d():
+    # Kare ızgara (nx == ny): şekil doğrulamasının kaçırabileceği en zor durum,
+    # çünkü kare bir dizinin transpozu .shape'i değiştirmez.
+    return Grid2D(nx=32, ny=32, lx=20.0, ly=20.0)
+
+
 def norm_of(psi, grid):
     return float(np.sum(np.abs(psi) ** 2) * grid.dx)
+
+
+def norm_of_2d(psi, grid):
+    return float(np.sum(np.abs(psi) ** 2) * grid.cell_area)
 
 
 def test_single_step_preserves_norm(grid):
@@ -76,7 +87,18 @@ def test_raises_when_norm_breaks(grid, monkeypatch):
     assert excinfo.value.step == 1
 
 
-def test_imaginary_time_lowers_energy(grid):
+def test_imaginary_time_converges_to_harmonic_ground_state_energy(grid):
+    """Enerjinin sadece azaldığını değil, doğru değere yakınsadığını doğrula.
+
+    Yalnızca "enerji azaldı" iddiası zayıf: işaret hatası ya da üstel
+    ifadede 2 kat hata gibi birçok yanlış-ama-monoton dinamik de bu testi
+    geçer. omega=1.0 harmonik osilatörün taban durum enerjisi atomik
+    birimlerde analitik olarak E0 = omega/2 = 0.5 olduğu için, yakınsanan
+    değeri bu referansla karşılaştırmak yöntemin katsayılarını da sınar.
+    500 adım x dt=0.01 fazlasıyla yeterli: deneysel olarak enerji bu noktada
+    0.5'ten ~1e-9 uzaklıkta (bkz. task-6-report.md), abs=1e-2 toleransı
+    bolca pay bırakıyor.
+    """
     omega = 1.0
     potential = potentials.harmonic(grid, omega=omega)
     psi = gaussian_packet(grid, x0=0.0, k0=0.0, sigma=1.5)
@@ -94,6 +116,7 @@ def test_imaginary_time_lowers_energy(grid):
     for _ in range(500):
         psi = prop.step(psi)
     assert energy(psi) < before
+    assert energy(psi) == pytest.approx(0.5 * omega, abs=1e-2)
     assert norm_of(psi, grid) == pytest.approx(1.0, abs=1e-10)
 
 
@@ -105,3 +128,32 @@ def test_rejects_potential_with_wrong_shape(grid):
 def test_rejects_nonpositive_dt(grid):
     with pytest.raises(InvalidInputError, match="dt"):
         SplitOperatorPropagator(grid=grid, potential=potentials.free(grid), dt=0.0)
+
+
+def test_step_rejects_psi_with_wrong_1d_length(grid):
+    prop = SplitOperatorPropagator(grid=grid, potential=potentials.free(grid), dt=0.01)
+    psi = np.zeros(grid.n + 1, dtype=np.complex128)
+    with pytest.raises(InvalidInputError, match="şekli"):
+        prop.step(psi)
+
+
+def test_step_rejects_psi_with_wrong_2d_shape(grid2d):
+    # Aynı toplam eleman sayısı (32*32 == 16*64), farklı şekil tuple'ı —
+    # doğrulamanın gerçekten şekle baktığını, sadece boyut sayısına değil.
+    # Kasıtlı olarak .T KULLANILMIYOR: kare bir dizide transpoz .shape'i
+    # değiştirmez, bu yüzden yanlış sebepten geçen bir test olurdu (bkz.
+    # step()'in docstring'i ve grid2d fixture'ının notu).
+    potential = np.zeros((grid2d.nx, grid2d.ny))
+    prop = SplitOperatorPropagator(grid=grid2d, potential=potential, dt=0.01)
+    psi = np.zeros(grid2d.nx * grid2d.ny, dtype=np.complex128).reshape(16, 64)
+    with pytest.raises(InvalidInputError, match="şekli"):
+        prop.step(psi)
+
+
+def test_2d_step_preserves_norm(grid2d):
+    # Propagator'ın ilk gerçek 2B egzersizi: fft2/ifft2, cell_area ve
+    # _expected_shape'in hepsi burada gerçekten çalıştırılıyor.
+    psi = gaussian_packet_2d(grid2d, x0=0.0, y0=0.0, kx0=0.5, ky0=-0.3, sigma=2.0)
+    potential = np.zeros((grid2d.nx, grid2d.ny))
+    prop = SplitOperatorPropagator(grid=grid2d, potential=potential, dt=0.01)
+    assert norm_of_2d(prop.step(psi), grid2d) == pytest.approx(1.0, abs=1e-12)

@@ -74,6 +74,24 @@ class SplitOperatorPropagator:
         return np.fft.ifft2(psi) if self.is_two_dimensional else np.fft.ifft(psi)
 
     def step(self, psi: np.ndarray) -> np.ndarray:
+        """Tek bir Strang adımı uygular ve yeni psi'yi döndürür.
+
+        Şekil doğrulaması yanlış boyutlu ya da yanlış eksen sayılı girdiyi
+        yakalar. Ama bilinen bir sınırı var: kare bir ızgarada (nx == ny)
+        transpoze edilmiş psi.T, orijinal psi ile birebir aynı .shape
+        tuple'ına sahiptir — NumPy dizisi hangi eksenin x, hangisinin y
+        olduğuna dair bir bilgi taşımaz, bu yüzden bu doğrulama transpozisyonu
+        hiçbir zaman yakalayamaz. Bu çözülmüş bir sorun değil, çalışma
+        zamanında tespit edilemeyen bilinen bir kısıt; kare ızgaralarda
+        eksenlerin doğru sırayla verilmesi çağıranın sorumluluğunda kalır.
+        """
+        expected = self._expected_shape()
+        if psi.shape != expected:
+            raise InvalidInputError(
+                f"psi şekli ızgarayla uyuşmuyor: beklenen {expected}, "
+                f"verilen {psi.shape}"
+            )
+
         psi = self._half_v * psi
         psi = self._inverse(self._kinetic * self._forward(psi))
         psi = self._half_v * psi
