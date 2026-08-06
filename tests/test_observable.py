@@ -4,6 +4,7 @@ import pytest
 from qlab.engine.tdse import potentials
 from qlab.engine.tdse.grid import Grid1D
 from qlab.engine.tdse.initial import gaussian_packet
+from qlab.errors import InvalidInputError
 from qlab.observable import tdse_obs
 
 
@@ -65,3 +66,69 @@ def test_probability_beyond_does_not_renormalise(grid, packet):
 
 def test_edge_probability_is_negligible_for_centred_packet(grid, packet):
     assert tdse_obs.edge_probability(packet, grid, width=20.0) < 1e-12
+
+
+# --- Çökmüş yoğunluk/spektrum koruması -----------------------------------
+#
+# Soğurucu maske (potentials.absorbing_mask) kenarlardan norm sızdırır ve
+# uzun bir koşuda toplam yoğunluk keyfi olarak küçülebilir. Bu durumda
+# 0/0'a bölüp NaN döndürmek yerine InvalidInputError fırlatılmalı — bkz.
+# qlab.errors ilkesi ve tdse_obs._agirlik_toplamini_dogrula.
+
+
+def test_expectation_position_rejects_collapsed_density(grid):
+    psi = np.zeros(grid.n, dtype=np.complex128)
+    with pytest.raises(InvalidInputError, match="Konum beklenti değeri"):
+        tdse_obs.expectation_position(psi, grid)
+
+
+def test_position_spread_rejects_collapsed_density(grid):
+    psi = np.zeros(grid.n, dtype=np.complex128)
+    with pytest.raises(InvalidInputError, match="Konum yayılımı"):
+        tdse_obs.position_spread(psi, grid)
+
+
+def test_expectation_momentum_rejects_collapsed_spectrum(grid):
+    psi = np.zeros(grid.n, dtype=np.complex128)
+    with pytest.raises(InvalidInputError, match="Momentum beklenti değeri"):
+        tdse_obs.expectation_momentum(psi, grid)
+
+
+def test_expectation_energy_rejects_collapsed_density(grid):
+    psi = np.zeros(grid.n, dtype=np.complex128)
+    with pytest.raises(InvalidInputError, match="Kinetik enerji"):
+        tdse_obs.expectation_energy(psi, grid, potentials.free(grid))
+
+
+def test_expectation_position_rejects_nan_psi(grid, packet):
+    psi = packet.copy()
+    psi[0] = np.nan
+    with pytest.raises(InvalidInputError, match="Konum beklenti değeri"):
+        tdse_obs.expectation_position(psi, grid)
+
+
+def test_guard_does_not_fire_on_legitimate_very_small_density(grid, packet):
+    # `packet` normalize edilmiş, yani toplam yoğunluğu 1/grid.dx ~= 10.24.
+    # Genliği 1e-3 ile çarpmak, soğurucu maskenin uzun bir koşuda gerçekten
+    # üretebileceği türden gerçek/meşru ama çok küçük bir durumu taklit
+    # eder: toplam yoğunluk (1e-3)^2 * 10.24 ~= 1.024e-5 olur — meşru tam
+    # değerin ~1e6 katı altında, ama eşiğin (1e-10) ~1e5 katı üstünde.
+    # Ölçeklendirme oranları etkilemediği için beklenti değerleri tam
+    # normalize edilmiş paketle aynı kalmalı; guard'ın hem tetiklenmediğini
+    # hem de sonucun hâlâ fiziksel olarak doğru olduğunu kanıtlar.
+    small_psi = 1e-3 * packet
+    total_density = float(np.sum(tdse_obs.density(small_psi)))
+    assert 1e-10 < total_density < 1e-4
+
+    assert tdse_obs.expectation_position(small_psi, grid) == pytest.approx(
+        -15.0, abs=1e-6
+    )
+    assert tdse_obs.position_spread(small_psi, grid) == pytest.approx(6.0, rel=1e-6)
+    assert tdse_obs.expectation_momentum(small_psi, grid) == pytest.approx(
+        1.2, abs=1e-6
+    )
+    assert tdse_obs.expectation_energy(
+        small_psi, grid, potentials.free(grid)
+    ) == pytest.approx(
+        tdse_obs.expectation_energy(packet, grid, potentials.free(grid)), rel=1e-6
+    )
