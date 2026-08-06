@@ -37,4 +37,15 @@ forbidden_modules = ["qlab.viz", "qlab.app"]
 [[tool.importlinter.contracts]]
 name = "Katmanlı mimari"
 type = "layers"
-layers = ["qlab.app", "qlab.viz", "qlab.observable", "qlab.engine", "qlab.scenario"]
+# Parantez, katmanı "opsiyonel" olarak işaretler: modül henüz mevcut değilse
+# import-linter onu atlar. Görevler ilerledikçe modüller tek tek ortaya
+# çıkacağı için (Task 3'te qlab.engine, sonrasında diğerleri) sözleşme her
+# aşamada geçerliliğini korur; var olan katmanlar arasındaki sıralama yine
+# tam olarak zorlanır.
+layers = [
+    "(qlab.app)",
+    "(qlab.viz)",
+    "(qlab.observable)",
+    "(qlab.engine)",
+    "(qlab.scenario)",
+]

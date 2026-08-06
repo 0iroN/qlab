@@ -1,0 +1,1 @@
+"""Zaman-bağımlı Schrödinger motoru."""

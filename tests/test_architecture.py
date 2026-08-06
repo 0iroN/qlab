@@ -10,8 +10,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -45,7 +43,6 @@ def _resolve_lint_imports() -> str | None:
     return None
 
 
-@pytest.mark.skip(reason="sözleşmedeki modüller Task 3'te oluşacak")
 def test_import_contracts_hold():
     lint_imports_exe = _resolve_lint_imports()
     assert lint_imports_exe is not None, (
