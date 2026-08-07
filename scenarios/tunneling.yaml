@@ -1,0 +1,24 @@
+name: Dikdörtgen bariyerden tünelleme
+grid:
+  n: 4096
+  length_bohr: 400.0
+potential:
+  kind: barrier
+  params:
+    height: 0.8
+    width: 2.0
+    center: 0.0
+packet:
+  x0_bohr: -80.0
+  k0: 1.0
+  sigma_bohr: 10.0
+# dt=0.005 (0.02 DEĞİL): Task 9'da ölçüldü — split-operator'ın kinetik fazı
+# k²·dt/(2m) tam 2π'ye ulaştığı k≈25.07'de rezonansa giriyor; dt=0.02'de bu
+# değer Nyquist sınırının (≈32) altında kalıp keskin bariyer kenarından
+# enerji alıyor ve ızgara kenarlarını sessizce kirletiyor (norm korunuyor,
+# sadece spektrum bozuluyor — norm kontrolü bunu yakalamaz). dt=0.005'te
+# rezonant k Nyquist'in üstüne çıkıyor ve sorun kayboluyor. n_steps=32000
+# ile toplam zaman (160 a.u.) aynı kalıyor. Optimize etmeye kalkışmayın.
+dt: 0.005
+n_steps: 32000
+save_every: 50
