@@ -37,3 +37,40 @@ class UnitarityViolationError(QLabError):
             f"(sapma {norm_deviation:.3e}, dt={dt}). "
             "Muhtemel sebep: dt çok büyük. Yarıya indirip tekrar deneyin."
         )
+
+
+class BasisNotAvailableError(QLabError):
+    """Istenen baz seti veya element icin veri yok."""
+
+
+class UnsupportedSystemError(QLabError):
+    """Sistem bu cozucunun kapsaminda degil (ornegin acik kabuk)."""
+
+
+class SCFConvergenceError(QLabError):
+    """SCF dongusu yakinsamadi.
+
+    Yakinsamamis bir SCF sonucu ASLA normal sonuc gibi donmez. Istisna, taniyi
+    yeniden kosmadan yapabilmek icin iterasyon gecmisini tasir.
+    """
+
+    def __init__(
+        self,
+        iterations: int,
+        energy_history: list[float],
+        final_residual: float,
+        oscillating: bool = False,
+    ) -> None:
+        self.iterations = iterations
+        self.energy_history = energy_history
+        self.final_residual = final_residual
+        self.oscillating = oscillating
+        oneri = (
+            "Enerji salınıyor — DIIS alt uzayını büyütmeyi veya damping eklemeyi deneyin."
+            if oscillating
+            else "Iterasyon sinirini artirmayi veya baslangic tahminini degistirmeyi deneyin."
+        )
+        super().__init__(
+            f"SCF {iterations} iterasyonda yakinsamadi "
+            f"(son residual {final_residual:.3e}). {oneri}"
+        )
