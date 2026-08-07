@@ -88,6 +88,54 @@ def test_factory_attaches_mask_when_requested(tmp_path):
     assert prop.mask is not None
 
 
+def test_rejects_potential_as_string(tmp_path):
+    """potential: <string> yerine potential: {dict} gerekirse ScenarioError verilir."""
+    broken = VALID_YAML.replace(
+        "potential:\n  kind: barrier\n  params:\n    height: 0.8\n    width: 2.0\n    center: 0.0",
+        "potential: banana"
+    )
+    with pytest.raises(ScenarioError, match="potential.*sözlük"):
+        load_scenario(write(tmp_path, broken))
+
+
+def test_rejects_potential_as_list(tmp_path):
+    """potential: [...] yerine potential: {dict} gerekirse ScenarioError verilir."""
+    broken = VALID_YAML.replace(
+        "potential:\n  kind: barrier\n  params:\n    height: 0.8\n    width: 2.0\n    center: 0.0",
+        "potential: [1, 2, 3]"
+    )
+    with pytest.raises(ScenarioError, match="potential.*sözlük"):
+        load_scenario(write(tmp_path, broken))
+
+
+def test_rejects_non_numeric_dt(tmp_path):
+    """dt: <non-numeric> ScenarioError verip 'dt' adını belirtir."""
+    broken = VALID_YAML.replace("dt: 0.02", "dt: not_a_number")
+    with pytest.raises(ScenarioError, match="dt.*dönüştürülemedi"):
+        load_scenario(write(tmp_path, broken))
+
+
+def test_rejects_non_numeric_n_steps(tmp_path):
+    """n_steps: <non-numeric> ScenarioError verip 'n_steps' adını belirtir."""
+    broken = VALID_YAML.replace("n_steps: 100", "n_steps: not_a_number")
+    with pytest.raises(ScenarioError, match="n_steps.*dönüştürülemedi"):
+        load_scenario(write(tmp_path, broken))
+
+
+def test_rejects_non_numeric_mass(tmp_path):
+    """mass: <non-numeric> ScenarioError verip 'mass' adını belirtir."""
+    broken = VALID_YAML + "mass: not_a_number\n"
+    with pytest.raises(ScenarioError, match="mass.*dönüştürülemedi"):
+        load_scenario(write(tmp_path, broken))
+
+
+def test_rejects_non_numeric_save_every(tmp_path):
+    """save_every: <non-numeric> ScenarioError verip 'save_every' adını belirtir."""
+    broken = VALID_YAML.replace("save_every: 10", "save_every: not_a_number")
+    with pytest.raises(ScenarioError, match="save_every.*dönüştürülemedi"):
+        load_scenario(write(tmp_path, broken))
+
+
 def test_provenance_declares_periodic_boundary(tmp_path):
     scenario = load_scenario(write(tmp_path, VALID_YAML))
     prov = factory.provenance_for(scenario, norm_deviation=1e-13)

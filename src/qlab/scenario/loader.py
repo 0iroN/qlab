@@ -52,11 +52,37 @@ def load_scenario(path: str | Path) -> TDSEScenario:
         raise ScenarioError(f"Eksik zorunlu anahtar(lar): {sorted(missing)}")
 
     potential_raw = raw["potential"]
+    if not isinstance(potential_raw, dict):
+        raise ScenarioError(
+            f"'potential' anahtar bir sözlük olmalı, {type(potential_raw).__name__} verildi"
+        )
+
     kind = potential_raw.get("kind")
     if kind not in POTENTIAL_KINDS:
         raise ScenarioError(
             f"Bilinmeyen potansiyel türü: {kind!r}. Geçerli türler: {list(POTENTIAL_KINDS)}"
         )
+
+    # Sayısal alanları tek tek dönüştürerek hata tanısı yapabilelim
+    try:
+        dt_val = float(raw["dt"])
+    except (ValueError, TypeError) as exc:
+        raise ScenarioError(f"'dt' sayıya dönüştürülemedi: {raw['dt']!r}") from exc
+
+    try:
+        n_steps_val = int(raw["n_steps"])
+    except (ValueError, TypeError) as exc:
+        raise ScenarioError(f"'n_steps' sayıya dönüştürülemedi: {raw['n_steps']!r}") from exc
+
+    try:
+        save_every_val = int(raw.get("save_every", 1))
+    except (ValueError, TypeError) as exc:
+        raise ScenarioError(f"'save_every' sayıya dönüştürülemedi: {raw.get('save_every')!r}") from exc
+
+    try:
+        mass_val = float(raw.get("mass", 1.0))
+    except (ValueError, TypeError) as exc:
+        raise ScenarioError(f"'mass' sayıya dönüştürülemedi: {raw.get('mass')!r}") from exc
 
     try:
         return TDSEScenario(
@@ -64,11 +90,13 @@ def load_scenario(path: str | Path) -> TDSEScenario:
             grid=GridSpec(**raw["grid"]),
             potential=PotentialSpec(kind=kind, params=dict(potential_raw.get("params", {}))),
             packet=PacketSpec(**raw["packet"]),
-            dt=float(raw["dt"]),
-            n_steps=int(raw["n_steps"]),
-            save_every=int(raw.get("save_every", 1)),
-            mass=float(raw.get("mass", 1.0)),
+            dt=dt_val,
+            n_steps=n_steps_val,
+            save_every=save_every_val,
+            mass=mass_val,
             absorbing_width_bohr=raw.get("absorbing_width_bohr"),
         )
-    except TypeError as exc:
+    except (TypeError, ScenarioError) as exc:
+        if isinstance(exc, ScenarioError):
+            raise
         raise ScenarioError(f"Senaryo alanları hatalı ({file_path}): {exc}") from exc
