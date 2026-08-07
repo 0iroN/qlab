@@ -1,0 +1,1 @@
+"""Qt uygulama kabuğu."""
