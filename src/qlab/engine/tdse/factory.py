@@ -83,14 +83,23 @@ def provenance_for(scenario: TDSEScenario, norm_deviation: float) -> Provenance:
     # evolve() norm kontrolünü yalnızca maske yokken yapar (propagator.py,
     # check_norm) — soğurucu maske normu bilinçli olarak azaltır, bu yüzden
     # o durumda üniterlik ihlali diye bir şey ölçülmez/raporlanmaz. Burada da
-    # aynı ayrım uygulanmalı: maske varken norm_deviation ne "yakınsamadı"
+    # aynı ayrım uygulanmalı: maske varken norm sapması ne "yakınsamadı"
     # kanıtıdır (norm zaten azalması bekleniyor) ne de "yakınsadı" kanıtıdır
     # (norm bu durumda hiç kontrol edilmedi). Maskeli koşuda converged=True,
     # yalnızca "evolve() bu koşuda hiçbir üniterlik ihlali tespit etmedi"
-    # anlamına gelir — ham norm_deviation değeri diagnostics'te olduğu gibi
-    # görünmeye devam eder, gizlenmez. Maskesiz koşuda ise eşik hâlâ tam
-    # olarak uygulanır.
+    # anlamına gelir — fakat diagnostics'teki anahtarı değiştirerek,
+    # "norm_deviation" (üniterlik kanıtı) yerine "observed_norm_drop"
+    # (bilgilendirici) kullanırız, böylece panel okuyucu yanılmaz.
+    # Maskesiz koşuda ise eşik hâlâ tam olarak uygulanır.
     converged = True if masked else norm_deviation <= _NORM_TOLERANCE
+
+    # Diagnostics anahtarını maskelenmiş duruma göre ayarla: üniterlik kontrolü
+    # yapıldıysa "norm_deviation" (yakınsama kanıtı), yapılmadıysa
+    # "observed_norm_drop" (bilgilendirici, kasten düşüş).
+    if masked:
+        diagnostics = {"observed_norm_drop": norm_deviation, "steps": scenario.n_steps}
+    else:
+        diagnostics = {"norm_deviation": norm_deviation, "steps": scenario.n_steps}
 
     return Provenance(
         method=f"TDSE split-operator (Strang), 1B, dt={scenario.dt}",
@@ -98,5 +107,5 @@ def provenance_for(scenario: TDSEScenario, norm_deviation: float) -> Provenance:
         neglected=("elektron-elektron etkileşimi", "spin", "göreli etkiler"),
         expected_error=f"O(dt^2) ~ {scenario.dt**2:.1e} hartree mertebesi",
         converged=converged,
-        diagnostics={"norm_deviation": norm_deviation, "steps": scenario.n_steps},
+        diagnostics=diagnostics,
     )

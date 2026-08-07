@@ -49,3 +49,42 @@ def test_unitarity_error_carries_diagnosis():
 def test_error_hierarchy():
     assert issubclass(UnitarityViolationError, QLabError)
     assert issubclass(InvalidInputError, QLabError)
+
+
+def test_unmasked_convergence_shows_norm_deviation():
+    """Maskesiz (üniterlik kontrolü yapılan) koşular norm_deviation etiketi
+    göstermelidir, bu kontrol kanıtıdır."""
+    prov = make_provenance(
+        converged=False,
+        diagnostics={"norm_deviation": 1.5e-2, "steps": 100},
+    )
+    yakinsama_line = dict(prov.as_lines())["Yakınsama"]
+    assert "norm_deviation=" in yakinsama_line
+    assert "observed_norm_drop=" not in yakinsama_line
+
+
+def test_masked_convergence_shows_observed_norm_drop():
+    """Maskeli (üniterlik kontrolü yapılmayan) koşular observed_norm_drop
+    etiketi göstermelidir, bu bilgilendirici ölçüdür ve kontrol kanıtı değildir."""
+    prov = make_provenance(
+        converged=True,
+        diagnostics={"observed_norm_drop": 7.0e-2, "steps": 100},
+    )
+    yakinsama_line = dict(prov.as_lines())["Yakınsama"]
+    assert "observed_norm_drop=" in yakinsama_line
+    assert "norm_deviation=" not in yakinsama_line
+
+
+def test_masked_case_cannot_be_misread_as_convergence_evidence():
+    """Maskeli koşuda kontrol yapılmadığı için, panel okuyucu norm değerini
+    yakınsama kanıtı olarak yanlış okumamalı. observed_norm_drop etiketinin
+    varlığı ve norm_deviation'ın YOKLUĞU bunu garanti eder."""
+    prov = make_provenance(
+        converged=True,  # Maske varken always True (kontrol yapılmadığı için)
+        diagnostics={"observed_norm_drop": 7.0e-2, "steps": 100},
+    )
+    yakinsama_line = dict(prov.as_lines())["Yakınsama"]
+    # Başlangıç ✓ kontrol geçti anlamı değildir maskede, ama norm_deviation
+    # görmemek kontrol yapılmadığını kanıtlar.
+    assert yakinsama_line.startswith("✓")
+    assert "norm_deviation" not in yakinsama_line
