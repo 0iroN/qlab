@@ -1,4 +1,6 @@
+import io
 import json
+import sys
 import textwrap
 
 import numpy as np
@@ -71,3 +73,32 @@ def test_main_returns_zero_and_writes_output(scenario_file, tmp_path):
 def test_main_reports_missing_scenario(capsys):
     assert run.main(["yok.yaml", "-o", "x.npz"]) == 1
     assert "bulunamadı" in capsys.readouterr().err
+
+
+def test_main_outputs_turkish_text_through_cp1252_stream(scenario_file, tmp_path):
+    """Ana fonksiyon CP1252 kodlaması (Türkçe 'ı' karakteri yapamaz) tarafından
+    yapılamayan akış üzerinden Türkçe metni çıkış yapamalıdır."""
+    output = tmp_path / "cli.npz"
+
+    # CP1252 akışı oluştur; 'ı' karakteri bu kodlamada yapılamaz.
+    # Başarılı bir çalıştırma, main() içindeki UTF-8 yeniden yapılandırmasını kanıtlar.
+    cp1252_buffer = io.BytesIO()
+    cp1252_stream = io.TextIOWrapper(cp1252_buffer, encoding="cp1252", errors="strict")
+
+    old_stdout = sys.stdout
+    old_stderr = sys.stderr
+    try:
+        sys.stdout = cp1252_stream
+        sys.stderr = io.TextIOWrapper(
+            io.BytesIO(), encoding="cp1252", errors="strict"
+        )
+
+        # main() Türkçe çıktı yapmak istediğinde, fix olmadan UnicodeEncodeError
+        # ile başarısız olmalı (scenario adında ve provenance'da 'ı' vardır).
+        # Fix ile, main() stdout'u UTF-8'e yapılandırır ve başarılı olur.
+        result = run.main([str(scenario_file), "-o", str(output)])
+        assert result == 0
+        assert output.is_file()
+    finally:
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr

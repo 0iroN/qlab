@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import io
 import json
 import sys
 from dataclasses import dataclass
@@ -63,6 +64,33 @@ def save(result: RunResult, output_path: str | Path) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Windows ve diğer CP1252 varsayılan konsollarında Türkçe karakterleri
+    # yazdırabilmek için stdout/stderr'i UTF-8'e yeniden yapılandır. reconfigure()
+    # var olmayan ortamlarda (ender), stdout/stderr'i wrapping'e geri döneriz.
+    # Her iki durumda da, başarısız olursa orijinal akış kullanılır ve hiçbir
+    # ek hata yükseltilmez.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError, OSError):
+        try:
+            if hasattr(sys.stdout, "buffer"):
+                sys.stdout = io.TextIOWrapper(
+                    sys.stdout.buffer, encoding="utf-8", errors="replace"
+                )
+        except (AttributeError, ValueError, OSError):
+            pass
+
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError, OSError):
+        try:
+            if hasattr(sys.stderr, "buffer"):
+                sys.stderr = io.TextIOWrapper(
+                    sys.stderr.buffer, encoding="utf-8", errors="replace"
+                )
+        except (AttributeError, ValueError, OSError):
+            pass
+
     parser = argparse.ArgumentParser(
         prog="qlab.run", description="TDSE senaryosunu GUI olmadan koştur"
     )
