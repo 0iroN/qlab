@@ -141,3 +141,32 @@ def test_provenance_declares_periodic_boundary(tmp_path):
     prov = factory.provenance_for(scenario, norm_deviation=1e-13)
     assert "periyodik" in " ".join(prov.approximations + prov.neglected).lower()
     assert prov.converged is True
+
+
+def test_rejects_params_as_string(tmp_path):
+    """params: banana yerine params: {dict} gerekirse ScenarioError verilir."""
+    broken = VALID_YAML.replace(
+        "potential:\n  kind: barrier\n  params:\n    height: 0.8\n    width: 2.0\n    center: 0.0",
+        "potential:\n  kind: barrier\n  params: banana"
+    )
+    with pytest.raises(ScenarioError, match="params|dictionary"):
+        load_scenario(write(tmp_path, broken))
+
+
+def test_rejects_params_as_list(tmp_path):
+    """params: [1, 2, 3] yerine params: {dict} gerekirse ScenarioError verilir."""
+    broken = VALID_YAML.replace(
+        "potential:\n  kind: barrier\n  params:\n    height: 0.8\n    width: 2.0\n    center: 0.0",
+        "potential:\n  kind: barrier\n  params:\n    - 1\n    - 2\n    - 3"
+    )
+    with pytest.raises(ScenarioError, match="params|dictionary"):
+        load_scenario(write(tmp_path, broken))
+
+
+def test_rejects_non_utf8_scenario_file(tmp_path):
+    """UTF-8 olmayan dosya ScenarioError verip UTF-8 hatasını belirtir."""
+    path = tmp_path / "non_utf8.yaml"
+    # İçinde geçersiz UTF-8 bayt dizisi olan dosya yaz
+    path.write_bytes(b"name: test\ngrid:\n  n: 512\n  length_bohr: 200\npotential:\n  kind: barrier\n  params:\n    height: 0.8\n\xff\xfe")
+    with pytest.raises(ScenarioError, match="UTF-8"):
+        load_scenario(path)

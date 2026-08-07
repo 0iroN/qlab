@@ -34,6 +34,10 @@ def load_scenario(path: str | Path) -> TDSEScenario:
 
     try:
         raw = yaml.safe_load(file_path.read_text(encoding="utf-8"))
+    except UnicodeDecodeError as exc:
+        raise ScenarioError(f"Dosya UTF-8 kodlanmadı: {file_path}") from exc
+    except OSError as exc:
+        raise ScenarioError(f"Dosya okunamadı ({file_path}): {exc}") from exc
     except yaml.YAMLError as exc:
         raise ScenarioError(f"YAML okunamadı ({file_path}): {exc}") from exc
 
@@ -96,7 +100,5 @@ def load_scenario(path: str | Path) -> TDSEScenario:
             mass=mass_val,
             absorbing_width_bohr=raw.get("absorbing_width_bohr"),
         )
-    except (TypeError, ScenarioError) as exc:
-        if isinstance(exc, ScenarioError):
-            raise
+    except (TypeError, ValueError) as exc:
         raise ScenarioError(f"Senaryo alanları hatalı ({file_path}): {exc}") from exc
