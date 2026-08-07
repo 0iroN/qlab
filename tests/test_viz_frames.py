@@ -50,6 +50,17 @@ def test_flat_potential_scales_to_zero(setup):
 
 
 def test_transmitted_probability_is_reported(setup):
-    grid, psi, potential = setup
-    payload = frames.build_payload(psi, grid, potential, boundary=-30.0)
-    assert payload.transmitted == pytest.approx(0.5, abs=1e-3)
+    grid, _, potential = setup
+
+    # Paketin merkezi iki ızgara noktası arasındaki orta noktaya yerleştirilir.
+    # Merkezi ızgara noktasında yer alırsa, o hücre iki taraf arasında bölünemez
+    # ve asimetrik bölünme sağlanır.
+    idx = np.searchsorted(grid.x, -30.0)
+    if idx > 0 and idx < len(grid.x):
+        x_offset = (grid.x[idx - 1] + grid.x[idx]) / 2
+    else:
+        x_offset = -30.0
+
+    psi = gaussian_packet(grid, x0=x_offset, k0=1.0, sigma=8.0)
+    payload = frames.build_payload(psi, grid, potential, boundary=x_offset)
+    assert payload.transmitted == pytest.approx(0.5, abs=1e-12)
