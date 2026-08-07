@@ -170,3 +170,19 @@ def test_rejects_non_utf8_scenario_file(tmp_path):
     path.write_bytes(b"name: test\ngrid:\n  n: 512\n  length_bohr: 200\npotential:\n  kind: barrier\n  params:\n    height: 0.8\n\xff\xfe")
     with pytest.raises(ScenarioError, match="UTF-8"):
         load_scenario(path)
+
+
+def test_factory_rejects_absorbing_width_as_string(tmp_path):
+    """absorbing_width_bohr: <string> factory.build() içinde ScenarioError verip
+    'absorbing_width_bohr' adını belirtir."""
+    scenario = load_scenario(write(tmp_path, VALID_YAML + "absorbing_width_bohr: cok\n"))
+    with pytest.raises(ScenarioError, match="absorbing_width_bohr"):
+        factory.build(scenario)
+
+
+def test_factory_rejects_absorbing_width_as_list(tmp_path):
+    """absorbing_width_bohr: [...] factory.build() içinde ScenarioError verip
+    hatayı belirtir."""
+    scenario = load_scenario(write(tmp_path, VALID_YAML + "absorbing_width_bohr: [1, 2, 3]\n"))
+    with pytest.raises(ScenarioError, match="absorbing_width_bohr"):
+        factory.build(scenario)

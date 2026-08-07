@@ -52,7 +52,12 @@ def build(
 
     mask = None
     if scenario.absorbing_width_bohr is not None:
-        mask = potentials.absorbing_mask(grid, width=scenario.absorbing_width_bohr)
+        try:
+            mask = potentials.absorbing_mask(grid, width=scenario.absorbing_width_bohr)
+        except TypeError as exc:
+            raise ScenarioError(
+                f"absorbing_width_bohr sayısal olmalı, verilen: {scenario.absorbing_width_bohr!r}"
+            ) from exc
 
     propagator = SplitOperatorPropagator(
         grid=grid,
