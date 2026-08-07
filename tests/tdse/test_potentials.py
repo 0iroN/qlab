@@ -34,11 +34,21 @@ def test_square_well_is_zero_inside_and_high_outside(grid):
     assert v[0] == pytest.approx(1e6)
 
 
+def test_square_well_rejects_nonpositive_wall_height(grid):
+    with pytest.raises(InvalidInputError, match="wall_height"):
+        potentials.square_well(grid, width=4.0, wall_height=0.0)
+
+
 def test_harmonic_matches_formula(grid):
     omega = 0.5
     np.testing.assert_allclose(
         potentials.harmonic(grid, omega=omega), 0.5 * omega**2 * grid.x**2, atol=1e-12
     )
+
+
+def test_harmonic_rejects_nonpositive_mass(grid):
+    with pytest.raises(InvalidInputError, match="mass"):
+        potentials.harmonic(grid, omega=0.5, mass=0.0)
 
 
 def test_uniform_field_is_linear(grid):

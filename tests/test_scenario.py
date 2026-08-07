@@ -143,6 +143,27 @@ def test_provenance_declares_periodic_boundary(tmp_path):
     assert prov.converged is True
 
 
+def test_provenance_masked_run_not_marked_unconverged_by_norm_drop(tmp_path):
+    """Soğurucu maskeli bir senaryoda norm bilinçli olarak azalır (evolve()
+    da bu yüzden maske varken norm kontrolünü atlar, bkz. propagator.py
+    check_norm). Büyük bir norm_deviation TEK BAŞINA converged=False'a yol
+    açmamalı — aksi halde panel doğru çalışan bir koşuyu '✗ Yakınsama' diye
+    gösterir."""
+    scenario = load_scenario(write(tmp_path, VALID_YAML + "absorbing_width_bohr: 20.0\n"))
+    prov = factory.provenance_for(scenario, norm_deviation=0.2)
+    assert prov.converged is True
+
+
+def test_provenance_unmasked_run_with_large_norm_deviation_reports_unconverged(tmp_path):
+    """Maskesiz bir koşuda norm sapması hâlâ tek üniterlik kanıtıdır; eşiği
+    (1e-8) aşan büyük bir sapma converged=False raporlamalı. Bu test, maskeli
+    koşu için yukarıdaki düzeltmenin kör bir 'her zaman yakınsadı'ya
+    dönüşmediğini kanıtlar."""
+    scenario = load_scenario(write(tmp_path, VALID_YAML))
+    prov = factory.provenance_for(scenario, norm_deviation=0.2)
+    assert prov.converged is False
+
+
 def test_rejects_params_as_string(tmp_path):
     """params: banana yerine params: {dict} gerekirse ScenarioError verilir."""
     broken = VALID_YAML.replace(

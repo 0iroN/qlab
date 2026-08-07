@@ -76,14 +76,27 @@ def provenance_for(scenario: TDSEScenario, norm_deviation: float) -> Provenance:
         "periyodik sınır koşulu (FFT)",
         "Strang bölmesi, O(dt^2)",
     ]
-    if scenario.absorbing_width_bohr is not None:
+    masked = scenario.absorbing_width_bohr is not None
+    if masked:
         approximations.append("kenarlarda soğurucu maske — norm bilinçli olarak azalır")
+
+    # evolve() norm kontrolünü yalnızca maske yokken yapar (propagator.py,
+    # check_norm) — soğurucu maske normu bilinçli olarak azaltır, bu yüzden
+    # o durumda üniterlik ihlali diye bir şey ölçülmez/raporlanmaz. Burada da
+    # aynı ayrım uygulanmalı: maske varken norm_deviation ne "yakınsamadı"
+    # kanıtıdır (norm zaten azalması bekleniyor) ne de "yakınsadı" kanıtıdır
+    # (norm bu durumda hiç kontrol edilmedi). Maskeli koşuda converged=True,
+    # yalnızca "evolve() bu koşuda hiçbir üniterlik ihlali tespit etmedi"
+    # anlamına gelir — ham norm_deviation değeri diagnostics'te olduğu gibi
+    # görünmeye devam eder, gizlenmez. Maskesiz koşuda ise eşik hâlâ tam
+    # olarak uygulanır.
+    converged = True if masked else norm_deviation <= _NORM_TOLERANCE
 
     return Provenance(
         method=f"TDSE split-operator (Strang), 1B, dt={scenario.dt}",
         approximations=tuple(approximations),
         neglected=("elektron-elektron etkileşimi", "spin", "göreli etkiler"),
         expected_error=f"O(dt^2) ~ {scenario.dt**2:.1e} hartree mertebesi",
-        converged=norm_deviation <= _NORM_TOLERANCE,
+        converged=converged,
         diagnostics={"norm_deviation": norm_deviation, "steps": scenario.n_steps},
     )

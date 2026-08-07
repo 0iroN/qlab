@@ -31,6 +31,8 @@ def square_well(
 ) -> np.ndarray:
     if width <= 0:
         raise InvalidInputError(f"Kuyu genişliği pozitif olmalı, verilen: {width}")
+    if wall_height <= 0:
+        raise InvalidInputError(f"wall_height pozitif olmalı, verilen: {wall_height}")
     return np.where(np.abs(grid.x - center) <= 0.5 * width, 0.0, wall_height)
 
 
@@ -39,6 +41,8 @@ def harmonic(
 ) -> np.ndarray:
     if omega <= 0:
         raise InvalidInputError(f"omega pozitif olmalı, verilen: {omega}")
+    if mass <= 0:
+        raise InvalidInputError(f"mass pozitif olmalı, verilen: {mass}")
     return 0.5 * mass * omega**2 * (grid.x - center) ** 2
 
 

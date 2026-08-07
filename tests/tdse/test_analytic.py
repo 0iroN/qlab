@@ -95,7 +95,7 @@ def test_particle_in_box_ground_state_via_engine():
     GEÇMİŞ BULGU (bu testin önceki hâliyle ilgili, bkz. task-8-report.md
     "kapsama açığı" bölümü): wall_height=1000 (derin kuyu) ile E_1 ~ 0.30
     civarında bir taban duruma karşı çalışıldığında, potansiyel bağlanmasında
-    (coupling) %2'lik, hatta %100'lük bir katsayı hatası SESSİZCE geçiyordu.
+    (coupling) %100'lük (2 kat) bir katsayı hatası SESSİZCE geçiyordu.
     Neden fiziksel: V0 >> E_1 rejiminde taban durum enerjisi kuyu derinliğine
     yalnızca ~1/sqrt(V0) ile ölçeklenen ZAYIF bir düzeltme üzerinden bağlı;
     orantısal katsayı hataları bu karekök tarafından güçlü biçimde bastırılır.

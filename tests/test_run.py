@@ -76,8 +76,8 @@ def test_main_reports_missing_scenario(capsys):
 
 
 def test_main_outputs_turkish_text_through_cp1252_stream(scenario_file, tmp_path):
-    """Ana fonksiyon CP1252 kodlaması (Türkçe 'ı' karakteri yapamaz) tarafından
-    yapılamayan akış üzerinden Türkçe metni çıkış yapamalıdır."""
+    """Ana fonksiyon, CP1252 kodlamalı (Türkçe 'ı' karakterini taşıyamayan) bir
+    akış üzerinden bile Türkçe metni başarıyla çıkış yapabilmelidir."""
     output = tmp_path / "cli.npz"
 
     # CP1252 akışı oluştur; 'ı' karakteri bu kodlamada yapılamaz.

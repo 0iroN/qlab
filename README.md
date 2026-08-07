@@ -7,10 +7,16 @@ Tasarım belgesi: `../docs/superpowers/specs/2026-08-05-qlab-kuantum-cekirdegi-d
 
 ## Durum
 
-- **Modül 1A — TDSE motoru: tamam.** Tek parçacık, 1B/2B, split-operator FFT.
-  Izgara, potansiyeller, başlangıç paketi, propagatör, observable katmanı,
-  senaryo şeması/yükleyici/fabrika, headless koşucu, görselleştirme veri
-  katmanı, Qt kabuğu ve şeffaflık paneli — hepsi uygulandı ve test edildi.
+- **Modül 1A — TDSE motoru: tamam.** Tek parçacık, split-operator FFT.
+  Motor çekirdeği — ızgara, potansiyeller, başlangıç paketi, propagatör ve
+  observable katmanı — 1B/2B'dir ve ikisi de test edilmiştir (2B: `Grid2D`,
+  `gaussian_packet_2d`, `double_slit`, `tdse_obs_2d`, çift yarık girişim
+  testi). Senaryo şeması/yükleyici/fabrika, headless koşucu, görselleştirme
+  veri katmanı, Qt kabuğu ve şeffaflık paneli ise yalnızca 1B'dir: `GridSpec`
+  hiçbir 2B alan taşımaz, `factory.build()` sabit biçimde `Grid1D` üretir, Qt
+  penceresi yalnızca 1B çizer. 2B'ye bu YAML → fabrika → koşucu/GUI hattından
+  ulaşılamaz — yalnızca engine/observable modülleri doğrudan import edilerek
+  kullanılabilir.
 - **Modül 1B — Hartree-Fock: henüz yazılmadı, ayrı bir plana (Plan B) ait.**
   Bu depoda `engine/hf/`, `observable/hf_obs.py`, `viz/volume.py`, PySCF
   referans testleri ve H₂/H₂O senaryoları YOKTUR. Aşağıdaki "Kabul kriterleri
@@ -57,7 +63,7 @@ değerler değil, ölçülen değerlerdir:
 
 | Test | Referans / tolerans | Ölçülen |
 |---|---|---|
-| Norm korunumu | Üniterlik garantisi, eşik 1e-10 | 8.427e-12 (headless CLI koşusu, `tunneling.yaml`, 32000 adım) |
+| Norm korunumu | Üniterlik garantisi, eşik 1e-8 | 8.427e-12 (headless CLI koşusu, `tunneling.yaml`, 32000 adım) |
 | Kutuda parçacık, taban durum (motor seviyesi) | Sonlu-duvar transandant denklemi, tolerans %0.05 | sapma **%-0.017** (measured=0.17762085, referans=0.17765102) |
 | Harmonik taban durum | E₀ = ω/2, tolerans %0.01 | pratikte tam örtüşme (measured=0.500000000002) |
 | Serbest paket yayılımı | σ₀√(1+(t/2mσ₀²)²), tolerans %1 | pratikte tam örtüşme (measured=7.0710678119, analitik=7.0710678119 — Gauss paketinin yayılımı analitik olarak da tam bu formülü izler) |
