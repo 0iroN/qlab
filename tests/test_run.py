@@ -157,3 +157,42 @@ def test_main_outputs_turkish_text_through_cp1252_stream(scenario_file, tmp_path
     finally:
         sys.stdout = old_stdout
         sys.stderr = old_stderr
+
+
+def test_main_outputs_turkish_text_through_cp1252_stream_for_hf_scan(
+    hf_scenario_file, tmp_path
+):
+    """HF tarama dalı da, TDSE dalı gibi, CP1252 kodlamalı bir akış üzerinden
+    Türkçe metni başarıyla çıkış yapabilmelidir.
+
+    main() akışları tek bir yerde (dallanmadan önce) yeniden yapılandırır, ama
+    bu korumayı sınayan tek regresyon testi şimdiye kadar yalnızca TDSE dalını
+    (isinstance(result, ScanResult) False olan yol) kapsıyordu. HF dalı hem
+    senaryo adında ("Küçük H2 taraması") hem de şeffaflık bloğu etiketlerinde
+    ("Yöntem", "Yaklaşımlar", "İhmal edilen", "Yakınsama") Türkçe karakter
+    taşıdığı için, fix olmadan aynı UnicodeEncodeError'a düşebilir.
+    """
+    output = tmp_path / "hf_cli.npz"
+
+    # CP1252 akışı oluştur; 'ı'/'ş' gibi karakterler bu kodlamada yapılamaz.
+    cp1252_buffer = io.BytesIO()
+    cp1252_stream = io.TextIOWrapper(cp1252_buffer, encoding="cp1252", errors="strict")
+
+    old_stdout = sys.stdout
+    old_stderr = sys.stderr
+    try:
+        sys.stdout = cp1252_stream
+        sys.stderr = io.TextIOWrapper(
+            io.BytesIO(), encoding="cp1252", errors="strict"
+        )
+
+        # main() Türkçe çıktı yapmak istediğinde, fix olmadan UnicodeEncodeError
+        # ile başarısız olmalı (scenario adında ve provenance etiketlerinde
+        # Türkçe karakter vardır). Fix ile, main() stdout'u UTF-8'e yapılandırır
+        # ve başarılı olur.
+        result = run.main([str(hf_scenario_file), "-o", str(output)])
+        assert result == 0
+        assert output.is_file()
+    finally:
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr

@@ -8,7 +8,7 @@ SCFConvergenceError yalnizca O NOKTA icin yakalanir; o noktanin enerjisi NaN
 olarak isaretlenir ve tarama diger degerlerle DEVAM eder. ScanResult.provenance
 o zaman converged=False tasir ve hangi deger(ler)in basarisiz oldugu
 diagnostics["failed_values"] icinde raporlanir. Boylece tek bir zor geometri
-(orneg in ayrisma siniri yakini, bkz. test_physical.py buyuk-ayrim notu) butun
+(ornegin ayrisma siniri yakini, bkz. test_physical.py buyuk-ayrim notu) butun
 egriyi yok etmez, ama sonuc hicbir zaman "hepsi yakinsadi" gibi SAHTE bicimde
 raporlanmaz -- cagiran taraf NaN'lari ve converged=False'u gormeden egriyi
 guvenilir sayamaz (spec ilkesi: yakinsamamis bir sonuc asla normal sonuc gibi

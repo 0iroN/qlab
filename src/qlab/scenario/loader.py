@@ -170,6 +170,13 @@ def _load_hf_scan_scenario(raw: dict, file_path: Path) -> HFScanScenario:
             "'values' listesi boş olamaz — en az bir tarama noktası gerekli"
         )
 
+    # Not: HFScanScenario __post_init__ taşımayan sade bir frozen dataclass'tır
+    # ve tüm alanlar burada anahtar-kelime ile veriliyor, bu yüzden aşağıdaki
+    # construction hiçbir zaman TypeError/ValueError fırlatamaz — dal, tasarım
+    # gereği erişilemez. _load_tdse_scenario'daki kardeş dalla simetriyi
+    # korumak ve HFScanScenario ileride __post_init__ doğrulaması kazanırsa
+    # (örn. alan-bazlı bir kısıt eklenirse) sessizce sızmasını önlemek için
+    # savunma amaçlı bırakıldı.
     try:
         return HFScanScenario(
             name=raw["name"],
