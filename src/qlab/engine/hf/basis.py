@@ -73,6 +73,52 @@ class BasisFunction:
         payda = factorial(2 * i) * factorial(2 * j) * factorial(2 * k)
         return on_carpan * np.sqrt(pay / payda)
 
+    def _self_overlap(self) -> float:
+        """Kontrakte fonksiyonun kendisiyle ortusmesi.
+
+        Primitif normalizasyonu (normalisation()) ve kutuphane kontraksiyon
+        katsayilari uygulanir; kontraksiyon-normalizasyon carpani UYGULANMAZ
+        (bu deger tam da o carpanin hesabinda kullanilir).
+
+        Ayni merkezdeki iki Kartezyen Gauss primitifinin ortusmesi (A=B
+        oldugu icin ustel terim 1'e iner):
+            <g_p|g_q> = (pi/(a_p+a_q))^{3/2}
+                        * carpim_{n in (i,j,k)} (2n-1)!! / (2(a_p+a_q))^n
+        s tipi icin (i=j=k=0) her carpan 1'dir ve formul (pi/(a_p+a_q))^{3/2}'ye iner.
+        """
+        i, j, k = self.angular
+        exponents = np.array([p.exponent for p in self.primitives])
+        coefficients = np.array([p.coefficient for p in self.primitives])
+        agirliklar = coefficients * self.normalisation()
+
+        p_toplam = exponents[:, None] + exponents[None, :]
+        ortusme = (np.pi / p_toplam) ** 1.5
+        for n in (i, j, k):
+            cift_faktoriyel = factorial(2 * n) / (2 ** n * factorial(n))
+            ortusme = ortusme * cift_faktoriyel / (2 * p_toplam) ** n
+        return float(agirliklar @ ortusme @ agirliklar)
+
+    def contraction_normalisation(self) -> float:
+        """Kontrakte fonksiyonun oz-ortusmesini tam 1'e getiren carpan.
+
+        PySCF, kutuphane contraction katsayilarini kullanmadan once kontrakte
+        fonksiyonu oz-ortusmesi tam olarak 1 olacak sekilde yeniden normalize
+        eder. Yalnizca primitif normalizasyonu (normalisation()) uygulanirsa
+        H2/STO-3G'de kosegen 0.9999999908898'de kalir, atol=1e-10'u ~91x asar
+        (bkz. .superpowers/sdd/task-5-brief.md). Bu carpan olmadan integral
+        degerleri PySCF referansiyla eslesmez.
+
+        Task 6 (iki-elektron integralleri) ve Task 7 (p kabugu) da ayni
+        carpani kullanacagi icin buraya, BasisFunction uzerine eklenir --
+        integrals.py icine gommek ayni hesabi uc gorevde tekrarlardi.
+
+        Tek primitifli kabuklarda (6-31G'nin dis kabuklari gibi) bu carpan
+        kutuphanenin zaten kendi contraction katsayisini 1.0 olarak verdigi
+        durumlarda kendiliginden 1'e cikar; ayrica bir ozel durum kodu
+        gerekmez.
+        """
+        return 1.0 / np.sqrt(self._self_overlap())
+
 
 def build_basis(molecule: Molecule, name: str) -> list[BasisFunction]:
     """Molekuldeki her atom icin kontrakte baz fonksiyonlarini kurar."""
