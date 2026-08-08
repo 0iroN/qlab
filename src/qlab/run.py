@@ -1,9 +1,14 @@
 """Senaryoları GUI olmadan koşan giriş noktası.
 
     python -m qlab.run scenarios/tunneling.yaml -o out.npz
+    python -m qlab.run scenarios/h2_bond_scan.yaml -o h2_curve.npz
 
 Toplu parametre taramaları ve doğrulama koşuları bu yoldan yapılır; app katmanı
 hiçbir zaman gerekmez. Bu, spec §3 İlke 1'in pratik karşılığıdır.
+
+Senaryo türüne göre dallanır: TDSEScenario mevcut split-operator yoluna,
+HFScanScenario ise engine.hf.factory.run_scan'e gider. İkisi de Provenance
+taşıdığı için şeffaflık bloğu tek bir yerden (provenance.as_lines()) basılır.
 """
 
 from __future__ import annotations
@@ -18,13 +23,14 @@ from pathlib import Path
 
 import numpy as np
 
+from qlab.engine.hf.factory import ScanResult, run_scan
 from qlab.engine.tdse import factory
 from qlab.engine.tdse.grid import Grid1D
 from qlab.engine.tdse.propagator import evolve
 from qlab.errors import QLabError
 from qlab.provenance import Provenance
 from qlab.scenario.loader import load_scenario
-from qlab.scenario.schema import TDSEScenario
+from qlab.scenario.schema import HFScanScenario, TDSEScenario
 
 
 @dataclass
@@ -37,8 +43,12 @@ class RunResult:
     provenance: Provenance
 
 
-def run_scenario(path: str | Path) -> RunResult:
+def run_scenario(path: str | Path) -> RunResult | ScanResult:
     scenario = load_scenario(path)
+
+    if isinstance(scenario, HFScanScenario):
+        return run_scan(scenario)
+
     grid, potential, psi0, propagator = factory.build(scenario)
 
     frames, times = evolve(
@@ -50,16 +60,27 @@ def run_scenario(path: str | Path) -> RunResult:
     return RunResult(scenario, grid, potential, frames, times, provenance)
 
 
-def save(result: RunResult, output_path: str | Path) -> None:
+def save(result: RunResult | ScanResult, output_path: str | Path) -> None:
+    provenance_json = json.dumps(
+        dataclasses.asdict(result.provenance), ensure_ascii=False
+    )
+
+    if isinstance(result, ScanResult):
+        np.savez_compressed(
+            output_path,
+            values=result.values,
+            energies=result.energies,
+            provenance_json=provenance_json,
+        )
+        return
+
     np.savez_compressed(
         output_path,
         frames=result.frames,
         times=result.times,
         x=result.grid.x,
         potential=result.potential,
-        provenance_json=json.dumps(
-            dataclasses.asdict(result.provenance), ensure_ascii=False
-        ),
+        provenance_json=provenance_json,
     )
 
 
@@ -105,7 +126,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     save(result, args.output)
-    print(f"{result.scenario.name}: {len(result.times)} kare -> {args.output}")
+    if isinstance(result, ScanResult):
+        print(f"{result.scenario.name}: {len(result.values)} nokta -> {args.output}")
+    else:
+        print(f"{result.scenario.name}: {len(result.times)} kare -> {args.output}")
     for label, value in result.provenance.as_lines():
         print(f"  {label:<14} {value}")
     return 0

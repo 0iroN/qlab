@@ -34,6 +34,26 @@ def scenario_file(tmp_path):
     return path
 
 
+SMALL_HF_SCENARIO = textwrap.dedent(
+    """
+    kind: hf_scan
+    name: Küçük H2 taraması
+    molecule_template: "H 0 0 0; H 0 0 {value}"
+    basis: sto-3g
+    parameter: bond_length
+    values: [0.7, 0.74]
+    unit: angstrom
+    """
+)
+
+
+@pytest.fixture
+def hf_scenario_file(tmp_path):
+    path = tmp_path / "hf_small.yaml"
+    path.write_text(SMALL_HF_SCENARIO, encoding="utf-8")
+    return path
+
+
 def test_run_scenario_returns_frames_and_provenance(scenario_file):
     result = run.run_scenario(scenario_file)
     assert result.frames.shape == (5, 256)  # t=0 dahil
@@ -73,6 +93,41 @@ def test_main_returns_zero_and_writes_output(scenario_file, tmp_path):
 def test_main_reports_missing_scenario(capsys):
     assert run.main(["yok.yaml", "-o", "x.npz"]) == 1
     assert "bulunamadı" in capsys.readouterr().err
+
+
+def test_run_scenario_dispatches_hf_scan(hf_scenario_file):
+    """run_scenario, HFScanScenario için TDSE fabrikasına değil run_scan'e
+    gitmeli — aksi halde HF senaryosu grid/potential arayan TDSE koduna
+    düşer ve AttributeError ile çöker."""
+    from qlab.engine.hf.factory import ScanResult
+
+    result = run.run_scenario(hf_scenario_file)
+    assert isinstance(result, ScanResult)
+    assert result.energies.shape == (2,)
+    assert np.all(np.isfinite(result.energies))
+
+
+def test_save_writes_readable_npz_for_hf_scan(hf_scenario_file, tmp_path):
+    result = run.run_scenario(hf_scenario_file)
+    output = tmp_path / "hf_out.npz"
+    run.save(result, output)
+
+    with np.load(output, allow_pickle=False) as data:
+        assert set(data.files) == {"values", "energies", "provenance_json"}
+        assert data["values"].shape == (2,)
+        assert data["energies"].shape == (2,)
+        provenance = json.loads(str(data["provenance_json"]))
+
+    assert provenance["method"].startswith("RHF/")
+    assert provenance["converged"] is True
+
+
+def test_main_reports_point_count_for_hf_scan(hf_scenario_file, tmp_path, capsys):
+    output = tmp_path / "hf_cli.npz"
+    assert run.main([str(hf_scenario_file), "-o", str(output)]) == 0
+    out = capsys.readouterr().out
+    assert "2 nokta" in out
+    assert "Yöntem" in out
 
 
 def test_main_outputs_turkish_text_through_cp1252_stream(scenario_file, tmp_path):

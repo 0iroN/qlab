@@ -1,0 +1,31 @@
+# DIKKAT -- bu YAML'in ilk hali YANLISTI, dispatch oncesi olcumle duzeltildi.
+# Once z koordinatina 0.9572 (bag uzunlugu) konmustu; o zaman value=0.7565
+# icin R(OH)=1.2201 A ve aci 76.64 derece cikiyordu, yorumun iddia ettigi
+# 104.5 degil. Referans su geometrisinde (reference/hf_energies.json:
+# "O 0 0 0; H 0 0.757 0.587; H 0 -0.757 0.587") z = 0.587'dir.
+#
+# Bu tarama SAF BIR ACI TARAMASI DEGILDIR: sablonda tek yer tutucu oldugu ve
+# z sabit tutuldugu icin value degistikce ACI DA BAG UZUNLUGU DA degisir.
+#   gercek aci   = 2 * arctan(value / 0.587)   (arcsin DEGIL -- sabit olan
+#                                               bag uzunlugu degil, z'dir)
+#   gercek R(OH) = sqrt(value^2 + 0.587^2)
+# Olculdu:
+#   value=0.5500  R=0.8044  aci= 86.27  E=-74.83501026
+#   value=0.6000  R=0.8394  aci= 91.25  E=-74.88974658
+#   value=0.6500  R=0.8758  aci= 95.83  E=-74.92761322
+#   value=0.7000  R=0.9135  aci=100.04  E=-74.95107116
+#   value=0.7565  R=0.9575  aci=104.38  E=-74.96301805
+#   value=0.8000  R=0.9923  aci=107.46  E=-74.96343147   <- minimum
+#   value=0.8500  R=1.0330  aci=110.74  E=-74.95614809
+# Minimum 107.46 derecede cikar, deneysel 104.5'te DEGIL -- cunku gerilme
+# serbestlik derecesi taramaya karisiyor. Saf aci taramasi (R sabit, yalniz
+# aci degisir) Task 11'deki test_water_equilibrium_angle_near_experiment'tedir
+# ve 100.97 derece verir. Bu dosya bir GOSTERIM senaryosudur; denge acisi
+# olcumu icin o testi kullan.
+kind: hf_scan
+name: H2O egilme+gerilme taramasi (z sabit 0.587 A)
+molecule_template: "O 0 0 0; H 0 {value} 0.587; H 0 -{value} 0.587"
+basis: sto-3g
+parameter: half_separation
+unit: angstrom
+values: [0.55, 0.60, 0.65, 0.70, 0.7565, 0.80, 0.85]

@@ -47,6 +47,18 @@ def test_loads_valid_scenario(tmp_path):
     assert scenario.packet.k0 == pytest.approx(1.0)
 
 
+def test_loads_scenario_with_explicit_kind_tdse(tmp_path):
+    """B1 Task 12: 'kind' artık isteğe bağlı bir üst-seviye anahtar. Mevcut
+    dosyalar bu anahtarı hiç taşımadığı için (yukarıdaki test) o yol zaten
+    kapsanıyor, ama 'kind: tdse' AÇIKÇA verilirse de aynı şekilde yüklenmeli
+    -- 'kind' _TOP_LEVEL kümesine eklenmezse bu, sahte bir 'bilinmeyen
+    anahtar' ScenarioError'ıyla kırılırdı."""
+    explicit = "kind: tdse\n" + VALID_YAML
+    scenario = load_scenario(write(tmp_path, explicit))
+    assert isinstance(scenario, TDSEScenario)
+    assert scenario.name == "Test tünelleme"
+
+
 def test_rejects_unknown_top_level_key(tmp_path):
     with pytest.raises(ScenarioError, match="unknown_key"):
         load_scenario(write(tmp_path, VALID_YAML + "\nunknown_key: 3\n"))

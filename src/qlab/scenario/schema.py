@@ -41,3 +41,13 @@ class TDSEScenario:
     save_every: int = 1
     mass: float = 1.0
     absorbing_width_bohr: float | None = None
+
+
+@dataclass(frozen=True)
+class HFScanScenario:
+    name: str
+    molecule_template: str
+    basis: str
+    parameter: str
+    values: tuple[float, ...]
+    unit: str = "angstrom"
