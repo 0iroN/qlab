@@ -335,6 +335,15 @@ def test_water_matches_pyscf_to_machine_precision_at_pyscf_geometry(
 #   * _Axis.e'nin i>=2 / j>=2 adimlari.
 # Asagidaki testler BasisFunction'i dogrudan kurarak bu yollari kapsar ve
 # degerleri scipy.integrate.quad ile bagimsiz olarak dogrular.
+#
+# Bu testlerin KANITLAMADIGI iki sey acikca soylenmelidir: (1) yalnizca
+# ortusme, kinetik ve dipol sinanir -- Coulomb yarisi (cekirdek-cekim ve ERI)
+# l>=2'de hicbir bagimsiz referansa karsi kosulmaz; (2) kontraksiyon
+# normalizasyonu sinanmaz, cunku _contracted_weights() hem hesaplanan hem
+# beklenen tarafta AYNI normalizasyon formulunu kullanir -- yanlis bir
+# normalizasyon carpani iki tarafta da sadelesir ve gorunmez kalir. (Bunun
+# tek istisnasi basis.py'nin (2n-1)!! carpanidir; o, test_basis.py'de l=2
+# icin bagimsiz kuadraturla ayrica sinanir.)
 
 
 def _contracted_weights(function: BasisFunction) -> list[float]:

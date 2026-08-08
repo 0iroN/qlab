@@ -1,8 +1,33 @@
 """Molekuler integraller: ortusme (S), kinetik (T), cekirdek-cekim (V), ERI.
 
-Dort tensorun tamami **keyfi Kartezyen acisal momentum** icin
-McMurchie-Davidson (MD) semasiyla hesaplanir; s kabugu bu semanin
-i=j=k=0 ozel durumudur, ayri bir kod yolu yoktur.
+Dort tensor de McMurchie-Davidson (MD) semasiyla hesaplanir. Ozyineleme
+**genel bicimde yazilmistir** (acisal momentumda bir ust sinir kodlanmaz;
+s kabugu semanin i=j=k=0 ozel durumudur, ayri bir kod yolu yoktur) --
+ama "genel bicimde yazilmis olmak" ile "dogrulanmis olmak" ayni sey
+DEGILDIR. Bu modulde DOGRULANAN kapsam sudur:
+
+  * s ve p (l<=1): dort tensor de PySCF referansiyla dogrulanir --
+    PySCF'in kendi bohr sabitiyle kurulan su geometrisinde atol=1e-12,
+    depo geometrisinde ve H2/STO-3G'de atol/rtol=1e-10 duzeyinde
+    (tests/hf/test_integrals.py).
+  * l>=2: YALNIZCA ortusme (S) ve kinetik (T) -- ve dipol momenti --
+    sayisal kuadraturla capraz kontrol edilir (test_integrals.py,
+    "l >= 2" bolumu).
+
+Dolayisiyla DOGRULANMAYANLAR acikca sunlardir:
+
+  * Coulomb yarisinin tamami l>=2'de test EDILMEZ: ne cekirdek-cekim (V)
+    ne de ERI, p kabugunun ustunde hicbir bagimsiz referansa karsi
+    kosulmamistir. Bu, Hermite-Coulomb yardimcilarinin (R) yuksek
+    t+u+v mertebelerini ve boys(n>=6)'yi kapsamayan bir bosluktur.
+  * Kontraksiyon normalizasyonu l>=2'de test EDILMEZ: yukarida anilan
+    l>=2 testleri normalizasyonu iki tarafta da ayni formulle hesaplar,
+    dolayisiyla yanlis bir normalizasyon her iki tarafta sadelesir.
+    (Tek istisna: basis.py'nin (2n-1)!! carpani _self_overlap icin
+    bagimsiz kuadraturla ayrica sinanir -- bkz. test_basis.py.)
+
+Bu bosluklar d kabugu eklenmeden kapatilmali; build_basis su an l>=2'yi
+zaten reddediyor (basis.py, spec bolum 13), yani uretimde tetiklenmiyor.
 
 Neden MD? Dort integral tipi de ayni iki ozyinelemeyi paylasir (Hermite
 genisletme katsayilari E ve Hermite-Coulomb yardimcilari R), yani tek bir

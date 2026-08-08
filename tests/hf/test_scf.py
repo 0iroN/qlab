@@ -15,20 +15,39 @@ from qlab.errors import SCFConvergenceError, UnsupportedSystemError
 from qlab.types import Molecule
 
 
+# pytest.approx BUYUK olani alir: max(abs, rel*expected). rel verilmezse
+# varsayilani 1e-6'dir, yani "abs=1e-6" yazan bir iddia -74.96 hartree'lik su
+# enerjisinde aslinda 7.5e-5'i zorlar -- yazilan sinir ile UYGULANAN sinir
+# farklidir. Bu dosyadaki her iddiada IKI parametre de acikca verilir; sayilar
+# olculmustur (bkz. .superpowers/sdd/b1-final-fix-report.md), tahmin degildir.
+
+
 @pytest.mark.parametrize(
     "label", ["he", "h2_074", "h2_100", "h2_200", "lih", "hf_mol", "h2o", "nh3", "ch4"]
 )
 def test_total_energy_matches_pyscf(hf_energies, label):
-    """Referans hakemligi: her sistem PySCF ile 1e-6 hartree icinde uyusmali."""
+    """Referans hakemligi: her sistem PySCF ile eslesmeli.
+
+    Kabul kriteri 1e-6 hartree'dir; OLCULEN uyum bundan bes mertebe daha
+    iyidir -- dokuz sistemin en kotusu h2_200'de 1.32e-11 hartree. Sinir
+    bu yuzden olculen sapmanin ~7.6 kati olan 1e-10'da BAGLAYICI tutulur:
+    1e-6'nin altinda kalan ama 1e-10'u asan bir gerileme (yakinsama
+    kriterinin bozulmasi, integrallerde kayma) sessizce gecmesin diye.
+    """
     record = hf_energies[label]
     result = solve(Molecule.from_string(record["atom"]), record["basis"])
-    assert result.energy_total == pytest.approx(record["energy_total"], abs=1e-6)
+    assert result.energy_total == pytest.approx(
+        record["energy_total"], abs=1e-10, rel=0.0
+    )
 
 
 def test_631g_basis_also_matches(hf_energies):
+    """Olculen sapma 2.95e-13 hartree; sinir ~10 kati (3e-12) ile baglayici."""
     record = hf_energies["h2_074_631g"]
     result = solve(Molecule.from_string(record["atom"]), "6-31g")
-    assert result.energy_total == pytest.approx(record["energy_total"], abs=1e-6)
+    assert result.energy_total == pytest.approx(
+        record["energy_total"], abs=3e-12, rel=0.0
+    )
 
 
 def test_orbital_energies_match_pyscf(hf_energies):
@@ -58,11 +77,18 @@ def test_density_matrix_idempotency(hf_energies):
 
 
 def test_electron_count_from_density(hf_energies):
-    """tr(PS) elektron sayisini vermeli."""
+    """tr(PS) elektron sayisini vermeli.
+
+    Olculen sapma 7.11e-15 (10 elektron uzerinde, makine hassasiyeti
+    mertebesinde); sinir 1e-13, yani ~14 kat pay. rel=0.0 olmadan
+    varsayilan rel=1e-6, 10 elektronda 1e-5'lik bir bosluk birakirdi.
+    """
     molecule = Molecule.from_string(hf_energies["h2o"]["atom"])
     result = solve(molecule, "sto-3g")
     S = overlap_matrix(build_basis(molecule, "sto-3g"))
-    assert np.trace(result.density @ S) == pytest.approx(molecule.n_electrons, abs=1e-8)
+    assert np.trace(result.density @ S) == pytest.approx(
+        molecule.n_electrons, abs=1e-13, rel=0.0
+    )
 
 
 def test_variational_principle_larger_basis_never_higher():
@@ -77,6 +103,32 @@ def test_result_carries_provenance():
     assert "Born-Oppenheimer" in text
     assert "korelasyon" in text.lower()
     assert result.provenance.converged is True
+
+
+def test_expected_error_names_the_dominant_error_not_the_secondary_one():
+    """Panelin her HF sonucunda bastigi TEK satir, dogru sebebi isimlendirmeli.
+
+    Onceki metin ("korelasyon enerjisi eksik -- bag enerjilerinde tipik
+    olarak birkac eV") bu modulun KENDI olcumuyle celisiyordu:
+    test_h2_binding_energy_overshoots_because_rhf_cannot_dissociate 14.6350
+    eV'ye karsi deneysel 4.75 eV olcuyor, yani ~9.9 eV'lik hata. Baskin
+    sebep eksik korelasyon degil, kisitli tek determinantin ayrisma
+    kusurudur; korelasyon ters yonde ve daha kucuktur.
+    """
+    result = solve(Molecule.from_string("H 0 0 0; H 0 0 0.74"), "sto-3g")
+    beklenen_hata = result.provenance.expected_error.lower()
+
+    assert "ayrisma kusuru" in beklenen_hata
+    assert "14.6350" in result.provenance.expected_error
+    assert "4.75" in result.provenance.expected_error
+    # Korelasyon hala aniliyor -- ama ikincil etki olarak.
+    assert "korelasyon" in beklenen_hata
+
+    # Ayrisma kusuru / statik korelasyon ihmal listesinde de yer almali:
+    # panelin "neyi hesaba katmadim" satiri bunu hic anmiyordu.
+    ihmal = " ".join(result.provenance.neglected).lower()
+    assert "statik korelasyon" in ihmal
+    assert "ayrisma" in ihmal
 
 
 def test_open_shell_rejected():
@@ -95,11 +147,20 @@ def test_non_convergence_raises_rather_than_returning(hf_energies):
 
 
 def test_converged_result_is_stationary(hf_energies):
-    """Yakinsamis cozumde daha siki tolerans enerjiyi degistirmemeli."""
+    """Yakinsamis cozumde daha siki tolerans enerjiyi degistirmemeli.
+
+    Olculen fark TAM SIFIR (iki kosu ayni sabit noktaya bit-bit ayni
+    iniyor), yani bir "pay orani" hesaplanamaz. Bu yuzden yazilan sinir
+    (1e-9) korunur ve yalnizca GERCEKTEN uygulanir hale getirilir:
+    rel=0.0 olmadan varsayilan rel=1e-6, -1.1167 hartree'de 1.12e-6'lik
+    bir bosluk birakiyordu -- iddia edilenden ~1000 kat gevsek. Siniri
+    bit-esitligine (abs=0.0) cekmek, yakinsama yolundaki bir iterasyon
+    farkinda kirilgan olurdu.
+    """
     molecule = Molecule.from_string(hf_energies["h2_074"]["atom"])
     loose = solve(molecule, "sto-3g", energy_tolerance=1e-10)
     tight = solve(molecule, "sto-3g", energy_tolerance=1e-13, max_iterations=200)
-    assert loose.energy_total == pytest.approx(tight.energy_total, abs=1e-9)
+    assert loose.energy_total == pytest.approx(tight.energy_total, abs=1e-9, rel=0.0)
 
 
 def test_diis_reduces_iteration_count(hf_energies):

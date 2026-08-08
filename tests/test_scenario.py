@@ -1,12 +1,15 @@
+import dataclasses
 import textwrap
+from pathlib import Path
 
 import numpy as np
 import pytest
 
+from qlab.engine.hf.factory import run_scan
 from qlab.engine.tdse import factory
 from qlab.errors import ScenarioError
 from qlab.scenario.loader import load_scenario
-from qlab.scenario.schema import TDSEScenario
+from qlab.scenario.schema import HFScanScenario, TDSEScenario
 
 VALID_YAML = textwrap.dedent(
     """
@@ -219,3 +222,62 @@ def test_factory_rejects_absorbing_width_as_list(tmp_path):
     scenario = load_scenario(write(tmp_path, VALID_YAML + "absorbing_width_bohr: [1, 2, 3]\n"))
     with pytest.raises(ScenarioError, match="absorbing_width_bohr"):
         factory.build(scenario)
+
+
+# ---------------------------------------------------------------------------
+# Depoyla BİRLİKTE DAĞITILAN senaryo dosyaları
+#
+# Bu dosyalara hiçbir test dokunmuyordu: `scenarios/water_angle_scan.yaml`
+# tam da bu boşluktan, bağ uzunluğu z koordinatına yazılmış hâlde yayınlandı
+# ve elle ölçümle yakalandı, süiti kırmadan. Aşağıdaki testler dizini
+# KEŞFEDEREK çalışır — yeni bir senaryo eklendiğinde kapsam kendiliğinden
+# genişler, listeyi güncellemeyi unutmak diye bir şey olmaz.
+#
+# Yollar test dosyasına GÖRE çözülür, cwd'ye göre değil: cwd-bağımlı bir yol
+# yalnızca pytest depo kökünden koşulduğunda geçerdi.
+# ---------------------------------------------------------------------------
+
+_SCENARIO_DIR = Path(__file__).resolve().parents[1] / "scenarios"
+_SHIPPED_SCENARIOS = sorted(_SCENARIO_DIR.glob("*.yaml"))
+_HF_SCAN_SAMPLE_POINTS = 2
+
+
+def test_scenario_directory_is_not_empty():
+    """Keşfe dayalı parametrizasyonun sessizce boşa düşmemesi için güvenlik ağı:
+    glob hiçbir şey bulmasaydı aşağıdaki test 0 kez koşar ve YEŞİL görünürdü."""
+    assert len(_SHIPPED_SCENARIOS) >= 2, f"{_SCENARIO_DIR} altında senaryo bulunamadı"
+
+
+@pytest.mark.parametrize(
+    "scenario_path", _SHIPPED_SCENARIOS, ids=lambda p: p.name
+)
+def test_shipped_scenario_loads_and_runs(scenario_path):
+    """Her dağıtılan senaryo yüklenebilmeli VE koşturulabilir olmalı.
+
+    "Ayrıştırılabilir" yetmez: TDSE tarafında motor nesneleri gerçekten
+    kurulur (`factory.build`, potansiyel parametreleri dahil), HF tarafında
+    taramanın ilk birkaç noktası gerçekten çözülür. Tam ızgara koşulmaz —
+    `h2_bond_scan.yaml` 19 nokta taşır ve burada aranan şey fizik değil,
+    dosyanın çalışır olmasıdır.
+    """
+    scenario = load_scenario(scenario_path)
+
+    if isinstance(scenario, HFScanScenario):
+        kisa = dataclasses.replace(
+            scenario, values=scenario.values[:_HF_SCAN_SAMPLE_POINTS]
+        )
+        result = run_scan(kisa)
+        assert result.energies.shape == (len(kisa.values),)
+        assert np.all(np.isfinite(result.energies)), (
+            f"{scenario_path.name}: ilk {_HF_SCAN_SAMPLE_POINTS} noktada SCF "
+            "yakınsamadı (enerji NaN)"
+        )
+        assert result.provenance.converged is True
+        return
+
+    assert isinstance(scenario, TDSEScenario)
+    grid, potential, psi0, _ = factory.build(scenario)
+    assert potential.shape == (scenario.grid.n,)
+    assert np.all(np.isfinite(potential))
+    norm = float(np.sum(np.abs(psi0) ** 2) * grid.dx)
+    assert norm == pytest.approx(1.0, abs=1e-10, rel=0.0)

@@ -75,7 +75,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 try:
     from PySide6 import QtWidgets
 
-    from qlab.app.main import TDSEWindow
+    from qlab.app.main import TDSEWindow, main
     from qlab.scenario.schema import GridSpec, PacketSpec, PotentialSpec, TDSEScenario
 
     _qapp = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
@@ -202,3 +202,36 @@ def test_debounce_delays_recompute_until_timeout():
     window._debounce.timeout.emit()
     assert window._readout.text() != before, "zamanlayıcı dolunca yeniden hesap tetiklenmeli"
     window.close()
+
+
+@requires_offscreen
+def test_main_rejects_hf_scan_scenario_before_building_the_window(tmp_path, capsys):
+    """Modül 1B `load_scenario`'yu genişletti: dönüş türü artık TDSEScenario ya
+    da HFScanScenario. `run.py` türe göre dallanmayı öğrendi, `app/main.py`
+    öğrenmemişti — bir HF tarama senaryosuyla açıldığında `TDSEWindow`
+    `scenario.potential`a dokunup çıplak AttributeError ile çöküyordu
+    (`scenarios/h2_bond_scan.yaml` ile doğrulandı).
+
+    Beklenen davranış: pencere HİÇ kurulmadan, çıkış kodu 1 ve GUI'nin neyi
+    desteklediğini + HF taramalarının nereden koşulacağını söyleyen temiz bir
+    mesaj. Metnin kendisi de sınanır: kullanıcıyı `python -m qlab.run`'a
+    yönlendirmeyen bir hata, yarısı eksik bir hatadır.
+    """
+    scenario_path = tmp_path / "hf.yaml"
+    scenario_path.write_text(
+        "kind: hf_scan\n"
+        "name: H2 test taramasi\n"
+        'molecule_template: "H 0 0 0; H 0 0 {value}"\n'
+        "basis: sto-3g\n"
+        "parameter: bond_length\n"
+        "values: [0.74]\n",
+        encoding="utf-8",
+    )
+
+    exit_code = main([str(scenario_path)])
+
+    assert exit_code == 1
+    stderr = capsys.readouterr().err
+    assert "TDSE" in stderr
+    assert "qlab.run" in stderr
+    assert "Traceback" not in stderr

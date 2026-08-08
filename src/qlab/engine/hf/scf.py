@@ -107,6 +107,60 @@ def _commutator_residual(
     return x.T @ (fps - spf) @ x
 
 
+_HF_APPROXIMATIONS: tuple[str, ...] = (
+    "Born-Oppenheimer",
+    "tek Slater determinanti",
+    "sonlu baz seti",
+    "kapali kabuk (cift isgal)",
+)
+
+_HF_NEGLECTED: tuple[str, ...] = (
+    "dinamik elektron korelasyonu",
+    "statik korelasyon -- RHF ayrisma kusuru (notr atomlara ayrisamaz)",
+    "goreli etkiler",
+    "cekirdek hareketi",
+)
+
+# Bu metin, RHF'in EN BUYUK hatasini isimlendirmek zorundadir; bu depoda
+# olculen sey sudur (tests/hf/test_physical.py, README "Ne iddia etmiyor"):
+# H2 0.74 -> 8.0 A ayrimi icin baglanma enerjisi 14.6350 eV cikar, deneysel
+# ayrisma enerjisi 4.75 eV'dir. Fark eksik korelasyondan GELMEZ -- kisitli tek
+# determinant ayrisma limitinde %50 iyonik (H- H+) kalir, E(sonsuz) olmasi
+# gerekenden yuksektir ve fazlalik dogrudan baglanma enerjisine eklenir.
+# Eksik korelasyon gercek bir eksiktir ama ters yonde ve bu hatanin yaninda
+# kucuktur. Panel her HF sonucunda TEK bir satir basar; o satirin ikincil
+# sebebi baskin sebep gibi gostermesi, projenin ana iddiasiyla celisir.
+_HF_EXPECTED_ERROR = (
+    "gerilmis geometrilerde baskin hata eksik korelasyon DEGIL, kisitli tek "
+    "determinantin ayrisma kusurudur: H2 icin 0.74 -> 8.0 A baglanma enerjisi "
+    "14.6350 eV olculdu, deneysel ayrisma enerjisi 4.75 eV (~3 kat). Eksik "
+    "korelasyon gercek ama daha kucuk bir etkidir ve ters yonde calisir."
+)
+
+
+def provenance_for(
+    method: str, converged: bool, diagnostics: dict
+) -> Provenance:
+    """RHF sonuclarinin ortak seffaflik blogu -- TEK kaynak.
+
+    Hem solve() (tek nokta) hem factory.run_scan() (tarama) ayni
+    yaklasimlari, ayni ihmal listesini ve ayni beklenen-hata metnini basar.
+    Bu blok daha once iki dosyada birebir kopyalanmisti; bir kopya
+    duzeltilip digeri unutuldugunda panel iki farkli seyi iddia ederdi.
+    TDSE tarafindaki tdse/factory.py:provenance_for ile ayni desen.
+
+    Yalnizca method/converged/diagnostics cagriya gore degisir.
+    """
+    return Provenance(
+        method=method,
+        approximations=_HF_APPROXIMATIONS,
+        neglected=_HF_NEGLECTED,
+        expected_error=_HF_EXPECTED_ERROR,
+        converged=converged,
+        diagnostics=diagnostics,
+    )
+
+
 _DIIS_MAX_HISTORY = 8
 
 
@@ -239,7 +293,8 @@ def solve(
     energy_history: list[float] = []
     fock_history: list[np.ndarray] = []
     error_history: list[np.ndarray] = []
-    fock = core
+    # residual_norm sentineli: max_iterations=0 ile dongu hic donmezse
+    # SCFConvergenceError yine de bir sayi tasimak zorunda.
     residual_norm = float("inf")
 
     for iteration in range(1, max_iterations + 1):
@@ -291,18 +346,8 @@ def solve(
     energy_electronic = energy_history[-1]
     energy_total = energy_electronic + nuclear_repulsion
 
-    provenance = Provenance(
+    provenance = provenance_for(
         method=f"RHF/{basis_name.upper()}",
-        approximations=(
-            "Born-Oppenheimer",
-            "tek Slater determinanti",
-            "sonlu baz seti",
-            "kapali kabuk (cift isgal)",
-        ),
-        neglected=("elektron korelasyonu", "goreli etkiler", "cekirdek hareketi"),
-        expected_error=(
-            "korelasyon enerjisi eksik -- bag enerjilerinde tipik olarak birkac eV"
-        ),
         converged=True,
         diagnostics={"iterations": iteration, "final_residual": residual_norm},
     )

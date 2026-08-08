@@ -28,7 +28,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from qlab.engine.hf.scf import solve
+from qlab.engine.hf.scf import provenance_for, solve
 from qlab.errors import ScenarioError, SCFConvergenceError
 from qlab.provenance import Provenance
 from qlab.scenario.schema import HFScanScenario
@@ -87,18 +87,11 @@ def run_scan(scenario: HFScanScenario) -> ScanResult:
     if failed_values:
         diagnostics["failed_values"] = failed_values
 
-    provenance = Provenance(
+    # Yaklasimlar/ihmaller/beklenen hata metni scf.provenance_for'dan gelir --
+    # tek nokta ile tarama ayni RHF'i kosar, dolayisiyla ayni beyani basmak
+    # ZORUNDADIR (bkz. scf.py, provenance_for).
+    provenance = provenance_for(
         method=f"RHF/{scenario.basis.upper()} tarama ({scenario.parameter})",
-        approximations=(
-            "Born-Oppenheimer",
-            "tek Slater determinanti",
-            "sonlu baz seti",
-            "kapali kabuk (cift isgal)",
-        ),
-        neglected=("elektron korelasyonu", "goreli etkiler", "cekirdek hareketi"),
-        expected_error=(
-            "korelasyon enerjisi eksik -- bag enerjilerinde tipik olarak birkac eV"
-        ),
         converged=converged,
         diagnostics=diagnostics,
     )

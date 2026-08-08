@@ -40,4 +40,7 @@ def test_integral_matrices_are_square_and_consistent(h2_sto3g_integrals):
     n = overlap.shape[0]
     assert overlap.shape == kinetic.shape == (n, n)
     assert eri.shape == (n, n, n, n)
-    np.testing.assert_allclose(np.diag(overlap), 1.0, atol=1e-10)
+    # rtol=0.0 acikca: varsayilan rtol=1e-7, beklenen deger 1.0 oldugu icin
+    # "atol=1e-10" yazan iddiayi gercekte 1e-7'ye gevsetiyordu. Referans
+    # dosyasindaki olculen sapma 2.22e-16; sinir 2e-15, ~9 kat pay.
+    np.testing.assert_allclose(np.diag(overlap), 1.0, atol=2e-15, rtol=0.0)

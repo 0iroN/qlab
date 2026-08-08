@@ -7,6 +7,8 @@ from scipy.integrate import quad
 
 from qlab.engine.hf.basis import (
     AVAILABLE_BASES,
+    BasisFunction,
+    PrimitiveGaussian,
     build_basis,
     _load_reference_data,
 )
@@ -205,6 +207,47 @@ def test_p_shell_self_overlap_matches_numerical_integration(angular):
     np.testing.assert_allclose(numeric, implementation, rtol=1e-10)
 
 
+def test_d_shell_self_overlap_matches_numerical_integration():
+    """(2n-1)!! carpanini l=2'de sinar -- n=0 ve n=1'de bu carpan 1'dir.
+
+    _self_overlap()'teki cift faktoriyel n=0 icin (-1)!!=1, n=1 icin 1!!=1
+    verir; yani mevcut TUM testler (s ve p kabuklari) yanlis yazilmis bir
+    cift faktoriyelden etkilenmez -- hata ancak d kabugu geldiginde (n=2'de
+    3!!=3) ortaya cikardi ve o ana kadar gorunmez kalirdi.
+
+    build_basis l>=2'yi reddettigi icin (basis.py, spec bolum 13) fonksiyon
+    elle kurulur; referans, test_p_shell_self_overlap_matches_numerical_
+    integration ile ayni bagimsiz sayisal integraldir (_numeric_self_overlap,
+    scipy.integrate.quad -- basis.py'nin kapali formuyle hicbir cebir
+    paylasmaz).
+    """
+    function = BasisFunction(
+        center=np.array([0.0, 0.0, 0.0]),
+        angular=(2, 0, 0),
+        primitives=(
+            PrimitiveGaussian(exponent=1.9, coefficient=0.42),
+            PrimitiveGaussian(exponent=0.55, coefficient=0.71),
+        ),
+        atom_index=0,
+    )
+
+    numeric = _numeric_self_overlap(function)
+    implementation = function._self_overlap()
+
+    np.testing.assert_allclose(numeric, implementation, rtol=1e-10)
+
+    # Cift faktoriyel gercekten devrede mi: ayni ustel/katsayilarla kurulmus
+    # s tipi bir fonksiyonun oz-ortusmesiyle ayni cikmamalidir. (Bu, "carpan
+    # 1'e indi ve test yine de gecti" senaryosunu dogrudan eler.)
+    s_version = BasisFunction(
+        center=function.center,
+        angular=(0, 0, 0),
+        primitives=function.primitives,
+        atom_index=0,
+    )
+    assert not np.isclose(implementation, s_version._self_overlap())
+
+
 def test_p_shell_contraction_normalisation_matches_pyscf_water_diagonal(
     h2o_sto3g_integrals,
 ):
@@ -240,7 +283,13 @@ def test_p_shell_contraction_normalisation_matches_pyscf_water_diagonal(
                 iz = _gauss_moment(2 * k, alpha)
                 toplam += weights[p] * weights[q] * ix * iy * iz
 
-        np.testing.assert_allclose(toplam, overlap[idx][idx], atol=1e-10)
+        # rtol=0.0 acikca verilir: assert_allclose'un varsayilan rtol'u
+        # 1e-7'dir ve kosegen degeri 1.0 oldugu icin "atol=1e-10" yazan bir
+        # iddia gercekte 1e-7'yi zorlar. Olculen sapma 2.22e-15 (uc p
+        # fonksiyonunda da ayni); sinir 2e-14, ~9 kat pay.
+        np.testing.assert_allclose(
+            toplam, overlap[idx][idx], atol=2e-14, rtol=0.0
+        )
 
     assert p_gorulen == 3, "Su/STO-3G'de O'nun 3 adet 2p fonksiyonu olmali"
 

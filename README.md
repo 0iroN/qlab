@@ -101,6 +101,12 @@ pytest tests/ -v
 pytest tests/ -v -m slow
 ```
 
+`pyproject.toml` bir `addopts` taşımaz, yani `pytest tests/` yavaş işaretli
+testleri de KOŞAR — ikinci komut ayrı bir küme değil, birincinin alt kümesidir.
+Bu makinede ölçüldü: tam süite 344 test / **127.3 s** (ikinci koşuda 128.7 s),
+`-m slow` alt kümesi 11 test / **112.6 s** — yani toplam sürenin ~%88'i o 11
+testten geliyor (çift yarık ve kutuda-parçacık koşuları).
+
 ## Doğrulama
 
 Her fizik iddiası bilinen bir referansa karşı test edilir.
@@ -134,7 +140,7 @@ Aşağıdaki sayılar bu görevde (B1 Task 13) gerçekten çalıştırılıp öl
 
 | Test | Referans / tolerans | Ölçülen |
 |---|---|---|
-| PySCF toplam enerji uyumu (9 sistem: He, H₂ @0.74/1.00/2.00 Å, LiH, HF, H₂O, NH₃, CH₄; STO-3G) | `tests/hf/test_scf.py::test_total_energy_matches_pyscf` | en kötü sapma **1.32e-11 hartree** (H₂, R=2.00 Å); su -74.9630631297 hartree (fark 4.56e-12) |
+| PySCF toplam enerji uyumu (9 sistem: He, H₂ @0.74/1.00/2.00 Å, LiH, HF, H₂O, NH₃, CH₄; STO-3G) | `tests/hf/test_scf.py::test_total_energy_matches_pyscf`, sınır `abs=1e-10, rel=0.0` (kabul kriteri 1e-6'dır; test ölçülen sapmanın ~7.6 katında bağlayıcı tutulur) | en kötü sapma **1.32e-11 hartree** (H₂, R=2.00 Å); su -74.9630631297 hartree (fark 4.56e-12) |
 | İntegral uyumu (S, T, V, ERI; H₂ ve H₂O, STO-3G) | `tests/hf/test_integrals.py`, atol=1e-10..3e-10 | en kötü mutlak sapma **2.129e-10** (su çekirdek-çekim matrisi, [5,1]) |
 | H₂ denge bağ uzunluğu | Deneysel 0.741 Å, tolerans ±%8 | **0.7156 Å**, sapma %3.4 |
 | H₂ bağlanma enerjisi (RHF/STO-3G, 0.74→8.0 Å) | Deneysel ayrışma enerjisi 4.75 eV | **14.6350 eV** — RHF ayrışma kusuru yüzünden ~3 kat fazla, korelasyon eksikliği DEĞİL (bkz. "Ne iddia etmiyor") |
@@ -167,7 +173,7 @@ Spec §15'teki yedi maddenin gerçek durumu (ölçüm ayrıntıları
 
 | # | Kriter | Durum |
 |---|---|---|
-| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — 335/335 test yeşil (`pytest tests/ -v`), PySCF referans testleri dahil; referans dosyası kaldırıldığında testler ATLANMIYOR, KIRMIZI oluyor — kanıtlandı (134 passed, 64 error) |
+| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — 344/344 test yeşil (`pytest tests/ -v`), PySCF referans testleri dahil; referans dosyası kaldırıldığında testler ATLANMIYOR, KIRMIZI oluyor — kanıtlandı (134 passed, 64 error) |
 | 2 | Headless koşucu çalışır + H₂ eğrisi bağ uzunluğu ±%8 | **Kapandı** — `python -m qlab.run scenarios/h2_bond_scan.yaml`; denge bağ uzunluğu 0.7156 Å, sapma %3.4 |
 | 3 | GUI'de H₂O HOMO izoyüzeyi döndürülebilir | **AÇIK** — Hartree-Fock artık var ama orbital görselleştirme yok; `observable/hf_obs.py` ve `viz/volume.py` Plan B2'ye ait, henüz yazılmadı |
 | 4 | Kaydırıcı ile canlı iletim, analitiğin ±%2'si içinde | **Kapandı** — ölçülen fark %0.07 |

@@ -19,8 +19,9 @@ from PySide6 import QtCore, QtWidgets
 from qlab.app.transparency import TransparencyPanel
 from qlab.engine.tdse import factory
 from qlab.engine.tdse.propagator import evolve
-from qlab.errors import QLabError
+from qlab.errors import QLabError, ScenarioError
 from qlab.scenario.loader import load_scenario
+from qlab.scenario.schema import TDSEScenario
 from qlab.viz.frames import build_payload
 
 _MEASUREMENT_BOUNDARY = 5.0
@@ -105,6 +106,22 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         scenario = load_scenario(args.scenario)
+        # `load_scenario` artık TDSEScenario ya da HFScanScenario döndürebiliyor
+        # (Modül 1B), ama bu pencere yalnızca TDSE'yi çizer: `TDSEWindow`
+        # doğrudan `scenario.potential`a dokunur. Tür kontrolü QApplication
+        # KURULMADAN ÖNCE yapılır — aksi halde kullanıcı bir Qt penceresi
+        # açılırken çıplak bir AttributeError görürdü. Hata, projenin kendi
+        # hiyerarşisinden (ScenarioError -> QLabError) seçilir ki aşağıdaki
+        # `except` bloğu onu `run.py` ile aynı biçimde, traceback dökmeden
+        # raporlasın.
+        if not isinstance(scenario, TDSEScenario):
+            raise ScenarioError(
+                "GUI kabuğu şu an yalnızca TDSE senaryolarını görselleştirir; "
+                f"{args.scenario!r} bir "
+                f"{type(scenario).__name__} (HF taraması). "
+                "HF taramaları GUI'siz koşucudan çalıştırılır: "
+                f"python -m qlab.run {args.scenario} -o cikti.npz"
+            )
     except QLabError as exc:
         print(str(exc), file=sys.stderr)
         return 1

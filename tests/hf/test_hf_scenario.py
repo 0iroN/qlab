@@ -1,12 +1,15 @@
 import textwrap
+from pathlib import Path
 
 import numpy as np
 import pytest
 
 from qlab.engine.hf.factory import run_scan
+from qlab.engine.hf.scf import solve
 from qlab.errors import BasisNotAvailableError, ScenarioError, SCFConvergenceError
 from qlab.scenario.loader import load_scenario
 from qlab.scenario.schema import HFScanScenario
+from qlab.types import Molecule
 
 VALID = textwrap.dedent(
     """
@@ -19,6 +22,13 @@ VALID = textwrap.dedent(
     unit: angstrom
     """
 )
+
+
+# Depo koku test dosyasina GORE cozulur: "scenarios/harmonic_trap.yaml" gibi
+# cwd'ye bagli bir yol yalnizca pytest depo kokunden kosuldugunda gecerdi
+# (tests/hf/ icinden kosuldugunda dosya bulunamaz, test ScenarioError ile
+# kirilirdi).
+_SCENARIO_DIR = Path(__file__).resolve().parents[2] / "scenarios"
 
 
 def write(tmp_path, content):
@@ -36,7 +46,7 @@ def test_loads_hf_scenario(tmp_path):
 
 def test_existing_tdse_scenario_still_loads():
     """Mevcut TDSE senaryolari kirilmamali — kind anahtari opsiyonel."""
-    scenario = load_scenario("scenarios/harmonic_trap.yaml")
+    scenario = load_scenario(_SCENARIO_DIR / "harmonic_trap.yaml")
     assert scenario.__class__.__name__ == "TDSEScenario"
 
 
@@ -74,6 +84,26 @@ def test_scan_result_carries_provenance(tmp_path):
     result = run_scan(load_scenario(write(tmp_path, VALID)))
     assert result.provenance.converged is True
     assert "Born-Oppenheimer" in " ".join(result.provenance.approximations)
+
+
+def test_scan_and_single_point_share_one_provenance_source(tmp_path):
+    """Tarama ile tek nokta AYNI RHF'i kosar, dolayisiyla ayni beyani basmali.
+
+    Bu blok (dort yaklasim, ihmal listesi, beklenen-hata metni) daha once
+    scf.py ve factory.py'de birebir KOPYALANMISTI; biri duzeltilip digeri
+    unutuldugunda panel iki farkli sey iddia ederdi. Tek kaynak
+    scf.provenance_for'dur ve bu test o esitligi kilitler -- metni
+    tekrarlamaz, iki uretici arasinda karsilastirir.
+    """
+    scan = run_scan(load_scenario(write(tmp_path, VALID)))
+    single = solve(Molecule.from_string("H 0 0 0; H 0 0 0.74"), "sto-3g")
+
+    assert scan.provenance.approximations == single.provenance.approximations
+    assert scan.provenance.neglected == single.provenance.neglected
+    assert scan.provenance.expected_error == single.provenance.expected_error
+    # Yontem satiri ve diagnostics bilincli olarak FARKLI olmali (biri tarama,
+    # digeri tek nokta) -- aksi halde test yanlislikla her seyi ayni yapardi.
+    assert scan.provenance.method != single.provenance.method
 
 
 # --- Ek testler: brief'in dispatcher/tur-bazli dallarinin her biri, ve
