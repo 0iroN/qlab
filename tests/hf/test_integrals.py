@@ -38,14 +38,24 @@ def h2(hf_energies):
 # gercekte uygulanan sinir cok daha gevsektir. Bu yuzden asagida ve su
 # molekulu grubunda atol VE rtol birlikte, acikca verilir.
 #
-# rtol degerleri olculen gercek sapmadan ~4-6 kat pay birakilarak secildi
-# (olcumler ve tam margin tablosu: .superpowers/sdd/b1-task-7-fix-report.md,
-# Finding 1). Kalan sapma ozyinelemenin kendisinden DEGIL, referansi ureten
-# PySCF derlemesinin bohr sabitinden (CODATA 2010, param.BOHR =
-# 0.52917721092) qlab'in kullandigi sabitten (CODATA 2018,
-# units.ANGSTROM_TO_BOHR = 1.8897261246257702) gelir; iki sabit 10. basamakta
-# ayrisir, bu da cekirdek konumlarina ve oradan her integrale buyuklugu ile
-# orantili sizar. Ozyinelemenin kendisi cok daha hassastir; kanit asagidaki
+# Sekiz PySCF karsilastirmasinin yedisi TEK bir kurala uyar: atol=1e-10,
+# rtol=1e-10. Bu kural olculen en siki elemanda bile en az ~5.2 kat pay
+# birakir (tam margin tablosu: .superpowers/sdd/b1-task-7-fix2-report.md,
+# Finding 1). Tek istisna su molekulunun cekirdek-cekim matrisidir
+# (test_water_nuclear_matches_pyscf) -- ayni kuralla orada pay ~1.80x'e
+# duser (kirilgan), bu yuzden o test ozel olarak atol=3e-10, rtol=3e-10
+# kullanir; fiziksel gerekce testin hemen ustunde.
+#
+# Kalan sapma ozyinelemenin kendisinden DEGIL, referansi ureten PySCF
+# derlemesinin bohr sabitinden (CODATA 2010, param.BOHR = 0.52917721092)
+# qlab'in kullandigi sabitten (CODATA 2018, units.ANGSTROM_TO_BOHR =
+# 1.8897261246257702) gelir; iki sabit ilk 10 basamakta (0.5291772109) ayni,
+# 11. basamaktan itibaren ayrisir (...92 / ...903). Bu kayma cekirdek
+# konumlarina dogrudan gecer ve oradan HER integrale KENDI cekirdek-konumu
+# turevi uzerinden sizar -- sizinti buyuklukle orantili DEGILDIR: olculen
+# bagil sapmalar 2.36e-11 ile 8.40e-10 arasinda (~36 kat), mutlak sapmalar
+# 1.42e-11 ile 2.13e-10 arasinda (~15 kat) degisir; ne biri sabit ne digeri
+# sabittir. Ozyinelemenin kendisi cok daha hassastir; kanit asagidaki
 # test_water_matches_pyscf_to_machine_precision_at_pyscf_geometry (PySCF'in
 # KENDI bohr sabitiyle kurulan geometride dort tensor de rtol=0, atol=1e-12
 # ile eslesir). O test ozyinelemeyi kilitleyen asil kapidir; buradaki rtol
@@ -56,20 +66,20 @@ def h2(hf_energies):
 def test_overlap_matches_pyscf(h2, h2_sto3g_integrals):
     _, basis = h2
     expected = np.array(h2_sto3g_integrals["overlap"])
-    np.testing.assert_allclose(overlap_matrix(basis), expected, atol=1e-12, rtol=1e-10)
+    np.testing.assert_allclose(overlap_matrix(basis), expected, atol=1e-10, rtol=1e-10)
 
 
 def test_kinetic_matches_pyscf(h2, h2_sto3g_integrals):
     _, basis = h2
     expected = np.array(h2_sto3g_integrals["kinetic"])
-    np.testing.assert_allclose(kinetic_matrix(basis), expected, atol=1e-12, rtol=3e-10)
+    np.testing.assert_allclose(kinetic_matrix(basis), expected, atol=1e-10, rtol=1e-10)
 
 
 def test_nuclear_matches_pyscf(h2, h2_sto3g_integrals):
     molecule, basis = h2
     expected = np.array(h2_sto3g_integrals["nuclear"])
     np.testing.assert_allclose(
-        nuclear_matrix(basis, molecule), expected, atol=1e-12, rtol=2e-10
+        nuclear_matrix(basis, molecule), expected, atol=1e-10, rtol=1e-10
     )
 
 
@@ -89,8 +99,20 @@ def test_matrices_are_symmetric(h2):
     """M == M.T oz-tutarlilik denetimi -- PySCF referansiyla ilgisi yok.
 
     Olculen fark tam 0.0 (bit-birebir ayni, bkz. b1-task-7-fix-report.md,
-    Finding 1). atol=1e-13 platforma bagli toplama sirasina kucuk bir pay
-    birakiyor; gercek bir simetri bozulmasi bundan kat kat buyuk olur.
+    Finding 1), ama bu genel bir garanti degil -- bu testin kullandigi h2
+    fixture'inin ozel bir sonucu. h2 s-kabugu ve es-cekirdeklidir (angular
+    her iki fonksiyon icin de (0,0,0)), bu yuzden matrix[a,b] ile
+    matrix[b,a]'nin ikisi de _pair_data'nin i==j==0 kisayolundan gecer
+    (deger dogrudan e000 = exp(-mu*(A-B)^2), a<->b degisiminde degismez) --
+    _Axis.e() ozyinelemesi hic calismaz. Acisal momentum sifirdan farkli
+    oldugunda (ornegin su/p kabugu) _pair_data(a,b) ile _pair_data(b,a)
+    x_pa/x_pb ve angular_a/angular_b degerlerini degistirir, ve
+    ozyineleme j'yi i'den once azalttigi icin iki siralama farkli
+    dugumlerden gecer -- bit-birebir eslesme artik garanti degildir.
+    atol=1e-13 burada platforma bagli toplama sirasina degil, bu ozel
+    s-kabugu/es-cekirdek durumuna kucuk bir pay birakiyor; bu testi su
+    molekulune genisletmek isteyen biri 1e-13'un sikilasabilecegini
+    bilmeli.
     """
     molecule, basis = h2
     for matrix in (
@@ -126,7 +148,7 @@ def test_overlap_falls_off_with_separation():
 def test_eri_matches_pyscf(h2, h2_sto3g_integrals):
     _, basis = h2
     expected = np.array(h2_sto3g_integrals["eri"])
-    np.testing.assert_allclose(eri_tensor(basis), expected, atol=1e-12, rtol=3e-10)
+    np.testing.assert_allclose(eri_tensor(basis), expected, atol=1e-10, rtol=1e-10)
 
 
 def test_eri_has_eightfold_symmetry(h2):
@@ -177,37 +199,53 @@ def water(hf_energies):
     return molecule, build_basis(molecule, "sto-3g")
 
 
-## Ayni bagil-tolerans gerekcesi: bkz. bu dosyanin basindaki
-## "PySCF karsilastirmalarinda tolerans: rtol ACIKCA verilmeli" notu (h2
-## fixture'inin hemen ustunde). Su molekulunde buyuklukler H2'den cok daha
-## genis oldugundan (cekirdek-cekim ~62 hartree'ye kadar cikiyor), rtol
-## degerleri de olculen gercek sapmaya gore ayrica secildi.
+# Ayni tolerans kurali gecerli: bkz. bu dosyanin basindaki
+# "PySCF karsilastirmalarinda tolerans: rtol ACIKCA verilmeli" notu (h2
+# fixture'inin hemen ustunde). Su molekulunde buyuklukler H2'den cok daha
+# genis oldugundan (cekirdek-cekim ~62 hartree'ye kadar cikiyor), tek
+# istisna cekirdek-cekim testidir (test_water_nuclear_matches_pyscf) --
+# gerekcesi o testin hemen ustunde.
 
 
 def test_water_overlap_matches_pyscf(water, h2o_sto3g_integrals):
     _, basis = water
     expected = np.array(h2o_sto3g_integrals["overlap"])
-    np.testing.assert_allclose(overlap_matrix(basis), expected, atol=1e-12, rtol=4e-10)
+    np.testing.assert_allclose(overlap_matrix(basis), expected, atol=1e-10, rtol=1e-10)
 
 
 def test_water_kinetic_matches_pyscf(water, h2o_sto3g_integrals):
     _, basis = water
     expected = np.array(h2o_sto3g_integrals["kinetic"])
-    np.testing.assert_allclose(kinetic_matrix(basis), expected, atol=1e-12, rtol=4e-9)
+    np.testing.assert_allclose(kinetic_matrix(basis), expected, atol=1e-10, rtol=1e-10)
 
 
 def test_water_nuclear_matches_pyscf(water, h2o_sto3g_integrals):
+    """Cekirdek-cekim matrisi digerlerinden daha gevsek toleransla kontrol edilir.
+
+    Sekiz PySCF karsilastirmasindaki artik hepsinde ayni kaynaktan gelir
+    (bkz. dosyanin basindaki bohr-sabiti notu), ama cekirdek-cekim
+    ozellikle duyarlidir: overlap, kinetik ve ERI integralleri geometriye
+    yalnizca Gauss cift-merkezleri (product centers) uzerinden baglidir,
+    oysa cekirdek-cekim her cekirdegi DOGRUDAN bir Coulomb merkezi olarak
+    kullanir. Bu yuzden bohr-sabiti kaymasi cekirdek-cekimde digerlerinden
+    daha guclu goruntur; ve oksijenin +8 yuku ile ~62 hartree'ye ulasan
+    matris elemanlari, bu duyarliligin en cok ortaya ciktigi yerdir. Genel
+    kuralla (atol=1e-10, rtol=1e-10) buradaki pay ~1.80x'e duser
+    (kirilgan); bu yuzden bu test ozel olarak atol=3e-10, rtol=3e-10
+    kullanir (pay ~5.4x, bkz. .superpowers/sdd/b1-task-7-fix2-report.md,
+    Finding 1).
+    """
     molecule, basis = water
     expected = np.array(h2o_sto3g_integrals["nuclear"])
     np.testing.assert_allclose(
-        nuclear_matrix(basis, molecule), expected, atol=1e-12, rtol=5e-10
+        nuclear_matrix(basis, molecule), expected, atol=3e-10, rtol=3e-10
     )
 
 
 def test_water_eri_matches_pyscf(water, h2o_sto3g_integrals):
     _, basis = water
     expected = np.array(h2o_sto3g_integrals["eri"])
-    np.testing.assert_allclose(eri_tensor(basis), expected, atol=1e-12, rtol=8e-10)
+    np.testing.assert_allclose(eri_tensor(basis), expected, atol=1e-10, rtol=1e-10)
 
 
 def test_water_overlap_diagonal_is_unity(water):
