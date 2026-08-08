@@ -18,6 +18,19 @@ referansiyla eslesme atol=1e-10 hedefini onlarca kat asar (bkz.
 .superpowers/sdd/task-5-brief.md ve basis.py).
 
 F_0 icin Boys fonksiyonu (qlab.engine.hf.boys.boys) kullanilir.
+
+Iki-elektron itme integralleri (ERI, kimyacı notasyonunda (ab|cd)) icin
+s-tipi kapali form (p = a+b, q = g+d, mu_ab = ab/p, mu_cd = gd/q,
+P = (aA+bB)/p, Q = (gC+dD)/q; A,B,C,D primitif merkezleri):
+
+    (ab|cd) = 2*pi^{5/2} / (p*q*sqrt(p+q))
+              * exp(-mu_ab|A-B|^2) * exp(-mu_cd|C-D|^2)
+              * F_0( p*q/(p+q) * |P-Q|^2 )
+
+ERI tensoru 8-katli permutasyon simetrisine sahiptir:
+(ab|cd) = (ba|cd) = (ab|dc) = (ba|dc) = (cd|ab) = (dc|ab) = (cd|ba) = (dc|ba).
+Bu simetriden yararlanilarak yalnizca a>=b, c>=d, (ab)>=(cd) uclugeni
+hesaplanir; kalan elemanlar kopyalanarak doldurulur (bkz. eri_tensor).
 """
 
 from __future__ import annotations
@@ -115,3 +128,83 @@ def nuclear_matrix(basis: list[BasisFunction], molecule: Molecule) -> np.ndarray
 def core_hamiltonian(basis: list[BasisFunction], molecule: Molecule) -> np.ndarray:
     """Cekirdek Hamiltoniyeni H_core = T + V, sekil (n, n)."""
     return kinetic_matrix(basis) + nuclear_matrix(basis, molecule)
+
+
+def _pair_centre(
+    function: BasisFunction,
+    p: np.ndarray,
+    exp_left: np.ndarray,
+    exp_right: np.ndarray,
+    other: BasisFunction,
+) -> np.ndarray:
+    """Bir primitif cifti icin agirlikli merkez P = (a*A + b*B) / p, sekil (na, nb, 3)."""
+    return (
+        exp_left[:, None, None] * function.center
+        + exp_right[None, :, None] * other.center
+    ) / p[:, :, None]
+
+
+def _eri_primitive_block(
+    a: BasisFunction, b: BasisFunction, c: BasisFunction, d: BasisFunction
+) -> np.ndarray:
+    """(ab|cd) icin primitif duzeyde deger izgarasi, sekil (na, nb, nc, nd).
+
+    _primitive_grids() (a,b) ve (c,d) ciftleri icin p, mu, r2 saglar; P ve Q
+    agirlikli merkezleri burada ayrica hesaplanir (nuclear_matrix'teki
+    merkez_p ile ayni desen). Kalan islem brief'teki kapali formun dogrudan
+    vektorize uygulamasidir.
+    """
+    exp_a, exp_b, p, mu_ab, r2_ab, _ = _primitive_grids(a, b)
+    exp_c, exp_d, q, mu_cd, r2_cd, _ = _primitive_grids(c, d)
+
+    centre_p = _pair_centre(a, p, exp_a, exp_b, b)
+    centre_q = _pair_centre(c, q, exp_c, exp_d, d)
+
+    pq_toplam = p[:, :, None, None] + q[None, None, :, :]
+    pq_carpim = p[:, :, None, None] * q[None, None, :, :]
+    fark_pq = centre_p[:, :, None, None, :] - centre_q[None, None, :, :, :]
+    r2_pq = np.sum(fark_pq**2, axis=-1)
+    T = pq_carpim / pq_toplam * r2_pq
+
+    exp_ab = np.exp(-mu_ab * r2_ab)[:, :, None, None]
+    exp_cd = np.exp(-mu_cd * r2_cd)[None, None, :, :]
+    on_carpan = (2 * np.pi**2.5) / (pq_carpim * np.sqrt(pq_toplam)) * exp_ab * exp_cd
+
+    return on_carpan * boys(0, T)
+
+
+def eri_tensor(basis: list[BasisFunction]) -> np.ndarray:
+    """Iki-elektron itme integralleri (ab|cd), sekil (n, n, n, n).
+
+    8-katli permutasyon simetrisinden yararlanilir: yalnizca a>=b, c>=d ve
+    (ab bilesik indeksi)>=(cd bilesik indeksi) sartlarini saglayan benzersiz
+    ucgen hesaplanir; kalan yedi permutasyon dogrudan kopyalanarak doldurulur.
+    """
+    n = len(basis)
+    weights = [_weights(f) for f in basis]
+    tensor = np.zeros((n, n, n, n))
+
+    for a in range(n):
+        for b in range(a + 1):
+            ab_index = a * (a + 1) // 2 + b
+            for c in range(n):
+                for d in range(c + 1):
+                    cd_index = c * (c + 1) // 2 + d
+                    if cd_index > ab_index:
+                        continue
+                    blok = _eri_primitive_block(basis[a], basis[b], basis[c], basis[d])
+                    deger = float(
+                        np.einsum(
+                            "i,j,k,l,ijkl->",
+                            weights[a],
+                            weights[b],
+                            weights[c],
+                            weights[d],
+                            blok,
+                        )
+                    )
+                    for i, j in ((a, b), (b, a)):
+                        for k, l in ((c, d), (d, c)):
+                            tensor[i, j, k, l] = deger
+                            tensor[k, l, i, j] = deger
+    return tensor
