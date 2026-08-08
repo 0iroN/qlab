@@ -69,6 +69,11 @@ Bu simetriden yararlanilarak yalnizca a>=b, c>=d, (ab)>=(cd) uclugeni
 hesaplanir; kalan elemanlar kopyalanarak doldurulur (bkz. eri_tensor).
 Ayrica her benzersiz (a,b) cifti icin MD verisi bir kez kurulup tum
 dortlulerde yeniden kullanilir (_pair_data onbellegi).
+
+Task 10, analiz katmani (dipol momenti) icin besinci bir integral tipi
+ekler: dipole_matrices. Bu da S/T/V/ERI'nin kullandigi ayni E ozyinelemesi
+uzerine kuruludur -- yeni bir turetme degil, mevcut Hermite genislemesinin
+(x-C) operatoruyle carpimidir (bkz. _dipole_primitive_block dokstringi).
 """
 
 from __future__ import annotations
@@ -306,6 +311,54 @@ def _kinetic_primitive_block(pair: _PairData) -> np.ndarray:
     )
 
 
+def _dipole_primitive_block(
+    pair: _PairData, origin: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """<a|(r-origin)|b> primitif izgaralari, uc eksen icin (na, nb) sekilli uclu.
+
+    Turetme: x_A^i x_B^j = sum_t E_t^{ij} Lambda_t(x_P) (Hermite Gauss
+    genislemesi, modul dokstringindeki E ozyinelemesiyle ayni). (x-C) =
+    (x-P) + (P_x-C_x) yazip carpinca:
+
+        x_A^i x_B^j (x-C) = sum_t E_t^{ij} [x_P Lambda_t(x_P)]
+                             + (P_x-C_x) sum_t E_t^{ij} Lambda_t(x_P)
+
+    x_P Lambda_t(x_P) = (1/(2p)) Lambda_{t+1}(x_P) + t Lambda_{t-1}(x_P)
+    kimligi (Hermite Gauss'larin standart yukseltme/alcaltma ozelligi) ve
+    integral(Lambda_s dx) = sqrt(pi/p) * delta_{s,0} (overlap formulunde
+    zaten kullanilan ayni ozellik) birlikte, integralde yalniz t=1 terimi
+    hayatta kalir:
+
+        <a|(x-C)|b>_1B = sqrt(pi/p) * [ E_1^{ij} + (P_x-C_x) * E_0^{ij} ]
+
+    s-tipi (i=j=0) icin E_1^{00}=0 (tanim geregi t>i+j=0 sifir), yani bu
+    S_ab*(P_x-C_x)'e indirgenir -- brief'in "s-tipi kapali form basittir"
+    notuyla tutarli. p kabugu icin ayni E ozyinelemesi (zaten kinetik/
+    coulomb integrallerinde kullanilan _Axis.e) dogrudan calisir, yeni bir
+    ozyineleme gerekmez.
+
+    Tam 3B matris elemani, diger iki eksende duz ortusmeyle carpilir
+    (kinetik enerjideki T_x*S_y*S_z kalibiyla ayni mantik, farkla ki
+    burada UC ayri matris -- Dx, Dy, Dz -- dondurulur, toplanmaz).
+    """
+    root = np.sqrt(np.pi / pair.p)
+    overlaps = []
+    moments = []
+    for k in range(3):
+        i, j = pair.angular_a[k], pair.angular_b[k]
+        axis = pair.axes[k]
+        overlap = root * axis.e(i, j, 0)
+        overlaps.append(overlap)
+        shift = pair.centre[:, :, k] - origin[k]
+        moments.append(root * axis.e(i, j, 1) + shift * overlap)
+
+    return (
+        moments[0] * overlaps[1] * overlaps[2],
+        overlaps[0] * moments[1] * overlaps[2],
+        overlaps[0] * overlaps[1] * moments[2],
+    )
+
+
 def _nuclear_primitive_block(pair: _PairData, centre_c: np.ndarray) -> np.ndarray:
     """Birim pozitif yuk icin Coulomb integrali izgarasi, sekil (na, nb).
 
@@ -389,6 +442,31 @@ def nuclear_matrix(basis: list[BasisFunction], molecule: Molecule) -> np.ndarray
 def core_hamiltonian(basis: list[BasisFunction], molecule: Molecule) -> np.ndarray:
     """Cekirdek Hamiltoniyeni H_core = T + V, sekil (n, n)."""
     return kinetic_matrix(basis) + nuclear_matrix(basis, molecule)
+
+
+def dipole_matrices(
+    basis: list[BasisFunction], origin: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Dipol integral matrisleri (Dx, Dy, Dz): <mu|(r-origin)|nu>, her biri (n, n).
+
+    origin, moment hesabinin merkezidir; molekul yuksuz (norotr) oldugu
+    surece toplam dipol momenti origin secimine gore DEGISMEZ (bkz.
+    analysis.dipole_moment) -- ama bu fonksiyon her origin icin dogru
+    sonucu verir, sadece norotrlik varsayimi cagirana ait degildir.
+    """
+    n = len(basis)
+    weights = [_weights(f) for f in basis]
+    origin = np.asarray(origin, dtype=float)
+    dx = np.zeros((n, n))
+    dy = np.zeros((n, n))
+    dz = np.zeros((n, n))
+    for a in range(n):
+        for b in range(n):
+            blocks = _dipole_primitive_block(_pair_data(basis[a], basis[b]), origin)
+            dx[a, b] = weights[a] @ blocks[0] @ weights[b]
+            dy[a, b] = weights[a] @ blocks[1] @ weights[b]
+            dz[a, b] = weights[a] @ blocks[2] @ weights[b]
+    return dx, dy, dz
 
 
 def eri_tensor(basis: list[BasisFunction]) -> np.ndarray:

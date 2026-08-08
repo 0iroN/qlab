@@ -13,6 +13,7 @@ from scipy.integrate import quad
 from qlab.engine.hf.basis import BasisFunction, PrimitiveGaussian, build_basis
 from qlab.engine.hf.integrals import (
     core_hamiltonian,
+    dipole_matrices,
     eri_tensor,
     kinetic_matrix,
     nuclear_matrix,
@@ -446,3 +447,84 @@ def test_kinetic_at_l2_matches_quadrature(angular_a, angular_b):
     b = _make_function((0.35, -0.6, 0.9), angular_b)
     computed = kinetic_matrix([a, b])[0, 1]
     assert computed == pytest.approx(_numeric_kinetic(a, b), rel=1e-8, abs=1e-12)
+
+
+# --------------------------------------------------------------------------
+# dipole_matrices (Task 10): quadrature check + origin-argument coverage
+# --------------------------------------------------------------------------
+#
+# analysis.py (Task 10) always calls dipole_matrices(basis, origin=(0,0,0)) --
+# for a neutral molecule the resulting dipole MOMENT is origin-independent,
+# so that call site never exercises a nonzero origin. A sign error or a
+# dropped origin term in _dipole_primitive_block would therefore pass every
+# analysis.py-level test undetected. The two tests below close that gap
+# directly at the integrals.py level, with a deliberately nonzero origin.
+
+_DIPOLE_ORIGIN = np.array([0.2, -0.4, 1.1])
+
+
+def _axis_moment(i, j, alpha, beta, ax, bx, origin_k) -> float:
+    """integral( (x-origin_k) * x_A^i e^{-alpha x_A^2} * x_B^j e^{-beta x_B^2} ) dx."""
+    def integrand(x):
+        return (
+            (x - origin_k)
+            * (x - ax) ** i * np.exp(-alpha * (x - ax) ** 2)
+            * (x - bx) ** j * np.exp(-beta * (x - bx) ** 2)
+        )
+
+    return quad(integrand, -np.inf, np.inf)[0]
+
+
+def _numeric_dipole(a: BasisFunction, b: BasisFunction, origin: np.ndarray) -> np.ndarray:
+    """<a|(r-origin)|b>, sekil (3,) -- her eksen icin bagimsiz sayisal integrasyon."""
+    result = np.zeros(3)
+    for pa, wa in zip(a.primitives, _contracted_weights(a)):
+        for pb, wb in zip(b.primitives, _contracted_weights(b)):
+            for k in range(3):
+                moment = _axis_moment(
+                    a.angular[k], b.angular[k], pa.exponent, pb.exponent,
+                    a.center[k], b.center[k], origin[k],
+                )
+                other_axes = 1.0
+                for m in range(3):
+                    if m == k:
+                        continue
+                    other_axes *= _axis_overlap(
+                        a.angular[m], b.angular[m], pa.exponent, pb.exponent,
+                        a.center[m], b.center[m],
+                    )
+                result[k] += wa * wb * moment * other_axes
+    return result
+
+
+@pytest.mark.parametrize(("angular_a", "angular_b"), _HIGH_ANGULAR_PAIRS)
+def test_dipole_at_l2_matches_quadrature_with_nonzero_origin(angular_a, angular_b):
+    a = _make_function((0.0, 0.0, 0.0), angular_a)
+    b = _make_function((0.35, -0.6, 0.9), angular_b)
+    computed = np.array(
+        [component[0, 1] for component in dipole_matrices([a, b], _DIPOLE_ORIGIN)]
+    )
+    expected = _numeric_dipole(a, b, _DIPOLE_ORIGIN)
+    np.testing.assert_allclose(computed, expected, rtol=1e-8, atol=1e-12)
+
+
+def test_dipole_matrices_shift_identity(water):
+    """<mu|(r-C)|nu> = <mu|r|nu> - C*<mu|nu>, yani D(C) = D(0) - C*S.
+
+    Su/STO-3G'de (s VE p fonksiyonlari, gercek uretim olcegi) origin C=0'dan
+    kasten farkli secilerek dogrudan sinanir -- bu ozdeslik yalniz origin
+    terimi dogru tasindiginda tutar; isareti ters veya eksik bir origin
+    terimi bu testi kirar.
+    """
+    _, basis = water
+    zero_x, zero_y, zero_z = dipole_matrices(basis, np.zeros(3))
+    shifted_x, shifted_y, shifted_z = dipole_matrices(basis, _DIPOLE_ORIGIN)
+    overlap = overlap_matrix(basis)
+    for shifted, zero, origin_k in (
+        (shifted_x, zero_x, _DIPOLE_ORIGIN[0]),
+        (shifted_y, zero_y, _DIPOLE_ORIGIN[1]),
+        (shifted_z, zero_z, _DIPOLE_ORIGIN[2]),
+    ):
+        np.testing.assert_allclose(
+            shifted, zero - origin_k * overlap, rtol=0.0, atol=1e-10
+        )
