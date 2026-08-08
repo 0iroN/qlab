@@ -1,14 +1,16 @@
-"""Tek-elektron integralleri (S, T, V) icin s-tipi testler.
+"""Molekuler integral testleri (S, T, V, ERI).
 
-Referans: reference/integrals_h2_074.json (PySCF, STO-3G, H2 0.74 A).
+Referanslar: reference/integrals_h2_074.json (PySCF, STO-3G, H2 0.74 A, yalniz
+s kabugu) ve reference/integrals_h2o.json (PySCF, STO-3G, su, uc p fonksiyonu).
 """
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
+from scipy.integrate import quad
 
-from qlab.engine.hf.basis import build_basis
+from qlab.engine.hf.basis import BasisFunction, PrimitiveGaussian, build_basis
 from qlab.engine.hf.integrals import (
     core_hamiltonian,
     eri_tensor,
@@ -16,7 +18,7 @@ from qlab.engine.hf.integrals import (
     nuclear_matrix,
     overlap_matrix,
 )
-from qlab.types import Molecule
+from qlab.types import Atom, Molecule
 
 
 @pytest.fixture(scope="module")
@@ -118,3 +120,226 @@ def test_eri_cauchy_schwarz_bound(h2):
                 for d in range(n):
                     bound = np.sqrt(g[a, b, a, b]) * np.sqrt(g[c, d, c, d])
                     assert abs(g[a, b, c, d]) <= bound + 1e-12
+
+
+@pytest.fixture(scope="module")
+def water(hf_energies):
+    molecule = Molecule.from_string(hf_energies["h2o"]["atom"])
+    return molecule, build_basis(molecule, "sto-3g")
+
+
+def test_water_overlap_matches_pyscf(water, h2o_sto3g_integrals):
+    _, basis = water
+    expected = np.array(h2o_sto3g_integrals["overlap"])
+    np.testing.assert_allclose(overlap_matrix(basis), expected, atol=1e-10)
+
+
+def test_water_kinetic_matches_pyscf(water, h2o_sto3g_integrals):
+    _, basis = water
+    expected = np.array(h2o_sto3g_integrals["kinetic"])
+    np.testing.assert_allclose(kinetic_matrix(basis), expected, atol=1e-10)
+
+
+def test_water_nuclear_matches_pyscf(water, h2o_sto3g_integrals):
+    molecule, basis = water
+    expected = np.array(h2o_sto3g_integrals["nuclear"])
+    np.testing.assert_allclose(nuclear_matrix(basis, molecule), expected, atol=1e-10)
+
+
+def test_water_eri_matches_pyscf(water, h2o_sto3g_integrals):
+    _, basis = water
+    expected = np.array(h2o_sto3g_integrals["eri"])
+    np.testing.assert_allclose(eri_tensor(basis), expected, atol=1e-10)
+
+
+def test_water_overlap_diagonal_is_unity(water):
+    _, basis = water
+    np.testing.assert_allclose(np.diag(overlap_matrix(basis)), 1.0, atol=1e-10)
+
+
+def test_p_functions_on_same_atom_are_orthogonal(water):
+    """Ayni merkezdeki p_x, p_y, p_z birbirine dik olmali."""
+    _, basis = water
+    overlap = overlap_matrix(basis)
+    p_indices = [i for i, f in enumerate(basis) if sum(f.angular) == 1]
+    assert len(p_indices) == 3
+    for i, j in ((0, 1), (0, 2), (1, 2)):
+        assert overlap[p_indices[i], p_indices[j]] == pytest.approx(0.0, abs=1e-12)
+
+
+# --------------------------------------------------------------------------
+# PySCF ile kalan fark: bohr sabiti
+# --------------------------------------------------------------------------
+
+_PYSCF_BOHR_TO_ANGSTROM = 0.52917721092
+"""PySCF'in param.BOHR degeri.
+
+qlab CODATA-2018'i (units.BOHR_TO_ANGSTROM = 0.529177210903) kullanir; iki
+sabit arasindaki bagil fark 3.2e-11'dir ve dogrudan cekirdek konumlarina
+gecer. Bu yuzden yukaridaki testler ~5e-11 bagil fark birakir. Referans
+uretilirken kullanilan sabitle ayni geometride hesaplanirsa fark makine
+hassasiyetine iner -- asagidaki test tam olarak bunu sabitler.
+"""
+
+
+def _molecule_at_pyscf_bohr(spec: str) -> Molecule:
+    atoms = []
+    for entry in spec.split(";"):
+        symbol, *coordinates = entry.split()
+        position = np.array([float(v) for v in coordinates]) / _PYSCF_BOHR_TO_ANGSTROM
+        atoms.append(Atom(symbol, position))
+    return Molecule(tuple(atoms))
+
+
+def test_water_matches_pyscf_to_machine_precision_at_pyscf_geometry(
+    hf_energies, h2o_sto3g_integrals
+):
+    """Ayni bohr sabitiyle kurulan geometride dort tensor de ~1e-14'te esler.
+
+    Bu test, yukaridaki 1e-10 seviyesindeki artigin ozyinelemeden DEGIL birim
+    sabitinden geldigini kanitlar ve ozyinelemeyi 1e-10 yerine 1e-12'de
+    kilitler: acisal momentum genislemesinde ileride olusacak bir hata,
+    gevsek toleransin arkasina saklanamaz.
+    """
+    molecule = _molecule_at_pyscf_bohr(hf_energies["h2o"]["atom"])
+    basis = build_basis(molecule, "sto-3g")
+    computed = {
+        "overlap": overlap_matrix(basis),
+        "kinetic": kinetic_matrix(basis),
+        "nuclear": nuclear_matrix(basis, molecule),
+        "eri": eri_tensor(basis),
+    }
+    for name, got in computed.items():
+        np.testing.assert_allclose(
+            got,
+            np.array(h2o_sto3g_integrals[name]),
+            rtol=0.0,
+            atol=1e-12,
+            err_msg=f"{name} tensoru makine hassasiyetinde eslesmedi",
+        )
+
+
+# --------------------------------------------------------------------------
+# l >= 2: su/STO-3G'nin ulasamadigi ozyineleme dallari
+# --------------------------------------------------------------------------
+#
+# build_basis d kabugunu bilincli olarak reddediyor (basis.py, spec bolum 13),
+# ama integrals.py'deki MD ozyinelemesi acisal momentumda geneldir. Su
+# molekulu l<=1 kaldigi icin iki sayisal yolu HIC calistirmaz:
+#   * kinetik enerjideki -1/2 j(j-1) S(i, j-2) terimi (yalniz j>=2'de sifirdan
+#     farkli),
+#   * _Axis.e'nin i>=2 / j>=2 adimlari.
+# Asagidaki testler BasisFunction'i dogrudan kurarak bu yollari kapsar ve
+# degerleri scipy.integrate.quad ile bagimsiz olarak dogrular.
+
+
+def _contracted_weights(function: BasisFunction) -> list[float]:
+    """d_i * N_i * kontraksiyon-normalizasyonu (basis.py'nin genel formulleri)."""
+    scale = function.contraction_normalisation()
+    return [
+        p.coefficient * n * scale
+        for p, n in zip(function.primitives, function.normalisation())
+    ]
+
+
+def _axis_overlap(i, j, alpha, beta, ax, bx) -> float:
+    """integral( x_A^i e^{-alpha x_A^2} * x_B^j e^{-beta x_B^2} ) dx."""
+    def integrand(x):
+        return (
+            (x - ax) ** i * np.exp(-alpha * (x - ax) ** 2)
+            * (x - bx) ** j * np.exp(-beta * (x - bx) ** 2)
+        )
+
+    return quad(integrand, -np.inf, np.inf)[0]
+
+
+def _axis_gradient_overlap(i, j, alpha, beta, ax, bx) -> float:
+    """integral( d/dx[x_A^i e^{-alpha x_A^2}] * d/dx[x_B^j e^{-beta x_B^2}] ) dx."""
+    def derivative(x, l, gamma, c):
+        u = x - c
+        power = l * u ** (l - 1) if l > 0 else 0.0
+        return (power - 2 * gamma * u ** (l + 1)) * np.exp(-gamma * u * u)
+
+    def integrand(x):
+        return derivative(x, i, alpha, ax) * derivative(x, j, beta, bx)
+
+    return quad(integrand, -np.inf, np.inf)[0]
+
+
+def _numeric_overlap(a: BasisFunction, b: BasisFunction) -> float:
+    total = 0.0
+    for pa, wa in zip(a.primitives, _contracted_weights(a)):
+        for pb, wb in zip(b.primitives, _contracted_weights(b)):
+            value = wa * wb
+            for k in range(3):
+                value *= _axis_overlap(
+                    a.angular[k], b.angular[k],
+                    pa.exponent, pb.exponent, a.center[k], b.center[k],
+                )
+            total += value
+    return total
+
+
+def _numeric_kinetic(a: BasisFunction, b: BasisFunction) -> float:
+    """T_ab = 1/2 integral(grad a . grad b) -- kismi integrasyon ozdesligi.
+
+    integrals.py kete -1/2 d^2/dx^2 uygular; buradaki yol yalnizca BIRINCI
+    turevleri kullanir, yani sinanan cebiri paylasmaz.
+    """
+    total = 0.0
+    for pa, wa in zip(a.primitives, _contracted_weights(a)):
+        for pb, wb in zip(b.primitives, _contracted_weights(b)):
+            s = [
+                _axis_overlap(a.angular[k], b.angular[k], pa.exponent,
+                              pb.exponent, a.center[k], b.center[k])
+                for k in range(3)
+            ]
+            g = [
+                _axis_gradient_overlap(a.angular[k], b.angular[k], pa.exponent,
+                                       pb.exponent, a.center[k], b.center[k])
+                for k in range(3)
+            ]
+            total += 0.5 * wa * wb * (
+                g[0] * s[1] * s[2] + s[0] * g[1] * s[2] + s[0] * s[1] * g[2]
+            )
+    return total
+
+
+def _make_function(center, angular) -> BasisFunction:
+    """build_basis d'yi reddettigi icin kabuk elle kurulur (iki primitif)."""
+    return BasisFunction(
+        center=np.array(center, dtype=float),
+        angular=angular,
+        primitives=(
+            PrimitiveGaussian(exponent=1.9, coefficient=0.42),
+            PrimitiveGaussian(exponent=0.55, coefficient=0.71),
+        ),
+        atom_index=0,
+    )
+
+
+_HIGH_ANGULAR_PAIRS = [
+    ((2, 0, 0), (0, 0, 0)),   # i>=2, j=0 -> _Axis.e'nin i-azaltma dali
+    ((0, 0, 0), (0, 0, 2)),   # j>=2 -> kinetikte j(j-1) terimi, i=0 ile
+    ((2, 0, 0), (1, 0, 0)),
+    ((0, 2, 0), (0, 1, 0)),
+    ((0, 0, 2), (0, 0, 2)),   # her iki tarafta da l=2
+    ((1, 1, 0), (1, 0, 1)),
+    ((2, 0, 0), (0, 2, 0)),
+]
+
+
+@pytest.mark.parametrize(("angular_a", "angular_b"), _HIGH_ANGULAR_PAIRS)
+def test_overlap_at_l2_matches_quadrature(angular_a, angular_b):
+    a = _make_function((0.0, 0.0, 0.0), angular_a)
+    b = _make_function((0.35, -0.6, 0.9), angular_b)
+    computed = overlap_matrix([a, b])[0, 1]
+    assert computed == pytest.approx(_numeric_overlap(a, b), rel=1e-8, abs=1e-12)
+
+
+@pytest.mark.parametrize(("angular_a", "angular_b"), _HIGH_ANGULAR_PAIRS)
+def test_kinetic_at_l2_matches_quadrature(angular_a, angular_b):
+    a = _make_function((0.0, 0.0, 0.0), angular_a)
+    b = _make_function((0.35, -0.6, 0.9), angular_b)
+    computed = kinetic_matrix([a, b])[0, 1]
+    assert computed == pytest.approx(_numeric_kinetic(a, b), rel=1e-8, abs=1e-12)

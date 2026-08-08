@@ -1,14 +1,50 @@
-"""Tek-elektron integralleri: ortusme (S), kinetik (T), cekirdek-cekim (V).
+"""Molekuler integraller: ortusme (S), kinetik (T), cekirdek-cekim (V), ERI.
 
-Bu modul yalnizca **s tipi** primitifleri dogru hesaplar (angular ==
-(0, 0, 0)). p kabugu Task 7'de Obara-Saika ozyinelemesiyle eklenecek.
+Dort tensorun tamami **keyfi Kartezyen acisal momentum** icin
+McMurchie-Davidson (MD) semasiyla hesaplanir; s kabugu bu semanin
+i=j=k=0 ozel durumudur, ayri bir kod yolu yoktur.
 
-s-tipi kapali formlar (p = a+b, mu = ab/p, P = (aA+bB)/p), normalize
-edilmemis primitifler icin (A, B primitif merkezleri; C cekirdek konumu):
+Neden MD? Dort integral tipi de ayni iki ozyinelemeyi paylasir (Hermite
+genisletme katsayilari E ve Hermite-Coulomb yardimcilari R), yani tek bir
+turetme dogrulandiginda dordu birden dogrulanmis olur. Obara-Saika'da
+tek-elektron ve iki-elektron dikey/yatay ozyinelemeleri ayri ayri
+turetilip ayri ayri dogrulanmak zorundadir. Kaynak: Helgaker/Jorgensen/
+Olsen, Molecular Electronic-Structure Theory, Bolum 9.
 
-    S_ab = (pi/p)^{3/2} * exp(-mu|A-B|^2)
-    T_ab = mu * (3 - 2*mu*|A-B|^2) * S_ab
-    V_ab = -(2*pi/p) * Z * exp(-mu|A-B|^2) * F_0(p*|P-C|^2)
+MD'nin cekirdegi: iki Kartezyen Gauss'un carpimi, ortak merkez P etrafinda
+Hermite Gauss'lari cinsinden **sonlu** bir seri olarak yazilabilir
+(p = a+b, mu = ab/p, P = (aA+bB)/p, X_AB = A_x - B_x):
+
+    x_A^i x_B^j exp(-a x_A^2) exp(-b x_B^2) = sum_{t=0}^{i+j} E_t^{ij} L_t(x_P)
+
+E katsayilari su ozyinelemeden gelir (E_t = 0 icin t<0 veya t>i+j):
+
+    E_0^{00} = exp(-mu X_AB^2)
+    E_t^{i+1,j} = E_{t-1}^{ij}/(2p) + X_PA E_t^{ij} + (t+1) E_{t+1}^{ij}
+    E_t^{i,j+1} = E_{t-1}^{ij}/(2p) + X_PB E_t^{ij} + (t+1) E_{t+1}^{ij}
+
+Hermite Gauss'larinin tekil olmayan integralleri kapali oldugundan:
+
+    S_ab = (pi/p)^{3/2} E_0^{i_x j_x} E_0^{i_y j_y} E_0^{i_z j_z}
+
+Kinetik enerji, -1/2 d^2/dx^2'nin ket uzerindeki dogrudan etkisiyle 1B
+ortusmelere indirgenir (S_1B = sqrt(pi/p) E_0):
+
+    T^{1B}_{ij} = -1/2 j(j-1) S_1B(i, j-2) + b(2j+1) S_1B(i, j) - 2b^2 S_1B(i, j+2)
+    T_ab = T_x S_y S_z + S_x T_y S_z + S_x S_y T_z
+
+Coulomb tipi integraller Hermite-Coulomb yardimcilarini kullanir
+(R^n_{000} = (-2 alpha)^n F_n(alpha |D|^2), D vektoru asagida):
+
+    R^n_{t+1,u,v} = t R^{n+1}_{t-1,u,v} + D_x R^{n+1}_{t,u,v}   (u, v icin benzeri)
+
+    V_ab(C) = (2 pi / p) sum_{tuv} E_t E_u E_v R^0_{tuv}(p, P-C)
+    (ab|cd) = 2 pi^{5/2} / (p q sqrt(p+q))
+              * sum_{tuv} E^{ab}_t E^{ab}_u E^{ab}_v
+              * sum_{t'u'v'} (-1)^{t'+u'+v'} E^{cd}_{t'} E^{cd}_{u'} E^{cd}_{v'}
+              * R^0_{t+t',u+u',v+v'}(pq/(p+q), P-Q)
+
+V isareti cekirdek yukuyle birlikte tasinir: V = -Z * V_ab(C).
 
 Kontrakte fonksiyon degeri primitif katkilarinin d_i * d_j * N_i * N_j
 agirlikli toplamidir; ayrica her fonksiyon
@@ -17,23 +53,20 @@ kareokune bolunerek yeniden normalize edilir -- bu olmadan PySCF
 referansiyla eslesme atol=1e-10 hedefini onlarca kat asar (bkz.
 .superpowers/sdd/task-5-brief.md ve basis.py).
 
-F_0 icin Boys fonksiyonu (qlab.engine.hf.boys.boys) kullanilir.
-
-Iki-elektron itme integralleri (ERI, kimyaci notasyonunda (ab|cd)) icin
-s-tipi kapali form (p = a+b, q = g+d, mu_ab = ab/p, mu_cd = gd/q,
-P = (aA+bB)/p, Q = (gC+dD)/q; A,B,C,D primitif merkezleri):
-
-    (ab|cd) = 2*pi^{5/2} / (p*q*sqrt(p+q))
-              * exp(-mu_ab|A-B|^2) * exp(-mu_cd|C-D|^2)
-              * F_0( p*q/(p+q) * |P-Q|^2 )
+F_n icin Boys fonksiyonu (qlab.engine.hf.boys.boys) kullanilir; su/STO-3G'de
+gereken en yuksek mertebe cekirdek-cekimde F_2, ERI'de F_4'tur.
 
 ERI tensoru 8-katli permutasyon simetrisine sahiptir:
 (ab|cd) = (ba|cd) = (ab|dc) = (ba|dc) = (cd|ab) = (dc|ab) = (cd|ba) = (dc|ba).
 Bu simetriden yararlanilarak yalnizca a>=b, c>=d, (ab)>=(cd) uclugeni
 hesaplanir; kalan elemanlar kopyalanarak doldurulur (bkz. eri_tensor).
+Ayrica her benzersiz (a,b) cifti icin MD verisi bir kez kurulup tum
+dortlulerde yeniden kullanilir (_pair_data onbellegi).
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -54,80 +87,16 @@ def _weights(function: BasisFunction) -> np.ndarray:
 
 def _primitive_grids(
     a: BasisFunction, b: BasisFunction
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, float, np.ndarray]:
-    """Iki fonksiyonun primitif ciftleri icin p, mu, r2 ve S_prim izgarasi.
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Iki fonksiyonun primitif ciftleri icin uslar, p ve mu izgarasi.
 
-    Donen degerler (na, nb) sekilli matrisler (na/nb primitif sayisi),
-    r2 skalerdir (fonksiyon merkezleri arasi mesafenin karesi -- tum
-    primitif ciftleri icin ortaktir).
+    p ve mu (na, nb) sekilli matrislerdir (na/nb primitif sayisi).
     """
     exp_a = np.array([p.exponent for p in a.primitives])
     exp_b = np.array([p.exponent for p in b.primitives])
-    diff = a.center - b.center
-    r2 = float(diff @ diff)
     p = exp_a[:, None] + exp_b[None, :]
     mu = exp_a[:, None] * exp_b[None, :] / p
-    s_prim = (np.pi / p) ** 1.5 * np.exp(-mu * r2)
-    return exp_a, exp_b, p, mu, r2, s_prim
-
-
-def overlap_matrix(basis: list[BasisFunction]) -> np.ndarray:
-    """Ortusme matrisi S_ab, sekil (n, n)."""
-    n = len(basis)
-    weights = [_weights(f) for f in basis]
-    matrix = np.zeros((n, n))
-    for a in range(n):
-        for b in range(n):
-            _, _, _, _, _, s_prim = _primitive_grids(basis[a], basis[b])
-            matrix[a, b] = weights[a] @ s_prim @ weights[b]
-    return matrix
-
-
-def kinetic_matrix(basis: list[BasisFunction]) -> np.ndarray:
-    """Kinetik enerji matrisi T_ab, sekil (n, n)."""
-    n = len(basis)
-    weights = [_weights(f) for f in basis]
-    matrix = np.zeros((n, n))
-    for a in range(n):
-        for b in range(n):
-            _, _, _, mu, r2, s_prim = _primitive_grids(basis[a], basis[b])
-            t_prim = mu * (3 - 2 * mu * r2) * s_prim
-            matrix[a, b] = weights[a] @ t_prim @ weights[b]
-    return matrix
-
-
-def nuclear_matrix(basis: list[BasisFunction], molecule: Molecule) -> np.ndarray:
-    """Cekirdek-cekim matrisi V_ab, sekil (n, n).
-
-    Her cekirdek uzerinden toplanir: V = sum_C V_ab(C); isaret negatiftir
-    (cekim) ve bu isaret asagidaki `on_carpan` teriminde tasinir.
-    """
-    n = len(basis)
-    weights = [_weights(f) for f in basis]
-    matrix = np.zeros((n, n))
-    for a in range(n):
-        for b in range(n):
-            fn_a, fn_b = basis[a], basis[b]
-            exp_a, exp_b, p, mu, r2, _ = _primitive_grids(fn_a, fn_b)
-            merkez_p = (
-                exp_a[:, None, None] * fn_a.center
-                + exp_b[None, :, None] * fn_b.center
-            ) / p[:, :, None]
-            on_carpan = -(2 * np.pi / p) * np.exp(-mu * r2)
-
-            toplam = 0.0
-            for atom in molecule.atoms:
-                fark_pc = merkez_p - atom.position
-                r2_pc = np.sum(fark_pc**2, axis=-1)
-                v_prim = on_carpan * atom.atomic_number * boys(0, p * r2_pc)
-                toplam += weights[a] @ v_prim @ weights[b]
-            matrix[a, b] = toplam
-    return matrix
-
-
-def core_hamiltonian(basis: list[BasisFunction], molecule: Molecule) -> np.ndarray:
-    """Cekirdek Hamiltoniyeni H_core = T + V, sekil (n, n)."""
-    return kinetic_matrix(basis) + nuclear_matrix(basis, molecule)
+    return exp_a, exp_b, p, mu
 
 
 def _pair_centre(
@@ -144,33 +113,265 @@ def _pair_centre(
     ) / p[:, :, None]
 
 
-def _eri_primitive_block(
-    a: BasisFunction, b: BasisFunction, c: BasisFunction, d: BasisFunction
-) -> np.ndarray:
-    """(ab|cd) icin primitif duzeyde deger izgarasi, sekil (na, nb, nc, nd).
+@dataclass(frozen=True)
+class _Axis:
+    """Tek bir Kartezyen eksen icin MD genisletme katsayilari E_t^{ij}.
 
-    _primitive_grids() (a,b) ve (c,d) ciftleri icin p, mu, r2 saglar; P ve Q
-    agirlikli merkezleri burada ayrica hesaplanir (nuclear_matrix'teki
-    merkez_p ile ayni desen). Kalan islem brief'teki kapali formun dogrudan
-    vektorize uygulamasidir.
+    p, x_pa, x_pb ve e000 primitif cifti izgarasi sekillidir (na, nb).
+    e() ozyinelemesi ayni cift icin cok kez cagrildigindan sonuclar
+    onbelleklenir; onbelleksiz agac (i+j) buyudukce 3^(i+j) gibi buyur.
     """
-    exp_a, exp_b, p, mu_ab, r2_ab, _ = _primitive_grids(a, b)
-    exp_c, exp_d, q, mu_cd, r2_cd, _ = _primitive_grids(c, d)
 
-    centre_p = _pair_centre(a, p, exp_a, exp_b, b)
-    centre_q = _pair_centre(c, q, exp_c, exp_d, d)
+    p: np.ndarray
+    x_pa: np.ndarray
+    x_pb: np.ndarray
+    e000: np.ndarray
+    _cache: dict[tuple[int, int, int], np.ndarray] = field(
+        default_factory=dict, repr=False, compare=False
+    )
 
-    pq_toplam = p[:, :, None, None] + q[None, None, :, :]
-    pq_carpim = p[:, :, None, None] * q[None, None, :, :]
-    fark_pq = centre_p[:, :, None, None, :] - centre_q[None, None, :, :, :]
-    r2_pq = np.sum(fark_pq**2, axis=-1)
-    T = pq_carpim / pq_toplam * r2_pq
+    def e(self, i: int, j: int, t: int) -> np.ndarray | float:
+        """E_t^{ij}; tanim disi (j<0, t<0, t>i+j) durumlarda 0.
 
-    exp_ab = np.exp(-mu_ab * r2_ab)[:, :, None, None]
-    exp_cd = np.exp(-mu_cd * r2_cd)[None, None, :, :]
-    on_carpan = (2 * np.pi**2.5) / (pq_carpim * np.sqrt(pq_toplam)) * exp_ab * exp_cd
+        j<0 dali kinetik enerjideki S(i, j-2) teriminden gelir ve j<2 olan
+        her fonksiyon icin -- yani her s ve p fonksiyonu icin -- kullanilir.
+        i<0 diye bir dal YOKTUR: i yalnizca j==0 dalinda azaltilir, o dal da
+        (i, j) == (0, 0) durumunda calismaz, dolayisiyla i asla negatife
+        dusmez. Cagiranlar da yalnizca angular bilesenlerini (>=0) verir.
+        """
+        if j < 0 or t < 0 or t > i + j:
+            return 0.0
+        key = (i, j, t)
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        if i == 0 and j == 0:
+            value = self.e000
+        elif j == 0:
+            value = (
+                self.e(i - 1, j, t - 1) / (2 * self.p)
+                + self.x_pa * self.e(i - 1, j, t)
+                + (t + 1) * self.e(i - 1, j, t + 1)
+            )
+        else:
+            value = (
+                self.e(i, j - 1, t - 1) / (2 * self.p)
+                + self.x_pb * self.e(i, j - 1, t)
+                + (t + 1) * self.e(i, j - 1, t + 1)
+            )
+        self._cache[key] = value
+        return value
 
-    return on_carpan * boys(0, T)
+
+@dataclass(frozen=True)
+class _PairData:
+    """Bir baz fonksiyonu ciftinin MD verisi; dort integral tipi de bunu kullanir.
+
+    hermite, E_t^x E_u^y E_v^z carpimlarini (t, u, v) anahtariyla tutar;
+    t <= i_x+j_x ve benzeri sinirlarin disindaki terimler sifir oldugu icin
+    sozlukte yer almaz.
+    """
+
+    p: np.ndarray
+    exp_b: np.ndarray
+    centre: np.ndarray
+    axes: tuple[_Axis, _Axis, _Axis]
+    angular_a: tuple[int, int, int]
+    angular_b: tuple[int, int, int]
+    hermite: dict[tuple[int, int, int], np.ndarray]
+    order: int
+
+
+def _pair_data(a: BasisFunction, b: BasisFunction) -> _PairData:
+    """(a, b) cifti icin primitif izgarasi ve Hermite katsayilarini kurar."""
+    exp_a, exp_b, p, mu = _primitive_grids(a, b)
+    centre = _pair_centre(a, p, exp_a, exp_b, b)
+
+    axes = tuple(
+        _Axis(
+            p=p,
+            x_pa=centre[:, :, k] - a.center[k],
+            x_pb=centre[:, :, k] - b.center[k],
+            e000=np.exp(-mu * (a.center[k] - b.center[k]) ** 2),
+        )
+        for k in range(3)
+    )
+
+    hermite: dict[tuple[int, int, int], np.ndarray] = {}
+    for t in range(a.angular[0] + b.angular[0] + 1):
+        ex = axes[0].e(a.angular[0], b.angular[0], t)
+        for u in range(a.angular[1] + b.angular[1] + 1):
+            ey = axes[1].e(a.angular[1], b.angular[1], u)
+            for v in range(a.angular[2] + b.angular[2] + 1):
+                ez = axes[2].e(a.angular[2], b.angular[2], v)
+                hermite[(t, u, v)] = ex * ey * ez
+
+    return _PairData(
+        p=p,
+        exp_b=exp_b,
+        centre=centre,
+        axes=axes,
+        angular_a=a.angular,
+        angular_b=b.angular,
+        hermite=hermite,
+        order=sum(a.angular) + sum(b.angular),
+    )
+
+
+def _hermite_coulomb(
+    order: int, alpha: np.ndarray, delta: np.ndarray
+) -> dict[tuple[int, int, int], np.ndarray]:
+    """R^0_{tuv}(alpha, delta) yardimcilari, t+u+v <= order.
+
+    delta son ekseni 3 olan bir vektor izgarasidir (cekirdek-cekimde P-C,
+    ERI'de P-Q). Ozyineleme toplam mertebe artarak yurutulur; L mertebesi
+    icin L-1 ve L-2'nin bir ustteki n seviyeleri gerekir, bu yuzden
+    F_0..F_order'in tamami basta hesaplanir.
+    """
+    x, y, z = delta[..., 0], delta[..., 1], delta[..., 2]
+    T = alpha * (x * x + y * y + z * z)
+
+    table: dict[tuple[int, int, int, int], np.ndarray] = {}
+    for n in range(order + 1):
+        table[(n, 0, 0, 0)] = (-2 * alpha) ** n * boys(n, T)
+
+    for total in range(1, order + 1):
+        for t in range(total + 1):
+            for u in range(total - t + 1):
+                v = total - t - u
+                for n in range(order - total + 1):
+                    if t > 0:
+                        value = x * table[(n + 1, t - 1, u, v)]
+                        if t > 1:
+                            value = value + (t - 1) * table[(n + 1, t - 2, u, v)]
+                    elif u > 0:
+                        value = y * table[(n + 1, t, u - 1, v)]
+                        if u > 1:
+                            value = value + (u - 1) * table[(n + 1, t, u - 2, v)]
+                    else:
+                        value = z * table[(n + 1, t, u, v - 1)]
+                        if v > 1:
+                            value = value + (v - 1) * table[(n + 1, t, u, v - 2)]
+                    table[(n, t, u, v)] = value
+
+    return {
+        (t, u, v): value for (n, t, u, v), value in table.items() if n == 0
+    }
+
+
+def _overlap_primitive_block(pair: _PairData) -> np.ndarray:
+    """S_ab primitif izgarasi, sekil (na, nb)."""
+    return (np.pi / pair.p) ** 1.5 * pair.hermite[(0, 0, 0)]
+
+
+def _kinetic_primitive_block(pair: _PairData) -> np.ndarray:
+    """T_ab primitif izgarasi, sekil (na, nb)."""
+    root = np.sqrt(np.pi / pair.p)
+    beta = pair.exp_b[None, :]
+
+    overlaps = []
+    kinetics = []
+    for k in range(3):
+        i, j = pair.angular_a[k], pair.angular_b[k]
+        axis = pair.axes[k]
+        overlap = root * axis.e(i, j, 0)
+        overlaps.append(overlap)
+        kinetics.append(
+            -0.5 * j * (j - 1) * root * axis.e(i, j - 2, 0)
+            + beta * (2 * j + 1) * overlap
+            - 2 * beta**2 * root * axis.e(i, j + 2, 0)
+        )
+
+    return (
+        kinetics[0] * overlaps[1] * overlaps[2]
+        + overlaps[0] * kinetics[1] * overlaps[2]
+        + overlaps[0] * overlaps[1] * kinetics[2]
+    )
+
+
+def _nuclear_primitive_block(pair: _PairData, centre_c: np.ndarray) -> np.ndarray:
+    """Birim pozitif yuk icin Coulomb integrali izgarasi, sekil (na, nb).
+
+    Donen deger pozitiftir; cekirdek yuku ve cekim isareti cagirana aittir.
+    """
+    r = _hermite_coulomb(pair.order, pair.p, pair.centre - centre_c)
+    total = 0.0
+    for key, coefficient in pair.hermite.items():
+        total = total + coefficient * r[key]
+    return 2 * np.pi / pair.p * total
+
+
+def _eri_primitive_block(bra: _PairData, ket: _PairData) -> np.ndarray:
+    """(ab|cd) primitif izgarasi, sekil (na, nb, nc, nd)."""
+    p = bra.p[:, :, None, None]
+    q = ket.p[None, None, :, :]
+    delta = bra.centre[:, :, None, None, :] - ket.centre[None, None, :, :, :]
+    alpha = p * q / (p + q)
+
+    r = _hermite_coulomb(bra.order + ket.order, alpha, delta)
+
+    total = 0.0
+    for (t, u, v), bra_coefficient in bra.hermite.items():
+        left = bra_coefficient[:, :, None, None]
+        for (tt, uu, vv), ket_coefficient in ket.hermite.items():
+            sign = -1.0 if (tt + uu + vv) % 2 else 1.0
+            total = total + (
+                sign
+                * left
+                * ket_coefficient[None, None, :, :]
+                * r[(t + tt, u + uu, v + vv)]
+            )
+
+    return 2 * np.pi**2.5 / (p * q * np.sqrt(p + q)) * total
+
+
+def overlap_matrix(basis: list[BasisFunction]) -> np.ndarray:
+    """Ortusme matrisi S_ab, sekil (n, n)."""
+    n = len(basis)
+    weights = [_weights(f) for f in basis]
+    matrix = np.zeros((n, n))
+    for a in range(n):
+        for b in range(n):
+            block = _overlap_primitive_block(_pair_data(basis[a], basis[b]))
+            matrix[a, b] = weights[a] @ block @ weights[b]
+    return matrix
+
+
+def kinetic_matrix(basis: list[BasisFunction]) -> np.ndarray:
+    """Kinetik enerji matrisi T_ab, sekil (n, n)."""
+    n = len(basis)
+    weights = [_weights(f) for f in basis]
+    matrix = np.zeros((n, n))
+    for a in range(n):
+        for b in range(n):
+            block = _kinetic_primitive_block(_pair_data(basis[a], basis[b]))
+            matrix[a, b] = weights[a] @ block @ weights[b]
+    return matrix
+
+
+def nuclear_matrix(basis: list[BasisFunction], molecule: Molecule) -> np.ndarray:
+    """Cekirdek-cekim matrisi V_ab, sekil (n, n).
+
+    Her cekirdek uzerinden toplanir: V = sum_C -Z_C * V_ab(C); isaret
+    negatiftir (cekim).
+    """
+    n = len(basis)
+    weights = [_weights(f) for f in basis]
+    matrix = np.zeros((n, n))
+    for a in range(n):
+        for b in range(n):
+            pair = _pair_data(basis[a], basis[b])
+            toplam = 0.0
+            for atom in molecule.atoms:
+                block = _nuclear_primitive_block(pair, atom.position)
+                toplam += -atom.atomic_number * (weights[a] @ block @ weights[b])
+            matrix[a, b] = toplam
+    return matrix
+
+
+def core_hamiltonian(basis: list[BasisFunction], molecule: Molecule) -> np.ndarray:
+    """Cekirdek Hamiltoniyeni H_core = T + V, sekil (n, n)."""
+    return kinetic_matrix(basis) + nuclear_matrix(basis, molecule)
 
 
 def eri_tensor(basis: list[BasisFunction]) -> np.ndarray:
@@ -179,10 +380,18 @@ def eri_tensor(basis: list[BasisFunction]) -> np.ndarray:
     8-katli permutasyon simetrisinden yararlanilir: yalnizca a>=b, c>=d ve
     (ab bilesik indeksi)>=(cd bilesik indeksi) sartlarini saglayan benzersiz
     ucgen hesaplanir; kalan yedi permutasyon dogrudan kopyalanarak doldurulur.
+    Her benzersiz (a, b) cifti icin MD verisi bir kez kurulur: su/STO-3G'de
+    bu 406 dortlu icin 812 yerine 28 kurulum demektir.
     """
     n = len(basis)
     weights = [_weights(f) for f in basis]
     tensor = np.zeros((n, n, n, n))
+
+    pairs = {
+        (a, b): _pair_data(basis[a], basis[b])
+        for a in range(n)
+        for b in range(a + 1)
+    }
 
     for a in range(n):
         for b in range(a + 1):
@@ -192,7 +401,7 @@ def eri_tensor(basis: list[BasisFunction]) -> np.ndarray:
                     cd_index = c * (c + 1) // 2 + d
                     if cd_index > ab_index:
                         continue
-                    blok = _eri_primitive_block(basis[a], basis[b], basis[c], basis[d])
+                    blok = _eri_primitive_block(pairs[(a, b)], pairs[(c, d)])
                     deger = float(
                         np.einsum(
                             "i,j,k,l,ijkl->",
