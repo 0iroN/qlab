@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pytest
+from scipy.integrate import quad
 
 from qlab.engine.hf.basis import (
     AVAILABLE_BASES,
@@ -135,6 +136,113 @@ def test_p_shell_normalisation_closed_form():
         p_single = (2 * p_exp / np.pi) ** 0.75 * np.sqrt(4 * p_exp)
         assert not np.isclose(s_single, p_single), \
             "p ve s normalizasyonu farkli olmali (acisal faktor)"
+
+
+def _gauss_moment(power: int, alpha: float) -> float:
+    """Tek eksende integral( x^power * exp(-alpha*x^2), x=-inf..inf ).
+
+    scipy.integrate.quad ile SAYISAL olarak hesaplanir; basis.py'deki cift
+    faktoriyel kapali formla hicbir cebir paylasmaz -- bu yuzden
+    _self_overlap()'i dogrulamak icin bagimsiz bir referans olusturur.
+    """
+    integrand = lambda x: x**power * math.exp(-alpha * x * x)
+    value, _ = quad(integrand, -np.inf, np.inf)
+    return value
+
+
+def _numeric_self_overlap(function) -> float:
+    """Kontrakte fonksiyonun oz-ortusmesini sayisal integralle hesaplar.
+
+    basis.py'nin _self_overlap()'i veya contraction_normalisation()'i
+    CAGRILMAZ; yalnizca ham us/katsayi verisi ve normalisation() (primitif
+    basina normalizasyon -- acisal kapali formdan bagimsiz, ayri bir
+    fonksiyon) kullanilir. Merkez konumu integralde onemsizdir (oteleme
+    degismezligi): fonksiyon sanki orijinde gibi entegre edilir.
+    """
+    i, j, k = function.angular
+    exponents = [p.exponent for p in function.primitives]
+    coefficients = [p.coefficient for p in function.primitives]
+    norms = function.normalisation()
+    weights = [c * n for c, n in zip(coefficients, norms)]
+
+    toplam = 0.0
+    for p in range(len(exponents)):
+        for q in range(len(exponents)):
+            alpha = exponents[p] + exponents[q]
+            ix = _gauss_moment(2 * i, alpha)
+            iy = _gauss_moment(2 * j, alpha)
+            iz = _gauss_moment(2 * k, alpha)
+            toplam += weights[p] * weights[q] * ix * iy * iz
+    return toplam
+
+
+def _water_basis():
+    mol = Molecule.from_string("O 0 0 0; H 0 0.757 0.587; H 0 -0.757 0.587")
+    return build_basis(mol, "sto-3g")
+
+
+@pytest.mark.parametrize("angular", [(1, 0, 0), (0, 1, 0), (0, 0, 1)])
+def test_p_shell_self_overlap_matches_numerical_integration(angular):
+    """_self_overlap()'in acisal-momentum kismini bagimsiz sayisal integralle
+    capraz dogrular.
+
+    Task 5'te tek test edilen acisal deger (0, 0, 0) oldugu icin cift
+    faktoriyel terimindeki her carpan 1'e iniyordu -- formulun acisal kismi
+    hicbir testte gercekten hesaba katilmiyordu (bkz.
+    .superpowers/sdd/task-5-report.md, 'Self-review findings'). Bu test, su
+    molekulundeki gercek oksijen 2p fonksiyonlarinin (build_basis'ten) uc
+    ekseni icin de _self_overlap()'i sayisal referansla karsilastirarak bu
+    bosluk kapatir.
+    """
+    functions = _water_basis()
+    p_functions = [f for f in functions if f.angular == angular]
+    assert len(p_functions) == 1
+    function = p_functions[0]
+
+    numeric = _numeric_self_overlap(function)
+    implementation = function._self_overlap()
+
+    np.testing.assert_allclose(numeric, implementation, rtol=1e-10)
+
+
+def test_p_shell_contraction_normalisation_matches_pyscf_water_diagonal(
+    h2o_sto3g_integrals,
+):
+    """Ikinci, bagimsiz referans: reference/integrals_h2o.json'daki PySCF
+    ortusme matrisinin kosegeni tam 1.0'dir (O'nun 2p fonksiyonlari dahil).
+
+    contraction_normalisation() carpani uygulandiktan sonra tam-normalize
+    kontrakte fonksiyonun sayisal oz-ortusme integrali de ayni kosegen
+    degerine esit olmalidir. Bu, basis.py'nin formulunu degil, PySCF'in
+    bagimsiz olarak hesapladigi gercek bir referans degerini kullanir.
+    """
+    functions = _water_basis()
+    overlap = h2o_sto3g_integrals["overlap"]
+
+    p_gorulen = 0
+    for idx, function in enumerate(functions):
+        if sum(function.angular) != 1:
+            continue
+        p_gorulen += 1
+        i, j, k = function.angular
+        exponents = [p.exponent for p in function.primitives]
+        coefficients = [p.coefficient for p in function.primitives]
+        norms = function.normalisation()
+        c_norm = function.contraction_normalisation()
+        weights = [c * n * c_norm for c, n in zip(coefficients, norms)]
+
+        toplam = 0.0
+        for p in range(len(exponents)):
+            for q in range(len(exponents)):
+                alpha = exponents[p] + exponents[q]
+                ix = _gauss_moment(2 * i, alpha)
+                iy = _gauss_moment(2 * j, alpha)
+                iz = _gauss_moment(2 * k, alpha)
+                toplam += weights[p] * weights[q] * ix * iy * iz
+
+        np.testing.assert_allclose(toplam, overlap[idx][idx], atol=1e-10)
+
+    assert p_gorulen == 3, "Su/STO-3G'de O'nun 3 adet 2p fonksiyonu olmali"
 
 
 def test_d_shell_rejection_with_monkeypatch():
