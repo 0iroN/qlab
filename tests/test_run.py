@@ -115,13 +115,47 @@ def test_save_writes_readable_npz_for_hf_scan(hf_scenario_file, tmp_path):
     run.save(result, output)
 
     with np.load(output, allow_pickle=False) as data:
-        assert set(data.files) == {"values", "energies", "provenance_json"}
+        assert set(data.files) == {
+            "values",
+            "energies",
+            "lowest_eigenvalues",
+            "provenance_json",
+        }
         assert data["values"].shape == (2,)
         assert data["energies"].shape == (2,)
+        # Kararlılık bilgisi nokta bazında da makine-okunur olmalı: tek bir
+        # özet bayrağı, eğrinin HANGİ noktasının eyer noktası olduğunu söylemez.
+        lowest_eigenvalues = data["lowest_eigenvalues"]
+        assert lowest_eigenvalues.shape == (2,)
         provenance = json.loads(str(data["provenance_json"]))
 
     assert provenance["method"].startswith("RHF/")
     assert provenance["converged"] is True
+    assert provenance["stability"] == {
+        "stable": True,
+        "lowest_eigenvalue": pytest.approx(
+            float(lowest_eigenvalues.min()), abs=0.0, rel=0.0
+        ),
+        "n_rotations": 1,
+    }
+
+
+def test_main_prints_stability_verdict_for_hf_scan(hf_scenario_file, tmp_path, capsys):
+    """Şeffaflık bloğu kararlılık hükmünü GÖRÜNÜR biçimde basmalı — bu
+    özelliğin varlık sebebi, sonucun kullanıcıya ulaşmasıdır."""
+    output = tmp_path / "hf_stab.npz"
+    assert run.main([str(hf_scenario_file), "-o", str(output)]) == 0
+    out = capsys.readouterr().out
+    assert "Kararlılık" in out
+    assert "✓" in out
+
+
+def test_main_does_not_print_stability_for_tdse(scenario_file, tmp_path, capsys):
+    """TDSE koşusunda kararlılık analizi diye bir şey yoktur; panel o satırı
+    hiç basmamalı (boş bir satır "sorun yok" gibi okunurdu)."""
+    output = tmp_path / "tdse.npz"
+    assert run.main([str(scenario_file), "-o", str(output)]) == 0
+    assert "Kararlılık" not in capsys.readouterr().out
 
 
 def test_main_reports_point_count_for_hf_scan(hf_scenario_file, tmp_path, capsys):

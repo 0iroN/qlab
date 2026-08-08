@@ -177,6 +177,144 @@ def test_scan_marks_provenance_unconverged_when_a_point_fails(tmp_path, monkeypa
     assert result.provenance.diagnostics["failed_values"] == [pytest.approx(0.7)]
 
 
+def test_scan_marks_lowest_eigenvalue_nan_for_a_failed_point(tmp_path, monkeypatch):
+    """Yakinsamayan noktanin kararlilik bilgisi YOKTUR -- 0.0 gibi bir sayi
+    basmak "kararli" diye okunurdu; NaN durust olanidir."""
+    import qlab.engine.hf.factory as hf_factory
+
+    real_solve = hf_factory.solve
+    calls = {"n": 0}
+
+    def flaky_solve(molecule, basis):
+        calls["n"] += 1
+        if calls["n"] == 3:
+            raise SCFConvergenceError(
+                iterations=5, energy_history=[-1.0, -1.0], final_residual=1.0
+            )
+        return real_solve(molecule, basis)
+
+    monkeypatch.setattr(hf_factory, "solve", flaky_solve)
+    result = run_scan(load_scenario(write(tmp_path, VALID)))
+
+    assert np.isnan(result.lowest_eigenvalues[2])
+    assert np.sum(np.isnan(result.lowest_eigenvalues)) == 1
+    # Yakinsamayan nokta "kararsiz" olarak SAYILMAMALI -- olculmemistir.
+    assert result.provenance.diagnostics["n_unstable"] == 0
+
+
+def test_scan_reports_no_stability_verdict_when_every_point_fails(tmp_path, monkeypatch):
+    """Hicbir nokta olculemediyse kararlilik hakkinda hicbir sey iddia
+    edilmemeli: verdict None, diagnostics'te n_unstable YOK. "0 kararsiz"
+    yazmak, hicbir sey olculmemisken "hepsi kararli" gibi okunurdu."""
+    import qlab.engine.hf.factory as hf_factory
+
+    def always_fails(molecule, basis):
+        raise SCFConvergenceError(
+            iterations=5, energy_history=[-1.0, -1.0], final_residual=1.0
+        )
+
+    monkeypatch.setattr(hf_factory, "solve", always_fails)
+    result = run_scan(load_scenario(write(tmp_path, VALID)))
+
+    assert result.provenance.stability is None
+    assert "n_unstable" not in result.provenance.diagnostics
+    assert np.all(np.isnan(result.lowest_eigenvalues))
+
+
+UNSTABLE_SCAN = textwrap.dedent(
+    """
+    kind: hf_scan
+    name: H2 asiri gerilmis tarama
+    molecule_template: "H 0 0 0; H 0 0 {value}"
+    basis: sto-3g
+    parameter: bond_length
+    values: [0.74, 12.0]
+    unit: angstrom
+    """
+)
+
+
+def test_scan_says_when_a_point_is_an_unreported_saddle_point(tmp_path):
+    """Duzeltilen kusur: 12 A'daki nokta yakinsar (n_failed=0) ama bir EYER
+    NOKTASIDIR. Tarama bunu soylemek zorundadir; "n_failed=0" tek basina
+    egrinin guvenilir oldugu anlamina GELMEZ."""
+    result = run_scan(load_scenario(write(tmp_path, UNSTABLE_SCAN)))
+
+    assert result.provenance.diagnostics["n_failed"] == 0
+    assert result.provenance.diagnostics["n_unstable"] == 1
+    assert result.provenance.diagnostics["unstable_values"] == [pytest.approx(12.0)]
+    assert result.provenance.stability.stable is False
+    assert result.provenance.stability.lowest_eigenvalue < 0.0
+    assert result.lowest_eigenvalues[0] > 0.0
+    assert result.lowest_eigenvalues[1] < 0.0
+
+
+def test_scan_reports_no_verdict_when_points_were_solved_without_analysis(
+    tmp_path, monkeypatch
+):
+    """Nokta COZULDU ama kararlilik ANALIZ EDILMEDI dali.
+
+    run_scan bugun solve()'u varsayilanlariyla cagirir, yani bu durum
+    normalde olusmaz; ama HFResult.stability tur olarak None olabilir ve o
+    dal testsiz kalirsa, ileride run_scan'e "hizli mod" eklendiginde
+    sessizce yanlis rapor uretirdi. Beklenen: yakinsama TRUE (noktalar
+    cozuldu), kararlilik hakkinda HICBIR iddia yok.
+    """
+    import qlab.engine.hf.factory as hf_factory
+
+    real_solve = hf_factory.solve
+    monkeypatch.setattr(
+        hf_factory, "solve", lambda molecule, basis: real_solve(
+            molecule, basis, stability=False
+        )
+    )
+    result = run_scan(load_scenario(write(tmp_path, VALID)))
+
+    assert result.provenance.converged is True
+    assert result.provenance.stability is None
+    assert "n_unstable" not in result.provenance.diagnostics
+    assert np.all(np.isnan(result.lowest_eigenvalues))
+
+
+HELIUM_SCAN = textwrap.dedent(
+    """
+    kind: hf_scan
+    name: He tek atom konum taramasi
+    molecule_template: "He 0 0 {value}"
+    basis: sto-3g
+    parameter: position
+    values: [0.0, 1.0]
+    unit: angstrom
+    """
+)
+
+
+def test_scan_of_a_system_without_virtual_orbitals_reports_no_eigenvalue(tmp_path):
+    """He/STO-3G'de bos orbital yoktur -> hicbir noktada ozdeger olculemez.
+
+    Hukum "kararli"dir (dondurulecek yon yok) ama raporlanan ozdeger None
+    olmalidir; 0.0 yazmak "sinirda kararli" diye okunurdu. Bu, _scan_verdict
+    icindeki "olculmus ozdeger listesi bos" dalidir.
+    """
+    result = run_scan(load_scenario(write(tmp_path, HELIUM_SCAN)))
+
+    assert np.all(np.isfinite(result.energies))
+    assert np.all(np.isnan(result.lowest_eigenvalues))
+    assert result.provenance.stability.stable is True
+    assert result.provenance.stability.lowest_eigenvalue is None
+    assert result.provenance.stability.n_rotations == 0
+    assert result.provenance.diagnostics["n_unstable"] == 0
+
+
+def test_scan_with_only_stable_points_reports_a_stable_verdict(tmp_path):
+    result = run_scan(load_scenario(write(tmp_path, VALID)))
+
+    assert result.provenance.diagnostics["n_unstable"] == 0
+    assert "unstable_values" not in result.provenance.diagnostics
+    assert result.provenance.stability.stable is True
+    assert np.all(result.lowest_eigenvalues > 0.0)
+
+
 def test_scan_rejects_template_with_extra_placeholder(tmp_path):
     """{value} disinda cozulemeyen bir alan (kopyala-yapistir kalintisi gibi)
     str.format()'da ciplak KeyError firlatirdi -- ScenarioError'a cevrilmeli."""

@@ -52,8 +52,9 @@ import numpy as np
 
 from qlab.engine.hf.basis import build_basis
 from qlab.engine.hf.integrals import core_hamiltonian, eri_tensor, overlap_matrix
+from qlab.engine.hf.stability import StabilityResult, analyse_stability, orbital_hessian
 from qlab.errors import SCFConvergenceError, UnsupportedSystemError
-from qlab.provenance import Provenance
+from qlab.provenance import Provenance, StabilityVerdict
 from qlab.types import Molecule
 
 
@@ -69,6 +70,10 @@ class HFResult:
     density: np.ndarray
     n_iterations: int
     provenance: Provenance
+    # Kararlilik analizi kosulmadiysa (solve(stability=False)) None kalir --
+    # "analiz edilmedi" ile "kararli" ayni sey degildir ve ayni degerle
+    # gosterilmemelidir.
+    stability: StabilityResult | None = None
 
 
 def _orthogonalisation_matrix(overlap: np.ndarray) -> np.ndarray:
@@ -119,6 +124,12 @@ _HF_NEGLECTED: tuple[str, ...] = (
     "statik korelasyon -- RHF ayrisma kusuru (notr atomlara ayrisamaz)",
     "goreli etkiler",
     "cekirdek hareketi",
+    # Kararlilik analizi eklendiginde bu listeye eklendi: analiz YALNIZCA ic
+    # (RHF -> RHF, tekil, reel) kararliligi sinar. "Kararli" hukmu, cozumun
+    # kuresel minimum oldugunu veya UHF'in daha dusuk enerji vermeyecegini
+    # SOYLEMEZ; bu siniri panelde yazmazsak hukum oldugundan genis okunur.
+    "dis kararsizlik sinavi (RHF->UHF, triplet, kompleks orbital) -- "
+    "yalnizca ic/tekil kararlilik test edilir",
 )
 
 # Bu metin, RHF'in EN BUYUK hatasini isimlendirmek zorundadir; bu depoda
@@ -139,7 +150,10 @@ _HF_EXPECTED_ERROR = (
 
 
 def provenance_for(
-    method: str, converged: bool, diagnostics: dict
+    method: str,
+    converged: bool,
+    diagnostics: dict,
+    stability: StabilityVerdict | None = None,
 ) -> Provenance:
     """RHF sonuclarinin ortak seffaflik blogu -- TEK kaynak.
 
@@ -149,7 +163,9 @@ def provenance_for(
     duzeltilip digeri unutuldugunda panel iki farkli seyi iddia ederdi.
     TDSE tarafindaki tdse/factory.py:provenance_for ile ayni desen.
 
-    Yalnizca method/converged/diagnostics cagriya gore degisir.
+    Yalnizca method/converged/diagnostics/stability cagriya gore degisir.
+    stability=None, "kararlilik analizi kosulmadi" demektir ve panelde
+    ilgili satir hic basilmaz.
     """
     return Provenance(
         method=method,
@@ -158,6 +174,7 @@ def provenance_for(
         expected_error=_HF_EXPECTED_ERROR,
         converged=converged,
         diagnostics=diagnostics,
+        stability=stability,
     )
 
 
@@ -258,8 +275,24 @@ def solve(
     energy_tolerance: float = 1e-10,
     residual_tolerance: float = 1e-8,
     use_diis: bool = True,
+    stability: bool = True,
 ) -> HFResult:
     """Kapali kabuk RHF enerjisini Roothaan-Hall SCF donguleriyle cozer.
+
+    stability=True (varsayilan) ise yakinsamadan sonra IC (RHF -> RHF)
+    kararlilik analizi kosulur: cozumun bir minimum mu yoksa eyer noktasi mi
+    oldugu, tekil orbital Hessian'inin ozdegerlerinden belirlenir (bkz.
+    stability.py). Kararsizlik YUKSELTMEZ -- eyer noktasi da gecerli bir
+    duragan noktadir, duzeltilen kusur sessizliktir.
+
+    Varsayilanin acik olmasi olcume dayanir: analiz, bir AO->MO ERI donusumu
+    (N^5) gerektirir ve bu depodaki en buyuk sistemde bile SCF suresinin
+    kucuk bir kesridir (rakamlar: .superpowers/sdd/b1-stability-report.md).
+
+    stability=False atlanirsa sonuc SESSIZ KALMAZ ama EKSIK kalir:
+    HFResult.stability ve Provenance.stability None olur, panel kararlilik
+    satirini hic basmaz. Bu, "kararli bulundu" ile karistirilmamalidir --
+    o durumda cozumun minimum mu eyer mi oldugu OLCULMEMISTIR.
 
     use_diis=True (varsayilan) ise DIIS (Pulay) hizlandirma uygulanir:
     diyagonalizasyonda kullanilan Fock, son en fazla _DIIS_MAX_HISTORY
@@ -346,10 +379,17 @@ def solve(
     energy_electronic = energy_history[-1]
     energy_total = energy_electronic + nuclear_repulsion
 
+    stability_result = None
+    if stability:
+        stability_result = analyse_stability(
+            orbital_hessian(core, eri, coefficients, n_occupied)
+        )
+
     provenance = provenance_for(
         method=f"RHF/{basis_name.upper()}",
         converged=True,
         diagnostics={"iterations": iteration, "final_residual": residual_norm},
+        stability=None if stability_result is None else stability_result.verdict(),
     )
 
     return HFResult(
@@ -363,4 +403,5 @@ def solve(
         density=density,
         n_iterations=iteration,
         provenance=provenance,
+        stability=stability_result,
     )

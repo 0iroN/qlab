@@ -102,8 +102,12 @@ def test_large_separation_breaks_down_numerically_and_we_say_so():
     bu gecerli bir duragan noktadir ama cok daha yuksek enerjilidir.
 
     Bu bir integral hatasi degil, sonlu hassasiyetin siniridir. Gercek
-    kuantum kimyasi paketleri bunu "stability analysis" ile yakalar;
-    qlab'da o yoktur ve bu test o eksigi YAZIYA DOKER.
+    kuantum kimyasi paketleri bunu "stability analysis" ile yakalar; qlab'da
+    O ARTIK VARDIR (engine/hf/stability.py) ve bu noktayi eyer noktasi
+    olarak isaretler -- 12 A'da en dusuk orbital Hessian ozdegeri -2.92
+    olculur, 10 A'da +2.89 (bkz. tests/hf/test_stability.py). Analiz
+    kirilmayi DUZELTMEZ, yalnizca sessizligini kaldirir: enerji hala
+    yanlistir, ama artik ciktida yanlis oldugu YAZAR.
     Sinir kilitlenmistir: 10 A'da dogru, 12 A'da bozuk. Biri gelip
     duzeltirse test kirmizi olur ve o zaman bu docstring guncellenir.
     """

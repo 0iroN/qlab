@@ -70,6 +70,10 @@ def save(result: RunResult | ScanResult, output_path: str | Path) -> None:
             output_path,
             values=result.values,
             energies=result.energies,
+            # Nokta bazında kararlılık: tek bir özet bayrağı, eğrinin HANGİ
+            # noktasının eyer noktası olduğunu söylemez. Ölçülemeyen
+            # noktalarda NaN (bkz. factory.ScanResult).
+            lowest_eigenvalues=result.lowest_eigenvalues,
             provenance_json=provenance_json,
         )
         return

@@ -8,6 +8,7 @@ durumunu (readout metni, panel metni) okur — yalnızca "içe aktarma hatasız"
 gibi zayıf bir kanıtla yetinilmez.
 """
 
+import dataclasses
 import os
 import re
 
@@ -48,6 +49,26 @@ def test_panel_marks_failure_visibly():
         diagnostics={"norm_deviation": 1.0},
     )
     assert "✗" in format_panel(failed)
+
+
+def test_panel_renders_the_stability_verdict_when_there_is_one():
+    """Panel Provenance'ı olduğu gibi basar; kararlılık satırı eklendiğinde
+    ayrıca bir uyarlama gerekmemeli. Bugün Qt penceresine yalnızca TDSE
+    sonucu besleniyor (HF sonucu GUI'ye hiç gitmiyor), ama `format_panel`
+    genel bir fonksiyondur ve bu yol testsiz kalmamalı."""
+    from qlab.provenance import StabilityVerdict
+
+    text = format_panel(
+        dataclasses.replace(
+            PROVENANCE,
+            stability=StabilityVerdict(
+                stable=False, lowest_eigenvalue=-2.92, n_rotations=1
+            ),
+        )
+    )
+    assert "Kararlılık" in text
+    assert "-2.920e+00" in text
+    assert "EYER NOKTASI" in text
 
 
 def test_panel_lines_are_aligned():

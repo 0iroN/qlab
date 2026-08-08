@@ -2,7 +2,7 @@ import dataclasses
 import pytest
 
 from qlab.errors import InvalidInputError, QLabError, UnitarityViolationError
-from qlab.provenance import Provenance
+from qlab.provenance import Provenance, StabilityVerdict
 
 
 def make_provenance(**overrides) -> Provenance:
@@ -35,6 +35,79 @@ def test_as_lines_joins_lists_with_separator():
 def test_as_lines_marks_converged_state():
     assert dict(make_provenance(converged=True).as_lines())["Yakınsama"].startswith("✓")
     assert dict(make_provenance(converged=False).as_lines())["Yakınsama"].startswith("✗")
+
+
+def test_as_lines_omits_stability_when_it_was_not_analysed():
+    """TDSE sonuçları (ve stability=False ile koşulan HF sonuçları) kararlılık
+    satırı BASMAMALI — analiz edilmemiş bir şeyi panelde göstermek, boş bir
+    değeri "sorun yok" gibi okutur."""
+    labels = [label for label, _ in make_provenance().as_lines()]
+    assert "Kararlılık" not in labels
+
+
+def test_as_lines_reports_a_stable_verdict():
+    prov = make_provenance(
+        stability=StabilityVerdict(
+            stable=True, lowest_eigenvalue=2.93, n_rotations=1
+        )
+    )
+    labels = [label for label, _ in prov.as_lines()]
+    assert labels == [
+        "Yöntem",
+        "Yaklaşımlar",
+        "İhmal edilen",
+        "Beklenen hata",
+        "Yakınsama",
+        "Kararlılık",
+    ]
+    line = dict(prov.as_lines())["Kararlılık"]
+    assert line.startswith("✓")
+    assert "2.930e+00" in line
+
+
+def test_as_lines_names_the_saddle_point_for_an_unstable_verdict():
+    """Kararsızlık sessiz kalmamalı: panel satırı sonucun bir EYER NOKTASI
+    olduğunu açıkça söylemeli, yalnızca bir sayı basmamalı."""
+    prov = make_provenance(
+        stability=StabilityVerdict(
+            stable=False, lowest_eigenvalue=-2.93, n_rotations=1
+        )
+    )
+    line = dict(prov.as_lines())["Kararlılık"]
+    assert line.startswith("✗")
+    assert "eyer" in line.lower()
+    assert "-2.930e+00" in line
+
+
+def test_as_lines_says_when_there_is_nothing_to_rotate():
+    """Bos orbitali olmayan sistemde (He/STO-3G) döndürülecek çift yoktur;
+    "kararlı" demek doğru ama bir özdeğer basmak yanlış olurdu."""
+    prov = make_provenance(
+        stability=StabilityVerdict(
+            stable=True, lowest_eigenvalue=None, n_rotations=0
+        )
+    )
+    line = dict(prov.as_lines())["Kararlılık"]
+    assert line.startswith("✓")
+    assert "dönme yok" in line
+
+
+def test_stability_verdict_survives_asdict_for_json():
+    """run.save() provenance'ı dataclasses.asdict + json.dumps ile yazar;
+    iç içe dataclass düz sözlüğe dönüşmeli ve JSON'a yazılabilmeli."""
+    import json
+
+    prov = make_provenance(
+        stability=StabilityVerdict(
+            stable=False, lowest_eigenvalue=-2.93, n_rotations=1
+        )
+    )
+    payload = json.loads(json.dumps(dataclasses.asdict(prov), ensure_ascii=False))
+    assert payload["stability"] == {
+        "stable": False,
+        "lowest_eigenvalue": -2.93,
+        "n_rotations": 1,
+    }
 
 
 def test_unitarity_error_carries_diagnosis():

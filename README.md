@@ -66,8 +66,16 @@ ayrılsın RHF bağ orbitalini çift işgal etmeye zorlar).
 10 Å'da enerji asimptota uyar, 12 Å'da kopar. İntegraller sağlamdır (kontrol
 edildi); kırılan adım özdeğer çözümüdür — iki atomik orbital arasındaki eşleşme
 yuvarlama farkının altına düşünce `eigh` simetrik yerine yerelleşmiş, çok daha
-yüksek enerjili bir çözüm seçer. Gerçek kuantum kimyası paketleri bunu
-"stability analysis" ile yakalar; qlab'da o yoktur.
+yüksek enerjili bir çözüm seçer. Bu çözüm gerçek bir durağan noktadır
+(`converged=True` yalan değildir) ama bir **eyer noktasıdır**. qlab bunu artık
+iç (RHF→RHF) kararlılık analiziyle yakalar: yakınsamadan sonra tekil orbital
+Hessian'ının özdeğerleri hesaplanır ve sonuç şeffaflık panelinde
+"Kararlılık" satırı olarak basılır (H₂ 0.74 Å: +4.52, 10 Å: +2.89, **12 Å:
+−2.92 → eyer noktası**). Analiz sonucu DÜZELTMEZ, yalnızca sessizliği
+kaldırır — kırılma hâlâ oradadır ve kararsız bir nokta hata yükseltmez, çünkü
+kullanıcı o çözümü meşru olarak isteyebilir. Sınanmayan: dış kararsızlıklar
+(RHF→UHF, triplet, kompleks orbital) — "kararlı" hükmü çözümün küresel minimum
+olduğunu söylemez.
 
 Qt penceresi bu depoda hiçbir gerçek ekranda henüz açılıp gözle doğrulanmadı.
 Projedeki her GUI testi `QT_QPA_PLATFORM=offscreen` ile ekransız çalışır

@@ -19,8 +19,18 @@ from __future__ import annotations
 import numpy as np
 
 from qlab.engine.hf.basis import BasisFunction, build_basis
-from qlab.engine.hf.integrals import dipole_matrices, overlap_matrix
+from qlab.engine.hf.integrals import (
+    core_hamiltonian,
+    dipole_matrices,
+    eri_tensor,
+    overlap_matrix,
+)
 from qlab.engine.hf.scf import HFResult
+from qlab.engine.hf.stability import (
+    StabilityResult,
+    analyse_stability,
+    orbital_hessian,
+)
 from qlab.units import AU_DIPOLE_TO_DEBYE
 
 
@@ -138,6 +148,28 @@ def homo_lumo(result: HFResult) -> tuple[float, float, float]:
     homo = float(result.orbital_energies[n_occupied - 1])
     lumo = float(result.orbital_energies[n_occupied])
     return homo, lumo, lumo - homo
+
+
+def stability(result: HFResult) -> StabilityResult:
+    """Ic (RHF -> RHF) kararlilik analizi, HFResult uzerinden.
+
+    solve() bunu varsayilan olarak zaten kosar ve sonucu HFResult.stability
+    icinde tasir; bu fonksiyon solve(stability=False) ile kosulmus (veya
+    baska bir yoldan elde edilmis) bir sonuc icin SONRADAN hesaplama
+    yoludur. HFResult integralleri saklamadigi icin (yalnizca molecule +
+    basis_name adi) baz burada yeniden kurulur -- analysis.py'nin geri
+    kalaniyla ayni desen.
+
+    Yontem ve sinirlar icin stability.py modul dokstringine bakin: yalnizca
+    IC (tekil, reel) kararlilik sinanir, dis (RHF->UHF) kararsizlik degil.
+    """
+    basis = build_basis(result.molecule, result.basis_name)
+    core = core_hamiltonian(basis, result.molecule)
+    eri = eri_tensor(basis)
+    n_occupied = result.molecule.n_electrons // 2
+    return analyse_stability(
+        orbital_hessian(core, eri, result.coefficients, n_occupied)
+    )
 
 
 def mayer_bond_orders(result: HFResult) -> np.ndarray:
