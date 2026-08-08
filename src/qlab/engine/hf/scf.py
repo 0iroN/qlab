@@ -22,10 +22,26 @@ VE RMS(e) < residual_tolerance, burada e = X^T (F P S - S P F) X ticaretcil
 (commutator) hatasidir -- yakinsamis bir cozumde F ve P commute eder (FPS -
 SPF = 0), yani e sifira gider.
 
-Bu dosya DIIS uygulamaz (Task 9'a birakilmistir); use_diis parametresi
-kabul edilir ama yok sayilir. Duz Roothaan iterasyonu bazi sistemlerde
-yavas yakinsayabilir veya salinabilir -- bu olculmesi gereken bir riskir,
-gizlenecek bir sorun degil.
+DIIS (Pulay) hizlandirma: son en fazla _DIIS_MAX_HISTORY iterasyonun
+(F_i, e_i) ciftleri tutulur ve
+
+    [ B  1 ] [c]   [0]
+    [ 1^T 0] [lam] = [1]      B_ij = tr(e_i^T e_j)
+
+sisteminden c katsayilari cozulup F = sum c_i F_i ile bir sonraki
+diyagonalizasyonda kullanilacak Fock kurulur. Enerji ve residual HER ZAMAN
+duz (ekstrapole edilmemis) Fock/yogunluk ciftinden hesaplanir -- yalnizca
+BIR SONRAKI yogunlugu uretmek icin kullanilan Fock ekstrapole edilir. Alt
+uzay dolmadan (ilk 2 iterasyon) duz Fock kullanilir. B tekillesirse (bilinen
+DIIS davranisi -- alt uzayda dogrusal bagimli hata vektorleri biriktiginde
+olur) en eski cift atilip yerel bir kopya uzerinde tekrar denenir; kalici
+gecmis bundan etkilenmez.
+
+Duz Roothaan iterasyonu bazi sistemlerde yavas yakinsayabilir veya
+salinabilir -- bu olculmesi gereken bir riskir, gizlenecek bir sorun degil.
+Salinim, enerji gecmisindeki ardisik farklarin isaretinin tutarli sekilde
+degistigi (bkz. _is_oscillating) durumlarda SCFConvergenceError.oscillating
+alaninda raporlanir.
 """
 
 from __future__ import annotations
@@ -91,6 +107,96 @@ def _commutator_residual(
     return x.T @ (fps - spf) @ x
 
 
+_DIIS_MAX_HISTORY = 8
+
+
+def _diis_extrapolate(
+    fock_history: list[np.ndarray], error_history: list[np.ndarray]
+) -> np.ndarray:
+    """DIIS (Pulay) ekstrapolasyonu: F = sum_i c_i F_i.
+
+        [ B  1 ] [c]   [0]
+        [ 1^T 0] [lam] = [1]      B_ij = tr(e_i^T e_j)
+
+    Cagiran, en az 2 cift oldugundan emin olmalidir (kucuk alt uzaylarda
+    ekstrapolasyonun bir anlami yoktur, cagiran taraf bunu duz Fock ile
+    atlamalidir).
+
+    B tekillesirse (alt uzayda dogrusal bagimli/tekrar eden hata vektorleri
+    biriktiginde olur -- ozellikle yakinsamaya cok yaklasilmis, hata
+    vektorleri neredeyse sifira inmis durumlarda) en eski cift atilip
+    KUCULTULMUS bir alt uzayla tekrar denenir. Bu deneme yerel kopyalar
+    uzerinde yapilir; kalici fock_history/error_history degistirilmez --
+    bir sonraki iterasyonda ayni cift yine mevcut olabilir ve o zaman B
+    tekil olmayabilir.
+    """
+    fock_list = list(fock_history)
+    error_list = list(error_history)
+
+    while len(fock_list) >= 2:
+        m = len(error_list)
+        b_matrix = np.array(
+            [[np.trace(ei.T @ ej) for ej in error_list] for ei in error_list]
+        )
+        a_matrix = np.zeros((m + 1, m + 1))
+        a_matrix[:m, :m] = b_matrix
+        a_matrix[:m, m] = 1.0
+        a_matrix[m, :m] = 1.0
+        rhs = np.zeros(m + 1)
+        rhs[m] = 1.0
+
+        try:
+            solution = np.linalg.solve(a_matrix, rhs)
+        except np.linalg.LinAlgError:
+            fock_list.pop(0)
+            error_list.pop(0)
+            continue
+
+        coefficients = solution[:m]
+        return sum(c * f for c, f in zip(coefficients, fock_list))
+
+    # Butun ciftler B tekilligi yuzunden dusuruldu, tek eleman kaldi:
+    # anlamli bir dogrusal kombinasyon kurulamaz -- en son duz Fock'a don.
+    return fock_list[0]
+
+
+_OSCILLATION_WINDOW = 10
+_OSCILLATION_MIN_DELTAS = 4
+_OSCILLATION_FLIP_RATIO = 0.7
+
+
+def _is_oscillating(energy_history: list[float]) -> bool:
+    """Enerji gecmisinde salinim tespiti.
+
+    Kriter: son en fazla _OSCILLATION_WINDOW ardisik enerji farkinin
+    (delta_i = E_i - E_{i-1}) isareti incelenir. Bu farklarin komsu
+    ciftlerinin urunu negatifse (isaret degisti) bu bir "flip"tir. Monoton
+    yakinsayan (veya monoton yakinsayip erken kesilen) bir SCF'de delta'lar
+    hep ayni isarettedir (flip orani 0), gercek bir salinan sistemde (iki
+    enerji arasinda gidip gelme) HER ardisik cift isaret degistirir (flip
+    orani 1). Flip orani _OSCILLATION_FLIP_RATIO esigini asarsa salinim
+    var sayilir.
+
+    Isareti sifir olan delta'lar (tam yakinsama sinirinda, iki enerji
+    ayni) flip sayimindan cikarilir -- ne "ayni yonde devam" ne de "isaret
+    degisimi" sayilmamalidir.
+
+    Yeterli veri yoksa (en az _OSCILLATION_MIN_DELTAS sifir-olmayan delta,
+    yani en az birkac iterasyon gectiginde) temkinli sekilde False donulur:
+    "henuz karar verilemez" varsayilan olarak salinim degildir -- bu,
+    SCFConvergenceError.oscillating'in varsayilan degeriyle de tutarlidir.
+    """
+    window = energy_history[-(_OSCILLATION_WINDOW + 1):]
+    deltas = np.diff(window)
+    signs = deltas[deltas != 0]
+    signs = np.sign(signs)
+    if len(signs) < _OSCILLATION_MIN_DELTAS:
+        return False
+    flips = np.sum(signs[1:] * signs[:-1] < 0)
+    flip_ratio = flips / (len(signs) - 1)
+    return bool(flip_ratio >= _OSCILLATION_FLIP_RATIO)
+
+
 def solve(
     molecule: Molecule,
     basis_name: str = "sto-3g",
@@ -101,11 +207,13 @@ def solve(
 ) -> HFResult:
     """Kapali kabuk RHF enerjisini Roothaan-Hall SCF donguleriyle cozer.
 
-    use_diis su an yok sayilir (Task 9'da uygulanacak); duz Roothaan
-    iterasyonu kullanilir.
+    use_diis=True (varsayilan) ise DIIS (Pulay) hizlandirma uygulanir:
+    diyagonalizasyonda kullanilan Fock, son en fazla _DIIS_MAX_HISTORY
+    iterasyonun ekstrapole edilmis kombinasyonudur. Bu yalnizca yakinsama
+    YOLUNU kisaltir; enerji ve residual her zaman duz (ekstrapole
+    edilmemis) Fock/yogunluk ciftinden hesaplanir, dolayisiyla yakinsama
+    kriteri ve sonuc DIIS'ten bagimsizdir (bkz. modul dokstringi).
     """
-    del use_diis  # Task 9: DIIS hizlandirma. Simdilik duz iterasyon.
-
     if molecule.n_electrons % 2 != 0:
         raise UnsupportedSystemError(
             f"acik kabuk sistem desteklenmiyor (n_electrons={molecule.n_electrons}); "
@@ -129,6 +237,8 @@ def solve(
     density = _density_matrix(coefficients, n_occupied)
 
     energy_history: list[float] = []
+    fock_history: list[np.ndarray] = []
+    error_history: list[np.ndarray] = []
     fock = core
     residual_norm = float("inf")
 
@@ -137,13 +247,27 @@ def solve(
         energy_electronic = _electronic_energy(density, core, fock)
         energy_history.append(energy_electronic)
 
+        # Residual/enerji DAIMA duz (ekstrapole edilmemis) Fock-yogunluk
+        # ciftinden hesaplanir -- yakinsama kriteri boylece DIIS'ten
+        # bagimsiz kalir (bkz. modul dokstringi).
         residual = _commutator_residual(fock, density, overlap, x)
         residual_norm = float(np.sqrt(np.mean(residual ** 2)))
+
+        if use_diis:
+            fock_history.append(fock)
+            error_history.append(residual)
+            if len(fock_history) > _DIIS_MAX_HISTORY:
+                fock_history.pop(0)
+                error_history.pop(0)
+            # Alt uzay dolmadan (ilk 2 iterasyon) duz Fock kullan.
+            if iteration > 2:
+                fock = _diis_extrapolate(fock_history, error_history)
 
         # Yeni katsayilari/yoguntugu her iterasyonda guncelle (yakinsasa da
         # yakinsamasa da), boylece dongu kirilinca ekstra bir tekrar
         # hesaplamaya gerek kalmaz: donen coefficients/density/orbital_energies
-        # tam da bu iterasyonun Fock'undan turetilmis olur.
+        # tam da bu iterasyonda diyagonalize edilen Fock'tan turetilmis olur
+        # (DIIS aktifse bu, ekstrapole edilmis Fock'tur).
         fock_prime = x.T @ fock @ x
         orbital_energies, coefficients_prime = np.linalg.eigh(fock_prime)
         coefficients = x @ coefficients_prime
@@ -161,6 +285,7 @@ def solve(
             iterations=max_iterations,
             energy_history=energy_history,
             final_residual=residual_norm,
+            oscillating=_is_oscillating(energy_history),
         )
 
     energy_electronic = energy_history[-1]
