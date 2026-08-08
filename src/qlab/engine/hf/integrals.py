@@ -54,7 +54,14 @@ referansiyla eslesme atol=1e-10 hedefini onlarca kat asar (bkz.
 .superpowers/sdd/task-5-brief.md ve basis.py).
 
 F_n icin Boys fonksiyonu (qlab.engine.hf.boys.boys) kullanilir; su/STO-3G'de
-gereken en yuksek mertebe cekirdek-cekimde F_2, ERI'de F_4'tur.
+(yalniz s ve p kabuklari, l<=1) gereken en yuksek mertebe cekirdek-cekimde
+F_2, ERI'de F_4'tur -- bu sadece mevcut p-kabugu kapsami icin gecerlidir,
+genel bir ust sinir DEGILDIR. _hermite_coulomb, order = bra.order + ket.order
+mertebesine kadar boys(n, ...) cagirir; l=2 (d kabugu) eklenirse bu order=8'e
+kadar cikar ve boys.py'deki _LARGE_T_THRESHOLD yalniz n=0..5 icin olculdu
+(bkz. boys.py modul docstring'i). build_basis d kabugunu reddettigi icin
+(basis.py, spec bolum 13) bu yol su an hic tetiklenmiyor, ama d/f kabugu
+eklenirse esigin n=6+ icin yeniden olculmesi gerekir.
 
 ERI tensoru 8-katli permutasyon simetrisine sahiptir:
 (ab|cd) = (ba|cd) = (ab|dc) = (ba|dc) = (cd|ab) = (dc|ab) = (cd|ba) = (dc|ba).
@@ -113,13 +120,19 @@ def _pair_centre(
     ) / p[:, :, None]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class _Axis:
     """Tek bir Kartezyen eksen icin MD genisletme katsayilari E_t^{ij}.
 
     p, x_pa, x_pb ve e000 primitif cifti izgarasi sekillidir (na, nb).
     e() ozyinelemesi ayni cift icin cok kez cagrildigindan sonuclar
     onbelleklenir; onbelleksiz agac (i+j) buyudukce 3^(i+j) gibi buyur.
+
+    eq=False: alanlar numpy dizisi (ve bir dict) tasidigi icin uretilen
+    __eq__ bir dizi doner (bool degil) ve __hash__ TypeError firlatir.
+    Hicbir yer bu nesneleri karsilastirmiyor/hashlemiyor, ama frozen=True
+    tek basina eq=True varsayilaniyla bu kirik __eq__/__hash__ ciftini
+    otomatik uretirdi -- eq=False onu hic uretmez.
     """
 
     p: np.ndarray
@@ -163,13 +176,17 @@ class _Axis:
         return value
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class _PairData:
     """Bir baz fonksiyonu ciftinin MD verisi; dort integral tipi de bunu kullanir.
 
     hermite, E_t^x E_u^y E_v^z carpimlarini (t, u, v) anahtariyla tutar;
     t <= i_x+j_x ve benzeri sinirlarin disindaki terimler sifir oldugu icin
     sozlukte yer almaz.
+
+    eq=False: ayni gerekce _Axis icin gecerli -- alanlar numpy dizisi ve
+    dict tasiyor, uretilen __eq__/__hash__ kirik olurdu; kullanilmiyor,
+    o yuzden hic uretilmiyor.
     """
 
     p: np.ndarray

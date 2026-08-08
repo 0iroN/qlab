@@ -27,37 +27,78 @@ def h2(hf_energies):
     return molecule, build_basis(molecule, "sto-3g")
 
 
+# --------------------------------------------------------------------------
+# PySCF karsilastirmalarinda tolerans: rtol ACIKCA verilmeli
+# --------------------------------------------------------------------------
+#
+# np.testing.assert_allclose'un varsayilan rtol'u 1e-7'dir ve kriter
+# |actual-desired| <= atol + rtol*|desired| seklindedir. Su molekulunun
+# ~62 hartree'lik cekirdek-cekim elemanlari icin varsayilan rtol tek basina
+# ~6e-6'lik bir bosluk birakir -- yani gorunurdeki atol=1e-10 aldaticidir,
+# gercekte uygulanan sinir cok daha gevsektir. Bu yuzden asagida ve su
+# molekulu grubunda atol VE rtol birlikte, acikca verilir.
+#
+# rtol degerleri olculen gercek sapmadan ~4-6 kat pay birakilarak secildi
+# (olcumler ve tam margin tablosu: .superpowers/sdd/b1-task-7-fix-report.md,
+# Finding 1). Kalan sapma ozyinelemenin kendisinden DEGIL, referansi ureten
+# PySCF derlemesinin bohr sabitinden (CODATA 2010, param.BOHR =
+# 0.52917721092) qlab'in kullandigi sabitten (CODATA 2018,
+# units.ANGSTROM_TO_BOHR = 1.8897261246257702) gelir; iki sabit 10. basamakta
+# ayrisir, bu da cekirdek konumlarina ve oradan her integrale buyuklugu ile
+# orantili sizar. Ozyinelemenin kendisi cok daha hassastir; kanit asagidaki
+# test_water_matches_pyscf_to_machine_precision_at_pyscf_geometry (PySCF'in
+# KENDI bohr sabitiyle kurulan geometride dort tensor de rtol=0, atol=1e-12
+# ile eslesir). O test ozyinelemeyi kilitleyen asil kapidir; buradaki rtol
+# degerleri yalnizca birim-sabiti farkini yutar, integral hassasiyetini
+# olcmez.
+
+
 def test_overlap_matches_pyscf(h2, h2_sto3g_integrals):
     _, basis = h2
     expected = np.array(h2_sto3g_integrals["overlap"])
-    np.testing.assert_allclose(overlap_matrix(basis), expected, atol=1e-10)
+    np.testing.assert_allclose(overlap_matrix(basis), expected, atol=1e-12, rtol=1e-10)
 
 
 def test_kinetic_matches_pyscf(h2, h2_sto3g_integrals):
     _, basis = h2
     expected = np.array(h2_sto3g_integrals["kinetic"])
-    np.testing.assert_allclose(kinetic_matrix(basis), expected, atol=1e-10)
+    np.testing.assert_allclose(kinetic_matrix(basis), expected, atol=1e-12, rtol=3e-10)
 
 
 def test_nuclear_matches_pyscf(h2, h2_sto3g_integrals):
     molecule, basis = h2
     expected = np.array(h2_sto3g_integrals["nuclear"])
-    np.testing.assert_allclose(nuclear_matrix(basis, molecule), expected, atol=1e-10)
+    np.testing.assert_allclose(
+        nuclear_matrix(basis, molecule), expected, atol=1e-12, rtol=2e-10
+    )
 
 
 def test_overlap_diagonal_is_unity(h2):
+    """Normalizasyon ozdesligi -- PySCF referansiyla ilgisi yok.
+
+    Kosegen deger tanim geregi 1.0'dir; olculen fark tam 0.0 (bkz.
+    b1-task-7-fix-report.md, Finding 1). atol=1e-13 makine hassasiyetine
+    yakin ama tam sifir degil, boylece platforma bagli toplama sirasina kucuk
+    bir pay birakiyor.
+    """
     _, basis = h2
-    np.testing.assert_allclose(np.diag(overlap_matrix(basis)), 1.0, atol=1e-10)
+    np.testing.assert_allclose(np.diag(overlap_matrix(basis)), 1.0, atol=1e-13, rtol=0.0)
 
 
 def test_matrices_are_symmetric(h2):
+    """M == M.T oz-tutarlilik denetimi -- PySCF referansiyla ilgisi yok.
+
+    Olculen fark tam 0.0 (bit-birebir ayni, bkz. b1-task-7-fix-report.md,
+    Finding 1). atol=1e-13 platforma bagli toplama sirasina kucuk bir pay
+    birakiyor; gercek bir simetri bozulmasi bundan kat kat buyuk olur.
+    """
     molecule, basis = h2
     for matrix in (
         overlap_matrix(basis),
         kinetic_matrix(basis),
         nuclear_matrix(basis, molecule),
     ):
-        np.testing.assert_allclose(matrix, matrix.T, atol=1e-12)
+        np.testing.assert_allclose(matrix, matrix.T, atol=1e-13, rtol=0.0)
 
 
 def test_overlap_is_positive_definite(h2):
@@ -84,10 +125,17 @@ def test_overlap_falls_off_with_separation():
 def test_eri_matches_pyscf(h2, h2_sto3g_integrals):
     _, basis = h2
     expected = np.array(h2_sto3g_integrals["eri"])
-    np.testing.assert_allclose(eri_tensor(basis), expected, atol=1e-10)
+    np.testing.assert_allclose(eri_tensor(basis), expected, atol=1e-12, rtol=3e-10)
 
 
 def test_eri_has_eightfold_symmetry(h2):
+    """8-katli permutasyon simetrisi -- PySCF referansiyla ilgisi yok.
+
+    eri_tensor ayni float degerini sekiz permutasyon konumuna da dogrudan
+    atadigi icin (bkz. integrals.py, eri_tensor) fark yapisal olarak tam
+    0.0'dir (bkz. b1-task-7-fix-report.md, Finding 1). atol=1e-13 kucuk bir
+    pay birakiyor.
+    """
     _, basis = h2
     g = eri_tensor(basis)
     for permuted in (
@@ -99,7 +147,7 @@ def test_eri_has_eightfold_symmetry(h2):
         np.transpose(g, (2, 3, 1, 0)),
         np.transpose(g, (3, 2, 1, 0)),
     ):
-        np.testing.assert_allclose(g, permuted, atol=1e-12)
+        np.testing.assert_allclose(g, permuted, atol=1e-13, rtol=0.0)
 
 
 def test_eri_diagonal_elements_are_positive(h2):
@@ -128,33 +176,49 @@ def water(hf_energies):
     return molecule, build_basis(molecule, "sto-3g")
 
 
+## Ayni bagil-tolerans gerekcesi: bkz. bu dosyanin basindaki
+## "PySCF karsilastirmalarinda tolerans: rtol ACIKCA verilmeli" notu (h2
+## fixture'inin hemen ustunde). Su molekulunde buyuklukler H2'den cok daha
+## genis oldugundan (cekirdek-cekim ~62 hartree'ye kadar cikiyor), rtol
+## degerleri de olculen gercek sapmaya gore ayrica secildi.
+
+
 def test_water_overlap_matches_pyscf(water, h2o_sto3g_integrals):
     _, basis = water
     expected = np.array(h2o_sto3g_integrals["overlap"])
-    np.testing.assert_allclose(overlap_matrix(basis), expected, atol=1e-10)
+    np.testing.assert_allclose(overlap_matrix(basis), expected, atol=1e-12, rtol=4e-10)
 
 
 def test_water_kinetic_matches_pyscf(water, h2o_sto3g_integrals):
     _, basis = water
     expected = np.array(h2o_sto3g_integrals["kinetic"])
-    np.testing.assert_allclose(kinetic_matrix(basis), expected, atol=1e-10)
+    np.testing.assert_allclose(kinetic_matrix(basis), expected, atol=1e-12, rtol=4e-9)
 
 
 def test_water_nuclear_matches_pyscf(water, h2o_sto3g_integrals):
     molecule, basis = water
     expected = np.array(h2o_sto3g_integrals["nuclear"])
-    np.testing.assert_allclose(nuclear_matrix(basis, molecule), expected, atol=1e-10)
+    np.testing.assert_allclose(
+        nuclear_matrix(basis, molecule), expected, atol=1e-12, rtol=5e-10
+    )
 
 
 def test_water_eri_matches_pyscf(water, h2o_sto3g_integrals):
     _, basis = water
     expected = np.array(h2o_sto3g_integrals["eri"])
-    np.testing.assert_allclose(eri_tensor(basis), expected, atol=1e-10)
+    np.testing.assert_allclose(eri_tensor(basis), expected, atol=1e-12, rtol=8e-10)
 
 
 def test_water_overlap_diagonal_is_unity(water):
+    """Normalizasyon ozdesligi -- PySCF referansiyla ilgisi yok.
+
+    Kosegen deger tanim geregi 1.0'dir; olculen fark 2.22e-16 (tek bir
+    makine epsilonu, bkz. b1-task-7-fix-report.md, Finding 1). atol=1e-13
+    bunu rahatca kapsar ve gorunurdeki eski atol=1e-10'un arkasindaki
+    gizli rtol=1e-7 bosluguna kiyasla gercekten baglayicidir.
+    """
     _, basis = water
-    np.testing.assert_allclose(np.diag(overlap_matrix(basis)), 1.0, atol=1e-10)
+    np.testing.assert_allclose(np.diag(overlap_matrix(basis)), 1.0, atol=1e-13, rtol=0.0)
 
 
 def test_p_functions_on_same_atom_are_orthogonal(water):
