@@ -2,10 +2,10 @@
 
 Baz verisi disaridan (reference/basis_*.json) okunur; koda hicbir us veya
 katsayi elle yazilmaz. Bu dosyalar PySCF'in kendi baz verisidir (bkz.
-reference/README.md) — elle kopyalanan baz seti sayilari klasik bir hata
+reference/README.md) -- elle kopyalanan baz seti sayilari klasik bir hata
 kaynagidir.
 
-Yalnizca s ve p kabuklari destekleniyor (spec §13 d kabugunu kapsam disi
+Yalnizca s ve p kabuklari destekleniyor (spec bolum 13 d kabugunu kapsam disi
 birakiyor). `angular_momentum >= 2` icin BasisNotAvailableError firlatilir.
 """
 

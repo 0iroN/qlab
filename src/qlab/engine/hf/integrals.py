@@ -19,7 +19,7 @@ referansiyla eslesme atol=1e-10 hedefini onlarca kat asar (bkz.
 
 F_0 icin Boys fonksiyonu (qlab.engine.hf.boys.boys) kullanilir.
 
-Iki-elektron itme integralleri (ERI, kimyacı notasyonunda (ab|cd)) icin
+Iki-elektron itme integralleri (ERI, kimyaci notasyonunda (ab|cd)) icin
 s-tipi kapali form (p = a+b, q = g+d, mu_ab = ab/p, mu_cd = gd/q,
 P = (aA+bB)/p, Q = (gC+dD)/q; A,B,C,D primitif merkezleri):
 
