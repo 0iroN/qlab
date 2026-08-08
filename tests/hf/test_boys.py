@@ -64,6 +64,20 @@ def test_accepts_array_input():
     assert result[0] == pytest.approx(1.0 / 3.0, rel=1e-12)
 
 
+def test_accepts_array_input_mixed_regime():
+    """Dizi hem kucuk hem buyuk rejim degerlerini birden icerdiginde,
+    her iki dal (kucuk-T kapali form, buyuk-T asimptotik) ayni cagirida
+    calismali. T = 44.9 ve 45.1 esik civarinda bilerek secildi.
+    """
+    T = np.array([1.0, 44.9, 45.1, 100.0])
+    for n in (0, 2, 5):
+        result = boys(n, T)
+        assert isinstance(result, np.ndarray)
+        assert result.shape == (4,)
+        expected = np.array([boys_by_quadrature(n, t) for t in T])
+        np.testing.assert_allclose(result, expected, rtol=1e-9)
+
+
 def test_large_T_asymptote():
     """Buyuk T'de F_n(T) -> (2n-1)!! / 2^{n+1} * sqrt(pi / T^{2n+1})."""
     T = 500.0
