@@ -84,12 +84,17 @@ def save(result: RunResult | ScanResult, output_path: str | Path) -> None:
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    # Windows ve diğer CP1252 varsayılan konsollarında Türkçe karakterleri
-    # yazdırabilmek için stdout/stderr'i UTF-8'e yeniden yapılandır. reconfigure()
-    # var olmayan ortamlarda (ender), stdout/stderr'i wrapping'e geri döneriz.
-    # Her iki durumda da, başarısız olursa orijinal akış kullanılır ve hiçbir
-    # ek hata yükseltilmez.
+def reconfigure_stdio_utf8() -> None:
+    """Windows ve diğer CP1252 varsayılan konsollarında Türkçe karakterleri
+    yazdırabilmek için stdout/stderr'i UTF-8'e yeniden yapılandırır.
+    reconfigure() var olmayan ortamlarda (ender), stdout/stderr'i wrapping'e
+    geri döneriz. Her iki durumda da, başarısız olursa orijinal akış
+    kullanılır ve hiçbir ek hata yükseltilmez.
+
+    Paylaşılan tek kaynak: hem bu modülün `main()`'i hem de `qlab.app.main`
+    aynı GUI-öncesi/iş-öncesi noktada bunu çağırır — desen iki kez elle
+    kopyalanmaz.
+    """
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except (AttributeError, ValueError, OSError):
@@ -111,6 +116,10 @@ def main(argv: list[str] | None = None) -> int:
                 )
         except (AttributeError, ValueError, OSError):
             pass
+
+
+def main(argv: list[str] | None = None) -> int:
+    reconfigure_stdio_utf8()
 
     parser = argparse.ArgumentParser(
         prog="qlab.run", description="TDSE senaryosunu GUI olmadan koştur"

@@ -20,6 +20,7 @@ from qlab.app.transparency import TransparencyPanel
 from qlab.engine.tdse import factory
 from qlab.engine.tdse.propagator import evolve
 from qlab.errors import QLabError, ScenarioError
+from qlab.run import reconfigure_stdio_utf8
 from qlab.scenario.loader import load_scenario
 from qlab.scenario.schema import TDSEScenario
 from qlab.viz.frames import build_payload
@@ -100,6 +101,11 @@ class TDSEWindow(QtWidgets.QMainWindow):
 
 
 def main(argv: list[str] | None = None) -> int:
+    # `qlab.run.main()` ile aynı desen, aynı yerden (iş başlamadan önce)
+    # çağrılır — bkz. reconfigure_stdio_utf8 docstring'i. CP1252 konsolda
+    # Türkçe diyakritikler artık kaçış dizisi olarak değil doğrudan basılır.
+    reconfigure_stdio_utf8()
+
     parser = argparse.ArgumentParser(prog="qlab.app.main")
     parser.add_argument("scenario", help="YAML senaryo dosyası")
     args = parser.parse_args(argv)

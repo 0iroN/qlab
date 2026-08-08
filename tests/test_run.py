@@ -65,7 +65,9 @@ def test_run_scenario_returns_frames_and_provenance(scenario_file):
 def test_run_scenario_preserves_norm(scenario_file):
     result = run.run_scenario(scenario_file)
     final_norm = np.sum(np.abs(result.frames[-1]) ** 2) * result.grid.dx
-    assert final_norm == pytest.approx(1.0, abs=1e-10)
+    # rel=0.0: varsayılan rel=1e-6 yazılan abs=1e-10'u ezmesin. Ölçülen sapma
+    # 3.55e-15; abs=2e-14 ~5.6x payla bağlayıcı.
+    assert final_norm == pytest.approx(1.0, abs=2e-14, rel=0.0)
 
 
 def test_save_writes_readable_npz(scenario_file, tmp_path):

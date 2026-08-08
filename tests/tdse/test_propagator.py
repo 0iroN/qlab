@@ -34,7 +34,9 @@ def test_single_step_preserves_norm(grid):
     prop = SplitOperatorPropagator(
         grid=grid, potential=potentials.harmonic(grid, omega=0.2), dt=0.01
     )
-    assert norm_of(prop.step(psi), grid) == pytest.approx(1.0, abs=1e-12)
+    # rel=0.0: varsayılan rel=1e-6 yazılan abs=1e-12'yi ezmesin. Ölçülen sapma
+    # 2.22e-16; abs=1e-15 ~4.5x payla bağlayıcı (bkz. b1-1a-tolerans-raporu).
+    assert norm_of(prop.step(psi), grid) == pytest.approx(1.0, abs=1e-15, rel=0.0)
 
 
 @settings(deadline=None, max_examples=25)
@@ -52,7 +54,10 @@ def test_norm_conserved_for_arbitrary_dt_and_potential(dt, barrier_height):
     )
     for _ in range(50):
         psi = prop.step(psi)
-    assert norm_of(psi, grid) == pytest.approx(1.0, abs=1e-10)
+    # rel=0.0: varsayılan rel=1e-6 yazılan abs=1e-10'u ezmesin. Genişletilmiş
+    # bir dt/height taramasında (50 adım) en kötü ölçülen sapma 1.554e-14
+    # (dt=0.042, height=0.211); abs=1e-13 ~6.4x payla bağlayıcı.
+    assert norm_of(psi, grid) == pytest.approx(1.0, abs=1e-13, rel=0.0)
 
 
 def test_free_packet_centre_moves_at_group_velocity(grid):
@@ -117,7 +122,10 @@ def test_imaginary_time_converges_to_harmonic_ground_state_energy(grid):
         psi = prop.step(psi)
     assert energy(psi) < before
     assert energy(psi) == pytest.approx(0.5 * omega, abs=1e-2)
-    assert norm_of(psi, grid) == pytest.approx(1.0, abs=1e-10)
+    # rel=0.0: varsayılan rel=1e-6 yazılan abs=1e-10'u ezmesin. imajiner
+    # zaman her adımda yeniden normalize ettiğinden ölçülen sapma tek bir
+    # yuvarlamaya iner: 2.22e-16; abs=1e-15 ~4.5x payla bağlayıcı.
+    assert norm_of(psi, grid) == pytest.approx(1.0, abs=1e-15, rel=0.0)
 
 
 def test_rejects_potential_with_wrong_shape(grid):
@@ -156,4 +164,6 @@ def test_2d_step_preserves_norm(grid2d):
     psi = gaussian_packet_2d(grid2d, x0=0.0, y0=0.0, kx0=0.5, ky0=-0.3, sigma=2.0)
     potential = np.zeros((grid2d.nx, grid2d.ny))
     prop = SplitOperatorPropagator(grid=grid2d, potential=potential, dt=0.01)
-    assert norm_of_2d(prop.step(psi), grid2d) == pytest.approx(1.0, abs=1e-12)
+    # rel=0.0: varsayılan rel=1e-6 yazılan abs=1e-12'yi ezmesin. Ölçülen sapma
+    # 2.22e-16; abs=1e-15 ~4.5x payla bağlayıcı.
+    assert norm_of_2d(prop.step(psi), grid2d) == pytest.approx(1.0, abs=1e-15, rel=0.0)

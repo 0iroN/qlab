@@ -19,7 +19,9 @@ def packet(grid):
 
 
 def test_norm_of_fresh_packet_is_one(grid, packet):
-    assert tdse_obs.norm(packet, grid) == pytest.approx(1.0, abs=1e-12)
+    # rel=0.0: varsayılan rel=1e-6 yazılan abs=1e-12'yi ezmesin. Ölçülen sapma
+    # 1.11e-16; abs=1e-15 ~9x payla bağlayıcı.
+    assert tdse_obs.norm(packet, grid) == pytest.approx(1.0, abs=1e-15, rel=0.0)
 
 
 def test_density_is_real_and_nonnegative(packet):
@@ -29,11 +31,16 @@ def test_density_is_real_and_nonnegative(packet):
 
 
 def test_expectation_position_recovers_x0(grid, packet):
-    assert tdse_obs.expectation_position(packet, grid) == pytest.approx(-15.0, abs=1e-6)
+    # rel=0.0: beklenen -15.0 için varsayılan rel=1e-6 (=1.5e-5) yazılan
+    # abs=1e-6'dan daha gevşekti. Ölçülen sapma 1.776e-15; abs=1e-14 ~5.6x pay.
+    assert tdse_obs.expectation_position(packet, grid) == pytest.approx(-15.0, abs=1e-14, rel=0.0)
 
 
 def test_expectation_momentum_recovers_k0(grid, packet):
-    assert tdse_obs.expectation_momentum(packet, grid) == pytest.approx(1.2, abs=1e-6)
+    # rel=0.0: fiilen uygulanan, varsayılan rel=1e-6'nın (=1.2e-6) yazılan
+    # abs=1e-6'yı ezdiği haldi. Ölçülen sapma tam 0.0 (bit-bit eşit) olduğu
+    # için yazarın abs=1e-6'sı korunuyor, sadece gerçekten enforce ediliyor.
+    assert tdse_obs.expectation_momentum(packet, grid) == pytest.approx(1.2, abs=1e-6, rel=0.0)
 
 
 def test_position_spread_recovers_sigma(grid, packet):
@@ -55,7 +62,11 @@ def test_probability_beyond_splits_symmetric_packet_in_half(grid):
     # bölünemez ve simetrik bölünme sağlanamaz. Bu nedenle paketin merkezini
     # iki ızgara noktası arasındaki orta noktaya yerleştiriyoruz.
     psi = gaussian_packet(grid, x0=grid.dx / 2, k0=0.0, sigma=5.0)
-    assert tdse_obs.probability_beyond(psi, grid, boundary=grid.dx / 2) == pytest.approx(0.5, abs=1e-12)
+    # rel=0.0: varsayılan rel=1e-6 (=5e-7) yazılan abs=1e-12'yi ezmesin.
+    # Ölçülen sapma 5.55e-17; abs=3e-16 ~5.4x payla bağlayıcı.
+    assert tdse_obs.probability_beyond(psi, grid, boundary=grid.dx / 2) == pytest.approx(
+        0.5, abs=3e-16, rel=0.0
+    )
 
 
 def test_probability_beyond_does_not_renormalise(grid, packet):
@@ -120,12 +131,16 @@ def test_guard_does_not_fire_on_legitimate_very_small_density(grid, packet):
     total_density = float(np.sum(tdse_obs.density(small_psi)))
     assert 1e-10 < total_density < 1e-4
 
+    # rel=0.0: beklenen -15.0 için varsayılan rel=1e-6 (=1.5e-5) yazılan
+    # abs=1e-6'dan daha gevşekti. Ölçülen sapma 1.776e-15; abs=1e-14 ~5.6x pay.
     assert tdse_obs.expectation_position(small_psi, grid) == pytest.approx(
-        -15.0, abs=1e-6
+        -15.0, abs=1e-14, rel=0.0
     )
     assert tdse_obs.position_spread(small_psi, grid) == pytest.approx(6.0, rel=1e-6)
+    # rel=0.0: varsayılan rel=1e-6 (=1.2e-6) yazılan abs=1e-6'yı ezmesin.
+    # Ölçülen sapma 2.22e-16; abs=1e-15 ~4.5x payla bağlayıcı.
     assert tdse_obs.expectation_momentum(small_psi, grid) == pytest.approx(
-        1.2, abs=1e-6
+        1.2, abs=1e-15, rel=0.0
     )
     assert tdse_obs.expectation_energy(
         small_psi, grid, potentials.free(grid)

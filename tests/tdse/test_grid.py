@@ -18,7 +18,11 @@ def test_x_starts_at_minus_half_length():
 def test_fft_roundtrip():
     grid = Grid1D(n=128, length=20.0)
     f = np.exp(-grid.x**2)
-    np.testing.assert_allclose(np.fft.ifft(np.fft.fft(f)).real, f, atol=1e-12)
+    # rtol=0.0: varsayılan rtol=1e-7 yazılan atol=1e-12'yi ezmesin. Ölçülen en
+    # büyük mutlak fark 2.22e-16; atol=1e-15 ~4.5x payla bağlayıcı.
+    np.testing.assert_allclose(
+        np.fft.ifft(np.fft.fft(f)).real, f, atol=1e-15, rtol=0.0
+    )
 
 
 def test_spectral_second_derivative_matches_analytic():
@@ -30,7 +34,9 @@ def test_spectral_second_derivative_matches_analytic():
     wave_number = 2.0 * np.pi / grid.length
     f = np.sin(wave_number * grid.x)
     second = np.fft.ifft(-grid.k2 * np.fft.fft(f)).real
-    np.testing.assert_allclose(second, -(wave_number**2) * f, atol=1e-10)
+    # rtol=0.0: varsayılan rtol=1e-7 yazılan atol=1e-10'u ezmesin. Ölçülen en
+    # büyük mutlak fark 1.185e-12; atol=1e-11 ~8.5x payla bağlayıcı.
+    np.testing.assert_allclose(second, -(wave_number**2) * f, atol=1e-11, rtol=0.0)
 
 
 def test_k_max_equals_nyquist():
@@ -59,4 +65,6 @@ def test_grid2d_spectral_laplacian():
     kx0, ky0 = 2.0 * np.pi / grid.lx, 2.0 * np.pi / grid.ly
     f = np.sin(kx0 * grid.X) * np.sin(ky0 * grid.Y)
     laplacian = np.fft.ifft2(-grid.k2 * np.fft.fft2(f)).real
-    np.testing.assert_allclose(laplacian, -(kx0**2 + ky0**2) * f, atol=1e-10)
+    # rtol=0.0: varsayılan rtol=1e-7 yazılan atol=1e-10'u ezmesin. Ölçülen en
+    # büyük mutlak fark 1.860e-13; atol=1e-12 ~5.4x payla bağlayıcı.
+    np.testing.assert_allclose(laplacian, -(kx0**2 + ky0**2) * f, atol=1e-12, rtol=0.0)

@@ -121,7 +121,9 @@ def single_slit_profile(grid_512: Grid2D) -> tuple[np.ndarray, np.ndarray]:
 def test_norm_and_density_shapes():
     grid = Grid2D(nx=128, ny=128, lx=60.0, ly=60.0)
     psi = gaussian_packet_2d(grid, x0=-15.0, y0=0.0, kx0=1.0, ky0=0.0, sigma=4.0)
-    assert tdse_obs_2d.norm(psi, grid) == pytest.approx(1.0, abs=1e-12)
+    # rel=0.0: varsayılan rel=1e-6 yazılan abs=1e-12'yi ezmesin. Ölçülen sapma
+    # 2.22e-16 (bkz. b1-1a-tolerans-raporu); abs=1e-15 ~4.5x payla bağlayıcı.
+    assert tdse_obs_2d.norm(psi, grid) == pytest.approx(1.0, abs=1e-15, rel=0.0)
     assert tdse_obs_2d.density(psi).shape == (128, 128)
 
 

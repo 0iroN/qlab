@@ -89,7 +89,13 @@ def test_simulated_transmission_matches_packet_integrated_analytic():
 
     # Sarma olmadığını kanıtla — bu kontrol olmadan ölçüm anlamsız
     assert tdse_obs.edge_probability(final, grid, width=40.0) < 1e-8
-    assert tdse_obs.norm(final, grid) == pytest.approx(1.0, abs=1e-10)
+    # rel=0.0: varsayılan rel=1e-6 yazılan abs=1e-10'u ezmesin. 32000 adımlık
+    # bu koşu, README'nin "Üniterlik garantisi" satırında andığı 8.427e-12'yi
+    # üretir; yazılan abs=1e-10 bu değere göre zaten ~11.9x payla bağlayıcı
+    # olduğundan korunuyor (yeniden sıkmak, 32000 FFT adımlık kümülatif
+    # yuvarlamanın platforma/derleyiciye bağlı son bit farklarına karşı
+    # kırılgan olurdu).
+    assert tdse_obs.norm(final, grid) == pytest.approx(1.0, abs=1e-10, rel=0.0)
 
     measured = tdse_obs.probability_beyond(final, grid, boundary=5.0)
     effective_width = float(np.count_nonzero(potential)) * grid.dx

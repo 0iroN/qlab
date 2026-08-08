@@ -92,7 +92,9 @@ def test_factory_builds_consistent_objects(tmp_path):
     assert potential.shape == (512,)
     assert psi0.shape == (512,)
     assert psi0.dtype == np.complex128
-    assert np.sum(np.abs(psi0) ** 2) * grid.dx == pytest.approx(1.0, abs=1e-12)
+    # rel=0.0: varsayılan rel=1e-6 yazılan abs=1e-12'yi ezmesin. Ölçülen sapma
+    # 2.22e-16; abs=1e-15 ~4.5x payla bağlayıcı.
+    assert np.sum(np.abs(psi0) ** 2) * grid.dx == pytest.approx(1.0, abs=1e-15, rel=0.0)
     assert prop.dt == pytest.approx(0.02)
     assert prop.mask is None
 

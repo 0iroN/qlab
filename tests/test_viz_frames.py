@@ -63,4 +63,7 @@ def test_transmitted_probability_is_reported(setup):
 
     psi = gaussian_packet(grid, x0=x_offset, k0=1.0, sigma=8.0)
     payload = frames.build_payload(psi, grid, potential, boundary=x_offset)
-    assert payload.transmitted == pytest.approx(0.5, abs=1e-12)
+    # rel=0.0: varsayılan rel=1e-6 (=5e-7) yazılan abs=1e-12'yi ezmesin.
+    # Ölçülen sapma tam 0.0 (bit-bit eşit) olduğundan yazarın abs=1e-12'si
+    # korunuyor.
+    assert payload.transmitted == pytest.approx(0.5, abs=1e-12, rel=0.0)

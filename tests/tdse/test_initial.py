@@ -13,7 +13,9 @@ def grid():
 
 def test_packet_is_normalised(grid):
     psi = gaussian_packet(grid, x0=-20.0, k0=1.0, sigma=5.0)
-    assert np.sum(np.abs(psi) ** 2) * grid.dx == pytest.approx(1.0, abs=1e-12)
+    # rel=0.0: varsayılan rel=1e-6 yazılan abs=1e-12'yi ezmesin. Ölçülen sapma
+    # 1.11e-16; abs=1e-15 ~9x payla bağlayıcı.
+    assert np.sum(np.abs(psi) ** 2) * grid.dx == pytest.approx(1.0, abs=1e-15, rel=0.0)
 
 
 def test_packet_is_complex(grid):
@@ -23,7 +25,9 @@ def test_packet_is_complex(grid):
 def test_expectation_position_matches_x0(grid):
     psi = gaussian_packet(grid, x0=-20.0, k0=1.0, sigma=5.0)
     w = np.abs(psi) ** 2
-    assert np.sum(w * grid.x) / np.sum(w) == pytest.approx(-20.0, abs=1e-6)
+    # rel=0.0: beklenen -20.0 için varsayılan rel=1e-6 (=2e-5) yazılan
+    # abs=1e-6'dan daha gevşekti. Ölçülen sapma 3.55e-15; abs=2e-14 ~5.6x pay.
+    assert np.sum(w * grid.x) / np.sum(w) == pytest.approx(-20.0, abs=2e-14, rel=0.0)
 
 
 def test_position_spread_matches_sigma(grid):
@@ -37,7 +41,9 @@ def test_position_spread_matches_sigma(grid):
 def test_expectation_momentum_matches_k0(grid):
     psi = gaussian_packet(grid, x0=0.0, k0=1.3, sigma=8.0)
     w = np.abs(np.fft.fft(psi)) ** 2
-    assert np.sum(w * grid.k) / np.sum(w) == pytest.approx(1.3, abs=1e-6)
+    # rel=0.0: beklenen 1.3 için varsayılan rel=1e-6 (=1.3e-6) yazılan
+    # abs=1e-6'dan daha gevşekti. Ölçülen sapma 2.22e-16; abs=1e-15 ~4.5x pay.
+    assert np.sum(w * grid.k) / np.sum(w) == pytest.approx(1.3, abs=1e-15, rel=0.0)
 
 
 def test_rejects_unresolved_sigma(grid):
@@ -54,7 +60,11 @@ def test_rejects_momentum_beyond_nyquist():
 def test_packet_2d_is_normalised():
     grid2d = Grid2D(nx=256, ny=256, lx=60.0, ly=60.0)
     psi = gaussian_packet_2d(grid2d, x0=-10.0, y0=0.0, kx0=1.0, ky0=0.0, sigma=3.0)
-    assert np.sum(np.abs(psi) ** 2) * grid2d.cell_area == pytest.approx(1.0, abs=1e-12)
+    # rel=0.0: varsayılan rel=1e-6 yazılan abs=1e-12'yi ezmesin. Ölçülen sapma
+    # 2.22e-16; abs=1e-15 ~4.5x payla bağlayıcı.
+    assert np.sum(np.abs(psi) ** 2) * grid2d.cell_area == pytest.approx(
+        1.0, abs=1e-15, rel=0.0
+    )
 
 
 # Anizotropik ızgara: dx = 200/32 = 6.25 (kaba eksen), dy = 60/256 = 0.234375
@@ -97,6 +107,8 @@ def test_packet_2d_accepts_packet_valid_on_both_axes(anisotropic_grid2d):
     psi = gaussian_packet_2d(
         anisotropic_grid2d, x0=0.0, y0=0.0, kx0=0.05, ky0=0.0, sigma=20.0
     )
+    # rel=0.0: varsayılan rel=1e-6 yazılan abs=1e-12'yi ezmesin. Ölçülen sapma
+    # 2.22e-16; abs=1e-15 ~4.5x payla bağlayıcı.
     assert np.sum(np.abs(psi) ** 2) * anisotropic_grid2d.cell_area == pytest.approx(
-        1.0, abs=1e-12
+        1.0, abs=1e-15, rel=0.0
     )

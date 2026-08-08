@@ -41,8 +41,14 @@ def test_square_well_rejects_nonpositive_wall_height(grid):
 
 def test_harmonic_matches_formula(grid):
     omega = 0.5
+    # rtol=0.0: varsayılan rtol=1e-7 yazılan atol=1e-12'yi ezmesin. Ölçülen en
+    # büyük mutlak fark tam 0.0 (bit-bit eşit; potentials.harmonic aynı
+    # ifadeyi hesaplıyor) olduğundan yazarın atol=1e-12'si korunuyor.
     np.testing.assert_allclose(
-        potentials.harmonic(grid, omega=omega), 0.5 * omega**2 * grid.x**2, atol=1e-12
+        potentials.harmonic(grid, omega=omega),
+        0.5 * omega**2 * grid.x**2,
+        atol=1e-12,
+        rtol=0.0,
     )
 
 
@@ -52,8 +58,11 @@ def test_harmonic_rejects_nonpositive_mass(grid):
 
 
 def test_uniform_field_is_linear(grid):
+    # rtol=0.0: varsayılan rtol=1e-7 yazılan atol=1e-12'yi ezmesin. Ölçülen en
+    # büyük mutlak fark tam 0.0 (bit-bit eşit) olduğundan yazarın
+    # atol=1e-12'si korunuyor.
     np.testing.assert_allclose(
-        potentials.uniform_field(grid, strength=0.01), 0.01 * grid.x, atol=1e-12
+        potentials.uniform_field(grid, strength=0.01), 0.01 * grid.x, atol=1e-12, rtol=0.0
     )
 
 
