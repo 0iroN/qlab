@@ -111,7 +111,8 @@ def test_core_hamiltonian_is_sum_of_parts(h2):
     np.testing.assert_allclose(
         core_hamiltonian(basis, molecule),
         kinetic_matrix(basis) + nuclear_matrix(basis, molecule),
-        atol=1e-14,
+        rtol=0.0,
+        atol=1e-15,
     )
 
 
