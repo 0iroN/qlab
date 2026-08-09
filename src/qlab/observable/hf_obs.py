@@ -569,3 +569,108 @@ def promolecule_density(
     )
 
     return ScalarField(values=promolecule, grid=grid, provenance=provenance)
+
+
+def _birlesik(*gruplar: tuple[str, ...]) -> tuple[str, ...]:
+    """Birden cok kaynagin beyanlarini sirayi bozmadan, tekrarsiz birlestirir.
+
+    Fark haritasi iki alandan uretilir ve ikisinin de yaklasimlarini tasimak
+    zorundadir; ortak olanlar (Born-Oppenheimer, sonlu baz, izgara araligi)
+    iki kez yazilmasin diye tekrar ayiklanir.
+    """
+    return tuple(dict.fromkeys(item for grup in gruplar for item in grup))
+
+
+def density_difference(result: HFResult, grid: VolumeGrid) -> ScalarField:
+    """Yogunluk farki haritasi: bag koda YAZILMAZ, olculur.
+
+        fark(r) = rho_molekul(r) - rho_pro(r)
+
+    Iki alan da ayni izgarada, ayni bazda ve ayni kontraksiyon yolundan
+    uretilir (electron_density ve promolecule_density); bu fonksiyon yalnizca
+    .values'lari cikarir. Ne burada ne motorda "kovalent bag" diye bir terim
+    tanimlidir: harita sadece iki yogunlugun farkidir, bagin nerede oldugu bu
+    haritadan OKUNUR.
+
+    OKUNAN (olculdu, STO-3G, pad=6.0 bohr, n=120):
+      * H2 (r=0.74 A): cekirdekler arasi kutuda (|x|<1, |y|<1, 0.2<z<1.2 bohr)
+        +0.055005 elektron BIRIKIYOR, dis bolgede (z<-1.0 veya z>2.4)
+        -0.027068 EKSILIYOR. Kovalent birikim boylece bir sonuctur, girdi
+        degil.
+      * HF (r=0.917 A): orta duzlemin (z=0.8664 bohr) H tarafi -0.184099,
+        F tarafi +0.184097. Elektronegatiflik hicbir yerde tablo olarak
+        yazili degildir; yon yalnizca bu farktan cikar.
+      * H...H 5.0 A'ya acilinca haritanin mutlak maksimumu yakin
+        geometrinin 0.000643 katina duser: ortusme bitince harita duzlesir.
+
+    NE TASIR: donen ScalarField'in provenance'i iki kaynagin sapmalarini
+    BIRDEN tasir -- promolekulun serbest-atom referansinin gercek taban durum
+    olmamasi (kuresel ortalamali, kesirli isgalli SAD-tipi atom) ve izgaranin
+    cekirdek kabuklarini cozememesi. Iki sapmanin turetmesi ve olcumleri
+    promolecule_density'nin dokstring'inde ve bu bolumun basindaki notta;
+    burada tekrar edilmez, yalnizca tasindigi beyan edilir.
+
+    YUK GIZLENMEZ: promolekul her zaman NOTR serbest atomlarin toplamidir,
+    yani elektron sayisi her zaman SUM Z'dir. Molekulun elektron sayisi ise
+    SUM Z - yuk'tur. Dolayisiyla fark haritasi sifira DEGIL, net -yuk kadar
+    integre olur; bu tanimin sonucudur, hata degil. Beklenen sayi
+    diagnostics'te "expected_difference" olarak yazilir ve olculen deger
+    "integrated_difference" ile yan yana durur.
+    """
+    molekul = electron_density(result, grid)
+    promolekul = promolecule_density(result.molecule, result.basis_name, grid)
+    fark = molekul.values - promolekul.values
+
+    en_buyuk_aralik = float(grid.spacing.max())
+    olculen = float(fark.sum() * grid.volume_element)
+    # SUM Z - yuk eksi SUM Z = -yuk. Notr molekulde sifir.
+    beklenen = float(result.molecule.n_electrons - sum(
+        atom.atomic_number for atom in result.molecule.atoms
+    ))
+
+    provenance = Provenance(
+        method=(
+            f"yogunluk farki (molekul - promolekul) / {result.basis_name.upper()}: "
+            "RHF yogunlugu eksi kuresel ortalamali serbest atom toplami, "
+            "kartezyen izgara"
+        ),
+        approximations=_birlesik(
+            molekul.provenance.approximations, promolekul.provenance.approximations
+        ),
+        neglected=_birlesik(
+            molekul.provenance.neglected, promolekul.provenance.neglected
+        ),
+        expected_error=(
+            "Bu alan IKI kaynagin sapmasini birden tasir; ikisi de burada "
+            "goturulmez: (1) promolekulun serbest-atom referansi gercek taban "
+            "durum DEGILDIR ve bu secim dogrudan haritaya yazilir; (2) izgara "
+            "cekirdek kabuklarini cozmez. Ikisinin ayrintili beyani, kaynak "
+            "alanlarin kendi provenance metinlerindedir. IZGARA hatasi FARKTA "
+            "buyuk olcude goturulur cunku iki alan ayni izgarada ayni kesmeyi "
+            "yasar, ama goturme TAM DEGILDIR (olculdu, STO-3G): HF molekulu "
+            "pad=7.0/n=100 izgarasinda tekil alanlar 9.945510 ve 9.945470, "
+            "yani her biri 10'dan 0.054 sapiyor, farkin integrali ise yalnizca "
+            "+4.08e-05 (~1300 kat goturme); ayni molekul pad=6.0/n=120'de "
+            "10.002782 ve 10.002784 (bu kez ASIYOR), fark -1.70e-06; H2 "
+            "pad=6.0/n=120'de 1.99999934 ve 1.99999935, fark -1.41e-08. "
+            "Kalan artik molekule ve izgaraya gore degisir. Bu harita "
+            "gorsellestirme ve YONSEL okuma icin uygundur; integre nicelik "
+            "hesabi icin DEGILDIR."
+        ),
+        converged=(
+            molekul.provenance.converged and promolekul.provenance.converged
+        ),
+        diagnostics={
+            "integrated_difference": olculen,
+            "expected_difference": beklenen,
+            "integrated_electrons_molecule": molekul.provenance.diagnostics[
+                "integrated_electrons"
+            ],
+            "integrated_electrons_promolecule": promolekul.provenance.diagnostics[
+                "integrated_electrons"
+            ],
+            "grid_spacing_bohr": en_buyuk_aralik,
+        },
+    )
+
+    return ScalarField(values=fark, grid=grid, provenance=provenance)

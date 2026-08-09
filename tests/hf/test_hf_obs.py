@@ -24,6 +24,7 @@ from qlab.observable import hf_obs
 from qlab.observable.hf_obs import (
     VolumeGrid,
     _symmetry_blocks,
+    density_difference,
     electron_density,
     evaluate_basis_function,
     evaluate_orbital,
@@ -965,3 +966,102 @@ def test_provenance_izgara_sinirini_beyan_ediyor(hf_energies):
     assert field.provenance.diagnostics["expected_electrons"] == 10
     olculen = field.provenance.diagnostics["integrated_electrons"]
     assert 9.6 < olculen < 10.0, "cekirdek eksigi tanilamada gorunmeli"
+
+
+def test_fark_haritasi_sifira_integre_oluyor():
+    """Molekul ve promolekul ayni sayida elektron tasir; fark sifir olmali.
+
+    Olculdu (pad=6.0, n=120): int(fark) = -1.41e-08. Kalan, kutunun kuyrugu
+    kesmesinden gelir -- cozunurlukten DEGIL: ayni kutuda n=100'de -1.37e-08,
+    daha genis pad=7.0/n=80'de -1.10e-10.
+
+    TOLERANS NE ISE YARAR, NE ISE YARAMAZ (olculdu):
+    Bu sinir bir HASSASIYET olcusu degil, bir ELEKTRON SAYISI kontroludur.
+    Yakaladigi tek hata sinifi O(1) buyuklugundedir -- ornegin promolekul hic
+    cikarilmazsa integral 2.0 olur. Ona karsi 1e-5 de 1e-8 de ayni sekilde
+    kirmizi olur, o yuzden siniri suslemek icin daraltmiyoruz.
+    YAKALAMADIGI: isaret hatasi (rho ve pro yer degistirse integral yine ~0
+    kalir) -- onu asagidaki bag/dis testi yakalar.
+    """
+    molecule = Molecule.from_string("H 0 0 0; H 0 0 0.74")
+    result = solve(molecule, "sto-3g")
+    grid = VolumeGrid.around(molecule, padding=6.0, points_per_axis=120)
+    field = density_difference(result, grid)
+    integral = float(field.values.sum() * grid.volume_element)
+    assert integral == pytest.approx(0.0, abs=1e-5, rel=0.0)
+
+
+def test_kovalent_bagda_elektron_birikiyor():
+    """MODULUN ASIL IDDIASI: bag koda yazilmaz, olculur.
+
+    H2'de elektron yogunlugu cekirdekler ARASINDA artar ve disarida azalir.
+    Olculdu (pad=6.0, n=120, kutu z in [-6, 7.398], x,y in [-6, 6] bohr):
+        bag bolgesi (|x|<1, |y|<1, 0.2<z<1.2 bohr) : +0.055005
+        dis bolge   (z<-1.0 veya z>2.4 bohr)       : -0.027068
+        fark maks +0.042281, min -0.064390
+    """
+    molecule = Molecule.from_string("H 0 0 0; H 0 0 0.74")
+    result = solve(molecule, "sto-3g")
+    grid = VolumeGrid.around(molecule, padding=6.0, points_per_axis=120)
+    field = density_difference(result, grid)
+    noktalar = grid.points
+    x, y, z = noktalar[..., 0], noktalar[..., 1], noktalar[..., 2]
+    bag = (np.abs(x) < 1.0) & (np.abs(y) < 1.0) & (z > 0.2) & (z < 1.2)
+    dis = (z < -1.0) | (z > 2.4)
+    bagda = float((field.values * bag).sum() * grid.volume_element)
+    disarida = float((field.values * dis).sum() * grid.volume_element)
+    assert bagda > 0.03, "cekirdekler arasinda elektron BIRIKMELI"
+    assert disarida < -0.01, "dis bolgeden elektron CEKILMELI"
+    assert bagda > abs(disarida), "birikim baskin olmali"
+
+
+def test_cok_ayrik_atomlarda_fark_kayboluyor():
+    """Bag yoksa molekul = promolekul olmali.
+
+    Olculdu: oran (uzak maks / yakin maks) = 0.0006, sinirin 330x altinda.
+    Izgaraya duyarsiz: n=79/80/81/100'de 0.0006-0.0007. Sinir bilerek gevsek --
+    iddia niceliksel degil YONSEL: ortusme bitince harita duzlesir.
+    """
+    uzak_molekul = Molecule.from_string("H 0 0 0; H 0 0 5.0")
+    uzak = density_difference(
+        solve(uzak_molekul, "sto-3g", max_iterations=300),
+        VolumeGrid.around(uzak_molekul, padding=5.0, points_per_axis=80),
+    )
+    yakin_molekul = Molecule.from_string("H 0 0 0; H 0 0 0.74")
+    yakin = density_difference(
+        solve(yakin_molekul, "sto-3g"),
+        VolumeGrid.around(yakin_molekul, padding=5.0, points_per_axis=80),
+    )
+    assert np.abs(uzak.values).max() < np.abs(yakin.values).max() / 5.0
+
+
+def test_polar_bagda_elektron_elektronegatif_atoma_geciyor():
+    """Elektronegatiflik KODA YAZILMADI; fark haritasindan olculuyor.
+
+    Yukaridaki uc test de H2 kullanir ve H2 simetriktir -- fark haritasi
+    orta duzleme gore ayna simetriktir, dolayisiyla hicbiri haritanin
+    DOGRU YONDE isaret degistirdigini sinamaz. HF'de yon belirgindir.
+
+    Olculdu (HF, r=0.917 A, orta duzlem z=0.8664 bohr):
+        pad=6.0 n=100 : H yarisi -0.183933 , F yarisi +0.183927
+        pad=6.0 n=120 : H yarisi -0.184099 , F yarisi +0.184097
+        pad=7.0 n=100 : H yarisi -0.183763 , F yarisi +0.183804
+    Uc izgarada +-%0.2 icinde: ~0.184 elektron H'den F'ye geciyor.
+
+    Sinirin gerekcesi: 0.05 esigi, olculen 0.184'un 3.7x altinda ve isaret
+    hatasini (yon tersine donerse) kesin kirmizi yapar.
+
+    UYARI -- bu teste int(fark) EKLEME: HF'de kutu kesme hatasi H2'den cok
+    daha buyuk ve izgaraya baglidir (pad=7/n=100'de +4.09e-05 olculdu, yani
+    ilk testin abs=1e-5 sinirini ASAR). O yuzden burada yalniz YON sinaniyor.
+    """
+    molecule = Molecule.from_string("H 0 0 0; F 0 0 0.917")
+    result = solve(molecule, "sto-3g")
+    grid = VolumeGrid.around(molecule, padding=6.0, points_per_axis=120)
+    field = density_difference(result, grid)
+    z = grid.points[..., 2]
+    orta = 0.5 * (molecule.atoms[0].position[2] + molecule.atoms[1].position[2])
+    h_tarafi = float((field.values * (z < orta)).sum() * grid.volume_element)
+    f_tarafi = float((field.values * (z > orta)).sum() * grid.volume_element)
+    assert h_tarafi < -0.05, "H tarafindan elektron CEKILMELI"
+    assert f_tarafi > 0.05, "F tarafinda elektron BIRIKMELI"
