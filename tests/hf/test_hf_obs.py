@@ -14,8 +14,9 @@ import pytest
 
 from qlab.engine.hf.basis import build_basis
 from qlab.engine.hf.integrals import overlap_matrix
+from qlab.engine.hf.scf import solve
 from qlab.errors import InvalidInputError
-from qlab.observable.hf_obs import VolumeGrid, evaluate_basis_function
+from qlab.observable.hf_obs import VolumeGrid, evaluate_basis_function, evaluate_orbital
 from qlab.types import Molecule
 
 
@@ -211,3 +212,58 @@ class TestVolumeGridAroundGirdiDogrulama:
             VolumeGrid(origin=np.zeros(3), spacing=np.array([1.0, 1.0, -1.0]), shape=(3, 3, 3))
         with pytest.raises(InvalidInputError):
             VolumeGrid(origin=np.zeros(3), spacing=np.ones(3), shape=(3, 3, 1))
+
+
+def test_homo_normu_kaba_izgarada_bile_bir(hf_energies):
+    """Olculdu: su/STO-3G'de HOMO normu n=60, 90 ve 120'de alti basamakta 1.000000.
+
+    Degerlik orbitalleri izgarada aninda yakinsar. Bu testin sikiligi bilinclidir:
+    HOMO gorsellestirdigimiz seydir ve dogru olmak zorundadir.
+    """
+    molecule = Molecule.from_string(hf_energies["h2o"]["atom"])
+    result = solve(molecule, "sto-3g")
+    grid = VolumeGrid.around(molecule, padding=6.0, points_per_axis=60)
+    homo = evaluate_orbital(result, molecule.n_electrons // 2 - 1, grid)
+    norm = float((homo**2).sum() * grid.volume_element)
+    assert norm == pytest.approx(1.0, abs=1e-5, rel=0.0)
+
+
+def test_cekirdek_orbitali_izgarada_yakinsamiyor_ve_bunu_soyluyoruz(hf_energies):
+    """BEYAN EDILEN SINIR -- kod hatasi degil.
+
+    Oksijenin 1s ussu 130.7, genisligi ~0.06 bohr. 6 bohr dolgulu kutuda 60
+    nokta ~0.203 bohr aralik verir; cekirdek orbitali cozulemez.
+    Olculdu: 1s normu n=60'ta 0.8599, n=120'de 0.9876.
+    Test bu sinniri KILITLER: kaba izgarada eksik, ince izgarada duzeliyor.
+    Biri gelip duzeltirse test kirmizi olur ve bu docstring guncellenir.
+    """
+    molecule = Molecule.from_string(hf_energies["h2o"]["atom"])
+    result = solve(molecule, "sto-3g")
+    kaba = VolumeGrid.around(molecule, padding=6.0, points_per_axis=60)
+    ince = VolumeGrid.around(molecule, padding=6.0, points_per_axis=120)
+    norm_kaba = float((evaluate_orbital(result, 0, kaba) ** 2).sum() * kaba.volume_element)
+    norm_ince = float((evaluate_orbital(result, 0, ince) ** 2).sum() * ince.volume_element)
+    assert norm_kaba == pytest.approx(0.8599, abs=0.01, rel=0.0)
+    assert norm_ince == pytest.approx(0.9876, abs=0.01, rel=0.0)
+    assert norm_kaba < norm_ince < 1.0
+
+
+def test_orbitaller_izgarada_dik(hf_energies):
+    """Farkli degerlik orbitalleri ortogonal olmali."""
+    molecule = Molecule.from_string(hf_energies["h2o"]["atom"])
+    result = solve(molecule, "sto-3g")
+    grid = VolumeGrid.around(molecule, padding=6.0, points_per_axis=80)
+    ucuncu = evaluate_orbital(result, 3, grid)
+    dorduncu = evaluate_orbital(result, 4, grid)
+    ortusme = float((ucuncu * dorduncu).sum() * grid.volume_element)
+    assert ortusme == pytest.approx(0.0, abs=1e-4, rel=0.0)
+
+
+def test_gecersiz_orbital_indeksi_reddediliyor():
+    molecule = Molecule.from_string("H 0 0 0; H 0 0 0.74")
+    result = solve(molecule, "sto-3g")
+    grid = VolumeGrid.around(molecule, padding=4.0, points_per_axis=20)
+    with pytest.raises(InvalidInputError, match="orbital"):
+        evaluate_orbital(result, 99, grid)
+    with pytest.raises(InvalidInputError, match="orbital"):
+        evaluate_orbital(result, -1, grid)

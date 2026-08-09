@@ -30,7 +30,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from qlab.engine.hf.basis import BasisFunction
+from qlab.engine.hf.basis import BasisFunction, build_basis
+from qlab.engine.hf.scf import HFResult
 from qlab.errors import InvalidInputError
 from qlab.types import Molecule
 
@@ -142,3 +143,37 @@ def evaluate_basis_function(function: BasisFunction, grid: VolumeGrid) -> np.nda
     radial_sum = np.tensordot(weights, radial, axes=(0, 0))  # (nx, ny, nz)
 
     return function.contraction_normalisation() * angular_factor * radial_sum
+
+
+def evaluate_orbital(result: HFResult, index: int, grid: VolumeGrid) -> np.ndarray:
+    """Bir molekuler orbitali izgaranin her noktasinda degerlendirir.
+
+    Orbital, baz fonksiyonlarinin MO katsayilariyla (result.coefficients'in
+    `index` sutunu) agirlikli toplamidir:
+
+        psi_index(r) = SUM_mu C[mu, index] * phi_mu(r)
+
+    `index` sifir tabanlidir ve result.coefficients'in sutun indeksidir
+    (HOMO = molecule.n_electrons // 2 - 1, LUMO = molecule.n_electrons // 2).
+    Sinir disi (negatif veya baz boyutunu asan) index icin InvalidInputError.
+
+    Her baz fonksiyonu izgarada tam olarak bir kez degerlendirilir (evaluate_
+    basis_function ile) ve agirlikli toplama eklenir -- baz, orbital basina
+    yeniden hesaplanmaz.
+
+    Baz, result.molecule ve result.basis_name'den build_basis ile yeniden
+    kurulur; solve() de basisi ayni sekilde (build_basis(molecule, basis_name))
+    kurdugu icin sutun sirasi result.coefficients ile eslesir.
+    """
+    n_basis = result.coefficients.shape[0]
+    if not (0 <= index < n_basis):
+        raise InvalidInputError(
+            f"orbital indeksi [0, {n_basis}) araliginda olmali, verilen: {index}"
+        )
+    basis = build_basis(result.molecule, result.basis_name)
+    orbital_coefficients = result.coefficients[:, index]
+
+    orbital = np.zeros(grid.shape, dtype=float)
+    for function, coefficient in zip(basis, orbital_coefficients):
+        orbital += coefficient * evaluate_basis_function(function, grid)
+    return orbital
