@@ -573,16 +573,20 @@ _SERBEST_ATOM_ISGALLERI: dict[str, list[float]] = {
 }
 
 
+@pytest.mark.parametrize("basis_name", ["sto-3g", "6-31g"])
 @pytest.mark.parametrize("symbol", sorted(_SERBEST_ATOM_ISGALLERI))
-def test_serbest_atom_elektron_sayisi_analitik_olarak_tam(symbol):
+def test_serbest_atom_elektron_sayisi_analitik_olarak_tam(symbol, basis_name):
     """Serbest atom yogunlugu TAM Z elektron tasir -- izgaradan bagimsiz olcum.
 
     Elektron sayisi int rho = Tr(P S)'dir ve bu izgaradan bagimsizdir. Orbital
     katsayilari S-ORTONORMAL oldugu surece (C^T S C = I) Tr(P S) = SUM_i n_i
     ozdesligi tam olarak saglanir; testin olctugu sey budur.
 
-    Olculdu: yedi element icin |Tr(P S) - Z| en fazla 2.665e-15 (O). Sinir
-    abs=1e-12, marj ~375x.
+    Olculdu: STO-3G'de yedi element icin |Tr(P S) - Z| en fazla 2.665e-15,
+    6-31G'de 5.329e-15. Sinir abs=1e-12, marj ~375x / ~188x. Iki baz de
+    kosuluyor cunku 6-31G kabuk basina birden fazla kontraksiyon tasir (s
+    blogu 2 degil 3 boyutlu, p blogu iki radyal kabuk): aufbau doldurmasi ve
+    blok cozumu orada gercekten daha genis bir alt uzayla sinanir.
 
     NE YAKALAR (olculdu -- MUTASYON: blok icindeki genellesmis ozdeger
     problemi yerine duz np.linalg.eigh, yani orbitallerin S yerine Oklit
@@ -597,14 +601,17 @@ def test_serbest_atom_elektron_sayisi_analitik_olarak_tam(symbol):
     yakalar. Iki test birbirinin yerine gecmez.
     """
     molecule = Molecule.from_string(f"{symbol} 0 0 0")
-    basis = build_basis(molecule, "sto-3g")
-    density = free_atom_density_matrix(symbol, "sto-3g")
+    basis = build_basis(molecule, basis_name)
+    density = free_atom_density_matrix(symbol, basis_name)
     sayim = float(np.trace(density @ overlap_matrix(basis)))
     assert sayim == pytest.approx(molecule.n_electrons, abs=1e-12, rel=0.0)
 
 
+@pytest.mark.parametrize("basis_name", ["sto-3g", "6-31g"])
 @pytest.mark.parametrize("symbol", sorted(_SERBEST_ATOM_ISGALLERI))
-def test_serbest_atom_dogal_isgalleri_beklenen_degerlerde_ve_pauli_siniri_icinde(symbol):
+def test_serbest_atom_dogal_isgalleri_beklenen_degerlerde_ve_pauli_siniri_icinde(
+    symbol, basis_name
+):
     """P S'nin ozdegerleri = dogal isgal sayilari; hicbiri 2'yi asamaz (Pauli).
 
     P = SUM_i n_i c_i c_i^T ve C^T S C = I ise P S'nin ozdegerleri tam olarak
@@ -612,8 +619,8 @@ def test_serbest_atom_dogal_isgalleri_beklenen_degerlerde_ve_pauli_siniri_icinde
     sayisi (izi) ayni kalsa bile. Ozdegerler simetrik S^(1/2) P S^(1/2)
     uzerinden hesaplanir (ayni spektrum, gercel ve kararli).
 
-    Olculdu: yedi element icin |dogal isgal - beklenen| en fazla 1.110e-15.
-    Sinir abs=1e-12, marj ~900x.
+    Olculdu: yedi element icin |dogal isgal - beklenen| STO-3G'de en fazla
+    2.220e-15, 6-31G'de 7.105e-15. Sinir abs=1e-12, marj ~450x / ~141x.
 
     NE YAKALAR (iki mutasyon da olculdu):
       (1) NAIF KOSEGEN ISGAL, P = diag(2, 2, 4/3, 4/3, 4/3): STO-3G'de 1s ve
@@ -630,9 +637,9 @@ def test_serbest_atom_dogal_isgalleri_beklenen_degerlerde_ve_pauli_siniri_icinde
     Dogru yol her elementte en buyuk isgali 2'nin 6.7e-16 altinda/ustunde
     birakir.
     """
-    basis = build_basis(Molecule.from_string(f"{symbol} 0 0 0"), "sto-3g")
+    basis = build_basis(Molecule.from_string(f"{symbol} 0 0 0"), basis_name)
     overlap = overlap_matrix(basis)
-    density = free_atom_density_matrix(symbol, "sto-3g")
+    density = free_atom_density_matrix(symbol, basis_name)
 
     ozdeger, vektor = np.linalg.eigh(overlap)
     kok_s = vektor @ np.diag(np.sqrt(ozdeger)) @ vektor.T
