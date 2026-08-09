@@ -248,15 +248,33 @@ def test_cekirdek_orbitali_izgarada_yakinsamiyor_ve_bunu_soyluyoruz(hf_energies)
     assert norm_kaba < norm_ince < 1.0
 
 
-def test_orbitaller_izgarada_dik(hf_energies):
-    """Farkli degerlik orbitalleri ortogonal olmali."""
+def test_farkli_simetrideki_orbitaller_izgarada_tam_dik(hf_energies):
+    """3a1 ile 1b1 SIMETRI geregi tam diktir -- izgara yakinsamasi geregi DEGIL.
+
+    Testin ilk adi "orbitaller izgarada dik"ti ve bu iddia YANLIS. Olculdu
+    (su/STO-3G, padding=6.0, n=80), tum MO ciftleri uzerinde:
+      cekirdek (indeks 0) iceren ciftler : maks 1.380e-02
+      yalniz degerlik ciftleri           : maks 1.618e-03
+      bu testin baktigi cift (3, 4)      : 3.706e-16
+    Yani orbitaller bu izgarada genel olarak dik DEGILDIR; cekirdek kabugunun
+    cozulememesi ortogonalligi bozar (bkz. asagidaki cekirdek testi). Eski
+    abs=1e-4 siniri hem olculen degerden 12 mertebe gevsekti (dekoratif), hem
+    de baska bir cift secilseydi KIRMIZI olurdu.
+
+    (3, 4) cifti tam sifir verir cunku su/STO-3G'de indeks 3 = 3a1 ve
+    indeks 4 = 1b1 (HOMO, duzlem disi p); farkli indirgenemez temsiller
+    oldugundan carpimlarinin integrali izgara kalitesinden bagimsiz olarak
+    sifirdir. Bu yuzden sinir makine hassasiyetine cekilebilir: abs=1e-12,
+    olculen 3.706e-16'ya ~2700x marj. Aci polinomunda veya katsayi
+    indekslemesinde bir hata bu simetriyi bozar ve test kirmizi olur.
+    """
     molecule = Molecule.from_string(hf_energies["h2o"]["atom"])
     result = solve(molecule, "sto-3g")
     grid = VolumeGrid.around(molecule, padding=6.0, points_per_axis=80)
     ucuncu = evaluate_orbital(result, 3, grid)
     dorduncu = evaluate_orbital(result, 4, grid)
     ortusme = float((ucuncu * dorduncu).sum() * grid.volume_element)
-    assert ortusme == pytest.approx(0.0, abs=1e-4, rel=0.0)
+    assert ortusme == pytest.approx(0.0, abs=1e-12, rel=0.0)
 
 
 def test_gecersiz_orbital_indeksi_reddediliyor():
