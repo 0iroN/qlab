@@ -1018,9 +1018,10 @@ def test_kovalent_bagda_elektron_birikiyor():
 def test_cok_ayrik_atomlarda_fark_kayboluyor():
     """Bag yoksa molekul = promolekul olmali.
 
-    Olculdu: oran (uzak maks / yakin maks) = 0.0006, sinirin 330x altinda.
-    Izgaraya duyarsiz: n=79/80/81/100'de 0.0006-0.0007. Sinir bilerek gevsek --
-    iddia niceliksel degil YONSEL: ortusme bitince harita duzlesir.
+    Olculdu (bu testin izgarasi, n=80): oran (uzak maks / yakin maks) =
+    0.000643, yani sinirin 311 kati altinda. Izgaraya duyarsiz: n=79/80/81/100
+    icin oran 0.000620-0.000651, sinirin 307-323 kati altinda. Sinir bilerek
+    gevsek -- iddia niceliksel degil YONSEL: ortusme bitince harita duzlesir.
     """
     uzak_molekul = Molecule.from_string("H 0 0 0; H 0 0 5.0")
     uzak = density_difference(
