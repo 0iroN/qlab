@@ -31,6 +31,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from qlab.engine.hf.basis import BasisFunction
+from qlab.errors import InvalidInputError
 from qlab.types import Molecule
 
 
@@ -46,6 +47,24 @@ class VolumeGrid:
     origin: np.ndarray
     spacing: np.ndarray
     shape: tuple[int, int, int]
+
+    def __post_init__(self) -> None:
+        for eksen, nokta in enumerate(self.shape):
+            if nokta < 2:
+                raise InvalidInputError(
+                    f"izgara her eksende en az 2 nokta icermeli "
+                    f"(eksen {eksen}), verilen shape: {self.shape}"
+                )
+        spacing = np.asarray(self.spacing, dtype=float)
+        if not np.all(np.isfinite(spacing)):
+            raise InvalidInputError(
+                f"spacing her eksende sonlu olmali, verilen: {self.spacing}"
+            )
+        if np.any(spacing <= 0):
+            raise InvalidInputError(
+                f"spacing her eksende pozitif olmali (kutu ters veya "
+                f"dejenere olmus olabilir), verilen: {self.spacing}"
+            )
 
     @property
     def axes(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -77,10 +96,25 @@ class VolumeGrid:
         aralik `points_per_axis` esit araliklarli noktaya bolunur (uc
         noktalar dahil, yani spacing = aralik / (points_per_axis - 1)).
         `padding` bohr birimindedir.
+
+        `points_per_axis` en az 2 olmalidir (aksi halde spacing sifira
+        bolme veya negatif/tanimsiz cikar) ve `padding` kutuyu ters
+        cevirmemeli veya dejenere etmemelidir (bir eksende yuksek sinirin
+        dusuk sinira esit ya da kucuk olmasi).
         """
+        if points_per_axis < 2:
+            raise InvalidInputError(
+                f"points_per_axis en az 2 olmali, verilen: {points_per_axis}"
+            )
         positions = np.array([atom.position for atom in molecule.atoms])
         low = positions.min(axis=0) - padding
         high = positions.max(axis=0) + padding
+        if np.any(high <= low):
+            raise InvalidInputError(
+                f"padding kutuyu ters cevirdi veya dejenere etti "
+                f"(yuksek sinir <= dusuk sinir): dusuk={low}, yuksek={high}, "
+                f"padding={padding}"
+            )
         spacing = (high - low) / (points_per_axis - 1)
         return cls(origin=low, spacing=spacing, shape=(points_per_axis,) * 3)
 
