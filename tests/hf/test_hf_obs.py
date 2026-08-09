@@ -312,6 +312,29 @@ def test_h2_yogunlugu_tam_iki_elektron():
     """Hidrojende cekirdek/degerlik ayrimi yok; izgara tam yakinsar.
 
     Olculdu: n=80 ve n=120 izgaralarda int(rho) = 2.000000.
+
+    MARJ GEREKCESI (duzeltildi -- olculdu, tahmin degil): bu sinirin (abs=
+    1e-5) daha once "sayisal izgara gurultusune (~1e-8) karsi ~1000x marj"
+    diye aciklanmasi YANLIS KIYASTI -- dogru soru sinirin GERCEKCI BIR
+    HATAYA karsi ne kadar marj biraktigidir. Iki capraz-terim bozulmasi
+    (kosegen-only kontraksiyon, kosegen-disi isaret ters cevirme -- ayni iki
+    mutasyon test_yogunluk_orbital_toplamiyla_ortusuyor testinde de
+    kullanilir) burada olculdu: int(rho) sirasiyla 1.204911 ve 0.409823
+    veriyor, yani 2.0'dan sapma 0.795089 ve 1.590177 -- sinirin cok
+    ustunde, marj ~7.95e4x ve ~1.59e5x.
+
+    Ayrica denendi ve ONEMLI BIR SINIRLAMA bulundu: yogunluk matrisinin iki
+    satirini yer degistirmek (index-confusion tipi olasi bir hata) H2/STO-3G
+    icin OLCULEBILIR HICBIR sapma URETMEZ -- integral tam olarak bit-bit ayni
+    kalir (fark 0.0). Sebebi mekanik degil, molekulun kendi simetrisi: H2'nin
+    bag orbitali iki H merkezinde esit buyuklukte esit isaretli katsayi tasir,
+    bu yuzden P00=P01=P10=P11 makine hassasiyetine kadar esittir (olculen
+    matris farki 2.22e-16); satir degisimi bu dorde-esit matrisi degistirmez.
+    Yani bu sinir buyuk capraz-terim bozulmalarini (~1e5x marjla) rahatlikla
+    yakalar ama H2'nin kendi simetrisi yuzunden bir satir/sutun yer-degistirme
+    turu index-confusion hatasina karsi HICBIR koruma saglamaz -- bu hata
+    sinifi icin marj bir sayi degil, sifir etki (test hicbir zaman kirmizi
+    olmaz).
     """
     molecule = Molecule.from_string("H 0 0 0; H 0 0 0.74")
     result = solve(molecule, "sto-3g")
@@ -322,11 +345,91 @@ def test_h2_yogunlugu_tam_iki_elektron():
 
 
 def test_yogunluk_her_yerde_negatif_degil():
+    """Yogunluk hicbir izgara noktasinda (float gurultusu disinda) negatif degil.
+
+    Bu gercek bir fiziksel ozelliktir: rho(r) = phi(r)^T P phi(r) ve
+    P = 2 C_occ C_occ^T pozitif yari-tanimli oldugundan rho(r) >= 0 her
+    noktada teorik olarak gecerlidir. Bu assertion o yuzden korunuyor.
+
+    AMA BU TEST SU IKI HATA SINIFINI YAKALAMAZ (olculdu, .superpowers/sdd/
+    b2-task-4-fix-report.md'de dogrulandi): kosegen-only kontraksiyon (capraz
+    terimler atlanmis) ve kosegen-disi isaret ters cevirme. Ikisi de bu
+    izgarada minimumu NEGATIF YAPMAZ:
+
+        mutasyon              H2 min (n=40)   H2O min (n=60)
+        kosegen-only           4.218e-14       4.463e-21
+        kosegen-disi isaret     3.649e-14       4.465e-21
+
+    Sebep yapisaldir: np.argmin(field.values) bu izgarada HER ZAMAN kutunun
+    en uzak kosesine duser (H2'de olculen konum (-5,-5,-5) bohr) -- molekulden
+    cok uzakta, tum baz fonksiyonlarinin sondugu ve yogunlugun kosegen
+    terimlerince (P_uu * phi_u(r)^2, herhangi bir P icin kare oldugundan
+    kosegensel olarak negatif OLAMAZ) domine edildigi bir nokta. Capraz terim
+    bozulmasi orada gorunmez.
+
+    test_yogunluk_orbital_toplamiyla_ortusuyor bu boslugu kapatir: orbital
+    yolu (evaluate_orbital, MO katsayilariyla) yogunluk-matrisi kontraksiyonuna
+    hic dokunmadigindan, capraz terim bozulmasi iki ifadeyi ayristirir ve o
+    test kirmizi olur.
+    """
     molecule = Molecule.from_string("H 0 0 0; H 0 0 0.74")
     result = solve(molecule, "sto-3g")
     grid = VolumeGrid.around(molecule, padding=5.0, points_per_axis=40)
     field = electron_density(result, grid)
     assert field.values.min() >= -1e-14
+
+
+def test_yogunluk_orbital_toplamiyla_ortusuyor(h2o):
+    """Yogunluk-matrisi kontraksiyonu, bagimsiz orbital-toplami ifadesiyle ortusuyor.
+
+    Kapali kabuk RHF yogunlugunun IKI bagimsiz ifadesi vardir:
+
+        rho(r) = SUM_uv P_uv phi_u(r) phi_v(r)      (yogunluk-matrisi yolu,
+                                                       electron_density'nin
+                                                       kullandigi)
+        rho(r) = 2 * SUM_i(occ) psi_i(r)^2           (orbital-toplami yolu)
+
+    Ikinci ifade P = 2 C_occ C_occ^T ozdesliginden dogar ve `evaluate_orbital`
+    ile TAMAMEN FARKLI bir kod yolundan (MO katsayilari, yogunluk matrisi
+    degil) hesaplanir. Bu yuzden yogunluk-matrisi kontraksiyonundaki bir
+    capraz terim bozulmasi (kosegen-only kontraksiyon veya kosegen-disi
+    isaret ters cevirme) orbital yolunu HIC ETKILEMEZ ama yogunluk-matrisi
+    yolunu buyuk olcude bozar -- iki ifade ayrisir ve bu test kirmizi olur.
+    (Ispat: .superpowers/sdd/b2-task-4-fix-report.md -- her iki mutasyon da
+    src/qlab/observable/hf_obs.py'ye gecici uygulanip bu testin kirmiziya
+    dondugu dogrulandi.)
+
+    test_yogunluk_her_yerde_negatif_degil bunu YAKALAMAZ (bkz. o testin
+    dokstring'i): oradaki np.argmin izgaranin uzak kosesine duser, capraz
+    terim bozulmasi orada gorunmez. Bu test o bosluk icin var; H2O kullanilir
+    (p fonksiyonlari var, acisal yol da zincirlenir -- H2/STO-3G tamamen
+    s-tipi).
+
+    Olculdu (bu fixture'da, padding=6.0, n=60): iki ifade arasindaki maks
+    mutlak fark 3.553e-15 (o noktada rho=24.09, yani goreli fark ~1.13e-15)
+    -- float64 makine epsilonu (2.22e-16) mertebesinde, iki farkli toplama
+    sirasinin (einsum kontraksiyonu vs orbital-basi kare toplami) beklenen
+    yuvarlama gurultusu, fiziksel bir uyusmazlik degil.
+
+    Sinir: atol=1e-10, rtol=1e-10 (np.testing.assert_allclose varsayilan
+    rtol=1e-7'ye guvenilmedi, ikisi de acikca verildi). Olculen mutlak sapmaya
+    (3.553e-15) marj ~2.8e4x, olculen goreli sapmaya (1.13e-15) marj ~8.8e4x.
+    Capraz terim bozulmasinin urettigi sapma (yogunlugun kendisi mertebesinde,
+    yani tipik olarak O(1) ve ustu -- bkz. baglama kaniti) bu sinirin
+    dokuz-on mertebe ustundedir.
+    """
+    molecule, _ = h2o
+    result = solve(molecule, "sto-3g")
+    grid = VolumeGrid.around(molecule, padding=6.0, points_per_axis=60)
+    field = electron_density(result, grid)
+
+    n_occ = molecule.n_electrons // 2
+    orbital_density = np.zeros(grid.shape, dtype=float)
+    for i in range(n_occ):
+        orbital_density += evaluate_orbital(result, i, grid) ** 2
+    orbital_density *= 2.0
+
+    np.testing.assert_allclose(field.values, orbital_density, atol=1e-10, rtol=1e-10)
 
 
 def test_provenance_izgara_sinirini_beyan_ediyor(hf_energies):
