@@ -15,10 +15,14 @@ icin yine de eklendi.
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError, replace
+
 import numpy as np
 import pytest
 
 from qlab.engine.hf.analysis import (
+    AnalysisReport,
+    analyse,
     dipole_debye,
     dipole_moment,
     homo_lumo,
@@ -401,3 +405,289 @@ def test_mayer_diagonal_matches_population_identity(water):
     row_sums = orders.sum(axis=1)
     populations = np.array([8.0, 1.0, 1.0]) - mulliken_charges(result)
     np.testing.assert_allclose(row_sums, 2 * populations, atol=1e-10, rtol=0.0)
+
+
+# ---------------------------------------------------------------------------
+# analyse() -- tek Provenance tasiyan rapor (B2 Task 7, B1'den devir).
+#
+# B1'in Global Constraint'i "her sonuc Provenance tasimak zorundadir" der ama
+# bu dosyanin yedi public fonksiyonu ciplak np.ndarray/float donduruyordu.
+# analyse() yedisini bir kez toplar ve TEK bir Provenance kurar. Asagidaki
+# testlerin her biri, sinirin hangi hatasini KIRMIZI yaptigini dokstringinde
+# yazar.
+# ---------------------------------------------------------------------------
+
+
+def test_analyse_tum_nicelikleri_donduruyor(water):
+    """Rapor, yedi fonksiyonun ciktisini BIREBIR tasimali -- yeniden hesap yok.
+
+    Kirmizi yaptigi hata: bir alanin yanlis fonksiyona baglanmasi veya
+    raporun degeri yeniden/farkli bir yoldan hesaplamasi. dipole_au ozellikle
+    dahil: planin ilk test taslaginda o alan HIC sinanmiyordu, yani cop bir
+    deger tasisa takim yesil kalirdi.
+    """
+    result, _ = water
+    rapor = analyse(result)
+    assert isinstance(rapor, AnalysisReport)
+    np.testing.assert_allclose(rapor.mulliken, mulliken_charges(result), rtol=0.0, atol=1e-15)
+    np.testing.assert_allclose(rapor.lowdin, lowdin_charges(result), rtol=0.0, atol=1e-15)
+    np.testing.assert_allclose(rapor.bond_orders, mayer_bond_orders(result), rtol=0.0, atol=1e-15)
+    np.testing.assert_allclose(rapor.dipole_au, dipole_moment(result), rtol=0.0, atol=1e-15)
+    assert rapor.dipole_debye == pytest.approx(dipole_debye(result), rel=1e-15, abs=0.0)
+    homo, lumo, gap = homo_lumo(result)
+    assert rapor.homo == pytest.approx(homo, rel=1e-15, abs=0.0)
+    assert rapor.lumo == pytest.approx(lumo, rel=1e-15, abs=0.0)
+    assert rapor.gap == pytest.approx(gap, rel=1e-15, abs=0.0)
+
+
+def test_analiz_raporu_dondurulmus(water):
+    """Rapor frozen olmali: tuketici (panel, CLI) bir alani yerinde degistirip
+    'olculmus' gorunumlu bir sayi enjekte edememeli.
+
+    Kirmizi yaptigi hata: dataclass'in frozen=True olmadan tanimlanmasi.
+    """
+    result, _ = water
+    rapor = analyse(result)
+    with pytest.raises(FrozenInstanceError):
+        rapor.gap = 0.0  # type: ignore[misc]
+
+
+def test_analiz_provenance_mulliken_uyarisini_tasiyor(water):
+    """Bu uyari bir formalite degil: LiH'te Mulliken'in ISARETI yanlis yonu gosterir.
+
+    Iddianin dogrulandigi yer bu dosyada:
+    test_lih_mulliken_sign_is_a_documented_basis_artifact (Mulliken yanilir) ve
+    test_lih_dipole_shows_correct_ionic_direction / test_ionic_character_ordering
+    (dipol dogru yonu gosterir).
+    """
+    result, _ = water
+    provenance = analyse(result).provenance
+    metin = (" ".join(provenance.approximations) + " " + provenance.expected_error).lower()
+    assert "mulliken" in metin
+    assert "dipol" in metin
+    assert "lih" in metin
+
+
+def test_analiz_provenance_mayer_ve_koopmans_uyarilarini_tasiyor(water):
+    result, _ = water
+    provenance = analyse(result).provenance
+    metin = (" ".join(provenance.neglected) + " " + provenance.expected_error).lower()
+    assert "koopmans" in metin or "orbital gevsemesi" in metin
+    assert "ayrisma" in metin
+
+
+def test_analiz_kendi_uyarilarini_KENDI_listesinde_tasiyor(water):
+    """Ustteki uc test TEK BASINA baglayici DEGILDIR -- mutasyonla olculdu.
+
+    Olculdu (tests/hf/test_analysis.py, 37 test, dort ayri mutasyon):
+      * approximations'tan Mulliken uyarisi SILINDI      -> 0 test kirildi
+      * approximations'tan dipol-birincil uyarisi SILINDI -> 0 test kirildi
+      * neglected'dan Koopmans uyarisi SILINDI            -> 0 test kirildi
+      * neglected'dan Mayer uyarisi SILINDI               -> 1 test kirildi
+    Sebep: o testler `approximations + expected_error` (ya da `neglected +
+    expected_error`) BIRLESIK metnine bakiyor, ve expected_error'un taban
+    metni zaten "Mulliken", "dipol", "LiH", "Koopmans" kelimelerini
+    iceriyor; ayrica dalga fonksiyonundan tasinan ihmal listesi "RHF ayrisma
+    kusuru" diyor. Yani analizin beyan LISTELERI tamamen bosaltilsa bile o
+    substring'ler metinde kalir ve takim yesil kalirdi.
+
+    Bu test her uyariyi KENDI listesinde ve ayirt edici bir parcayla (olculen
+    sayi ya da yontem adi) arar. Ayni dort mutasyon bu testle 1'er test kirar.
+    """
+    result, _ = water
+    provenance = analyse(result).provenance
+    approximations = " ".join(provenance.approximations).lower()
+    neglected = " ".join(provenance.neglected).lower()
+    assert "mulliken" in approximations
+    assert "-0.016028455" in approximations  # LiH/STO-3G, PySCF ile eslesen deger
+    assert "dipol" in approximations  # iyonik karakterin BIRINCIL olcusu
+    assert "koopmans" in neglected
+    assert "mayer" in neglected
+    assert "1.0" in neglected  # H2: her mesafede tam 1.0
+
+
+def test_analiz_dalga_fonksiyonunun_beyanlarini_da_tasiyor(water):
+    """Rapor, analiz ettigi dalga fonksiyonunun yaklasimlarini/ihmallerini de
+    tasimali -- Born-Oppenheimer ve sonlu baz seti analizde de yururluktedir.
+
+    Kirmizi yaptigi hata: analyse()'in sifirdan, YALNIZCA analize ozgu bir
+    beyan listesi kurup SCF'in listesini dusurmesi. Ayni desen bu depoda
+    zaten var: hf_obs.density_difference iki kaynagin beyanlarini birlestirir.
+    """
+    result, _ = water
+    provenance = analyse(result).provenance
+    assert set(result.provenance.approximations) <= set(provenance.approximations)
+    assert set(result.provenance.neglected) <= set(provenance.neglected)
+    # ...ve analizin kendi beyanlari da eklenmis olmali (yalnizca kopyalama degil).
+    assert len(provenance.approximations) > len(result.provenance.approximations)
+    assert len(provenance.neglected) > len(result.provenance.neglected)
+
+
+def test_analiz_yontemi_bazi_adiyla_beyan_ediyor(water):
+    """Panelde hangi bazin okundugu gorunmeli (precedent: test_hf_obs.py'de
+    `assert "6-31G" in buyuk.provenance.method`).
+
+    Kirmizi yaptigi hata: method'un sabit bir metne ("RHF analizi") yazilmasi.
+    """
+    result, _ = water
+    assert "STO-3G" in analyse(result).provenance.method
+
+
+def test_analiz_provenance_makine_okunur_tanilari_tasiyor(water):
+    """Substring kontrolu tek basina zayiftir: icinde "mulliken dipol lih"
+    gecen sacma bir metin de gecer. Bu yuzden provenance ayrica olculen/
+    beklenen ciftini makine-okunur tasir (precedent: hf_obs'ta
+    diagnostics["expected_electrons"]).
+
+    Olculdu (su/STO-3G): n_occupied=5, n_orbitals=7, Mulliken yuklerinin
+    toplami -7.105427357601002e-15, molekulun yuku 0.
+
+    UYARI (olculdu): notr bir molekulde `mulliken_charge_sum`'i
+    `pytest.approx(0.0)` ile sinamak BAGLAYICI DEGILDIR -- alani sabit 0.0
+    yazan bir mutasyon 0 test kirdi. Bu yuzden asagida deger, olculen
+    toplamla BIREBIR karsilastirilir (iki taraf da ayni cagrinin ciktisi,
+    yani bit-esit olmak zorunda) ve yuku SIFIR OLMAYAN sistem
+    test_isgal_edilmis_orbital_yoksa_HOMO_uydurulmuyor icinde sinanir.
+    """
+    result, _ = water
+    diagnostics = analyse(result).provenance.diagnostics
+    assert diagnostics["n_occupied"] == 5
+    assert diagnostics["n_orbitals"] == 7
+    assert diagnostics["expected_charge"] == 0
+    assert diagnostics["mulliken_charge_sum"] == float(np.sum(mulliken_charges(result)))
+    # SCF'in kendi tanilari da dusurulmemeli: converged=True isaretinin yaninda
+    # onu destekleyen sayi (final_residual, iterations) durmali.
+    assert result.provenance.diagnostics.items() <= diagnostics.items()
+
+
+def test_analiz_scf_kararlilik_hukmunu_kaybetmiyor(water):
+    """Analiz, analiz ettigi dalga fonksiyonu kadar guvenilirdir.
+
+    SCF bir eyer noktasina oturduysa rapordaki her yuk ve her bag mertebesi
+    o eyer noktasindan hesaplanmistir. Raporun provenance'i SCF'in kararlilik
+    hukmunu DUSURURSE panel kararlilik satirini hic basmaz ve okuyucu bunu
+    "sorun yok" diye okur -- Provenance.stability dokstringinin tam olarak
+    uyardigi hata.
+
+    Olculdu (su/STO-3G): stable=True, lowest_eigenvalue=2.0926707415493113,
+    n_rotations=10. Alanlarin gercekten dolu oldugu ayrica sinanir; bos bir
+    StabilityVerdict tasimak da bilgi kaybidir.
+    """
+    result, _ = water
+    verdict = analyse(result).provenance.stability
+    assert verdict == result.provenance.stability
+    assert verdict is not None
+    assert verdict.stable is True
+    assert verdict.n_rotations == 10
+    assert verdict.lowest_eigenvalue == pytest.approx(2.0926707415493113, rel=1e-9, abs=0.0)
+
+
+def test_analiz_olculmemis_kararliligi_UYDURMUYOR(hf_energies):
+    """Tersi de gecerli: SCF kararliligi OLCMEDIYSE rapor bir hukum uyduramaz.
+
+    solve(stability=False) ile kosulan sonucun provenance.stability'si None'dir
+    (olculdu). analyse() bu alani result.provenance'tan TASIR; kendi basina
+    stability(result) cagirip yeniden hesaplamaz -- oyle yapsaydi rapor,
+    kaynagin OLCMEDIGI bir hukmu beyan ederdi.
+
+    Kirmizi yaptigi hata: analyse() icinde stability(result) cagrilmasi veya
+    sabit bir StabilityVerdict yazilmasi.
+    """
+    result = solve(
+        Molecule.from_string(hf_energies["h2o"]["atom"]), "sto-3g", stability=False
+    )
+    assert result.provenance.stability is None
+    assert analyse(result).provenance.stability is None
+
+
+def test_analiz_yakinsama_hukmunu_tasiyor(water):
+    """converged de AYNEN tasinir: yakinsamamis bir dalga fonksiyonundan
+    hesaplanmis yukler "yakinsadi" diye gosterilemez.
+
+    solve() yakinsamayi ISTISNA ile bildirdigi icin (SCFConvergenceError)
+    converged=False tasiyan bir HFResult uretilemez; olculdu: depoda HFResult
+    YALNIZCA scf.solve() icinde kurulur (tek `HFResult(` cagrisi, scf.py:395)
+    ve orada provenance'a converged=True SABIT yazilir -- converged=False
+    yalnizca factory.run_scan'in ScanResult'inda gorunur. Bu yuzden test
+    frozen dataclass'i dataclasses.replace ile kopyalayip alani dogrudan bozar.
+
+    Kirmizi yaptigi hata: Provenance(converged=True) sabit yazilmasi.
+    """
+    result, _ = water
+    yakinsamamis = replace(
+        result, provenance=replace(result.provenance, converged=False)
+    )
+    assert analyse(yakinsamamis).provenance.converged is False
+    assert analyse(result).provenance.converged is True
+
+
+def test_lumo_yoksa_analiz_patlamiyor_ve_bunu_beyan_ediyor():
+    """He/STO-3G'de bos orbital YOK -- LUMO diye bir sey yok.
+
+    Olculdu: homo_lumo(He) ham `IndexError: index 1 is out of bounds for
+    axis 0 with size 1` firlatiyor (n_occupied=1, n_orbitals=1). analyse()
+    bunu tuketiciye yansitmamali. gap=0.0 yazmak "bosluk yok, metalik" diye
+    okunurdu; None + beyan dogru. Ayni karar StabilityVerdict.
+    lowest_eigenvalue'da zaten verilmis.
+
+    Olculdu (He/STO-3G): orbital_energies = [-0.8760355074024515].
+    """
+    result = solve(Molecule.from_string("He 0 0 0"), "sto-3g")
+    rapor = analyse(result)
+    assert rapor.lumo is None
+    assert rapor.gap is None
+    assert rapor.homo == pytest.approx(-0.8760355074024515, rel=1e-9, abs=0.0)
+    provenance = rapor.provenance
+    assert provenance.diagnostics["n_occupied"] == 1
+    assert provenance.diagnostics["n_orbitals"] == 1
+    # Ayirt edici cumle: sade "lumo" substring'i baglayici DEGILDIR, cunku
+    # analizin taban expected_error metni zaten "HOMO/LUMO Koopmans duzeyinde
+    # kalir" diyor -- beyan tamamen silinse bile o substring gecerdi.
+    assert "bu sistemde lumo yok" in provenance.expected_error.lower()
+
+
+def test_lumo_yoksa_homo_hala_EN_YUKSEK_isgal_edilmis_orbital():
+    """He'de tek orbital vardir, yani yanlis bir HOMO indeksi orada AYNI sayiyi
+    verir ve fark edilmez. He2/STO-3G bu boslugu kapatir: n_occupied=2,
+    n_orbitals=2 (yine LUMO yok) ama iki orbital enerjisi FARKLIDIR.
+
+    Olculdu (He2, r=2.0 A, STO-3G): orbital_energies =
+    [-0.8968359506154..., -0.8542936219536...]. HOMO en yuksek isgal edilmis
+    orbitaldir, yani index 1 -> -0.85429362. Index 0 alan bir hata -0.89683595
+    verirdi; test bu iki degeri ayirt eder.
+    """
+    result = solve(Molecule.from_string("He 0 0 0; He 0 0 2.0"), "sto-3g")
+    assert result.molecule.n_electrons // 2 == result.orbital_energies.shape[0] == 2
+    rapor = analyse(result)
+    assert rapor.lumo is None and rapor.gap is None
+    assert rapor.homo == pytest.approx(-0.8542936219536, rel=1e-9, abs=0.0)
+
+
+def test_isgal_edilmis_orbital_yoksa_HOMO_uydurulmuyor():
+    """Simetrik bosluk (controller listesinde yoktu, burada olculdu): isgal
+    edilmis orbital olmayan bir sistemde HOMO da yoktur.
+
+    Olculdu (Li, charge=3 -> 0 elektron, STO-3G, 5 baz fonksiyonu):
+    homo_lumo() patlamaz ama SESSIZCE yanlis doner -- n_occupied-1 = -1
+    indeksi son (en yuksek) orbitale sarar ve sonuc
+    homo=-0.8775791414291554, lumo=-4.407952827261487, gap=-3.5303736858323314
+    olur: NEGATIF bir bosluk, yani fiziksel olarak imkansiz bir sayi rapora
+    "olculmus" gibi girer. analyse() bu durumda homo ve gap'i None birakir;
+    LUMO gercekten vardir (en dusuk orbital) ve tasinir.
+    """
+    result = solve(Molecule.from_string("Li 0 0 0", charge=3), "sto-3g")
+    rapor = analyse(result)
+    assert rapor.homo is None
+    assert rapor.gap is None
+    assert rapor.lumo == pytest.approx(-4.407952827261487, rel=1e-9, abs=0.0)
+    assert rapor.provenance.diagnostics["n_occupied"] == 0
+    # Ayirt edici cumle; sade "homo" substring'i taban metinde zaten var.
+    assert "isgal edilmis orbital yok" in rapor.provenance.expected_error.lower()
+    # Yuku SIFIR OLMAYAN tek sistem: Mulliken toplami molekulun yukune esit
+    # olmak zorundadir (olculdu: 3.0, charge=3). Notr sistemde iki taraf da
+    # sifir oldugu icin bu ciftin sabit yazilmasi orada gorunmez; burada
+    # gorunur.
+    assert rapor.provenance.diagnostics["expected_charge"] == 3
+    assert rapor.provenance.diagnostics["mulliken_charge_sum"] == pytest.approx(
+        3.0, abs=1e-10, rel=0.0
+    )
