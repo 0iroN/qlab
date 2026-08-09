@@ -16,7 +16,12 @@ from qlab.engine.hf.basis import build_basis
 from qlab.engine.hf.integrals import overlap_matrix
 from qlab.engine.hf.scf import solve
 from qlab.errors import InvalidInputError
-from qlab.observable.hf_obs import VolumeGrid, evaluate_basis_function, evaluate_orbital
+from qlab.observable.hf_obs import (
+    VolumeGrid,
+    electron_density,
+    evaluate_basis_function,
+    evaluate_orbital,
+)
 from qlab.types import Molecule
 
 
@@ -301,3 +306,38 @@ def test_gecersiz_orbital_indeksi_reddediliyor():
         evaluate_orbital(result, 99, grid)
     with pytest.raises(InvalidInputError, match="orbital"):
         evaluate_orbital(result, -1, grid)
+
+
+def test_h2_yogunlugu_tam_iki_elektron():
+    """Hidrojende cekirdek/degerlik ayrimi yok; izgara tam yakinsar.
+
+    Olculdu: n=80 ve n=120 izgaralarda int(rho) = 2.000000.
+    """
+    molecule = Molecule.from_string("H 0 0 0; H 0 0 0.74")
+    result = solve(molecule, "sto-3g")
+    grid = VolumeGrid.around(molecule, padding=7.0, points_per_axis=80)
+    field = electron_density(result, grid)
+    integral = float(field.values.sum() * grid.volume_element)
+    assert integral == pytest.approx(2.0, abs=1e-5, rel=0.0)
+
+
+def test_yogunluk_her_yerde_negatif_degil():
+    molecule = Molecule.from_string("H 0 0 0; H 0 0 0.74")
+    result = solve(molecule, "sto-3g")
+    grid = VolumeGrid.around(molecule, padding=5.0, points_per_axis=40)
+    field = electron_density(result, grid)
+    assert field.values.min() >= -1e-14
+
+
+def test_provenance_izgara_sinirini_beyan_ediyor(hf_energies):
+    """Bu modulun kimligi: yaklasim gizlenmez, yaziya dokulur."""
+    molecule = Molecule.from_string(hf_energies["h2o"]["atom"])
+    result = solve(molecule, "sto-3g")
+    grid = VolumeGrid.around(molecule, padding=6.0, points_per_axis=60)
+    field = electron_density(result, grid)
+    metin = " ".join(field.provenance.approximations) + " " + field.provenance.expected_error
+    assert "izgara" in metin.lower()
+    assert "cekirdek" in metin.lower()
+    assert field.provenance.diagnostics["expected_electrons"] == 10
+    olculen = field.provenance.diagnostics["integrated_electrons"]
+    assert 9.6 < olculen < 10.0, "cekirdek eksigi tanilamada gorunmeli"

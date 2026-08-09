@@ -33,6 +33,7 @@ import numpy as np
 from qlab.engine.hf.basis import BasisFunction, build_basis
 from qlab.engine.hf.scf import HFResult
 from qlab.errors import InvalidInputError
+from qlab.provenance import Provenance
 from qlab.types import Molecule
 
 
@@ -177,3 +178,67 @@ def evaluate_orbital(result: HFResult, index: int, grid: VolumeGrid) -> np.ndarr
     for function, coefficient in zip(basis, orbital_coefficients):
         orbital += coefficient * evaluate_basis_function(function, grid)
     return orbital
+
+
+@dataclass(frozen=True)
+class ScalarField:
+    """Izgara uzerinde degerlendirilmis bir skaler nicelik ve provenance'i.
+
+    `values` sekli grid.shape ile aynidir, yani (nx, ny, nz). `provenance`,
+    bu alanin nasil uretildigini ve izgaranin hangi sinirlari tasidigini
+    beyan eder -- bkz. electron_density().
+    """
+
+    values: np.ndarray
+    grid: VolumeGrid
+    provenance: Provenance
+
+
+def electron_density(result: HFResult, grid: VolumeGrid) -> ScalarField:
+    """Elektron yogunlugunu izgaranin her noktasinda degerlendirir.
+
+    rho(r) = SUM_uv P_uv phi_u(r) phi_v(r)
+
+    P, result.density'dir (yogunluk matrisi). Her baz fonksiyonu izgarada
+    tam olarak bir kez degerlendirilir (evaluate_basis_function ile) ve
+    yogunluk matrisiyle kontrakte edilir -- evaluate_orbital isgal edilmis
+    orbitaller uzerinde dongu icinde cagrilmaz.
+
+    Donen ScalarField'in provenance'i izgaranin cozunurluk sinirini acikca
+    beyan eder: izgara cekirdek orbitallerini cozmez, bu yuzden hidrojen
+    disi atomlarda integre edilen elektron sayisi eksik cikar (degerlik
+    orbitalleri etkilenmez). diagnostics, olculen ve beklenen elektron
+    sayisini tasir ki sapma sayisal olarak gorunsun.
+    """
+    basis = build_basis(result.molecule, result.basis_name)
+    values = np.stack([evaluate_basis_function(function, grid) for function in basis])
+    density = np.einsum("uv,uxyz,vxyz->xyz", result.density, values, values)
+
+    en_buyuk_aralik = float(grid.spacing.max())
+    olculen = float(density.sum() * grid.volume_element)
+
+    provenance = Provenance(
+        method=f"RHF/{result.basis_name.upper()} elektron yogunlugu, kartezyen izgara",
+        approximations=(
+            "Born-Oppenheimer",
+            "tek Slater determinanti",
+            "sonlu baz seti",
+            f"duzgun kartezyen izgara, aralik {en_buyuk_aralik:.3f} bohr",
+        ),
+        neglected=("elektron korelasyonu", "goreli etkiler"),
+        expected_error=(
+            "izgara cekirdek orbitallerini cozmez: hidrojen disi atomlarda "
+            "integre edilen elektron sayisi eksik cikar (su/STO-3G, 0.203 bohr "
+            "aralik: 9.70 / 10). Degerlik orbitalleri etkilenmez -- ayni izgarada "
+            "HOMO normu 1.000000. Gorsellestirme icin uygundur, integre nicelik "
+            "hesabi icin DEGILDIR."
+        ),
+        converged=result.provenance.converged,
+        diagnostics={
+            "integrated_electrons": olculen,
+            "expected_electrons": result.molecule.n_electrons,
+            "grid_spacing_bohr": en_buyuk_aralik,
+        },
+    )
+
+    return ScalarField(values=density, grid=grid, provenance=provenance)
