@@ -473,11 +473,11 @@ def test_h2_promolekulu_iki_elektron():
     olarak_tam).
 
     Sinir (abs=1e-5) olculen sapmaya ~1850x marj birakir. Yakalar: bir atomun
-    yogunluk blogunun hic yazilmamasi (sapma 1.0) veya blok kosegen
-    yerlestirmesinin kaymasi. YAKALAMAZ: atomlar arasi capraz terimlerin
-    yanlislikla eklenmesi -- promolekul TANIMI geregi bloklar arasi terim
-    tasimaz ve o terimler eklenirse bu integral H2'de ~0.6 elektron artardi,
-    yani aslinda yakalar; ama bu, tanimin ihlali olurdu, izgara hatasi degil.
+    yogunluk blogunun hic yazilmamasi (sapma 1.0), blok kosegen
+    yerlestirmesinin kaymasi VE atomlar arasi capraz terimlerin yanlislikla
+    eklenmesi -- promolekul TANIMI geregi bloklar arasi terim tasimaz, ama bu
+    terimler eklenirse (olculdu) integral 2.132'ye kayar, yani bu test onu
+    da yakalar; sinirin (1e-5) cok ustunde bir sapma.
     """
     molecule = Molecule.from_string("H 0 0 0; H 0 0 0.74")
     grid = VolumeGrid.around(molecule, padding=7.0, points_per_axis=80)
@@ -675,12 +675,29 @@ def test_serbest_atom_yogunlugu_lityum_katyonunda_solve_ile_ortusuyor():
     NE YAKALAMAZ -- ve bu sinir bilincli olarak yaziliyor: iki taraf da AYNI
     Fock kurulumunu (scf._fock_matrix) ve ayni S^(-1/2) ortogonallestirmesini
     kullanir, cunku bu formullerin ikinci bir kopyasi tutulmamistir. Olculdu:
-    degisim katsayisini 0.5'ten 1.0'a cikaran mutasyon bu dosyadaki 24 testin
+    degisim katsayisini 0.5'ten 1.0'a cikaran mutasyon bu dosyadaki 64 testin
     HICBIRINI kirmaz -- iki taraf birlikte kayar. O formulu koruyan sey
     motorun kendi PySCF'e karsi dogrulanmis testleridir (ayni mutasyon
     tests/hf altinda 28 test kiriyor, olculdu). Bu test paylasilan formulu
-    degil, promolekule OZGU parcayi zincirler: simetri bloklamasi, aufbau ve
-    kesirli isgal atamasi, S-ortonormallik.
+    degil, promolekule OZGU parcayi zincirler: simetri bloklamasi, aufbau
+    siralamasi, S-ortonormallik.
+
+    KESIRLI ISGAL BOLUSTURMESINI ZINCIRLEMEZ -- bu onceki surumde YANLISLIKLA
+    iddia edilmisti, duzeltildi. Li+'nin 2 elektronu ilk (en dusuk enerjili)
+    s orbitaline TAM 2 olarak atanir, ikinci orbital 0 alir; occupation hic
+    kesir olmuyor. Olculdu (isgal atamasi dongusu iceriden izlendi):
+        Li+ -> [(2, 1)]           kesirli Kartezyen bolunme calisti mi? Hayir
+        He  -> [(2, 1)]           kesirli Kartezyen bolunme calisti mi? Hayir
+        O   -> [(2, 1), (4, 3)]   kesirli Kartezyen bolunme calisti mi? Evet
+    (O buraya kiyas icin; bu testte cozulmuyor.) Kesirli isgal yolu (kismen
+    dolu bir p kabugunun payini uc kartezyen yone esit dagitma) bu baz
+    setinde yalnizca kismen dolu p kabuklu atomlarda (C, N, O, F) calisir --
+    ve onlar icin RHF free-atom karsilastirmasi YOKTUR, cunku serbest O acik
+    kabuklu 3P'dir ve solve() bunu cozemez. Kesirli isgal bu yuzden yalnizca
+    IC TUTARLILIKLA sinanir: dogal isgal sayilarinin elle turetilen 4/3 gibi
+    degerlerle ortusmesi (test_serbest_atom_dogal_isgalleri_...) ve kuresel
+    simetri (test_serbest_atom_kuresel_simetrik). Bagimsiz bir referansa
+    ZINCIRLENMEZ -- bu, kacinilmaz bir sinirdir, gizlenmiyor.
     """
     for spec, charge in [("Li 0 0 0", 1), ("He 0 0 0", 0)]:
         molecule = Molecule.from_string(spec, charge=charge)
@@ -877,6 +894,63 @@ def test_serbest_atom_d_kabugu_reddediliyor():
     )
     with pytest.raises(UnsupportedSystemError, match="acisal momentum"):
         _symmetry_blocks([sahte_d])
+
+
+def test_simetri_bloklari_p_yonlerini_ayni_radyal_kabuga_esler():
+    """_symmetry_blocks dokstring'inin dayandigi sira varsayimini DOGRUDAN sinar.
+
+    _symmetry_blocks'un dokstring'i soyle der: p icin donen uc yon listesinin
+    (px, py, pz) k. elemanlari AYNI radyal kabuga aittir -- ve bu eslemenin
+    kaynagi build_basis'in (basis.py, BASKA BIR MODUL) her kabugu tek
+    seferde, bilesenleri sabit sirada uretmesidir. Bugune kadar bu varsayim
+    hicbir yerde DOGRUDAN sinanmiyordu: onu koruyan hicbir test yoktu,
+    yalnizca STO-3G'de dolayli olarak dogru cikiyordu (STO-3G'de her p
+    kabugu tek radyal kabuk tasir, yani mutasyon orada no-op'tur; 6-31G'de
+    iki radyal p kabugu vardir ve varsayim gercekten anlam tasir).
+
+    Bu test build_basis'in KENDI ciktisindaki bir ozelligi (BasisFunction.
+    primitives) _symmetry_blocks'un dondurdugu index eslemesi uzerinden
+    dogrudan karsilastirir -- _symmetry_blocks'un kendi ic mantigini tekrar
+    etmez: k. radyal kabugun px/py/pz temsilcileri, tanim geregi AYNI
+    primitifleri (ayni us ve katsayilarla) tasimak ZORUNDADIR, cunku
+    build_basis onlari ayni ic donguden (ayni primitifler tuple'i) uretir.
+
+    BAGLAYICILIK KANITI (olculdu, .superpowers/sdd/b2-task-5-fix-report.md):
+    _symmetry_blocks'un O/6-31G icin dondurdugu p grubu [[5, 8], [4, 7],
+    [3, 6]]'dir (pz, py, px). Yalnizca pz yon listesi ters cevrilip ([8, 5])
+    ayni karsilastirma calistirilinca:
+
+        AssertionError: k=0: yon indeksi 4 (primitives=(PrimitiveGaussian(
+        exponent=15.539616, coefficient=0.0708743), ..., exponent=1.0137618,
+        coefficient=0.7271586))) referans indeksi 8 (primitives=(
+        PrimitiveGaussian(exponent=0.2700058, coefficient=1.0),)) ile
+        uyusmuyor
+
+    yani ic (3 primitifli) kabuk ile dis (1 primitifli) valans kabugu
+    karistiriliyor -- tam da F1'in tarif ettigi mutasyon sekli. Gercek
+    (ters cevrilmemis) eslemede asagidaki dongu hicbir AssertionError
+    firlatmiyor.
+    """
+    molecule = Molecule.from_string("O 0 0 0")
+    basis = build_basis(molecule, "6-31g")
+    blocks = _symmetry_blocks(basis)
+    p_grubu = next(group for group in blocks if len(group) == 3)
+    assert len(p_grubu) == 3
+
+    boy = len(p_grubu[0])
+    assert boy > 1, "6-31G'de O'nun p'si en az iki radyal kabuk tasimali"
+    for yon in p_grubu[1:]:
+        assert len(yon) == boy
+
+    for k in range(boy):
+        referans = basis[p_grubu[0][k]].primitives
+        for yon in p_grubu[1:]:
+            assert basis[yon[k]].primitives == referans, (
+                f"k={k}: yon indeksi {yon[k]} (primitives="
+                f"{basis[yon[k]].primitives}) referans indeksi "
+                f"{p_grubu[0][k]} (primitives={referans}) ile uyusmuyor -- "
+                "ayni radyal kabuga ait olmalari gerekirdi"
+            )
 
 
 def test_provenance_izgara_sinirini_beyan_ediyor(hf_energies):

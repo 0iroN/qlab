@@ -314,6 +314,14 @@ def electron_density(result: HFResult, grid: VolumeGrid) -> ScalarField:
 # atomu 3P'dir: kuresel degildir ve spin-kutupludur. Ayrica kesirli isgalli
 # bir kabukta kapali kabuk Fock ifadesi (J - K/2) oz-etkilesimi tam
 # goturmez. Ikisi de Provenance'ta yazilidir; gizlenmez.
+#
+# TERMINOLOJI: bu yapi literaturdeki "average of configuration" HF DEGILDIR --
+# o, Slater'in acik-kabuk eslesme katsayilarini (coupling coefficients)
+# kullanir. Burada SAD-tipi (superposition of atomic densities) bir yapi var:
+# kapali-kabuk J - K/2 ifadesi dogrudan kesirli isgalli bir yogunluga
+# uygulaniyor. Etkisi yukarida zaten olculdu: dolu bloklarda sifir (SCF ilk
+# adimdan sonra degismiyor), yalnizca kismen dolu blokta (bu baz setinde
+# yalnizca Li) devrede.
 
 _MAX_ANGULAR_MOMENTUM = 1
 
@@ -332,7 +340,10 @@ def _symmetry_blocks(basis: list[BasisFunction]) -> list[list[list[int]]]:
     indeks listeleri donulur: s icin tek liste, p icin (px, py, pz) uc liste.
     Her listenin k. elemani AYNI radyal kabuga aittir -- build_basis her
     kabugu tek seferde ve bilesenleri sabit sirada urettigi icin bu esleme
-    kabuk sirasindan gelir.
+    kabuk sirasindan gelir. Bu DIGER BIR MODULE (basis.py) ait bir sira
+    varsayimidir ve dogrudan sinanir:
+    test_simetri_bloklari_p_yonlerini_ayni_radyal_kabuga_esler (O/6-31G'de),
+    bkz. tests/hf/test_hf_obs.py.
 
     d ve ustu REDDEDILIR: ayni l'nin kartezyen bilesenleri d'de birbirine
     simetri geregi denk degildir (6 kartezyen bilesen, ama kabuk 12 degil 10
@@ -371,9 +382,13 @@ def _free_atom_density(
     ile doldurulur; kismen dolu bir kabugun payi kartezyen yonlere ESIT
     dagitilir.
 
-    Aufbau siralamasi enerji sirasidir. Bu baz setinde doldurma sinirindaki
-    en kucuk aralik Li'nin 2s -> 2p araligidir (olculdu: 0.1995 hartree),
-    yani siralama belirsiz degildir. Kabuk ICINDEKI dejenerasyon zaten
+    Aufbau siralamasi enerji sirasidir. Bu fonksiyon hem STO-3G hem 6-31G
+    icin cagrilir; kapsamdaki en kucuk doldurma-sinniri araligi 6-31G'dedir,
+    STO-3G'de degil -- STO-3G'de Li disindaki elementlerin dolu kabugu tam
+    baz boyutunu kapladigindan orada bir sinir (dolu/bos gecisi) hic
+    olusmaz. Olculdu: 6-31G'de Li'nin 2s -> 2p araligi 0.1330 hartree
+    (kapsamdaki en kucuk), C/N/O/F icin 0.8392-2.0330 hartree araliginda.
+    Yani siralama belirsiz degildir. Kabuk ICINDEKI dejenerasyon zaten
     kesirli isgalle ele alinir.
 
     BLOKLAMA VARSAYIMI OLCULDU, farz edilmedi: serbest atomda hem S'nin hem
