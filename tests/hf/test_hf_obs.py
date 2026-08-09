@@ -12,17 +12,25 @@ import dataclasses
 import numpy as np
 import pytest
 
-from qlab.engine.hf.basis import build_basis
+from qlab.engine.hf.basis import BasisFunction, PrimitiveGaussian, build_basis
 from qlab.engine.hf.integrals import overlap_matrix
 from qlab.engine.hf.scf import solve
-from qlab.errors import InvalidInputError
+from qlab.errors import (
+    InvalidInputError,
+    SCFConvergenceError,
+    UnsupportedSystemError,
+)
+from qlab.observable import hf_obs
 from qlab.observable.hf_obs import (
     VolumeGrid,
+    _symmetry_blocks,
     electron_density,
     evaluate_basis_function,
     evaluate_orbital,
+    free_atom_density_matrix,
+    promolecule_density,
 )
-from qlab.types import Molecule
+from qlab.types import Atom, Molecule
 
 
 @pytest.fixture(scope="module")
@@ -430,6 +438,438 @@ def test_yogunluk_orbital_toplamiyla_ortusuyor(h2o):
     orbital_density *= 2.0
 
     np.testing.assert_allclose(field.values, orbital_density, atol=1e-10, rtol=1e-10)
+
+
+def test_serbest_hidrojen_yogunlugu_tam_bir_elektron():
+    """Minimal bazda H'nin tek baz fonksiyonu var; oz-ortusmesi 1'dir.
+
+    Olculdu: padding=8.0, n=80 izgarada int = 0.99999999998436, yani 1.0'dan
+    sapma -1.56e-11.
+
+    SINIR (abs=1e-5) NE YAKALAR, NE YAKALAMAZ: bu test bir OLCEK/BAGLANTI
+    testidir. Yakalar: isgal sayisinin yanlis olmasi (H'ye 2 elektron
+    konulmasi -> sapma 1.0, sinnrin 1e5 kati), hacim elemaninin veya izgara
+    toplaminin yanlis olmasi (ayni mertebe). YAKALAMAZ: kontraksiyon
+    normalizasyonunun dusurulmesi -- o hata H'nin oz-ortusmesini 1 yerine
+    0.99999999089 yapar, yani integrali yalnizca 9.1e-9 kaydirir ve bu sinnrin
+    3 mertebe altindadir. O kirilma test_izgara_ortusmesi_analitik_ortusmeye_
+    oturuyor testinin atol=1e-8 sinniriyla ayrica kilitlidir; burada tekrar
+    korunuyormus gibi yazilmamalidir.
+    """
+    molecule = Molecule.from_string("H 0 0 0")
+    grid = VolumeGrid.around(molecule, padding=8.0, points_per_axis=80)
+    field = promolecule_density(molecule, "sto-3g", grid)
+    integral = float(field.values.sum() * grid.volume_element)
+    assert integral == pytest.approx(1.0, abs=1e-5, rel=0.0)
+
+
+def test_h2_promolekulu_iki_elektron():
+    """Iki serbest H atomu, etkilesmeden ust uste bindirilir.
+
+    Olculdu: padding=7.0, n=80 izgarada int = 1.99999999460097 (sapma
+    -5.40e-09); n=120'de 1.99999999361885. Sapma izgara Riemann toplamindan
+    gelir, atom yogunlugundan degil: analitik elektron sayisi Tr(P S) her
+    atom icin TAM 1'dir (bkz. test_serbest_atom_elektron_sayisi_analitik_
+    olarak_tam).
+
+    Sinir (abs=1e-5) olculen sapmaya ~1850x marj birakir. Yakalar: bir atomun
+    yogunluk blogunun hic yazilmamasi (sapma 1.0) veya blok kosegen
+    yerlestirmesinin kaymasi. YAKALAMAZ: atomlar arasi capraz terimlerin
+    yanlislikla eklenmesi -- promolekul TANIMI geregi bloklar arasi terim
+    tasimaz ve o terimler eklenirse bu integral H2'de ~0.6 elektron artardi,
+    yani aslinda yakalar; ama bu, tanimin ihlali olurdu, izgara hatasi degil.
+    """
+    molecule = Molecule.from_string("H 0 0 0; H 0 0 0.74")
+    grid = VolumeGrid.around(molecule, padding=7.0, points_per_axis=80)
+    field = promolecule_density(molecule, "sto-3g", grid)
+    integral = float(field.values.sum() * grid.volume_element)
+    assert integral == pytest.approx(2.0, abs=1e-5, rel=0.0)
+
+
+def test_promolekul_negatif_degil():
+    """Promolekul yogunlugu hicbir noktada negatif degil.
+
+    P = SUM_i n_i c_i c_i^T ve tum n_i >= 0 oldugundan P pozitif yari-tanimli,
+    dolayisiyla rho(r) = v^T P v >= 0 her noktada teorik olarak gecerlidir.
+
+    BU TESTIN KAPSAMI DARDIR (olculdu): H2 promolekulunun minimumu bu izgarada
+    +7.00e-14'tur ve bu modulde denenen HICBIR mutasyon onu negatif yapmaz --
+    naif kosegen isgal de (min +7.0e-14 mertebesi), S-ortonormalligin atlanmasi
+    da pozitif kalir, cunku her ikisi de P'yi pozitif yari-tanimli birakir.
+    Yakaladigi tek sinif isgal sayisinin negatife dusmesidir (orn. aufbau
+    doldurmasinda `remaining` isaretinin ters cevrilmesi). Gercek koruma
+    test_serbest_atom_dogal_isgalleri_... testindedir.
+    """
+    molecule = Molecule.from_string("H 0 0 0; H 0 0 0.74")
+    grid = VolumeGrid.around(molecule, padding=5.0, points_per_axis=40)
+    field = promolecule_density(molecule, "sto-3g", grid)
+    assert field.values.min() >= -1e-14
+
+
+def test_serbest_atom_kuresel_simetrik():
+    """Kesirli isgal p kabugunu esit doldurur; sonuc kuresel olmali.
+
+    Testin adi "kuresel" diyor; yalnizca uc EKSEN yonune bakmak bunu
+    kanitlamaz (eksenlerde esit ama kosegende farkli bir alan da o testi
+    gecerdi). Bu yuzden ikinci bir olcum var: indeks-yaricapinin karesi 9 olan
+    ALTI nokta -- uc eksen yonu (3,0,0) ve uc kosegen yon (1,2,2) tipinde --
+    ayni degeri vermek zorunda.
+
+    Olculdu (O/STO-3G, padding=5.0, n=41):
+      merkezden 2.0 bohr (indeks 8), eksenler: x = y = z = 1.798872147155e-02,
+        goreli fark TAM 0.0 (bit-bit ayni)
+      indeks-yaricap^2 = 9 olan alti nokta: 7.008797261506e-01, aralarindaki
+        maks goreli sapma 3.17e-16 (float yuvarlamasi)
+    Tam esitlik tesaduf degil: uc kartezyen p yonune ayni radyal katsayi ve
+    ayni kesirli isgal (4/3) verilir, s fonksiyonlari zaten izotropiktir.
+
+    SINIR (rel=1e-10 eksenlerde, rel=1e-12 esit-yaricap kumesinde) NE
+    YAKALAR: kuresel ortalamanin hic yapilmamasi. Olculdu
+    -- p kabugunu 2p_x/2p_y'ye yigip 2p_z'yi bos birakan mutasyonda ayni
+    noktalarda x = 2.369011950686e-02, z = 6.585925400923e-03, yani goreli
+    fark 7.22e-01: sinnrin 7.2e9 kati. Bu mutasyonun elektron sayisini
+    DEGISTIRMEDIGINI de olctuk (int = 9.922668, dogru degerle ayni), yani
+    kureselligi yalnizca bu test koruyor.
+    """
+    molecule = Molecule.from_string("O 0 0 0")
+    grid = VolumeGrid.around(molecule, padding=5.0, points_per_axis=41)
+    field = promolecule_density(molecule, "sto-3g", grid)
+    orta = 41 // 2
+    yaricap = 8
+    x_yonu = field.values[orta + yaricap, orta, orta]
+    y_yonu = field.values[orta, orta + yaricap, orta]
+    z_yonu = field.values[orta, orta, orta + yaricap]
+    assert x_yonu == pytest.approx(y_yonu, rel=1e-10, abs=0.0)
+    assert x_yonu == pytest.approx(z_yonu, rel=1e-10, abs=0.0)
+
+    esit_yaricap = [(3, 0, 0), (0, 3, 0), (0, 0, 3), (1, 2, 2), (2, 1, 2), (2, 2, 1)]
+    degerler = [field.values[orta + a, orta + b, orta + c] for a, b, c in esit_yaricap]
+    for deger in degerler[1:]:
+        assert deger == pytest.approx(degerler[0], rel=1e-12, abs=0.0)
+
+
+def test_promolekul_provenance_kuresel_ortalamayi_beyan_ediyor():
+    """Referans atom gercek taban durum DEGILDIR; bu yaziya dokulmek zorunda."""
+    molecule = Molecule.from_string("O 0 0 0")
+    grid = VolumeGrid.around(molecule, padding=4.0, points_per_axis=20)
+    field = promolecule_density(molecule, "sto-3g", grid)
+    metin = " ".join(field.provenance.approximations).lower()
+    assert "kuresel" in metin
+    ihmal = " ".join(field.provenance.neglected).lower()
+    assert "taban durum" in ihmal, "gercek taban durumdan sapma ihmal listesinde olmali"
+    assert field.provenance.diagnostics["expected_electrons"] == 8
+
+
+_SERBEST_ATOM_ISGALLERI: dict[str, list[float]] = {
+    # Kuresel ortalamali, kesirli isgalli serbest atom: aufbau ile doldurulan
+    # kabuk kesirli olarak ve esit sekilde uc kartezyen p yonune dagitilir.
+    "H": [1.0],
+    "He": [2.0],
+    "Li": [2.0, 1.0],
+    "C": [2.0, 2.0, 2 / 3, 2 / 3, 2 / 3],
+    "N": [2.0, 2.0, 1.0, 1.0, 1.0],
+    "O": [2.0, 2.0, 4 / 3, 4 / 3, 4 / 3],
+    "F": [2.0, 2.0, 5 / 3, 5 / 3, 5 / 3],
+}
+
+
+@pytest.mark.parametrize("symbol", sorted(_SERBEST_ATOM_ISGALLERI))
+def test_serbest_atom_elektron_sayisi_analitik_olarak_tam(symbol):
+    """Serbest atom yogunlugu TAM Z elektron tasir -- izgaradan bagimsiz olcum.
+
+    Elektron sayisi int rho = Tr(P S)'dir ve bu izgaradan bagimsizdir. Orbital
+    katsayilari S-ORTONORMAL oldugu surece (C^T S C = I) Tr(P S) = SUM_i n_i
+    ozdesligi tam olarak saglanir; testin olctugu sey budur.
+
+    Olculdu: yedi element icin |Tr(P S) - Z| en fazla 2.665e-15 (O). Sinir
+    abs=1e-12, marj ~375x.
+
+    NE YAKALAR (olculdu -- MUTASYON: blok icindeki genellesmis ozdeger
+    problemi yerine duz np.linalg.eigh, yani orbitallerin S yerine Oklit
+    normuyla normalize edilmesi):
+      Li  Tr(PS) = 3.135216  (sapma +0.135216 = sinnrin 1.35e11 kati)  KIRMIZI
+      C,N,O,F, H, He: sapma TAM 0
+    Yani bu test, S-ortonormallik hatasini YALNIZCA kismen dolu bir simetri
+    blogu olan atomda (burada Li'nin 2 boyutlu s blogu, 3 elektron) yakalar.
+    Blok TAMAMEN doluysa isgal edilen alt uzay tum blogu kaplar, C C^T = S^-1
+    olur ve iz her durumda dogru cikar. Ayni hata O'da elektron sayisini
+    bozmadigi halde YOGUNLUGU bozar; onu test_serbest_atom_dogal_isgalleri_...
+    yakalar. Iki test birbirinin yerine gecmez.
+    """
+    molecule = Molecule.from_string(f"{symbol} 0 0 0")
+    basis = build_basis(molecule, "sto-3g")
+    density = free_atom_density_matrix(symbol, "sto-3g")
+    sayim = float(np.trace(density @ overlap_matrix(basis)))
+    assert sayim == pytest.approx(molecule.n_electrons, abs=1e-12, rel=0.0)
+
+
+@pytest.mark.parametrize("symbol", sorted(_SERBEST_ATOM_ISGALLERI))
+def test_serbest_atom_dogal_isgalleri_beklenen_degerlerde_ve_pauli_siniri_icinde(symbol):
+    """P S'nin ozdegerleri = dogal isgal sayilari; hicbiri 2'yi asamaz (Pauli).
+
+    P = SUM_i n_i c_i c_i^T ve C^T S C = I ise P S'nin ozdegerleri tam olarak
+    {n_i}'dir. Bu, yogunluk matrisinin SEKLINI dogrudan sinar -- elektron
+    sayisi (izi) ayni kalsa bile. Ozdegerler simetrik S^(1/2) P S^(1/2)
+    uzerinden hesaplanir (ayni spektrum, gercel ve kararli).
+
+    Olculdu: yedi element icin |dogal isgal - beklenen| en fazla 1.110e-15.
+    Sinir abs=1e-12, marj ~900x.
+
+    NE YAKALAR (iki mutasyon da olculdu):
+      (1) NAIF KOSEGEN ISGAL, P = diag(2, 2, 4/3, 4/3, 4/3): STO-3G'de 1s ve
+          2s DIK DEGILDIR (O icin S_12 = 0.236704), bu yuzden bu matris bir
+          Slater determinantinin yogunlugu DEGILDIR. Elektron sayisi yine de
+          dogru cikar (Tr(P S) = 8.000000, cunku S'nin kosegeni 1'dir) --
+          yani bir onceki test bunu YAKALAMAZ. Dogal isgaller ise
+          {1.333, 1.333, 1.333, 1.527, 2.473} olur: 2.473 > 2, Pauli ihlali,
+          beklenenden 0.473 sapma = sinnrin 4.7e11 kati. KIRMIZI.
+          Ayni mutasyon C'de 2.497, N'de 2.470, F'de 2.476, Li'de 2.105 verir.
+      (2) Duz np.linalg.eigh (S-ortonormallik atlanmis): O icin en buyuk
+          dogal isgal 2.473408, C 2.496725, N 2.470076, F 2.475980,
+          Li 2.325030. Hepsi KIRMIZI.
+    Dogru yol her elementte en buyuk isgali 2'nin 6.7e-16 altinda/ustunde
+    birakir.
+    """
+    basis = build_basis(Molecule.from_string(f"{symbol} 0 0 0"), "sto-3g")
+    overlap = overlap_matrix(basis)
+    density = free_atom_density_matrix(symbol, "sto-3g")
+
+    ozdeger, vektor = np.linalg.eigh(overlap)
+    kok_s = vektor @ np.diag(np.sqrt(ozdeger)) @ vektor.T
+    dogal = np.sort(np.linalg.eigvalsh(kok_s @ density @ kok_s))[::-1]
+
+    beklenen = _SERBEST_ATOM_ISGALLERI[symbol]
+    beklenen = np.array(beklenen + [0.0] * (len(dogal) - len(beklenen)))
+    np.testing.assert_allclose(dogal, beklenen, atol=1e-12, rtol=0.0)
+    assert dogal.max() <= 2.0 + 1e-12, "Pauli: bir orbital 2 elektrondan fazlasini tasiyamaz"
+
+
+def test_serbest_atom_yogunlugu_lityum_katyonunda_solve_ile_ortusuyor():
+    """Serbest atom SCF'i, motorun DOGRULANMIS solve()'una zincirlenir.
+
+    Bu modulun serbest atom cozucusu kendi Fock dongusunu kosar; ic tutarlilik
+    testleri (iz, dogal isgaller) onun DOGRU FIZIGI cozdugunu tek basina
+    kanitlamaz. Zincir noktasi Li+ (yuk +1, 2 elektron): kapali kabuktur, yani
+    motorun PySCF'e karsi dogrulanmis solve()'u onu cozebilir; ve s blogu
+    KISMEN doludur (2 fonksiyon, 1 dolu orbital), yani S-ortonormallik
+    gercekten devrededir. He (2 elektron, tek fonksiyon) ikinci, onemsiz ama
+    bedava bir kontrol noktasidir.
+
+    Olculdu: maks|P_serbest - P_solve| = 3.353e-11 (Li+), 0.0 (He). Li+
+    sapmasi bizim yakinsamamizdan gelmiyor -- kendi dongumuz sabit noktaya
+    otururken (iterasyonlar arasi degisim 0.0'a iniyor) fark 3.353e-11'de
+    sabit kaliyor; solve()'un kendi yakinsama sinirlari (energy_tolerance
+    1e-14, residual_tolerance 1e-12 ile bile) buraya kadar geliyor.
+
+    Sinir atol=1e-9, olculene ~30x marj. Yakalar (olculdu, hepsi KIRMIZI):
+    genellesmis ozdeger problemi yerine duz eigh, naif kosegen isgal, aufbau
+    siralamasinin ters cevrilmesi.
+
+    NE YAKALAMAZ -- ve bu sinir bilincli olarak yaziliyor: iki taraf da AYNI
+    Fock kurulumunu (scf._fock_matrix) ve ayni S^(-1/2) ortogonallestirmesini
+    kullanir, cunku bu formullerin ikinci bir kopyasi tutulmamistir. Olculdu:
+    degisim katsayisini 0.5'ten 1.0'a cikaran mutasyon bu dosyadaki 24 testin
+    HICBIRINI kirmaz -- iki taraf birlikte kayar. O formulu koruyan sey
+    motorun kendi PySCF'e karsi dogrulanmis testleridir (ayni mutasyon
+    tests/hf altinda 28 test kiriyor, olculdu). Bu test paylasilan formulu
+    degil, promolekule OZGU parcayi zincirler: simetri bloklamasi, aufbau ve
+    kesirli isgal atamasi, S-ortonormallik.
+    """
+    for spec, charge in [("Li 0 0 0", 1), ("He 0 0 0", 0)]:
+        molecule = Molecule.from_string(spec, charge=charge)
+        beklenen = solve(
+            molecule, "sto-3g", energy_tolerance=1e-14, residual_tolerance=1e-12
+        ).density
+        bizim = free_atom_density_matrix(
+            molecule.atoms[0].symbol, "sto-3g", n_electrons=molecule.n_electrons
+        )
+        np.testing.assert_allclose(bizim, beklenen, atol=1e-9, rtol=0.0)
+
+
+def test_promolekul_izgara_cekirdek_sinnrini_beyan_ediyor():
+    """BEYAN EDILEN SINIR -- kod hatasi degil (Task 4'un cekirdek siniri burada da).
+
+    Serbest oksijenin ANALITIK elektron sayisi tam 8'dir (yukaridaki iz
+    testi). Izgara integrali degildir ve iki YONE birden sapar:
+
+      padding  n     aralik(bohr)   int(rho)
+      6.0      60    0.2034         7.696685   (eksik -- cekirdek cozulmuyor)
+      6.0     120    0.1008         7.990173   (duzeliyor)
+      5.0      41    0.2500         9.922668   (FAZLA!)
+
+    Ucuncu satir bir hata degil, Riemann toplaminin cusp'ta davranisidir: o
+    izgarada bir nokta TAM cekirdegin uzerine duser ([-5,5] araligi, 41 nokta
+    -> indeks 20 tam 0.0'da) ve 1s'in tepe degeri hucre hacmiyle carpilinca
+    toplami yukari kacirir. Yani promolekul yogunlugunun izgara integrali,
+    hidrojen disi atomlarda gerceklen elektron sayisinin ne alt ne ust
+    siniridir -- gorsellestirme icin uygundur, integre nicelik icin DEGILDIR.
+    Provenance bunu yazmak zorundadir.
+
+    Sinirlar: abs=0.01 -- olculen degerler yukaridaki tabloda; test, bu uc
+    sayidan herhangi biri 0.01'den fazla kayarsa kirilir. 60 -> 120
+    iyilesmesi (0.303 -> 0.010 eksik) ve n=41'deki 1.92 elektronluk FAZLA,
+    ikisi de sinnrin cok ustunde; yani bu test hem "cekirdek eksigi
+    kayboldu" hem de "cusp asimi kayboldu" degisikliklerini yakalar.
+    """
+    molecule = Molecule.from_string("O 0 0 0")
+    kaba = VolumeGrid.around(molecule, padding=6.0, points_per_axis=60)
+    ince = VolumeGrid.around(molecule, padding=6.0, points_per_axis=120)
+    cekirdek_uzerinde = VolumeGrid.around(molecule, padding=5.0, points_per_axis=41)
+
+    def integral(grid):
+        field = promolecule_density(molecule, "sto-3g", grid)
+        return float(field.values.sum() * grid.volume_element)
+
+    assert integral(kaba) == pytest.approx(7.696685, abs=0.01, rel=0.0)
+    assert integral(ince) == pytest.approx(7.990173, abs=0.01, rel=0.0)
+    assert integral(cekirdek_uzerinde) == pytest.approx(9.922668, abs=0.01, rel=0.0)
+    assert integral(kaba) < integral(ince) < 8.0
+
+    field = promolecule_density(molecule, "sto-3g", kaba)
+    metin = field.provenance.expected_error.lower()
+    assert "izgara" in metin and "cekirdek" in metin
+    assert field.provenance.diagnostics["expected_electrons"] == 8
+    assert field.provenance.diagnostics["integrated_electrons"] == pytest.approx(
+        7.696685, abs=0.01, rel=0.0
+    )
+
+
+@pytest.mark.parametrize("symbol", ["Li", "O"])
+def test_serbest_atom_yogunlugu_otelemeden_bagimsiz(symbol):
+    """Serbest atom kendi cekirdeginde cozulur -- orijinde degil.
+
+    Atomu kaydirip izgarayi AYNI vektorle kaydirinca alan degismemeli. Bu,
+    tek-atom molekulunun cekirdek konumunun baz merkeziyle ayni tutuldugunu
+    sinar: cekirdegi orijine sabitleyen bir hata (klasik "serbest atomu
+    orijinde kur" hatasi) atomu yapay olarak kutuplastirirdi.
+
+    Bu bosluk baska hicbir testte kapali degil: hidrojenin yogunluk matrisi
+    tek fonksiyonlu oldugu icin (P = [[1]]) konumdan etkilenmez, oksijen
+    testlerinde atom zaten orijindedir, toplanabilirlik testinde ise ayni
+    hata her iki tarafta ayni sekilde olusur ve gorunmez.
+
+    Olculdu: maks mutlak fark Li icin 5.329e-15, O icin 1.377e-14 (yogunluk
+    tepe degerleri 2.52 ve 3.52; goreli 2.1e-15 ve 3.9e-15) -- kaydirilmis
+    koordinatlarin float yuvarlanmasi. Sinir atol/rtol=1e-11, olculene ~700x
+    marj; cekirdegi orijine sabitleyen mutasyon O(1e-2) ve ustu sapma verir.
+    """
+    orijinde = Molecule.from_string(f"{symbol} 0 0 0")
+    izgara = VolumeGrid.around(orijinde, padding=5.0, points_per_axis=30)
+    kayma = np.array([0.7, -1.3, 2.1])
+    kaymis = Molecule((Atom(symbol, kayma),))
+    kaymis_izgara = VolumeGrid(
+        origin=izgara.origin + kayma, spacing=izgara.spacing, shape=izgara.shape
+    )
+
+    np.testing.assert_allclose(
+        promolecule_density(kaymis, "sto-3g", kaymis_izgara).values,
+        promolecule_density(orijinde, "sto-3g", izgara).values,
+        atol=1e-11,
+        rtol=1e-11,
+    )
+
+
+def test_promolekul_tek_tek_atomlarin_toplamina_esit():
+    """Promolekulun TANIMI: atomlar birbirini gormez, alanlar toplanir.
+
+    Ayni izgara nesnesi uc kez kullanilir: LiH'in promolekulu, sonra tek
+    basina Li (kendi konumunda) ve tek basina H. Toplam esit olmak zorunda --
+    bu, "etkilesimsiz ust uste binme" iddiasinin dogrudan olcumudur ve
+    yogunluk matrisinin BLOK KOSEGEN oldugunu (atomlar arasi capraz terim
+    tasimadigini) sinar.
+
+    Molekul KASITLI olarak heteronukleer secildi: H2 gibi ozdes atomlu bir
+    molekulde bir atomun yogunluk blogu digerinin yerine yazilsa bile fark
+    olusmaz, yani blok atama hatasi gorunmez olurdu. LiH'te Li blogunun H'ye
+    yazilmasi o noktada yogunlugu ~2-3 elektron/bohr^3 kaydirir.
+
+    Olculdu: maks|rho_LiH - (rho_Li + rho_H)| = 0.0 (bit bit ayni, n=40 ve
+    n=60'ta), yogunluk tepe degeri 4.91. Sinir atol/rtol=1e-12 -- olculen
+    sifira karsi degil, GERCEKCI hataya karsi marj icin: atomlar arasi capraz
+    terim eklenmesi veya blok atamasinin kaymasi O(0.1)-O(1) sapma verir,
+    yani sinnrin 11-12 mertebe ustunde.
+    """
+    lih = Molecule.from_string("Li 0 0 0; H 0 0 1.6")
+    grid = VolumeGrid.around(lih, padding=6.0, points_per_axis=40)
+
+    butun = promolecule_density(lih, "sto-3g", grid)
+    lityum = promolecule_density(Molecule((lih.atoms[0],)), "sto-3g", grid)
+    hidrojen = promolecule_density(Molecule((lih.atoms[1],)), "sto-3g", grid)
+
+    np.testing.assert_allclose(
+        butun.values, lityum.values + hidrojen.values, atol=1e-12, rtol=1e-12
+    )
+    assert butun.provenance.diagnostics["expected_electrons"] == 4
+
+
+def test_promolekul_notr_atomlardan_kurulur_molekulun_yukunden_bagimsiz():
+    """Promolekul NOTR serbest atomlarin toplamidir; molekulun yuku dagitilmaz.
+
+    Yuklu bir molekulde promolekulun elektron sayisi SUM Z'dir, molecule.
+    n_electrons DEGILDIR -- ikisi yuk kadar farklidir. Task 6'nin fark
+    haritasi bu yuzden yuklu sistemlerde net -yuk kadar integre olur; bu bir
+    hata degil, tanimin sonucudur ve tanilamada gorunmek zorundadir.
+
+    Olculdu: H2 icin ayni izgarada notr ve +1 yuklu molekulun promolekul
+    integralleri BIT BIT AYNI (fark tam 0.0) -- yuk hicbir yere sizmiyor.
+    """
+    grid_molekulu = Molecule.from_string("H 0 0 0; H 0 0 0.74")
+    grid = VolumeGrid.around(grid_molekulu, padding=6.0, points_per_axis=40)
+
+    notr = promolecule_density(grid_molekulu, "sto-3g", grid)
+    katyon = promolecule_density(
+        Molecule.from_string("H 0 0 0; H 0 0 0.74", charge=1), "sto-3g", grid
+    )
+
+    assert katyon.provenance.diagnostics["expected_electrons"] == 2
+    assert float(np.abs(katyon.values - notr.values).max()) == 0.0
+
+
+def test_serbest_atom_gecersiz_elektron_sayisi_reddediliyor():
+    """Baz setinin tasiyabileceginden fazla (veya negatif) elektron reddedilir.
+
+    Minimal bazda H'nin tek fonksiyonu vardir, yani en fazla 2 elektron
+    tasiyabilir. Sessizce eksik yerlestirmek, elektron sayisi ozelligini
+    fark ettirmeden bozardi.
+    """
+    with pytest.raises(InvalidInputError, match="elektron"):
+        free_atom_density_matrix("H", "sto-3g", n_electrons=3)
+    with pytest.raises(InvalidInputError, match="elektron"):
+        free_atom_density_matrix("H", "sto-3g", n_electrons=-1)
+
+
+def test_serbest_atom_yakinsamazsa_yukseltiliyor(monkeypatch):
+    """Yakinsamamis bir yogunluk ASLA normal sonuc gibi donmez (spec Ilke 3).
+
+    Iterasyon siniri 1'e cekilince dongu yakinsama kosulunu hic sinayamaz
+    (kosul iteration > 1 gerektirir) ve SCFConvergenceError firlar. Bu yol
+    normal kosuda hicbir zaman girilmez -- bu baz setindeki en yavas atom
+    Li'dir ve 12 iterasyonda yakinsar, digerleri 2'de -- ama girildiginde
+    sessizce yari-yakinsak bir yogunluk donmedigi burada kilitlenir.
+    """
+    monkeypatch.setattr(hf_obs, "_FREE_ATOM_MAX_ITERATIONS", 1)
+    with pytest.raises(SCFConvergenceError):
+        free_atom_density_matrix("Li", "sto-3g")
+
+
+def test_serbest_atom_d_kabugu_reddediliyor():
+    """d kabugu icin kartezyen bilesenler simetri geregi denk DEGILDIR.
+
+    _symmetry_blocks, ayni l'nin kartezyen bilesenlerini dejenere kabul edip
+    isgali esit dagitir. Bu s (1 bilesen) ve p (3 bilesen) icin dogrudur; d
+    icin 6 kartezyen bilesen vardir, bunlar birbirine denk degildir ve kabuk
+    kapasitesi 12 degil 10'dur. Baz katmani (basis.py) su an d kabugunu zaten
+    reddediyor, ama o kural gevsetilirse burasi SESSIZCE yanlis bir yogunluk
+    uretirdi; koruma bu yuzden burada da var ve dogrudan sinaniyor.
+    """
+    sahte_d = BasisFunction(
+        center=np.zeros(3),
+        angular=(2, 0, 0),
+        primitives=(PrimitiveGaussian(exponent=1.0, coefficient=1.0),),
+        atom_index=0,
+    )
+    with pytest.raises(UnsupportedSystemError, match="acisal momentum"):
+        _symmetry_blocks([sahte_d])
 
 
 def test_provenance_izgara_sinirini_beyan_ediyor(hf_energies):
