@@ -49,17 +49,23 @@ def test_hacim_elemani_eksen_araliklarinin_carpimi(h2):
 
 
 def test_izgara_ortusmesi_analitik_ortusmeye_oturuyor(h2):
-    """Olculdu: n=80 izgarada maks fark 2.70e-09.
+    """Olculdu: n=80 izgarada maks fark 2.700e-09.
 
     Bu testin gucu buradan gelir: yeni degerlendirme kodu, Modul 1B'nin
-    PySCF'e karsi dogrulanmis overlap_matrix'ine baglanir. Kontraksiyon
-    normalizasyonu atlanirsa fark 1e-2 mertebesine cikar ve test kirmizi olur.
+    PySCF'e karsi dogrulanmis overlap_matrix'ine baglanir.
+
+    TOLERANS GEREKCESI (olculdu, tahmin degil): planin ilk hali atol=1e-7
+    diyordu ve bu YETERSIZDI. Kontraksiyon normalizasyonu dusurulunce maks
+    fark 2.700e-09'dan yalnizca 1.181e-08'e cikiyor -- yani 1e-7 sinnri,
+    planin tam da uyardigi hatayi GECIRIYORDU. atol=1e-8 dogru degere 3.7x
+    marj birakir ve o kirigi yakalar (kirma kaniti:
+    .superpowers/sdd/b2-task-2-fix-report.md). Bu tolerans gevsetilmemeli.
     """
     molecule, basis = h2
     grid = VolumeGrid.around(molecule, padding=7.0, points_per_axis=80)
     values = np.stack([evaluate_basis_function(b, grid) for b in basis])
     numeric = np.einsum("ixyz,jxyz->ij", values, values) * grid.volume_element
-    np.testing.assert_allclose(numeric, overlap_matrix(basis), atol=1e-7, rtol=0.0)
+    np.testing.assert_allclose(numeric, overlap_matrix(basis), atol=1e-8, rtol=0.0)
 
 
 def test_s_fonksiyonu_merkezde_maksimum(h2):
