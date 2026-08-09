@@ -22,6 +22,7 @@ import pytest
 
 from qlab.engine.hf.analysis import (
     AnalysisReport,
+    _merged,
     analyse,
     dipole_debye,
     dipole_moment,
@@ -34,7 +35,7 @@ from qlab.engine.hf.basis import build_basis
 from qlab.engine.hf.integrals import overlap_matrix
 from qlab.engine.hf.scf import solve
 from qlab.types import Molecule
-from qlab.units import AU_DIPOLE_TO_DEBYE
+from qlab.units import ANGSTROM_TO_BOHR, AU_DIPOLE_TO_DEBYE
 
 
 @pytest.fixture(scope="module")
@@ -130,6 +131,49 @@ def test_lih_dipole_shows_correct_ionic_direction(hf_energies):
     dipole = dipole_moment(result) * AU_DIPOLE_TO_DEBYE
     np.testing.assert_allclose(dipole, hf_energies["lih"]["dipole_debye"], atol=1e-6, rtol=0.0)
     assert dipole[2] < 0, "H tarafi elektronca zengin olmali (dogru iyonik yon, Li+ H-)"
+
+
+def test_dipol_OTELEME_altinda_yalnizca_NOTR_sistemde_degismez(hf_energies):
+    """Yuklu bir sistemde dipol momenti koordinat ORIJININE baglidir.
+
+    Bu bir kod hatasi degil, bir OLGU: bir sistem a kadar otelenirse
+    d -> d + q*a olur (q net yuk). q = 0 ise terim yok olur ve sayi molekulun
+    kendi ozelligidir; q != 0 ise bildirilen sayi molekulun uzayda NEREDE
+    durduguna baglidir, yani tek basina anlamsizdir.
+
+    Olculdu (LiH/STO-3G, ayni molekul yalnizca +10 A z'de otelendi):
+      notr : 4.858750745324352 D -> 4.8587507453240795 D
+             (fark 2.7267077484793845e-13, yalnizca kayan nokta gurultusu)
+      2+   : 7.667440123884034 D -> 103.73153436795428 D (13.5 kat)
+
+    Yuklu durumdaki degisim TAM OLARAK q*a'dir, ve bu test onu oyle baglar:
+    dipole_au[2] 3.016603034697723 -> 40.81112552721315, fark
+    37.794522492515426; q*a = 2 * 10 A * ANGSTROM_TO_BOHR = 37.794522492515405
+    (goreli sapma 5.640045347053757e-16). Yani "degisiyor" demek yetmez --
+    NE KADAR degistigi de olculur.
+
+    Kirmizi yaptigi hata iki yonlu: (a) dipole_moment()'in origin'i sessizce
+    baska bir noktaya (yuk merkezi, kutle merkezi) kaydirmasi -- o secim de bir
+    yaklasimdir ve sessizce yapilamaz; (b) bu olgunun hic olculmemis olmasi,
+    ki C-1'e kadar durum buydu.
+    """
+    geometri = hf_energies["lih"]["atom"]
+    otelenmis = "Li 0 0 10.0; H 0 0 11.60"
+
+    notr = dipole_debye(solve(Molecule.from_string(geometri), "sto-3g"))
+    notr_otelenmis = dipole_debye(solve(Molecule.from_string(otelenmis), "sto-3g"))
+    assert notr_otelenmis == pytest.approx(notr, abs=1e-9, rel=0.0), (
+        "notr sistemde dipol otelemeye DUYARSIZ olmali (olculen fark 2.7e-13, "
+        "sinir onun ~3700 kati)"
+    )
+
+    yuklu = dipole_moment(solve(Molecule.from_string(geometri, charge=2), "sto-3g"))
+    yuklu_otelenmis = dipole_moment(
+        solve(Molecule.from_string(otelenmis, charge=2), "sto-3g")
+    )
+    assert yuklu_otelenmis[2] - yuklu[2] == pytest.approx(
+        2 * 10.0 * ANGSTROM_TO_BOHR, rel=1e-12, abs=0.0
+    ), "yuklu sistemde dipol TAM OLARAK q*a kadar kayar"
 
 
 def test_homo_below_lumo(water):
@@ -440,16 +484,71 @@ def test_analyse_tum_nicelikleri_donduruyor(water):
     assert rapor.gap == pytest.approx(gap, rel=1e-15, abs=0.0)
 
 
+def test_analiz_ANA_YOLU_ikinci_bir_molekulde_de_baglaniyor(hf_energies):
+    """`has_homo and has_lumo` dali -- yani her GERCEK molekulun gectigi normal
+    yol -- tek sistemle (su/STO-3G) kosuluyordu ve o yuzden korumasizdi.
+
+    Olculdu (duzeltmeden once): o dalda deger SABIT yazilinca
+      gap  = 0.9964101798591279 (suyun degeri) -> 0/464 test kirildi
+      homo = -0.3912742189062497                -> 0/37 test kirildi
+      lumo = 0.6051359609528782                 -> 0/37 test kirildi
+    Sebep: tek sinayan test (test_analyse_tum_nicelikleri_donduruyor) degeri
+    AYNI molekulun homo_lumo() ciktisiyla karsilastiriyor, yani o molekulun
+    degerini sabit yazmak testi gecer. He/He2/Li3+ testleri bu boslugu
+    KAPATMAZ: ucu de `else` dalindan gecer, orada homo_lumo() hic cagrilmaz.
+
+    Ikinci bir gercek molekul (LiH/STO-3G) ana yolu baglar. Olculdu:
+    orbital_energies = [-2.34876194, -0.28527075, 0.07821656, 0.16394135,
+    0.16394135, 0.54770841], n_occupied=2, n_orbitals=6 ->
+    homo=-0.28527074715966527, lumo=0.07821656128586067,
+    gap=0.36348730844552596. Ucu de suyun degerlerinden farkli.
+    """
+    result = solve(Molecule.from_string(hf_energies["lih"]["atom"]), "sto-3g")
+    assert result.molecule.n_electrons // 2 == 2
+    assert result.orbital_energies.shape[0] == 6
+    rapor = analyse(result)
+    homo, lumo, gap = homo_lumo(result)
+    assert rapor.homo == pytest.approx(homo, rel=1e-15, abs=0.0)
+    assert rapor.lumo == pytest.approx(lumo, rel=1e-15, abs=0.0)
+    assert rapor.gap == pytest.approx(gap, rel=1e-15, abs=0.0)
+    # ...ve olculen degerlere de bagli (homo_lumo() ile analyse()'in birlikte
+    # kaymasi ihtimaline karsi dis capa):
+    assert rapor.homo == pytest.approx(-0.28527074715966527, rel=1e-9, abs=0.0)
+    assert rapor.lumo == pytest.approx(0.07821656128586067, rel=1e-9, abs=0.0)
+    assert rapor.gap == pytest.approx(0.36348730844552596, rel=1e-9, abs=0.0)
+    # gap ozdesligi analiz katmaninda da tutmali (B1'de test_homo_below_lumo
+    # ile kilitli; burada raporun KENDI ucu arasinda sinaniyor).
+    assert rapor.gap == pytest.approx(rapor.lumo - rapor.homo, rel=1e-12, abs=0.0)
+
+
 def test_analiz_raporu_dondurulmus(water):
     """Rapor frozen olmali: tuketici (panel, CLI) bir alani yerinde degistirip
     'olculmus' gorunumlu bir sayi enjekte edememeli.
 
-    Kirmizi yaptigi hata: dataclass'in frozen=True olmadan tanimlanmasi.
+    IKI AYRI koruma gerekir ve `frozen=True` bunlardan yalnizca birini verir:
+
+    * alan YENIDEN BAGLAMA (`rapor.gap = 0.0`) -> FrozenInstanceError. Bunu
+      frozen=True saglar.
+    * dizi ICERIGINI yerinde degistirme -> frozen=True bunu KORUMAZ. Olculdu
+      (bu duzeltmeden once, su/STO-3G): `rapor.mulliken[0] = -99.0` sorunsuz
+      CALISIYORDU, `mulliken` [-0.36550977 0.18275488 0.18275488]'den
+      [-99.0 0.18275488 0.18275488]'e donuyordu; `lowdin`, `dipole_au` ve
+      `bond_orders` de ayni sekilde acikti (writeable=True). Yani dokstringin
+      vaat ettigi koruma dort alan icin YOKTU. Diziler artik salt-okunur.
+
+    Kirmizi yaptigi hata: dataclass'in frozen=True olmadan tanimlanmasi
+    (birinci assert), veya analyse()'in dizileri salt-okunur isaretlememesi
+    (ikinci blok).
     """
     result, _ = water
     rapor = analyse(result)
     with pytest.raises(FrozenInstanceError):
         rapor.gap = 0.0  # type: ignore[misc]
+    for alan in ("mulliken", "lowdin", "dipole_au", "bond_orders"):
+        dizi = getattr(rapor, alan)
+        assert dizi.flags.writeable is False, alan
+        with pytest.raises(ValueError):
+            dizi[0] = -99.0
 
 
 def test_analiz_provenance_mulliken_uyarisini_tasiyor(water):
@@ -493,6 +592,13 @@ def test_analiz_kendi_uyarilarini_KENDI_listesinde_tasiyor(water):
 
     Bu test her uyariyi KENDI listesinde ve ayirt edici bir parcayla (olculen
     sayi ya da yontem adi) arar. Ayni dort mutasyon bu testle 1'er test kirar.
+
+    EKSIK KALAN BESINCI BEYAN (C-1 duzeltmesinde eklendi): yukaridaki dort
+    kontrol `_ANALYSIS_APPROXIMATIONS`'in ucuncu maddesini ("HOMO/LUMO kanonik
+    RHF orbital enerjileridir, Koopmans duzeyi") aramiyordu. Olculdu: o madde
+    TAMAMEN silindiginde 0/464 test kiriliyordu. Sebep, "koopmans"in yalnizca
+    `neglected` icinde aranmasi -- orada AYRI bir Koopmans maddesi var, yani
+    approximations bosalsa da o assert gecerdi.
     """
     result, _ = water
     provenance = analyse(result).provenance
@@ -501,6 +607,10 @@ def test_analiz_kendi_uyarilarini_KENDI_listesinde_tasiyor(water):
     assert "mulliken" in approximations
     assert "-0.016028455" in approximations  # LiH/STO-3G, PySCF ile eslesen deger
     assert "dipol" in approximations  # iyonik karakterin BIRINCIL olcusu
+    # HOMO/LUMO'nun HANGI DUZEYDE okundugu -- approximations'in KENDI maddesi,
+    # neglected'daki Koopmans maddesinden ayri.
+    assert "kanonik" in approximations
+    assert "koopmans" in approximations
     assert "koopmans" in neglected
     assert "mayer" in neglected
     assert "1.0" in neglected  # H2: her mesafede tam 1.0
@@ -513,6 +623,12 @@ def test_analiz_dalga_fonksiyonunun_beyanlarini_da_tasiyor(water):
     Kirmizi yaptigi hata: analyse()'in sifirdan, YALNIZCA analize ozgu bir
     beyan listesi kurup SCF'in listesini dusurmesi. Ayni desen bu depoda
     zaten var: hf_obs.density_difference iki kaynagin beyanlarini birlestirir.
+
+    UCUNCU ALAN (C-1 duzeltmesinde eklendi): dalga fonksiyonunun kendi
+    `expected_error` metni de tasinmali. Olculdu: `expected_error`'in SCF
+    devrini tamamen kaldiran mutasyon 0/37 test kiriyordu -- yani listeler
+    tasiniyor, ama SCF'in "gerilmis geometrilerde baskin hata ... ayrisma
+    kusurudur, H2 icin 14.6350 eV olculdu" cumlesi sessizce dusurulebiliyordu.
     """
     result, _ = water
     provenance = analyse(result).provenance
@@ -521,16 +637,89 @@ def test_analiz_dalga_fonksiyonunun_beyanlarini_da_tasiyor(water):
     # ...ve analizin kendi beyanlari da eklenmis olmali (yalnizca kopyalama degil).
     assert len(provenance.approximations) > len(result.provenance.approximations)
     assert len(provenance.neglected) > len(result.provenance.neglected)
+    # Dalga fonksiyonunun hata beyani KELIMESI KELIMESINE icerilmeli: analiz,
+    # analiz ettigi dalga fonksiyonu kadar guvenilirdir.
+    assert result.provenance.expected_error in provenance.expected_error
+    assert len(provenance.expected_error) > len(result.provenance.expected_error)
 
 
-def test_analiz_yontemi_bazi_adiyla_beyan_ediyor(water):
+def test_analiz_KENDI_beklenen_hatasini_expected_error_alaninda_tasiyor(water):
+    """`expected_error` panelin en gorunur alanidir ve HIC baglanmamisti.
+
+    Olculdu: `_ANALYSIS_EXPECTED_ERROR`'un 701 karakterlik tamami tek bir "x"
+    harfine indirildiginde 0/464 test kiriliyordu. Sebep, brief'in verdigi iki
+    provenance testinin `approximations + expected_error` (ya da `neglected +
+    expected_error`) BIRLESIK metnine bakmasi: aradiklari her substring zaten
+    listelerde de geciyor, yani expected_error tamamen bosalsa bile yesil
+    kaliyorlardi. Bu, `..._KENDI_listesinde_tasiyor`'un cozdugu tuzagin AYNISI,
+    bir alan yukarida.
+
+    Bu test yalnizca `expected_error` alanina bakar ve listelerde GECMEYEN
+    ayirt edici parcalar arar: raporun "en buyuk hata YORUMDA'dir" tezi ve
+    LiH/STO-3G'de olculen Mulliken degeri.
+    """
+    result, _ = water
+    expected_error = analyse(result).provenance.expected_error.lower()
+    assert "yorumda" in expected_error
+    assert "-0.016028455" in expected_error
+    assert "birincil olarak dipol" in expected_error
+
+
+def test_yuklu_sistemde_rapor_dipolun_ORIJINE_BAGLI_oldugunu_BEYAN_EDIYOR(hf_energies):
+    """C-1: yuklu sistemde dipol orijine baglidir (olgu, bkz.
+    test_dipol_OTELEME_altinda_yalnizca_NOTR_sistemde_degismez) -- rapor bunu
+    SESSIZ gecemez.
+
+    Task 7 `expected_charge`'i raporun birinci sinif niceligi yapti ve
+    charge=3 sistemini desteklenen bir test sistemi haline getirdi, yani
+    dipole_moment()'in "bu projede tum senaryolar norotr" on kosulu artik
+    gecerli DEGIL. Ayni anda raporun kendi bas talimati ("iyonik karakter
+    BIRINCIL olarak dipolle olculur") okuyucuyu tam o sayiya yonlendiriyordu.
+
+    Bir orijin secip sessizce "duzeltmek" yanlis olurdu: secilen orijin de bir
+    yaklasimdir. Dogru olan, sayiyi oldugu gibi vermek ve NE OLDUGUNU
+    yazmaktir.
+
+    Kirmizi yaptigi hata iki yonlu: (a) beyanin hic olmamasi; (b) beyanin
+    KOSULSUZ eklenmesi -- notr bir molekulun raporunda "dipol orijine baglidir"
+    yazmak da yanlis bilgidir ve okuyucunun dogru sayiya guvenini bosa
+    harcatir. Bu yuzden asagida iki yon de sinaniyor.
+    """
+    yuklu = analyse(
+        solve(Molecule.from_string(hf_energies["lih"]["atom"], charge=2), "sto-3g")
+    )
+    metin = yuklu.provenance.expected_error.lower()
+    assert "bu sistem yuklu" in metin
+    assert "orijinine baglidir" in metin
+    assert "d -> d + q*a" in metin  # olgunun kendisi, sozu degil
+    # Substring tek basina zayiftir; makine-okunur esi de var (precedent:
+    # diagnostics["expected_electrons"] / ["expected_charge"]).
+    assert yuklu.provenance.diagnostics["dipole_origin_dependent"] is True
+
+    notr = analyse(solve(Molecule.from_string(hf_energies["lih"]["atom"]), "sto-3g"))
+    notr_metin = notr.provenance.expected_error.lower()
+    assert "orijin" not in notr_metin, "notr sistemde dipol otelemeye duyarsiz"
+    assert notr.provenance.diagnostics["dipole_origin_dependent"] is False
+
+
+def test_analiz_yontemi_bazi_adiyla_beyan_ediyor(water, hf_energies):
     """Panelde hangi bazin okundugu gorunmeli (precedent: test_hf_obs.py'de
     `assert "6-31G" in buyuk.provenance.method`).
 
-    Kirmizi yaptigi hata: method'un sabit bir metne ("RHF analizi") yazilmasi.
+    Kirmizi yaptigi hata: method'un sabit bir metne ("RHF analizi") yazilmasi
+    -- ya da sabit ama icinde "STO-3G" GECEN bir metne yazilmasi.
+
+    Olculdu: `method=f"STO-3G"` (sonuctan turetilmeyen duz sabit) mutasyonu
+    0/37 test kiriyordu, cunku bu dosyanin butun sistemleri sto-3g kullaniyor.
+    O precedent yalnizca FARKLI bir baz da kosuldugunda baglayicidir; asagidaki
+    6-31G blogu bunu sagliyor.
     """
     result, _ = water
     assert "STO-3G" in analyse(result).provenance.method
+    buyuk = solve(Molecule.from_string(hf_energies["h2o"]["atom"]), "6-31g")
+    buyuk_method = analyse(buyuk).provenance.method
+    assert "6-31G" in buyuk_method
+    assert "STO-3G" not in buyuk_method
 
 
 def test_analiz_provenance_makine_okunur_tanilari_tasiyor(water):
@@ -652,20 +841,43 @@ def test_lumo_yoksa_homo_hala_EN_YUKSEK_isgal_edilmis_orbital():
     n_orbitals=2 (yine LUMO yok) ama iki orbital enerjisi FARKLIDIR.
 
     Olculdu (He2, r=2.0 A, STO-3G): orbital_energies =
-    [-0.8968359506154..., -0.8542936219536...]. HOMO en yuksek isgal edilmis
+    [-0.8968359506145498, -0.8542936219536033]. HOMO en yuksek isgal edilmis
     orbitaldir, yani index 1 -> -0.85429362. Index 0 alan bir hata -0.89683595
     verirdi; test bu iki degeri ayirt eder.
+
+    (Duzeltme notu: bu dokstring onceden birinci enerjiyi -0.8968359506154
+    diye yaziyordu -- son iki rakam yer degismisti ve deger ASSERT EDILMEDIGI
+    icin takim onu hicbir zaman yakalayamazdi. Sayi duzeltildi ve asagida
+    artik assert ediliyor, yani iddia bir daha sessizce yanlis olamaz.)
     """
     result = solve(Molecule.from_string("He 0 0 0; He 0 0 2.0"), "sto-3g")
     assert result.molecule.n_electrons // 2 == result.orbital_energies.shape[0] == 2
+    assert float(result.orbital_energies[0]) == pytest.approx(
+        -0.8968359506145498, rel=1e-12, abs=0.0
+    )
     rapor = analyse(result)
     assert rapor.lumo is None and rapor.gap is None
-    assert rapor.homo == pytest.approx(-0.8542936219536, rel=1e-9, abs=0.0)
+    assert rapor.homo == pytest.approx(-0.8542936219536033, rel=1e-12, abs=0.0)
 
 
 def test_isgal_edilmis_orbital_yoksa_HOMO_uydurulmuyor():
     """Simetrik bosluk (controller listesinde yoktu, burada olculdu): isgal
     edilmis orbital olmayan bir sistemde HOMO da yoktur.
+
+    NE OLDUGU KONUSUNDA DURUST OLMAK: Li3+ (charge=3) sifir elektronlu CIPLAK
+    BIR CEKIRDEKTIR, kimyasal bir sistem degildir. Burada bir fizik iddiasi
+    olarak degil, `n_occupied == 0` SINIRINI baglayan en kucuk sistem olarak
+    duruyor. Raporu `converged=True` tasir (elektron olmadigi icin SCF ilk
+    adimda yakinsar) ve butun analiz alanlari dolar -- bu, sinirin kendisinin
+    neden beyan gerektirdiginin ornegidir.
+
+    Molekulun ORIJINDE durmasi da bilincli degil, tarihsel bir tesadufti ve
+    tam olarak C-1'i gizleyen konumdur: dipol burada 0.000000 D cikar, ama ayni
+    ciplak cekirdek `Li 0 0 5` icin 72.04807068305266 D, `Li 0 0 10` icin
+    144.09614136610531 D "olculmus" dipol bildirir (yuklu sistemde dipol
+    orijine baglidir; bkz.
+    test_yuklu_sistemde_rapor_dipolun_ORIJINE_BAGLI_oldugunu_BEYAN_EDIYOR).
+    Bu yuzden asagida raporun o beyani tasidigi da sinaniyor.
 
     Olculdu (Li, charge=3 -> 0 elektron, STO-3G, 5 baz fonksiyonu):
     homo_lumo() patlamaz ama SESSIZCE yanlis doner -- n_occupied-1 = -1
@@ -691,3 +903,22 @@ def test_isgal_edilmis_orbital_yoksa_HOMO_uydurulmuyor():
     assert rapor.provenance.diagnostics["mulliken_charge_sum"] == pytest.approx(
         3.0, abs=1e-10, rel=0.0
     )
+    # charge != 0: dipol orijine baglidir ve rapor bunu beyan etmek zorunda.
+    assert rapor.provenance.diagnostics["dipole_origin_dependent"] is True
+    assert "orijin" in rapor.provenance.expected_error.lower()
+
+
+def test_merged_beyanlari_sirayi_bozmadan_tekrarsiz_birlestiriyor():
+    """`_merged`'in dokstring iddiasi ("sirayi bozmadan, tekrarsiz") uretimde
+    HIC dogrulanmiyor: olculdu, SCF'in beyan listeleriyle analizin listeleri
+    arasinda su an KESISIM YOK (iki taraf icin de bos kesisim), yani dedup
+    yolu bir defa bile tetiklenmiyor -- tekrar ayiklamayi tamamen kaldiran bir
+    mutasyon uretimde hicbir sey degistirmezdi. Bir sonraki gorev ortak bir
+    beyan eklerse (ornegin iki katman da "sonlu baz seti" derse) davranis
+    birden onemli hale gelir; o gune kadar iddia testsiz kalmasin.
+
+    Sira KORUNUR, siralanmaz: panelde beyanlarin okunma sirasi dalga
+    fonksiyonundan analize dogrudur, alfabetik degil.
+    """
+    assert _merged(("a", "b"), ("b", "c")) == ("a", "b", "c")
+    assert _merged(("b",), ("a",)) == ("b", "a")

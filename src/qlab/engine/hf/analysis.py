@@ -12,6 +12,13 @@ Mulliken ve Lowdin yukleri ikincil, tanisal metriklerdir -- baz setine
 asiri duyarlidirlar ve (LiH/STO-3G'de goruldugu gibi, bkz.
 mulliken_charges dokstringi) hatta ISARET olarak bile yanilabilirler.
 Bu belirsizlik gizlenmez, olculur ve yazilir.
+
+Bu hukmun bir on kosulu vardir: molekul NOTR olmali. Yuklu bir sistemde
+dipol momenti koordinat orijinine baglidir (bkz. dipole_moment
+dokstringi), yani iyonik karakterin olcusu olarak kullanilamaz. analyse()
+charge != 0 gordugunde bunu provenance'ta ACIKCA beyan eder; bu on kosul
+bir zamanlar yalnizca "bu projede tum senaryolar notrdur" varsayimiyla
+tutuluyordu, artik tutmuyor.
 """
 
 from __future__ import annotations
@@ -110,13 +117,29 @@ def dipole_moment(result: HFResult) -> np.ndarray:
     d = sum_A Z_A R_A - sum_uv P_uv <mu|r|nu>
 
     Origin olarak molekul koordinat cercevesinin kendisi (0,0,0) kullanilir
-    -- Molecule.atoms konumlariyla ayni cerceve. Molekul norotr oldugu
-    surece (bu projede tum senaryolar norotr) sonuc origin secimine
-    duyarsizdir.
+    -- Molecule.atoms konumlariyla ayni cerceve.
+
+    ORIGIN BAGIMLILIGI (olgu, kod hatasi degil): sistem a kadar otelenirse
+    d -> d + q*a olur, q = molekulun net yuku. Molekul NOTR ise (q = 0) bu
+    terim yok olur ve sonuc origin secimine duyarsizdir. Yuklu bir sistemde
+    ise bildirilen sayi molekulun uzayda NEREDE durduguna baglidir ve tek
+    basina molekulun bir ozelligi degildir. Olculdu (LiH/STO-3G, molekul
+    +10 A z'de otelendi): notr 4.858750745324352 -> 4.8587507453240795 D
+    (fark 2.7e-13, kayan nokta gurultusu); charge=2 icin 7.667440123884034
+    -> 103.73153436795428 D. Yuklu durumdaki kayma tam olarak q*a'dir
+    (olculdu, goreli sapma 5.6e-16). Bkz.
+    test_dipol_OTELEME_altinda_yalnizca_NOTR_sistemde_degismez.
+
+    Burada origin SESSIZCE kaydirilmaz (ornegin yuk merkezine): o secim de
+    bir yaklasim olurdu ve beyan edilmesi gerekirdi. Bunun yerine sayi
+    oldugu gibi verilir ve analyse() charge != 0 durumunda ne oldugunu
+    provenance'a yazar.
 
     Bu, iyonik karakterin bu projedeki BIRINCIL olcusudur (bkz. spec 6.3 ve
     mulliken_charges dokstringi) -- Mulliken/Lowdin yuklerinin aksine baz
     setine asiri duyarli degildir ve isaret/yon konusunda guvenilirdir.
+    Ancak bu hukum NOTR sistemler icindir; yukaridaki origin bagimliligi
+    yuzunden yuklu bir sistemde dipol iyonik karakterin olcusu olamaz.
     """
     basis = build_basis(result.molecule, result.basis_name)
     origin = np.zeros(3)
@@ -222,7 +245,10 @@ _ANALYSIS_APPROXIMATIONS: tuple[str, ...] = (
     "bkz. test_lih_mulliken_sign_is_a_documented_basis_artifact)",
     "iyonik karakter BIRINCIL olarak dipol momentiyle olculur, yuklerle "
     "DEGIL (bkz. test_lih_dipole_shows_correct_ionic_direction ve "
-    "test_ionic_character_ordering: H2 < HF < LiH)",
+    "test_ionic_character_ordering: H2 < HF < LiH) -- ama bu hukmun on "
+    "kosulu molekulun NOTR olmasidir: yuklu bir sistemde dipol koordinat "
+    "orijininin secimine baglidir ve iyonik karakterin olcusu OLAMAZ "
+    "(o durumda expected_error ayrica uyarir)",
     "HOMO/LUMO kanonik RHF orbital enerjileridir (Koopmans duzeyi)",
 )
 
@@ -262,6 +288,25 @@ _NO_HOMO_NOTE = (
     "sey yoktur, homo ve gap None birakildi."
 )
 
+# Yuklu sistemde dipol orijine baglidir. Bu bir kod hatasi degil bir olgudur;
+# kusur onun SESSIZ kalmasi olurdu. dipole_moment()'in dokstringi bir zamanlar
+# "bu projede tum senaryolar norotr" diyordu -- charge artik raporun birinci
+# sinif niceligi (diagnostics["expected_charge"]) oldugu icin o on kosul
+# gecerli degil, ve bu not onun yerini alir.
+_CHARGED_DIPOLE_NOTE = (
+    "BU SISTEM YUKLU (charge != 0) ve dipol momenti bu durumda koordinat "
+    "ORIJININE BAGLIDIR: sistem a kadar otelenirse d -> d + q*a olur, yani "
+    "bildirilen sayi molekulun uzayda nerede durduguna baglidir ve tek basina "
+    "molekulun bir ozelligi DEGILDIR. Kullanilan orijin, molekulun kendi "
+    "koordinat cercevesinin (0,0,0) noktasidir; baska bir orijin (yuk merkezi, "
+    "kutle merkezi) baska bir sayi verirdi ve o secim de beyan edilmesi gereken "
+    "bir yaklasim olurdu -- bu yuzden sessizce yapilmadi. Olculdu (LiH/STO-3G, "
+    "charge=2, molekul +10 A otelendi): 7.667440123884034 D -> "
+    "103.73153436795428 D; ayni oteleme notr LiH'te sayiyi degistirmez. Sonuc: "
+    "iyonik karakteri dipolden okuma hukmu BU SISTEMDE GECERSIZDIR, bkz. "
+    "test_dipol_OTELEME_altinda_yalnizca_NOTR_sistemde_degismez."
+)
+
 
 @dataclass(frozen=True)
 class AnalysisReport:
@@ -269,6 +314,16 @@ class AnalysisReport:
 
     Alanlar yukaridaki fonksiyonlarin ciktilarini BIREBIR tasir; bu sinif
     hicbir seyi yeniden hesaplamaz (bkz. analyse()).
+
+    frozen=True alanlarin yeniden BAGLANMASINI engeller; dizi alanlari
+    (mulliken, lowdin, dipole_au, bond_orders) ayrica SALT-OKUNUR isaretlenir
+    (bkz. _read_only), cunku frozen tek basina dizi icerigini korumaz ve
+    korumasiz haliyle bir tuketici rapor.mulliken[0] = -99.0 yazip "olculmus"
+    gorunumlu bir sayi enjekte edebiliyordu.
+
+    dipole_au/dipole_debye yuklu bir sistemde koordinat orijinine baglidir;
+    provenance bunu beyan eder (diagnostics["dipole_origin_dependent"] ve
+    expected_error). Ayrinti icin dipole_moment dokstringine bakin.
 
     homo/lumo/gap `float | None`'dir. None, "olculemedi" demektir ve sebebi
     provenance.expected_error'da yazilidir: bos orbitali olmayan bir sistemde
@@ -299,6 +354,27 @@ def _merged(*groups: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(item for group in groups for item in group))
 
 
+def _read_only(array: np.ndarray) -> np.ndarray:
+    """Diziyi salt-okunur isaretler ve AYNI diziyi geri dondurur.
+
+    Gerekce: dataclass(frozen=True) yalnizca alan YENIDEN BAGLAMAYI engeller
+    (rapor.gap = 0.0 -> FrozenInstanceError), dizi ICERIGINI korumaz. Olculdu
+    (bu koruma eklenmeden once, su/STO-3G): rapor.mulliken[0] = -99.0 sorunsuz
+    calisiyordu ve mulliken [-0.36550977 0.18275488 0.18275488]'den
+    [-99.0 0.18275488 0.18275488]'e donuyordu; lowdin, dipole_au ve bond_orders
+    de ayni sekilde acikti. test_analiz_raporu_dondurulmus'un dokstringi
+    tuketicinin "yerinde degistirip olculmus gorunumlu bir sayi enjekte
+    edememesini" vaat ediyor -- bu, o vaadin tutuldugu yer.
+
+    Bayragi burada degistirmek guvenlidir: mulliken_charges/lowdin_charges/
+    dipole_moment/mayer_bond_orders her cagrida YENI bir dizi uretir (hicbiri
+    HFResult'in ic dizilerine view dondurmez), yani salt-okunurluk yalnizca
+    raporun kendi kopyasini baglar. Tuketici degistirmek isterse .copy() alir.
+    """
+    array.setflags(write=False)
+    return array
+
+
 def analyse(result: HFResult) -> AnalysisReport:
     """Yedi analiz fonksiyonunu bir kez toplar ve TEK bir Provenance kurar.
 
@@ -323,6 +399,14 @@ def analyse(result: HFResult) -> AnalysisReport:
     None birakmak panelin kararlilik satirini hic basmamasina, yani okuyucunun
     bunu "sorun yok" diye okumasina yol acardi.
 
+    YUKLU SISTEMLER: charge != 0 oldugunda dipol momenti koordinat orijinine
+    baglidir (olgu, bkz. dipole_moment dokstringi). analyse() bu durumda
+    _CHARGED_DIPOLE_NOTE'u expected_error'a ekler ve
+    diagnostics["dipole_origin_dependent"] bayragini kaldirir. Orijin sessizce
+    kaydirilmaz: bir orijin secmek de bir yaklasimdir ve beyan edilmesi
+    gerekirdi. Notr sistemde bu not EKLENMEZ -- kosulsuz eklenmis bir uyari
+    dogru sayiya duyulan guveni bosa harcatirdi.
+
     stability(result) BILEREK cagrilmaz: kararlilik hukmu dalga
     fonksiyonunun ozelligidir ve SCF onu ya olcmustur ya olcmemistir
     (solve(stability=False)). Burada yeniden hesaplamak, kaynagin OLCMEDIGI
@@ -335,11 +419,11 @@ def analyse(result: HFResult) -> AnalysisReport:
     modulde zaten var: _basis_and_atom_index uc fonksiyon tarafindan ayri
     ayri cagrilir.
     """
-    mulliken = mulliken_charges(result)
-    lowdin = lowdin_charges(result)
-    dipole_au = dipole_moment(result)
+    mulliken = _read_only(mulliken_charges(result))
+    lowdin = _read_only(lowdin_charges(result))
+    dipole_au = _read_only(dipole_moment(result))
     debye = dipole_debye(result)
-    bond_orders = mayer_bond_orders(result)
+    bond_orders = _read_only(mayer_bond_orders(result))
 
     n_occupied = result.molecule.n_electrons // 2
     n_orbitals = int(result.orbital_energies.shape[0])
@@ -360,7 +444,11 @@ def analyse(result: HFResult) -> AnalysisReport:
         lumo = float(result.orbital_energies[n_occupied]) if has_lumo else None
         gap = None
 
+    charged = bool(result.molecule.charge != 0)
+
     expected_error = [_ANALYSIS_EXPECTED_ERROR]
+    if charged:
+        expected_error.append(_CHARGED_DIPOLE_NOTE)
     if not has_lumo:
         expected_error.append(_NO_LUMO_NOTE)
     if not has_homo:
@@ -390,6 +478,11 @@ def analyse(result: HFResult) -> AnalysisReport:
             # olculen/beklenen cifti panelde yan yana durur.
             "mulliken_charge_sum": float(np.sum(mulliken)),
             "expected_charge": result.molecule.charge,
+            # Yuklu sistemde dipol koordinat orijinine baglidir (bkz.
+            # _CHARGED_DIPOLE_NOTE ve dipole_moment dokstringi). Metin
+            # beyaninin makine-okunur esi: panel/CLI dipol satirini bu
+            # bayraga bakarak isaretleyebilir.
+            "dipole_origin_dependent": charged,
         },
         stability=result.provenance.stability,
     )
