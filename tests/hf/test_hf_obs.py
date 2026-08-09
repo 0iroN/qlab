@@ -263,10 +263,26 @@ def test_farkli_simetrideki_orbitaller_izgarada_tam_dik(hf_energies):
 
     (3, 4) cifti tam sifir verir cunku su/STO-3G'de indeks 3 = 3a1 ve
     indeks 4 = 1b1 (HOMO, duzlem disi p); farkli indirgenemez temsiller
-    oldugundan carpimlarinin integrali izgara kalitesinden bagimsiz olarak
-    sifirdir. Bu yuzden sinir makine hassasiyetine cekilebilir: abs=1e-12,
-    olculen 3.706e-16'ya ~2700x marj. Aci polinomunda veya katsayi
-    indekslemesinde bir hata bu simetriyi bozar ve test kirmizi olur.
+    oldugundan ANALITIK integralleri sifirdir.
+
+    DIKKAT -- burada iki ayri kosul var, karistirilmasin:
+      (a) Analitik sifir yalnizca simetriden gelir ve her izgarada gecerlidir.
+      (b) AYRIK toplamin 1e-16'ya (makine epsilonuna) DUSMESI ayrica
+          izgaranin x=0'a gore AYNALI olmasini gerektirir. Bu fixture'da
+          oyle: suyun uc atomu da x=0'da oldugu icin VolumeGrid.around'un
+          sinirlayici kutusu x'te simetrik cikiyor, MO 4 tam olarak tek
+          pariteli (yalniz O 2p_x), MO 3 tam cift pariteli, ve toplam
+          terim terim goturuyor.
+    Aynali olmayan bir kutuda ya da ayna duzlemine hizali olmayan bir
+    molekulde analitik deger yine sifir olurdu ama ayrik yaklasim sadece
+    olagan izgara yakinsama hiziyla (bu dosyadaki 1e-8/1e-10 marjlari
+    mertebesinde) yaklasirdi, 1e-16'ya DUSMEZDI. Bu testin siki sinnri
+    o yuzden bu geometriye ozguddur; baska bir molekule genisletirken
+    once olcum yapilmali.
+
+    Sinir: abs=1e-12, olculen 3.706e-16'ya ~2700x marj. Baglayicidir:
+    gercekci indeks/sutun hatalari 1.38e-02 ve 1.62e-03 mertebesinde
+    sapma verir, yani sinnrin dokuz kat ustunde.
     """
     molecule = Molecule.from_string(hf_energies["h2o"]["atom"])
     result = solve(molecule, "sto-3g")
