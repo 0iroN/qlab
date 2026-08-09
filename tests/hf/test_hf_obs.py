@@ -999,6 +999,35 @@ def test_kovalent_bagda_elektron_birikiyor():
         bag bolgesi (|x|<1, |y|<1, 0.2<z<1.2 bohr) : +0.055005
         dis bolge   (z<-1.0 veya z>2.4 bohr)       : -0.027068
         fark maks +0.042281, min -0.064390
+
+    BU SINIRLAR HANGI HATAYI KIRMIZI YAPAR (olculdu):
+      * `bagda > 0.03` -- DORT FIZIK TESTININ tek kuculme-koruyucusudur.
+        Harita 0.5 ile olceklenirse bagda 0.027502 olur ve dort fizik
+        testinden YALNIZCA bu test kirilir; digerleri yesil kalir (yukaridaki
+        integral testi ve polar test tek yonlu alt sinirlardir ve 0.5x onlari
+        asmaz; ayrik-atom testi bir ORANDIR, yani olcekten bagimsizdir).
+        Marj dortlunun EN DARI: 0.055005 / 0.03 = 1.83x,
+        yani harita 0.5454 katina kadar kuculebilir ve bu sinir yine yesil
+        kalir. Sinir bilerek olculenin bu kadar altinda: `dis` gibi bolge
+        integralleri izgaraya duyarlidir (asagiya bak) ve amac hassasiyet
+        degil, "birikim VAR MI" sorusudur.
+      * `disarida < -0.01` -- isaret hatasini (rho ile pro'nun yer
+        degistirmesi) kirmizi yapar: o durumda disarida +0.027068 olur.
+        Marj 0.027068 / 0.01 = 2.71x.
+      * `bagda > abs(disarida)` -- bolge SECIMI hatasini kirmizi yapar. Bag
+        kutusu cekirdeklerin arasindan disina kaydirilirsa (olculdu: ayni
+        kutu 0.2<z<1.2 yerine -1.2<z<-0.2'ye tasinirsa deger +0.055005
+        yerine -0.031780 olur) bu satir kirilir. Marj 0.055005 / 0.027068
+        = 2.03x. Bu satir bir ORAN oldugu icin olcekten bagimsizdir.
+      * YUKARIDAN SINIR YOK: uc sinirin ucu de tek yonludur, harita 2.0 ile
+        olceklense ucu de yesil kalir (olculdu). Buyuklugu iki yonlu
+        sabitleyen sey bu test degil, asagidaki
+        test_fark_haritasi_regresyon_kilidi ile yuklu-molekul testidir.
+
+    Bolge integralleri izgaraya duyarli: `dis` degeri n=100'de -0.023803,
+    n=120'de -0.027068, pad=7/n=80'de -0.023972 (~%14 yayilim). Bu yuzden
+    izgara bu testte SABITTIR; sinirlar bu yayilimi kucuk birakacak kadar
+    genis secilmistir.
     """
     molecule = Molecule.from_string("H 0 0 0; H 0 0 0.74")
     result = solve(molecule, "sto-3g")
@@ -1053,8 +1082,15 @@ def test_polar_bagda_elektron_elektronegatif_atoma_geciyor():
     hatasini (yon tersine donerse) kesin kirmizi yapar.
 
     UYARI -- bu teste int(fark) EKLEME: HF'de kutu kesme hatasi H2'den cok
-    daha buyuk ve izgaraya baglidir (pad=7/n=100'de +4.09e-05 olculdu, yani
+    daha buyuk ve izgaraya baglidir (pad=7/n=100'de +4.08e-05 olculdu, yani
     ilk testin abs=1e-5 sinirini ASAR). O yuzden burada yalniz YON sinaniyor.
+
+    Yarim uzaylar `z < orta` / `z > orta` ile ayrilir; TAM duzlem uzerindeki
+    bir izgara noktasi iki toplamdan da duserdi. Bu izgarada oyle bir nokta
+    YOK (olculdu: duzlem, z ekseninde 59.500000 indeksine dusuyor, yani iki
+    komsu duzlemin tam ortasinda; en yakin izgara z'si 5.770e-02 bohr
+    uzakta, duzlem uzerindeki nokta sayisi 0). Izgara degistirilirse bu
+    yeniden olculmelidir.
     """
     molecule = Molecule.from_string("H 0 0 0; F 0 0 0.917")
     result = solve(molecule, "sto-3g")
@@ -1066,3 +1102,242 @@ def test_polar_bagda_elektron_elektronegatif_atoma_geciyor():
     f_tarafi = float((field.values * (z > orta)).sum() * grid.volume_element)
     assert h_tarafi < -0.05, "H tarafindan elektron CEKILMELI"
     assert f_tarafi > 0.05, "F tarafinda elektron BIRIKMELI"
+
+
+def test_fark_haritasi_sonucun_bazini_kullaniyor():
+    """Promolekul SONUCUN bazinda kurulmali -- sabit bir bazda DEGIL.
+
+    `density_difference` promolekulu `result.basis_name` ile kurar. Bu boru
+    hatti tek satirlik bir hataya acikti: baz adi "sto-3g" diye SABIT
+    yazilsaydi sto-3g ile cagiran butun testler yesil kalir, hata yalnizca
+    baska bir bazda ve SESSIZCE ortaya cikardi. Serbest atom tarafi
+    (test_serbest_atom_elektron_sayisi_analitik_olarak_tam) zaten 6-31G'de
+    de kilitli; kilitli olmayan sey fark haritasinin bu iki tarafi AYNI
+    bazda birlestirmesiydi.
+
+    OLCULDU (HF, r=0.917 A, pad=6.0, n=100, orta duzlem z=0.8664 bohr):
+        sto-3g : H yarisi -0.183933 , F yarisi +0.183927 , int(fark) -5.98e-06
+        6-31G  : H yarisi -0.287737 , F yarisi +0.287807 , int(fark) +7.06e-05
+    Ayni molekul, ayni izgara, tek fark baz seti: 6-31G'nin olctugu yuk
+    aktarimi sto-3g'nin 1.565 katidir. Yani baz OLCULEBILIR sekilde sonuca
+    giriyor -- bu bir fizik iddiasi degil, boru hattinin kaniti.
+
+    BU SINIRLAR HANGI HATAYI KIRMIZI YAPAR (mutasyon kosuldu; bu test
+    eklenmeden ONCE "sto-3g" sabiti tam takimda 0/446 kiriyordu):
+      * `result.basis_name` -> "sto-3g" sabiti IKI siniri birden kirar:
+        (a) int(fark): mutasyonla -7.70e-03 olculur, 1e-3 sinirinin 7.70
+            kati USTUNDE (dogru deger 7.06e-05, sinirin 14.2 kati ALTINDA).
+            Gerekce fiziksel: notr molekulde molekul ve promolekul AYNI baz
+            setinde AYNI elektron sayisini tasir ve izgara kesme hatasi
+            farkta buyuk olcude goturulur; iki farkli baz karistirilirsa
+            goturme bozulur ve artik O(1e-2) mertebesine cikar.
+        (b) iki bazin yuk aktarimi farki: mutasyonla 0.0549 olculur,
+            0.08 sinirinin 1.46 kati ALTINDA (dogru deger 0.1039, sinirin
+            1.30 kati USTUNDE). Bu marj dardir ve tek basina yeterli
+            sayilmamistir; (a) ile birlikte durur.
+      * `result.basis_name` -> "6-31g" sabiti (ters yondeki ayni hata):
+        olculdu, 6 test kiriliyor -- bu test, kovalent-birikim testi,
+        ayrik-atom testi, yuklu-molekul testi, provenance testi ve regresyon
+        kilidi. Kirilmayan ikisi kayda deger: H2'nin integral testi ve polar
+        test, yanlis bazda kurulmus bir promolekulu GORMEZ (birincisi cunku
+        H2'de her iki baz da ~2 elektron tasiyor ve kesme farki 1e-5'in
+        altinda kaliyor, ikincisi cunku sinir 0.05 ve yon degismiyor).
+    """
+    molecule = Molecule.from_string("H 0 0 0; F 0 0 0.917")
+    grid = VolumeGrid.around(molecule, padding=6.0, points_per_axis=100)
+    kucuk = density_difference(solve(molecule, "sto-3g"), grid)
+    buyuk = density_difference(solve(molecule, "6-31g"), grid)
+
+    z = grid.points[..., 2]
+    orta = 0.5 * (molecule.atoms[0].position[2] + molecule.atoms[1].position[2])
+
+    def f_tarafi(field):
+        return float((field.values * (z > orta)).sum() * grid.volume_element)
+
+    integral = float(buyuk.values.sum() * grid.volume_element)
+    assert abs(integral) < 1e-3, (
+        "notr molekulde 6-31G fark haritasi da sifira integre olmali; "
+        "olmuyorsa iki alan ayni baz setinde uretilmemis demektir"
+    )
+    assert f_tarafi(buyuk) > 0.05, "6-31G'de de yon H'den F'ye olmali"
+    assert f_tarafi(buyuk) - f_tarafi(kucuk) > 0.08, (
+        "iki baz OLCULEBILIR sekilde farkli harita vermeli"
+    )
+    assert "6-31G" in buyuk.provenance.method, "kullanilan baz beyan edilmeli"
+
+
+def test_yuklu_molekulde_fark_net_yuk_kadar_integre_oluyor():
+    """Yuk gizlenmez: promolekul her zaman NOTR atomlardan kurulur.
+
+    Promolekulun elektron sayisi tanim geregi SUM Z'dir, molekulunki ise
+    SUM Z - yuk. Dolayisiyla fark haritasi sifira DEGIL, net -yuk kadar
+    integre olur; bu tanimin sonucudur, hata degil, ve
+    `diagnostics["expected_difference"]` bunu ilan eder.
+
+    OLCULDU (LiH^2+, `Li 0 0 0; H 0 0 1.6`, charge=2, sto-3g, pad=6.0,
+    n=60): expected_difference = -2.0 (tam), integrated_difference =
+    -1.99025240. Kalan 9.75e-03 izgara kesme hatasidir (pad=6.0/n=100'de
+    -1.98970250, kalan 1.03e-02 -- ayni mertebede).
+
+    BU SINIRLAR HANGI HATAYI KIRMIZI YAPAR (mutasyon kosuldu):
+      * `expected_difference` isaretinin ters yazilmasi (SUM Z - n_el):
+        ilan edilen deger +2.0 olur, birinci assertion KIRMIZI. Bu sayi
+        seffaflik panelinde basiliyordu ve isareti kirmizi yapan hicbir
+        sinir YOKTU -- bu testten once tam takim (446) yesil kaliyordu.
+      * Haritanin isaretinin ters cevrilmesi (pro - rho): integral
+        +1.99025240 olur, dogru degerden 3.98 uzakta, yani abs=0.05
+        sinirinin 79.6 kati -- ucuncu assertion KIRMIZI.
+      * Sinirin marji: |-1.99025240 - (-2.0)| = 9.75e-03, sinirin (0.05)
+        5.13 kati ALTINDA. Sinir izgara kesme hatasini gecirecek kadar
+        gevsek, O(1) bir yuk hatasini gecirmeyecek kadar sikidir.
+      * BEKLENMEYEN AMA OLCULEN yan fayda: ucuncu assertion IKI YONLU bir
+        buyukluk sinriridir (integral tam -2.0'a oturmali). Harita 2.0 ile
+        olceklenirse integral -3.98 olur -> KIRMIZI; 0.56 ile olceklenirse
+        -1.114 olur -> KIRMIZI. Notr molekullerdeki testler bunu yapamaz,
+        cunku orada beklenen deger sifirdir ve sifir her olcekle korunur.
+    """
+    molecule = Molecule.from_string("Li 0 0 0; H 0 0 1.6", charge=2)
+    result = solve(molecule, "sto-3g")
+    grid = VolumeGrid.around(molecule, padding=6.0, points_per_axis=60)
+    field = density_difference(result, grid)
+    integral = float(field.values.sum() * grid.volume_element)
+
+    assert field.provenance.diagnostics["expected_difference"] == -2.0
+    assert field.provenance.diagnostics["integrated_difference"] == pytest.approx(
+        integral, rel=1e-12, abs=0.0
+    )
+    assert integral == pytest.approx(-2.0, abs=0.05, rel=0.0)
+
+
+def test_fark_provenance_iki_kaynagin_beyanini_birden_tasiyor():
+    """Fark haritasi IKI kaynaktan uretilir; ikisinin de sapmalarini tasimali.
+
+    `electron_density` ve `promolecule_density` icin ayri ayri provenance
+    testleri var (test_provenance_izgara_sinirini_beyan_ediyor,
+    test_promolekul_provenance_kuresel_ortalamayi_beyan_ediyor); fark
+    haritasi bu ailenin korumasiz tek uyesiydi.
+
+    BU SINIRLAR HANGI HATAYI KIRMIZI YAPAR (mutasyon kosuldu; ucu de bu
+    testten once tam takimda 0/446 kiriyordu):
+      * `approximations` / `neglected` demetlerinin bosaltilmasi: alt kume
+        assertion'lari KIRMIZI.
+      * Birlestirici yardimcinin yalniz ILK grubu dondurmesi (promolekulun
+        beyanlari sessizce dusurulur): promolekule OZGU uc yaklasim
+        ("serbest atomlar birbirini gormez", "kuresel ortalamali atom",
+        "notr serbest atom") ve iki ihmal ("GERCEK taban durum", "kesirli
+        isgalli kabukta oz-etkilesim") kaybolur -> KIRMIZI. Simetrik hata
+        (yalniz ikinci grup) molekule ozgu "tek Slater determinanti"
+        maddesini dusurur -> KIRMIZI.
+      * `diagnostics` sayilarinin sifirlanmasi: son dort assertion KIRMIZI.
+
+    Ne sinamaz: metinlerin DOGRU olup olmadigini. Yalnizca iki kaynagin
+    beyanlarinin TAMAMEN tasindigini, tekrar edilmedigini ve tanilama
+    sayilarinin gercekten olculmus degerler oldugunu sinar.
+    """
+    molecule = Molecule.from_string("H 0 0 0; H 0 0 0.74")
+    result = solve(molecule, "sto-3g")
+    grid = VolumeGrid.around(molecule, padding=4.0, points_per_axis=30)
+    molekul = electron_density(result, grid)
+    promolekul = promolecule_density(molecule, "sto-3g", grid)
+    field = density_difference(result, grid)
+
+    for ad, kaynak in (("molekul", molekul), ("promolekul", promolekul)):
+        eksik = set(kaynak.provenance.approximations) - set(
+            field.provenance.approximations
+        )
+        assert not eksik, f"{ad} yaklasimlari dusmus: {sorted(eksik)}"
+        eksik = set(kaynak.provenance.neglected) - set(field.provenance.neglected)
+        assert not eksik, f"{ad} ihmalleri dusmus: {sorted(eksik)}"
+
+    for demet in (field.provenance.approximations, field.provenance.neglected):
+        assert len(demet) == len(set(demet)), f"tekrar eden beyan: {demet}"
+
+    yaklasim = " ".join(field.provenance.approximations).lower()
+    assert "slater determinanti" in yaklasim, "molekul tarafinin ayirt edici maddesi"
+    assert "kuresel ortalamali atom" in yaklasim, "promolekul tarafinin maddesi"
+    assert "taban durum" in " ".join(field.provenance.neglected).lower()
+
+    tanilama = field.provenance.diagnostics
+    assert tanilama["integrated_difference"] == pytest.approx(
+        float(field.values.sum() * grid.volume_element), rel=1e-12, abs=0.0
+    )
+    assert tanilama["expected_difference"] == 0.0, "notr molekulde beklenen 0"
+    assert (
+        tanilama["integrated_electrons_molecule"]
+        == molekul.provenance.diagnostics["integrated_electrons"]
+    )
+    assert (
+        tanilama["integrated_electrons_promolecule"]
+        == promolekul.provenance.diagnostics["integrated_electrons"]
+    )
+
+
+def test_fark_haritasi_regresyon_kilidi():
+    """REGRESYON KILIDI -- bu bir FIZIK iddiasi DEGILDIR.
+
+    Fark haritasinin dort FIZIK testi de tek yonlu alt sinirlardir (ya da
+    olcekten bagimsiz oranlardir). Olculdu: bu test paketi eklenmeden once
+    harita 2.0 ile olceklendiginde tam takim 446/446 YESIL kaliyordu, 0.56
+    ile olceklendiginde de 446/446 yesil kaliyordu -- oysa hem kodun hem
+    testlerin dokstringlerinde gecen ALTI niceliksel sayi o anda yalan
+    olurdu. Korunan bant [0.5454x, sonsuz) idi. Bu test tam olarak o bosluk
+    icindir: fizigi degil, BASILI SAYILARI kilitler.
+
+    Kilitlenen degerler (STO-3G, pad=6.0, n=120):
+        H2  bag bolgesi   +0.05500498066805427
+        H2  dis bolge     -0.02706752099017653
+        H2  maksimum      +0.04228059044629684
+        H2  minimum       -0.06438982238839946
+        HF  H yarisi      -0.18409854783000826
+        HF  F yarisi      +0.18409684986626995
+
+    TOLERANS NASIL SECILDI (olculdu, tahmin degil): ayni hesap ayni surecte
+    iki kez ve iki AYRI python surecinde kosuldu; alti deger de 17 anlamli
+    hanede BIT-BIREBIR ayni cikti. Yani bu kodun bugunku belirsizligi
+    sifirdir. rel=1e-9 secildi: cift-duyarlikli bir toplamin (izgara
+    1.7e6 nokta) yeniden siralanmasiyla ortaya cikabilecek en kotu goreli
+    gurultunun (~1e-12) yaklasik 1000 kati USTUNDE -- yani numpy/BLAS
+    surumu degisse bile kirilmasi beklenmez -- ama 2.0x olcek hatasinin
+    1e9 kati ALTINDA.
+
+    BU SINIR HANGI HATAYI KIRMIZI YAPAR: haritanin buyuklugunu degistiren
+    HER SEY. 2.0x olcek -> alti assertion da KIRMIZI (sapma toleransin
+    1e9 kati). 0.56x olcek -> alti assertion da KIRMIZI. Ama ayrica: baz
+    setinin, promolekul isgallerinin, izgara kurulumunun ya da
+    kontraksiyonun sessizce degismesi de buradan gorulur.
+
+    BU SINIR NE DEMEK DEGILDIR: bu alti sayinin DOGRU oldugu. Hicbiri
+    bagimsiz bir referansa (PySCF, literatur) zincirlenmemistir; izgara
+    kesme hatasi ve SAD-tipi promolekul referansi ikisi de iclerindedir.
+    Kilit yalnizca sunu garanti eder: bu sayilar degisirse degisiklik
+    KASITLIDIR ve dokstringler yeniden olculup guncellenir.
+    """
+    h2 = Molecule.from_string("H 0 0 0; H 0 0 0.74")
+    h2_grid = VolumeGrid.around(h2, padding=6.0, points_per_axis=120)
+    h2_field = density_difference(solve(h2, "sto-3g"), h2_grid)
+    noktalar = h2_grid.points
+    x, y, z = noktalar[..., 0], noktalar[..., 1], noktalar[..., 2]
+    bag = (np.abs(x) < 1.0) & (np.abs(y) < 1.0) & (z > 0.2) & (z < 1.2)
+    dis = (z < -1.0) | (z > 2.4)
+
+    kilit = dict(rel=1e-9, abs=0.0)
+    assert float(
+        (h2_field.values * bag).sum() * h2_grid.volume_element
+    ) == pytest.approx(0.05500498066805427, **kilit)
+    assert float(
+        (h2_field.values * dis).sum() * h2_grid.volume_element
+    ) == pytest.approx(-0.02706752099017653, **kilit)
+    assert float(h2_field.values.max()) == pytest.approx(0.04228059044629684, **kilit)
+    assert float(h2_field.values.min()) == pytest.approx(-0.06438982238839946, **kilit)
+
+    hf = Molecule.from_string("H 0 0 0; F 0 0 0.917")
+    hf_grid = VolumeGrid.around(hf, padding=6.0, points_per_axis=120)
+    hf_field = density_difference(solve(hf, "sto-3g"), hf_grid)
+    hf_z = hf_grid.points[..., 2]
+    orta = 0.5 * (hf.atoms[0].position[2] + hf.atoms[1].position[2])
+    assert float(
+        (hf_field.values * (hf_z < orta)).sum() * hf_grid.volume_element
+    ) == pytest.approx(-0.18409854783000826, **kilit)
+    assert float(
+        (hf_field.values * (hf_z > orta)).sum() * hf_grid.volume_element
+    ) == pytest.approx(0.18409684986626995, **kilit)

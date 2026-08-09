@@ -571,14 +571,14 @@ def promolecule_density(
     return ScalarField(values=promolecule, grid=grid, provenance=provenance)
 
 
-def _birlesik(*gruplar: tuple[str, ...]) -> tuple[str, ...]:
+def _merged_declarations(*groups: tuple[str, ...]) -> tuple[str, ...]:
     """Birden cok kaynagin beyanlarini sirayi bozmadan, tekrarsiz birlestirir.
 
     Fark haritasi iki alandan uretilir ve ikisinin de yaklasimlarini tasimak
     zorundadir; ortak olanlar (Born-Oppenheimer, sonlu baz, izgara araligi)
     iki kez yazilmasin diye tekrar ayiklanir.
     """
-    return tuple(dict.fromkeys(item for grup in gruplar for item in grup))
+    return tuple(dict.fromkeys(item for group in groups for item in group))
 
 
 def density_difference(result: HFResult, grid: VolumeGrid) -> ScalarField:
@@ -634,10 +634,10 @@ def density_difference(result: HFResult, grid: VolumeGrid) -> ScalarField:
             "RHF yogunlugu eksi kuresel ortalamali serbest atom toplami, "
             "kartezyen izgara"
         ),
-        approximations=_birlesik(
+        approximations=_merged_declarations(
             molekul.provenance.approximations, promolekul.provenance.approximations
         ),
-        neglected=_birlesik(
+        neglected=_merged_declarations(
             molekul.provenance.neglected, promolekul.provenance.neglected
         ),
         expected_error=(
@@ -657,9 +657,14 @@ def density_difference(result: HFResult, grid: VolumeGrid) -> ScalarField:
             "gorsellestirme ve YONSEL okuma icin uygundur; integre nicelik "
             "hesabi icin DEGILDIR."
         ),
-        converged=(
-            molekul.provenance.converged and promolekul.provenance.converged
-        ),
+        # Iki kaynak da yakinsamayi DEGER ile degil ISTISNA ile bildirir:
+        # solve() ve _free_atom_density() yakinsamazsa SCFConvergenceError
+        # firlatir, ikisi de provenance'a converged=True SABIT yazar. Yani
+        # buraya ulasan her cagri yakinsamistir ve bu alan erisilebilir
+        # hicbir yolda False olamaz -- burada bir KONTROL yok, yalnizca
+        # kaynaklarin beyaninin tasinmasi var. Gercek kontrol iki uretici
+        # fonksiyonun icindedir.
+        converged=(molekul.provenance.converged and promolekul.provenance.converged),
         diagnostics={
             "integrated_difference": olculen,
             "expected_difference": beklenen,
