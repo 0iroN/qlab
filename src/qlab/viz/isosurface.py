@@ -11,14 +11,20 @@ Buradaki `Mesh.vertices` ise **bohr** cinsindendir; dönüşüm
 `origin + spacing * indeks` ile eksen eksen yapılır. Dönüşüm atlanırsa
 görüntü sessizce yanlış ölçekte çıkar: ölçüldü, [-2,2]^3 kutusunda 41 noktalı
 bir küre alanında (level=1.0) tepe noktalarının orijinden uzaklığı 1.0 yerine
-35.600986 olur.
+35.600985 olur.
 
 Dönüşüm eksen eksen yapılmak zorundadır çünkü `VolumeGrid` genelde
 anizotropiktir: `VolumeGrid.around(H2, padding=6.0)` ölçüldüğünde
 spacing = [0.15189873, 0.15189873, 0.16959997] bohr çıkıyor.
 
 `pg.isosurface` girdinin **c-bitişik** olmasını şart koşuyor (aksi halde
-`TypeError: isosurface input data must be c-contiguous.`). float32 şartı
+`TypeError: isosurface input data must be c-contiguous.`). Buradaki
+`np.ascontiguousarray` koruması BUGÜN LATENT'tir: `ScalarField.values` bu
+depoda her zaman float64 ve float64 -> float32 dökümü zaten yeni, bitişik bir
+kopya üretiyor, yani `np.asarray` de yeterdi. Koruma yalnızca `values` ZATEN
+float32 ve bitişik DEĞİLKEN iş yapar; `ScalarField` dtype doğrulaması
+yapmadığı için bu kurulabilir bir durumdur ve testle kilitlidir
+(`test_c_bitisik_olmayan_alan_da_kabul_ediliyor`). float32 şartı
 DEĞİL -- ölçüldü, c-bitişik float64 de kabul ediliyor. Yine de float32'ye
 döküyoruz: büyük ızgaralarda belleği yarıya indiriyor ve ölçülen fark
 görselleştirme için önemsiz (aynı küre için yarıçap 0.999215 yerine 0.999225,
@@ -35,6 +41,7 @@ from dataclasses import dataclass
 import numpy as np
 import pyqtgraph as pg
 
+from qlab.errors import InvalidInputError
 from qlab.observable.hf_obs import ScalarField, VolumeGrid
 
 
@@ -44,8 +51,16 @@ class Mesh:
 
     - `vertices`: (m, 3), **bohr** biriminde tepe konumları.
     - `faces`: (k, 3), her satır `vertices` içine üç indeks (bir üçgen).
+      Satırdaki **SIRA anlamlıdır**: üçgenin sarımını, dolayısıyla normalinin
+      yönünü belirler. Sözleşme `extract_signed_pair`'in dokstring'inde.
     - `level`: izoyüzeyin seviyesi, alanın kendi biriminde.
     - `sign`: bu ağın hangi fazı temsil ettiği, +1 ya da -1.
+
+    Bu biçim iddiaları **doğrulanır**, yalnızca belgelenmez: (n, 3) olmayan
+    bir `vertices`/`faces` ya da ±1 olmayan bir `sign` `InvalidInputError`
+    verir. Doğrulama burada olmalı çünkü tüketici `app/orbital_window.py`
+    `faces`'i doğrudan `gl.MeshData`ya veriyor; bozuk biçim orada, kaynaktan
+    uzakta, OpenGL katmanında patlardı.
 
     Sözleşme: ağ üzerindeki her nokta için **alan == sign * level**.
     `extract_isosurface` her zaman `sign = +1` bildirir, yani orada
@@ -70,8 +85,19 @@ class Mesh:
     def __post_init__(self) -> None:
         for alan in ("vertices", "faces"):
             dizi = np.array(getattr(self, alan), copy=True)
+            if dizi.ndim != 2 or dizi.shape[1] != 3:
+                raise InvalidInputError(
+                    f"Mesh.{alan} (n, 3) seklinde olmali "
+                    f"(her satir bir nokta ya da bir ucgen), "
+                    f"verilen sekil: {dizi.shape}"
+                )
             dizi.setflags(write=False)
             object.__setattr__(self, alan, dizi)
+        if self.sign not in (1, -1):
+            raise InvalidInputError(
+                f"Mesh.sign yalnizca +1 ya da -1 olabilir (agin fazi); "
+                f"verilen: {self.sign!r}"
+            )
 
 
 def extract_isosurface(field: ScalarField, level: float) -> Mesh:
@@ -88,8 +114,26 @@ def extract_signed_pair(field: ScalarField, level: float) -> tuple[Mesh, Mesh]:
     """`(pozitif, negatif)` ağ çifti: alanın `+level` ve `-level` izoyüzeyleri.
 
     Negatif taraf alanın işareti ters çevrilip aynı pozitif seviyede
-    çıkarılarak bulunur (`-values`, `+level`) -- ölçüldü, `pg.isosurface(-p,
-    +0.05)` ile `pg.isosurface(p, -0.05)` aynı tepe kümesini veriyor.
+    çıkarılarak bulunur (`-values`, `+level`). Bu, `pg.isosurface(values,
+    -level)` ile **EŞDEĞER DEĞİLDİR**; iddia yalnızca yarısı doğrudur:
+
+    - TEPELER için eşdeğer -- ölçüldü, `pg.isosurface(-p, +0.05)` ile
+      `pg.isosurface(p, -0.05)` aynı tepe kümesini veriyor (her ikisi de
+      3076 tepe, `np.array_equal` True).
+    - YÜZLER için DEĞİL -- 6040 yüzün her birinde sarım terstir
+      (örneğin [58, 53, 0] karşı [58, 0, 53]).
+
+    Ve fark önemsiz değil: `pg.isosurface` sarımı, normal **girdi dizisinin
+    AZALDIĞI** yöne bakacak şekilde üretiyor. Negatif lobun içinde `-values`
+    büyük olduğu için `-values` yolu o lobun normalini DIŞARI çevirir; iki
+    lobun da dışarı bakması bu numaranın sonucudur. `pg.isosurface(values,
+    -level)`e "sadeleştiren" bir refactor negatif lobu iç-dışa çevirir --
+    ölçüldü, dışarı bakan üçgen oranı 1.000'den 0.000'a düşer.
+
+    Tüketici (`app/orbital_window.py`) `faces`'i `gl.MeshData`ya verip
+    `GLMeshItem`'ı `smooth=True, shader="balloon"` ile çiziyor; ikisi de
+    sarımdan türetilen tepe normallerine bağlı, yani bu doğrudan görüntüye
+    yansır. Sarım `tests/test_isosurface.py`'de iki testle kilitlidir.
 
     `level` mutlak değer olarak yorumlanmaz: negatif bir `level` verilirse iki
     ağın rolleri yer değiştirir. Çağıran, arayüzde ±faz ayrımı istiyorsa

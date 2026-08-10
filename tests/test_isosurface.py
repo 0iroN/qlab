@@ -19,8 +19,9 @@ kuramsal değil: `VolumeGrid.around` gerçekte anizotropik ızgara üretiyor
 `_kutu_izgarasi` `VolumeGrid`'i kurup eksenleri **ayrıca** `linspace` ile
 üretiyor; bu bilinçli bir tekrardır. `grid.axes` kullanılsaydı alan ile dönüşüm
 aynı formülü paylaşır, test kendi kendini onaylardı. İki yolun farkı ölçüldü:
-maks 3.553e-15 bohr (anizotropik kutuda eksenlere göre 3.553e-15 / 1.776e-15 /
-7.105e-15) -- buradaki 0.05 mertebesindeki sınırların yanında sıfırdır.
+maks **7.105e-15** bohr (anizotropik kutuda eksenlere göre 3.553e-15 /
+1.776e-15 / 7.105e-15; izotropik kutuda üç eksende de 3.553e-15) -- buradaki
+0.05 mertebesindeki sınırların yanında sıfırdır.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from qlab.errors import InvalidInputError
 from qlab.observable.hf_obs import ScalarField, VolumeGrid
 from qlab.provenance import Provenance
 from qlab.viz.isosurface import Mesh, extract_isosurface, extract_signed_pair
@@ -75,6 +77,34 @@ def _p_degeri(x: np.ndarray, y: np.ndarray, z: np.ndarray) -> np.ndarray:
     return z * np.exp(-(x * x + y * y + z * z))
 
 
+def _p_gradyani(x: np.ndarray, y: np.ndarray, z: np.ndarray) -> np.ndarray:
+    """`_p_degeri`nin analitik gradyanı, (n, 3).
+
+    p = z*exp(-r^2) olduğuna göre
+    dp/dx = -2xz*exp(-r^2), dp/dy = -2yz*exp(-r^2),
+    dp/dz = (1 - 2z^2)*exp(-r^2).
+
+    Sayısal gradyan bilinçli olarak KULLANILMIYOR: `np.gradient` alanı ızgara
+    üzerinden türetirdi, yani ağın geldiği aynı ayrıklaştırmayı paylaşırdı.
+    Analitik gradyan bağımsız bir referanstır.
+    """
+    e = np.exp(-(x * x + y * y + z * z))
+    return np.stack([-2 * x * z * e, -2 * y * z * e, (1 - 2 * z * z) * e], axis=1)
+
+
+def _ucgen_normalleri(mesh: Mesh) -> tuple[np.ndarray, np.ndarray]:
+    """Ağın üçgen normallerini ve ağırlık merkezlerini döndürür, ((k,3), (k,3)).
+
+    Normal `(b-a) x (c-a)`; yönü doğrudan `faces` satırındaki tepe SIRASINDAN,
+    yani sarımdan gelir. Normalleştirilmez -- uzunluğu üçgen alanının iki
+    katıdır ve dejenere (sıfır alanlı) üçgenleri ayıklamak için kullanılıyor.
+    """
+    v = np.asarray(mesh.vertices, dtype=float)
+    f = np.asarray(mesh.faces, dtype=int)
+    a, b, c = v[f[:, 0]], v[f[:, 1]], v[f[:, 2]]
+    return np.cross(b - a, c - a), (a + b + c) / 3.0
+
+
 def _p_alani(
     sinirlar: tuple[tuple[float, float], ...] = _IZOTROPIK, npts: int = 41
 ) -> ScalarField:
@@ -92,9 +122,11 @@ def test_kurenin_izoyuzeyi_dogru_yaricapta():
 
     - `mean == approx(1.0, abs=0.05)` -> **indeks/bohr dönüşümünün atlanmasını**
       yakalar. Ölçüldü: dönüşüm atlanırsa (ham indeks tepe noktaları) bu testin
-      gördüğü ortalama **35.600986** (std 5.693233) olur, çünkü küre indeks
+      gördüğü ortalama **35.600985** (std 5.693233) olur, çünkü küre indeks
       uzayında (20,20,20) merkezlidir ve orijinden uzaklık ~sqrt(3)*20'dir.
-      Sınır 35x aşılır. (Küre kendi merkezine göre ölçülseydi indeks yarıçapı
+      Hedeften sapma 34.600985, sınır 0.05, yani sınır **692x** aşılır --
+      dosyanın geri kalanındaki "94x / 4.7x / 7.7x" ile aynı sapma/sınır
+      konvansiyonu. (Küre kendi merkezine göre ölçülseydi indeks yarıçapı
       9.992149 çıkardı -- ama bu testin baktığı büyüklük o değil.)
       Gerçek ayrıklaştırma hatası yalnızca 7.851e-4 (1 - 0.9992148566441512),
       yani sınır bu iş için 64x gevşek; testin işi hassasiyet ölçmek DEĞİL.
@@ -238,3 +270,198 @@ def test_ag_dizileri_gercekten_salt_okunur():
     )
     disaridan[0, 0] = 7.0
     assert elle.vertices[0, 0] == 0.0
+
+
+def test_sarim_normali_alanin_azaldigi_yone_ceviriyor():
+    """`pg.isosurface`'in SARIM sözleşmesini kilitler.
+
+    Bir üçgenin normali `faces` satırındaki tepe sırasından gelir; sıra ters
+    çevrilirse normal 180 derece döner. `pg.isosurface` sarımı, normal
+    **girdi dizisinin AZALDIĞI** yöne bakacak şekilde üretiyor. Burada küre
+    alanı (x^2+y^2+z^2) kullanılıyor: alan dışarı doğru ARTAR, dolayısıyla
+    doğru sarımda normal MERKEZE bakmalıdır (geometrik olarak "içeri").
+
+    Bu, `extract_signed_pair`'in `-values` numarasının dayandığı sözleşmedir;
+    bkz. o fonksiyonun dokstring'i.
+
+    Ölçüldü: normal ile gradyan (2*r) arasındaki kosinüs, izotropik kutuda
+    3656 üçgenin ortalaması -0.9865, anizotropikte 4248 üçgenin ortalaması
+    -0.9876; ikisinde de dejenere olmayan üçgenlerin **tamamı** negatif.
+
+    DEJENERE ÜÇGENLER: küre ağında 48 üçgenin alanı tam olarak sıfır (izotropik
+    kutuda 3656'nın %1.31'i, anizotropikte 4248'in %1.13'ü). Sıfır alanlı bir
+    üçgenin normali sıfır vektördür, yani YÖNÜ YOKTUR -- bunlar ayıklanmadan
+    "tüm üçgenler" denemez. Ölçüldü: kosinüsü negatif olmayan üçgen kümesi ile
+    dejenere üçgen kümesi TAM OLARAK aynı (dejenere olmayan ve d == 0 olan
+    üçgen sayısı: 0). Bu üçgenler görüntüyü de bozmaz: sıfır normal, tepe
+    normali toplamına sıfır katkı verir. p alanının ağında hiç dejenere üçgen
+    yok (0 / 6200 ve 0 / 6040).
+    """
+    for sinirlar in (_IZOTROPIK, _ANIZOTROPIK):
+        mesh = extract_isosurface(_kure_alani(sinirlar), level=1.0)
+        normaller, merkezler = _ucgen_normalleri(mesh)
+        dejenere = np.linalg.norm(normaller, axis=1) == 0.0
+        gradyan = 2.0 * merkezler  # grad(x^2+y^2+z^2)
+        izdusum = np.sum(normaller * gradyan, axis=1)
+
+        assert dejenere.mean() < 0.05
+        assert np.all(izdusum[~dejenere] < 0.0)
+
+
+def test_isaretli_ciftte_iki_lobun_da_normali_disari_bakiyor():
+    """`-values` numarasının ASIL sebebi: iki lobun da normali DIŞARI baksın.
+
+    `extract_signed_pair` negatif ağı `pg.isosurface(-values, +level)` ile
+    çıkarıyor. Bunun `pg.isosurface(values, -level)` ile "eşdeğer" olduğu
+    sanılabilir -- TEPELER için doğrudur (ölçüldü: her iki yol da 3076 tepe,
+    `np.array_equal` True) ama YÜZLER için sarım terstir (6040 yüzün her biri,
+    örneğin [58, 53, 0] karşı [58, 0, 53]).
+
+    Fark görüntüye yansır. Bir lobun içinden dışına çıkarken `sign*p` azalır,
+    dolayısıyla normalin dışarı bakması `normal . grad(sign*p) < 0` demektir.
+    Ölçüldü:
+
+    | negatif ağ nasıl çıkarılıyor      | dışarı-bakan üçgen oranı |
+    |-----------------------------------|--------------------------|
+    | `-values, +level` (mevcut kod)    | 1.000                    |
+    | `values, -level` (sadeleştirme)   | 0.000                    |
+
+    Yani "sadeleştirme" negatif lobu komple iç-dışa çevirir. Tüketici
+    `app/orbital_window.py` yüzleri `gl.MeshData`ya verip `GLMeshItem`'ı
+    `smooth=True, shader="balloon"` ile çiziyor; ikisi de sarımdan türetilen
+    tepe normallerine bağlı.
+
+    Marj: kosinüs ortalaması -0.9986, **en kötü** üçgende -0.9838
+    (anizotropik kutu, 6040 üçgen); izotropikte en kötü -0.9930. Sınır 0.0,
+    yani fiziksel olarak anlamlı olan işaret değişimi -- gevşetilmiş bir eşik
+    değil. Dejenere üçgen yok, ayıklama gerekmiyor.
+    """
+    for sinirlar in (_IZOTROPIK, _ANIZOTROPIK):
+        pozitif, negatif = extract_signed_pair(_p_alani(sinirlar), level=0.05)
+        for mesh in (pozitif, negatif):
+            normaller, merkezler = _ucgen_normalleri(mesh)
+            assert np.all(np.linalg.norm(normaller, axis=1) > 0.0)
+            gradyan = (
+                _p_gradyani(merkezler[:, 0], merkezler[:, 1], merkezler[:, 2])
+                * mesh.sign
+            )
+            assert np.all(np.sum(normaller * gradyan, axis=1) < 0.0)
+
+
+def test_ucgenler_tek_bir_izgara_hucresinin_icinde_kaliyor():
+    """Ağın TOPOLOJİSİNİ kilitler: `faces` gerçekten komşu tepeleri bağlıyor mu?
+
+    `test_izoyuzey_ucgenlerden_olusuyor` bu işi YAPMIYOR: onun üç assert'i de
+    (`shape[1]==3`, `faces.max() < len(vertices)`, `len(faces)>100`) tepe
+    dizisinin herhangi bir PERMÜTASYONU altında değişmez, yani yüzler tamamen
+    yanlış tepeleri gösterse bile geçer.
+
+    Buradaki sınır kuramdan geliyor, veriden uydurulmadı: marching cubes her
+    tepeyi bir ızgara hücresinin KENARI üzerine koyar ve her üçgen TEK bir
+    hücrenin içinde kalır. Dolayısıyla hiçbir üçgen kenarı o hücrenin
+    köşegeninden (`norm(spacing)`) uzun olamaz. Bu bir kalibrasyon değil,
+    geometrik bir üst sınır.
+
+    Ölçülen maks kenar / köşegen oranı (sınır 1.0):
+
+    | yapılandırma                   | oran  |
+    |--------------------------------|-------|
+    | p anizotropik, her iki lob     | 0.989 |
+    | p izotropik                    | 0.987 |
+    | küre anizotropik               | 0.988 |
+    | küre izotropik, level=1.00     | 0.978 |
+    | küre izotropik, level=0.25     | 0.955 |
+    | küre izotropik, level=2.25     | 0.962 |
+
+    Bozuk indekslemeye duyarlılık (p anizotropik, köşegen 0.2291 bohr):
+    tepe dizisi `[::-1]` ile ters çevrilip yüzler yeniden indekslenmezse maks
+    kenar 0.2267 -> 2.4611 bohr olur, yani sınır **10.7x** aşılır; sadece bir
+    adım kaydırmak (`np.roll(v, 1)`) bile 2.9226 bohr, **12.8x** verir.
+    """
+    olcumler = [
+        (_p_alani(_ANIZOTROPIK), 0.05, True),
+        (_p_alani(_IZOTROPIK), 0.05, True),
+        (_kure_alani(_ANIZOTROPIK), 1.0, False),
+        (_kure_alani(_IZOTROPIK), 1.0, False),
+        (_kure_alani(_IZOTROPIK), 0.25, False),
+        (_kure_alani(_IZOTROPIK), 2.25, False),
+    ]
+    for field, level, isaretli in olcumler:
+        agler = (
+            extract_signed_pair(field, level=level)
+            if isaretli
+            else (extract_isosurface(field, level=level),)
+        )
+        kosegen = float(np.linalg.norm(np.asarray(field.grid.spacing, dtype=float)))
+        for mesh in agler:
+            v = np.asarray(mesh.vertices, dtype=float)
+            f = np.asarray(mesh.faces, dtype=int)
+            a, b, c = v[f[:, 0]], v[f[:, 1]], v[f[:, 2]]
+            kenarlar = np.concatenate(
+                [
+                    np.linalg.norm(b - a, axis=1),
+                    np.linalg.norm(c - b, axis=1),
+                    np.linalg.norm(a - c, axis=1),
+                ]
+            )
+            assert kenarlar.max() <= kosegen
+
+
+def test_c_bitisik_olmayan_alan_da_kabul_ediliyor():
+    """`np.ascontiguousarray` koruması -- ve bugün neden LATENT olduğu.
+
+    `pg.isosurface` girdinin c-bitişik olmasını şart koşuyor, aksi halde
+    `TypeError: isosurface input data must be c-contiguous.` atıyor (ölçüldü).
+    `_ag_cikar` bu yüzden `np.ascontiguousarray` kullanıyor.
+
+    DÜRÜSTLÜK NOTU: bu koruma bu depoda BUGÜN ölü koddur. `ScalarField.values`
+    burada her zaman float64 üretiliyor ve float64 -> float32 dökümü her
+    halükârda yeni, bitişik bir kopya doğuruyor -- yani `np.asarray` bile
+    yeterdi. Koruma yalnızca `values` ZATEN float32 ve bitişik DEĞİLSE iş
+    yapar: o zaman `np.asarray(..., dtype=np.float32)` hiçbir kopya almaz ve
+    bitişik olmayan diziyi olduğu gibi geçirir (ölçüldü, C_CONTIGUOUS False
+    kalıyor ve pyqtgraph TypeError atıyor).
+
+    `ScalarField` bir veri taşıyıcısı; dtype doğrulaması yapmıyor, dolayısıyla
+    böyle bir alan kurulabilir ve bu test onu kuruyor. Test, korumanın
+    sözleşmesini kilitler; bugünkü üreticilerin onu tetiklememesi, sözleşmenin
+    yanlış olduğu anlamına gelmez.
+    """
+    kure = _kure_alani()
+    genis = np.zeros((41, 41, 82), dtype=np.float32)
+    genis[:, :, ::2] = np.asarray(kure.values, dtype=np.float32)
+    bitisiksiz = genis[:, :, ::2]
+    assert bitisiksiz.dtype == np.float32
+    assert not bitisiksiz.flags["C_CONTIGUOUS"]
+
+    field = ScalarField(values=bitisiksiz, grid=kure.grid, provenance=_TEST_PROVENANCE)
+    mesh = extract_isosurface(field, level=1.0)
+    assert len(mesh.vertices) > 0
+    assert np.linalg.norm(mesh.vertices, axis=1).mean() == pytest.approx(
+        1.0, abs=0.05, rel=0.0
+    )
+
+
+def test_mesh_bozuk_bicimi_reddediyor():
+    """`Mesh` dokstring'inin BİÇİM sözünü kilitler.
+
+    Dokstring "vertices: (m,3)", "faces: (k,3)", "sign: +1 ya da -1" diyor.
+    Bu bir belge değil sözleşmedir: `app/orbital_window.py` `faces`'i doğrudan
+    `gl.MeshData`ya veriyor, yanlış biçim orada OpenGL katmanında patlar --
+    yani hatanın kaynaktan uzakta görüldüğü tipik durum. Doğrulama `Mesh`'in
+    kendisinde olmalı.
+    """
+    with pytest.raises(InvalidInputError):
+        Mesh(vertices=np.zeros((4, 7)), faces=np.zeros((2, 3)), level=1.0, sign=1)
+    with pytest.raises(InvalidInputError):
+        Mesh(vertices=np.zeros((4, 3)), faces=np.zeros((2, 9)), level=1.0, sign=1)
+    with pytest.raises(InvalidInputError):
+        Mesh(vertices=np.zeros(3), faces=np.zeros((2, 3)), level=1.0, sign=1)
+    with pytest.raises(InvalidInputError):
+        Mesh(vertices=np.zeros((4, 3)), faces=np.zeros((2, 3)), level=1.0, sign=5)
+    with pytest.raises(InvalidInputError):
+        Mesh(vertices=np.zeros((4, 3)), faces=np.zeros((2, 3)), level=1.0, sign=0)
+
+    # Boş ağ geçerlidir: pg.isosurface bulunmayan seviye için (0,3) döndürüyor.
+    bos = Mesh(vertices=np.zeros((0, 3)), faces=np.zeros((0, 3)), level=1.0, sign=-1)
+    assert len(bos.vertices) == 0
