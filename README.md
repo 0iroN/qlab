@@ -30,13 +30,18 @@ Tasarım belgesi: `../docs/superpowers/specs/2026-08-05-qlab-kuantum-cekirdegi-d
   tek bir türetme doğrulandığında dördü birden doğrulanmış olur — gerekçe
   `engine/hf/integrals.py` modül dokstring'inde. Ölçülen sayılar aşağıdaki
   Doğrulama tablosundadır.
-- **Modül 1B2 — orbital görselleştirme: henüz yazılmadı, ayrı bir plana
-  (Plan B2) ait.** `observable/hf_obs.py` (moleküler orbitali kartezyen
-  ızgarada değerlendirme, elektron yoğunluğu, yoğunluk farkı haritası) ve
-  `viz/volume.py` (PyVista marching cubes izoyüzeyleri, GUI entegrasyonu)
-  bu depoda YOKTUR. Kabul kriteri 3 (GUI'de döndürülebilir H₂O HOMO
-  izoyüzeyi) bu yüzden kapanmamıştır — bkz. "Kabul kriterleri durumu".
-- **Modül 2 — moleküler dinamik: planlanıyor.** Henüz başlamadı.
+- **Modül 1B2 — orbital görselleştirme: tamam.** `observable/hf_obs.py`
+  (moleküler orbitali kartezyen ızgarada değerlendirme, elektron yoğunluğu,
+  promolekül ve yoğunluk farkı haritası), `engine/hf/analysis.py::analyse`
+  (yedi analiz fonksiyonunu tek `Provenance` altında toplayan rapor),
+  `viz/isosurface.py` (marching cubes ağ çıkarımı, ±faz için işaretli çift) ve
+  `app/orbital_window.py` (döndürülebilir 3B pencere). Görselleştirme yığını
+  **PyVista değil `pyqtgraph.opengl` + PyOpenGL**: ~150 MB yerine ~2 MB ve
+  depoda zaten kullanılan tek render yığını — spec'ten bilinçli sapma.
+  Kabul kriteri 3 kapandı ve bu, depodaki **ilk gerçek-ekran doğrulamasıdır**.
+- **Modül 2 — moleküler dinamik: planlanıyor.** Henüz başlamadı. Bu modülün
+  ürettiği yoğunluk farkı haritası orada zamana bağlı hâle gelir; bağın
+  kopuşu görünür olur.
 
 ## Ne iddia etmiyor
 
@@ -77,16 +82,48 @@ kullanıcı o çözümü meşru olarak isteyebilir. Sınanmayan: dış kararsız
 (RHF→UHF, triplet, kompleks orbital) — "kararlı" hükmü çözümün küresel minimum
 olduğunu söylemez.
 
-Qt penceresi bu depoda hiçbir gerçek ekranda henüz açılıp gözle doğrulanmadı.
-Projedeki her GUI testi `QT_QPA_PLATFORM=offscreen` ile ekransız çalışır
-(bkz. `tests/test_transparency.py`) — widget durumu programatik olarak okunur,
-ama kimse pencereyi fiilen görmedi.
+Görselleştirme ızgarası çekirdek orbitallerini ÇÖZMEZ, ve bu ölçülmüştür:
+su/STO-3G'de HOMO'nun ızgara üzerindeki normu 1.00000000 çıkarken çekirdek
+1s orbitalininki **0.98760196**'dır — analitik değeri 1 olan bir büyüklükte
+%1.24 eksik. Aynı orbitalin ızgaradaki maksimum genliği de yakınsamamıştır
+(n=60'ta 4.9041, n=80'de 5.9271). Çekirdeğe yakın gösterilen her yüzey bu
+yüzden niteldir; oradan sayı okunmaz.
+
+Yoğunluk farkı haritasının promolekül referansı **gerçek taban durum
+değildir**. RHF serbest atomları genel olarak çözemez (tek elektronlu H açık
+kabuktur, oksijenin taban durumu üçlüdür), bu yüzden referans küresel
+ortalamalı, kesirli işgalli bir serbest atomdur (SAD tipi: simetri blokları
+ayrı köşegenleştirilir, kısmi dolu kabuk üç kartezyen yöne eşit bölünür —
+oksijende 2p başına 4/3 elektron). Bu bir seçimdir ve `Provenance`'ta
+yazılıdır; bağımsız bir dış referansı YOKTUR, çünkü karşılaştırılacak "doğru"
+serbest atomu aynı yöntem üretemez.
+
+Orbital penceresindeki **±faz renkleri mutlak bir anlam taşımaz**. Bir
+özvektörün global işareti keyfidir; başka bir kütüphane aynı orbitali ters
+işaretle verse kırmızı ile mavi yer değiştirirdi ve hiçbir fizik değişmezdi.
+İki renk yalnızca aynı orbitalin kendi içindeki bağıl fazı gösterir. Aynı
+şekilde izoyüzey seviyesi hesabın bir sonucu değil bakanın bir seçimidir:
+aynı su HOMO'su 0.02'de 2850, 0.50'de 114 tepe verir. Pencere üçünü de
+şeffaflık panelinde beyan eder.
+
+Qt penceresi bu depoda **bir kez** gerçek ekranda açılıp gözle doğrulandı:
+orbital penceresi (su/STO-3G HOMO), Windows platformunda, kabul kriteri 3
+kapsamında — ayrıntı "Kabul kriterleri durumu" tablosunda. Onun DIŞINDA
+projedeki her GUI testi `QT_QPA_PLATFORM=offscreen` ile ekransız çalışır
+(bkz. `tests/test_transparency.py`, `tests/test_orbital_window.py`) — widget
+durumu programatik olarak okunur, çizimin kendisi doğrulanmaz. TDSE penceresi
+hâlâ hiçbir gerçek ekranda görülmedi.
 
 ## Kurulum
 
 ```bash
 python -m pip install -e ".[dev]"
 ```
+
+Orbital penceresi `pyqtgraph.opengl` üzerinden **PyOpenGL**'e bağlıdır; ikisi de
+bağımlılık listesindedir. Eksikse `tests/test_orbital_window.py` sessizce
+atlamaz, KIRMIZI olur — kurulu olmayan bir bağımlılık bozuk bir ortamdır,
+atlanacak bir koşul değil.
 
 ## Kullanım
 
@@ -96,11 +133,20 @@ GUI olmadan senaryo koştur:
 python -m qlab.run scenarios/tunneling.yaml -o out.npz
 ```
 
-Etkileşimli pencere:
+Etkileşimli TDSE penceresi:
 
 ```bash
 python -m qlab.app.main scenarios/tunneling.yaml
 ```
+
+Döndürülebilir orbital penceresi (RHF koşar, HOMO ile açılır):
+
+```bash
+python -m qlab.app.main --molecule "O 0 0 0; H 0 0.757 0.587; H 0 -0.757 0.587" --basis sto-3g
+```
+
+İki giriş yolu birbirini dışlar; ikisi birden ya da hiçbiri verilmezse komut
+hangisini kastettiğinizi tahmin etmeden hata verir.
 
 Testler:
 
@@ -111,9 +157,11 @@ pytest tests/ -v -m slow
 
 `pyproject.toml` bir `addopts` taşımaz, yani `pytest tests/` yavaş işaretli
 testleri de KOŞAR — ikinci komut ayrı bir küme değil, birincinin alt kümesidir.
-Bu makinede ölçüldü: tam süite 344 test / **127.3 s** (ikinci koşuda 128.7 s),
-`-m slow` alt kümesi 11 test / **112.6 s** — yani toplam sürenin ~%88'i o 11
-testten geliyor (çift yarık ve kutuda-parçacık koşuları).
+Bu makinede ölçüldü: tam süite **514 test / 127.96 s**, `-m slow` alt kümesi
+**16 test / 106.67 s** — yani toplam sürenin ~%83'ü o 16 testten geliyor (çift
+yarık, kutuda-parçacık ve HF tarama koşuları). Modül 1B2 süiteyi 344'ten
+514'e çıkardı ama süreye neredeyse hiçbir şey eklemedi: orbital penceresi
+testleri ekransız ve saniyenin altında.
 
 ## Doğrulama
 
@@ -168,6 +216,32 @@ aynı geometride dört tensör de rtol=0, atol=1e-12 ile eşleşir
 özyinelemeyi kilitleyen asıl kapıdır; yukarıdaki 1e-10 seviyesi birim-sabiti
 farkını ölçer, integral hassasiyetini değil.
 
+### Modül 1B2 — orbital görselleştirme
+
+Bu tablodaki sayılar bu görevde (B2 Task 10) gerçekten koşturulup ölçülmüştür.
+Modül 1B'nin aksine burada **bağımsız bir dış referans yoktur**: doğrulama
+fikri, ızgara üzerinde sayısal olarak hesaplanan büyüklüğün motorun kendi
+ANALİTİK sonucuna oturmasıdır. Bu, yeni kodu Modül 1B'nin PySCF'e karşı
+doğrulanmış motoruna zincirler; "PySCF'ten daha doğru" gibi bir iddia
+taşımaz.
+
+| Test | Referans / tolerans | Ölçülen |
+|---|---|---|
+| Izgara örtüşmesi ↔ analitik `overlap_matrix` (H₂/STO-3G, padding 8 bohr, n=120) | Motorun kendi analitik integrali | en kötü fark **1.610e-11** |
+| Elektron sayısı: ∫ρ dV (H₂/STO-3G, padding 6 bohr, n=120) | Tam olarak 2 | **1.9999993405** (kalan kutu kuyruğunun kesilmesinden) |
+| Su HOMO'sunun ızgara normu | Analitik 1 | **1.00000000** |
+| Su çekirdek 1s orbitalinin ızgara normu | Analitik 1 | **0.98760196** — %1.24 eksik; ızgaranın çekirdek tepesini çözemediğinin sayısal kanıtı |
+| Yoğunluk farkı sıfıra integre oluyor mu (H₂) | Molekül ve promolekül aynı elektron sayısını taşır | **−1.411e-08** |
+| **Kovalent bağda elektron birikimi** (H₂, bağ bölgesi \|x\|<1, \|y\|<1, 0.2<z<1.2 bohr) | Yön iddiası: çekirdekler arasında ARTMALI | **+0.055005**; dış bölge (z<−1.0 veya z>2.4) **−0.027068**; maks +0.042281 (z=+0.643 bohr, çekirdekler 0 ve 1.398 arasında) |
+| **Polar bağda yük transferi** (HF, r=0.917 Å, orta düzlem z=0.8664 bohr) | Yön iddiası: elektronegatif atoma GİTMELİ | H yarısı **−0.1841**, F yarısı **+0.1841** — üç ayrı ızgarada ±%0.2 |
+| İzoyüzey yarıçapı (analitik küre `x²+y²+z²`, level=1.0, bohr) | Yarıçap 1.0 | ort **0.999215**, std 0.000363; indeks→bohr dönüşümü atlanırsa aynı büyüklük 35.600985 çıkar |
+| İzoyüzey ağının yön tutarlılığı | Her iki fazın normali DIŞARI bakmalı | dışarı-bakan üçgen oranı **1.000 / 1.000** |
+
+"Bağ", bu tabloda hiçbir yerde koda yazılmamıştır. `+0.055005` ve `0.184`
+elektron, iki ayrı hesabın (molekül ve etkileşmeyen serbest atomlar) farkından
+OKUNMUŞTUR. Elektronegatiflik de öyle: HF'nin hangi ucuna elektron gittiği
+hiçbir tabloda tanımlı değildir, haritadan çıkar.
+
 ## Mimari kuralı
 
 `engine` paketi `viz` veya `app` import **edemez**. Kural yorumla değil
@@ -181,9 +255,9 @@ Spec §15'teki yedi maddenin gerçek durumu (ölçüm ayrıntıları
 
 | # | Kriter | Durum |
 |---|---|---|
-| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — 344/344 test yeşil (`pytest tests/ -v`), PySCF referans testleri dahil; referans dosyası kaldırıldığında testler ATLANMIYOR, KIRMIZI oluyor — kanıtlandı (134 passed, 64 error) |
+| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — 514/514 test yeşil (`pytest tests/ -v`), PySCF referans testleri dahil; referans dosyası kaldırıldığında testler ATLANMIYOR, KIRMIZI oluyor — kanıtlandı (134 passed, 64 error) |
 | 2 | Headless koşucu çalışır + H₂ eğrisi bağ uzunluğu ±%8 | **Kapandı** — `python -m qlab.run scenarios/h2_bond_scan.yaml`; denge bağ uzunluğu 0.7156 Å, sapma %3.4 |
-| 3 | GUI'de H₂O HOMO izoyüzeyi döndürülebilir | **AÇIK** — Hartree-Fock artık var ama orbital görselleştirme yok; `observable/hf_obs.py` ve `viz/volume.py` Plan B2'ye ait, henüz yazılmadı |
+| 3 | GUI'de H₂O HOMO izoyüzeyi döndürülebilir | **Kapandı — bu depoda ilk gerçek-ekran doğrulaması.** `python -m qlab.app.main --molecule "O 0 0 0; H 0 0.757 0.587; H 0 -0.757 0.587"` gerçek Windows platformunda açıldı; su HOMO'su (1b₁) çizildi, ±faz iki renkte, 1764/1764 tepe, çekirdekler ve şeffaflık paneli görüldü. Döndürme ölçüldü: kamera azimutu değişince kare piksel bileşenlerinin **%14.1'i**, elevasyon değişince **%7.2'si** değişiyor — sahne gerçekten 3B ve görünüm tepki veriyor. **Ne ölçülmedi:** fareyle sürükleyerek döndürme; kamera programatik değiştirildi. Kriterin "döndürülebilir" kelimesi bu yüzden yalnızca sahne tarafında kapalıdır, girdi tarafında bir insanın bakması gerekir. Doğrulamanın kendisi bir kusuru da GÖRÜNÜR KILDI: 12 satırlık beyan 140 px'lik panelde katlanın altında kalıyordu (düzeltildi, `TransparencyPanel(max_height=…)`) |
 | 4 | Kaydırıcı ile canlı iletim, analitiğin ±%2'si içinde | **Kapandı** — ölçülen fark %0.07 |
 | 5 | Şeffaflık paneli her hesapta dolu | **Kapandı** — TDSE tarafında pencere paneli; HF tarafında headless koşucu her senaryoda Yöntem/Yaklaşımlar/İhmal edilen/Beklenen hata/Yakınsama satırlarını basar (`h2_bond_scan.yaml` çıktısı) |
 | 6 | Yakınsamayan SCF sessizce sayı döndürmez, test edilmiş | **Kapandı** — `SCFConvergenceError`, `test_non_convergence_raises_rather_than_returning` ile test edilmiştir |
