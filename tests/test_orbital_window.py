@@ -19,9 +19,16 @@ kurulamazsa devreye giren bir güvenlik ağıdır.
 from __future__ import annotations
 
 import os
+import pathlib
+import sys
 
 import numpy as np
 import pytest
+
+#: Depo kökü. Senaryo yolları buradan MUTLAK kurulur; planın önerdiği
+#: `"scenarios/harmonic_trap.yaml"` göreli yolu pytest'in hangi dizinden
+#: çağrıldığına bağlı olurdu.
+_DEPO = pathlib.Path(__file__).resolve().parents[1]
 
 
 def test_pyqtgraph_opengl_import_edilebiliyor():
@@ -236,3 +243,160 @@ def test_gecersiz_orbital_secimi_reddediliyor():
         assert pencere.orbital_index == 0, "reddedilen seçim durumu bozmamalı"
     finally:
         pencere.close()
+
+
+# ---------------------------------------------------------------------------
+# CLI bağlantısı (Task 10)
+
+
+@pytest.fixture
+def acilan_pencereler(monkeypatch):
+    """`_pencereyi_goster` yamalanır; gerçek olay döngüsü testte koşamaz.
+
+    Yamalanan işlev çıkış kodunu DÖNDÜRÜR (gerçeği `app.exec()`'i döndürür),
+    yoksa `main()` `None` döndürür ve `kod == 0` iddiası anlamsızlaşırdı.
+    """
+    from qlab.app import main as app_main
+
+    acilanlar: list = []
+
+    def sahte(pencere):
+        acilanlar.append(pencere)
+        return 0
+
+    monkeypatch.setattr(app_main, "_pencereyi_goster", sahte)
+    return app_main, acilanlar
+
+
+@requires_offscreen
+def test_main_molekul_argumaniyla_orbital_penceresi_aciyor(acilan_pencereler):
+    """`--molecule` ikinci bir giriş yolu açar; SCF koşar ve pencere gelir.
+
+    H2/STO-3G'de iki orbital var, HOMO indeksi 0.
+    """
+    app_main, acilanlar = acilan_pencereler
+    kod = app_main.main(["--molecule", "H 0 0 0; H 0 0 0.74", "--basis", "sto-3g"])
+    assert kod == 0
+    assert len(acilanlar) == 1
+    assert isinstance(acilanlar[0], OrbitalWindow)
+    assert acilanlar[0].orbital_index == 0
+
+
+@requires_offscreen
+def test_main_tdse_senaryosunu_bozmadan_calistiriyor(acilan_pencereler):
+    """Geriye uyumluluk: mevcut TDSE yolu aynen çalışmalı.
+
+    Planın önerdiği `harmonic_trap.yaml` DEĞİL `tunneling.yaml` kullanılıyor:
+    ilki bir sonraki testin konusu olan hatayı tetikliyordu, ve bu testin işi
+    TDSE yolunun BOZULMADIĞINI göstermek. Ölçüldü: tunneling.yaml ile pencere
+    2.02 s'de kuruluyor (n_steps=32000), iletim 0.1478, norm 1.0000000000.
+    """
+    app_main, acilanlar = acilan_pencereler
+    kod = app_main.main([str(_DEPO / "scenarios" / "tunneling.yaml")])
+    assert kod == 0
+    assert len(acilanlar) == 1
+    assert type(acilanlar[0]).__name__ == "TDSEWindow"
+
+
+@requires_offscreen
+def test_main_bariyersiz_senaryoda_cokmuyor(acilan_pencereler):
+    """ÖNCEDEN VAR OLAN HATA: `harmonic_trap.yaml` pencereyi çökertiyordu.
+
+    `TDSEWindow._recompute` kaydırıcının değerini KOŞULSUZ olarak
+    `params["height"]` diye enjekte ediyordu; `height` parametresini yalnızca
+    `barrier` potansiyeli kabul ediyor. Ölçülen çökme:
+
+        ScenarioError: 'harmonic' potansiyeli için parametreler hatalı:
+        harmonic() got an unexpected keyword argument 'height'
+
+    Yani `python -m qlab.app.main scenarios/harmonic_trap.yaml` bugüne kadar
+    hiç çalışmadı. Hata Task 10'un getirdiği bir şey değil; bu test onu
+    kilitliyor.
+
+    Sessiz varyantı daha kötüydü: `potentials.double_slit` de `height` ALIYOR
+    (varsayılan 10000.0 hartree, duvarı geçirimsiz yapan değer). Bir 2B
+    çift-yarık senaryosu açılsaydı kaydırıcı duvar yüksekliğini sessizce
+    0.80'e düşürür ve yarıklar anlamını yitirirdi -- çökme bile olmazdı.
+    """
+    app_main, acilanlar = acilan_pencereler
+    kod = app_main.main([str(_DEPO / "scenarios" / "harmonic_trap.yaml")])
+    assert kod == 0
+    assert len(acilanlar) == 1
+    pencere = acilanlar[0]
+    assert type(pencere).__name__ == "TDSEWindow"
+    assert not pencere._slider.isEnabled(), (
+        "bariyeri olmayan bir potansiyelde 'Bariyer yüksekliği' kaydırıcısı "
+        "etkin kalmamalı -- döndürecek bir şey yok"
+    )
+
+
+@requires_offscreen
+def test_main_ne_senaryo_ne_molekul_verilmezse_hata(acilan_pencereler, capsys):
+    """Argümansız çağrı sessizce bir şey açmamalı."""
+    app_main, acilanlar = acilan_pencereler
+    kod = app_main.main([])
+    assert kod == 1
+    assert acilanlar == []
+    assert "molecule" in capsys.readouterr().err
+
+
+@requires_offscreen
+def test_main_hem_senaryo_hem_molekul_verilirse_hata(acilan_pencereler, capsys):
+    """İki giriş yolu birbirini dışlar; hangisinin kazandığı tahmin edilmemeli."""
+    app_main, acilanlar = acilan_pencereler
+    kod = app_main.main(
+        [str(_DEPO / "scenarios" / "tunneling.yaml"), "--molecule", "H 0 0 0; H 0 0 0.74"]
+    )
+    assert kod == 1
+    assert acilanlar == []
+    assert "molecule" in capsys.readouterr().err
+
+
+#: Alt süreç sürücüsü. `_pencereyi_goster` yamalanır (olay döngüsü hiç
+#: dönmezdi), gerisi gerçek `main()` yoludur.
+_ALT_SUREC = """
+import os, sys
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+from qlab.app import main as m
+m._pencereyi_goster = lambda pencere: 0
+sys.exit(m.main(sys.argv[1:]))
+"""
+
+
+@pytest.mark.parametrize(
+    "arguman",
+    [
+        pytest.param(["--molecule", "H 0 0 0; H 0 0 0.74"], id="orbital"),
+        pytest.param([str(_DEPO / "scenarios" / "harmonic_trap.yaml")], id="tdse"),
+    ],
+)
+def test_main_taze_surecte_qapplication_olmadan_cokmuyor(arguman):
+    """CLI, süreçte HİÇBİR QApplication yokken de çalışmalı.
+
+    Bu testin ALT SÜREÇTE koşmasının sebebi, testin kendisidir: bu depodaki
+    her Qt test modülü içe aktarılırken modül düzeyinde bir QApplication
+    kuruyor. Yani aynı süreç içinde koşan hiçbir test, "QApplication yokken
+    ne olur" sorusunu SORAMAZ -- ortam hatayı maskeler.
+
+    Maskelenen hata ölçüldü ve sessiz değil, ÖLÜMCÜL: QApplication yokken bir
+    QWidget kurmak Qt'nin `qFatal`'ını tetikliyor, süreç **çıkış kodu 127** ile
+    ölüyor; Python istisnası da yok, traceback de yok. `main()` pencereyi
+    kurup SONRA uygulamayı kursaydı `--molecule` yolu her gerçek çağrıda
+    böyle ölürdü ve takım yemyeşil kalırdı.
+    """
+    import subprocess
+
+    sonuc = subprocess.run(
+        [sys.executable, "-c", _ALT_SUREC, *arguman],
+        cwd=str(_DEPO),
+        env={**os.environ, "PYTHONPATH": str(_DEPO / "src")},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=300,
+    )
+    assert sonuc.returncode == 0, (
+        f"CLI taze süreçte çöktü (kod {sonuc.returncode}).\n"
+        f"stdout: {sonuc.stdout}\nstderr: {sonuc.stderr}"
+    )

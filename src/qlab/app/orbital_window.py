@@ -183,7 +183,10 @@ class OrbitalWindow(QtWidgets.QMainWindow):
         self._kaydirici.setValue(int(round(self._level * _KAYDIRICI_OLCEK)))
         self._kaydirici.valueChanged.connect(self._kaydirici_degisti)
 
-        self._panel = TransparencyPanel()
+        # 260 px ≈ 15 satır. Ölçüldü (kabul kriteri 3, gerçek ekran): bu
+        # pencerenin beyanı 12 satır sürüyor ve varsayılan 140 px'lik kutuda
+        # son satırlar katlanın altında kalıyordu.
+        self._panel = TransparencyPanel(max_height=260)
 
         ust = QtWidgets.QHBoxLayout()
         ust.addWidget(QtWidgets.QLabel("Orbital:"))

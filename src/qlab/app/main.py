@@ -43,12 +43,17 @@ class TDSEWindow(QtWidgets.QMainWindow):
             pen=pg.mkPen(style=QtCore.Qt.PenStyle.DashLine, width=1)
         )
 
+        # Kaydırıcı bir bariyer yüksekliğini döndürür; senaryoda öyle bir
+        # parametre yoksa döndürecek bir şey de yoktur (bkz. `_recompute`).
+        self._bariyerli = "height" in scenario.potential.params
+
         self._slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self._slider.setMinimum(0)
         self._slider.setMaximum(200)
         self._slider.setValue(
             int(round(100 * scenario.potential.params.get("height", 0.8)))
         )
+        self._slider.setEnabled(self._bariyerli)
 
         self._debounce = QtCore.QTimer(self)
         self._debounce.setSingleShot(True)
@@ -60,7 +65,12 @@ class TDSEWindow(QtWidgets.QMainWindow):
         self._panel = TransparencyPanel()
 
         controls = QtWidgets.QFormLayout()
-        controls.addRow("Bariyer yüksekliği (hartree × 100)", self._slider)
+        controls.addRow(
+            "Bariyer yüksekliği (hartree × 100)"
+            if self._bariyerli
+            else "Bariyer yüksekliği — bu potansiyelde yok",
+            self._slider,
+        )
         controls.addRow("Ölçüm", self._readout)
 
         layout = QtWidgets.QVBoxLayout()
@@ -77,7 +87,18 @@ class TDSEWindow(QtWidgets.QMainWindow):
     def _recompute(self) -> None:
         height = self._slider.value() / 100.0
         params = dict(self._scenario.potential.params)
-        params["height"] = height
+        # Kaydırıcı YALNIZCA senaryonun zaten taşıdığı bir `height`'ı değiştirir.
+        # Koşulsuz enjekte edilince iki ayrı hata çıkıyordu (ölçüldü):
+        #   - `harmonic` bu parametreyi hiç almıyor, pencere ScenarioError ile
+        #     ÇÖKÜYORDU -- yani `qlab.app.main scenarios/harmonic_trap.yaml`
+        #     hiç çalışmamıştı;
+        #   - `double_slit` ise ALIYOR (varsayılan 10000.0 hartree, duvarı
+        #     geçirimsiz yapan değer), yani sessizce 0.80'e düşürülür ve
+        #     yarıklar anlamını yitirirdi -- çökme bile olmadan.
+        # Bariyeri olmayan senaryoda kaydırıcı kurulumda kapatılır; "etkin ama
+        # etkisiz" bir denetim yalan söylerdi.
+        if self._bariyerli:
+            params["height"] = height
         scenario = dataclasses.replace(
             self._scenario,
             potential=dataclasses.replace(self._scenario.potential, params=params),
@@ -91,13 +112,62 @@ class TDSEWindow(QtWidgets.QMainWindow):
         payload = build_payload(frames[-1], grid, potential, _MEASUREMENT_BOUNDARY)
         self._density_curve.setData(payload.x, payload.density)
         self._potential_curve.setData(payload.x, payload.potential_scaled)
+        # Bariyeri olmayan senaryoda "V0" diye bir sayı basmak yalan olurdu:
+        # kaydırıcının değeri hiçbir yere gitmiyor.
+        bariyer = f"V0 = {height:.2f} hartree   ·   " if self._bariyerli else ""
         self._readout.setText(
-            f"V0 = {height:.2f} hartree   ·   iletim = {payload.transmitted:.4f}"
+            f"{bariyer}iletim = {payload.transmitted:.4f}"
             f"   ·   norm = {payload.norm:.10f}"
         )
         self._panel.set_provenance(
             factory.provenance_for(scenario, norm_deviation=abs(payload.norm - 1.0))
         )
+
+
+def _pencereyi_goster(window: QtWidgets.QWidget) -> int:
+    """Pencereyi gösterir ve Qt olay döngüsünü koşturur; çıkış kodunu döndürür.
+
+    Bu, testlerin yamaladığı TEK gösterim noktasıdır: olay döngüsü bir testte
+    koşturulamaz. Ayrı bir işlev olması, `main()`'in hangi pencereyi kurduğunun
+    olay döngüsünü açmadan doğrulanabilmesini sağlar.
+
+    `QApplication.instance()` önce denenir. Süreçte zaten bir uygulama varken
+    ikincisini kurmak Qt'yi düşürür; test oturumunda `tests/test_transparency.py`
+    ve `tests/test_orbital_window.py` modül düzeyinde birer tane kuruyor.
+    """
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv[:1])
+    window.show()
+    return app.exec()
+
+
+def _orbital_penceresi(molecule_text: str, basis: str) -> QtWidgets.QWidget:
+    """`--molecule` yolu: SCF koşar ve orbital penceresini kurar.
+
+    İçe aktarma işlev gövdesinde: `orbital_window` PyOpenGL'e bağlı ve TDSE
+    yolunu kullanan biri için o bağımlılığı modül yüklenirken zorunlu kılmak
+    gereksiz olurdu.
+    """
+    from qlab.app.orbital_window import OrbitalWindow
+    from qlab.engine.hf.scf import solve
+    from qlab.types import Molecule
+
+    molecule = Molecule.from_string(molecule_text)
+    result = solve(molecule, basis)
+
+    # QApplication, HERHANGİ bir widget'tan ÖNCE var olmak zorunda -- TDSE dalı
+    # `TDSEWindow`'dan hemen önce aynısını yapıyor. Yoksa Qt `qFatal` ile süreci
+    # ÖLDÜRÜR: ölçüldü, Windows'ta çıkış kodu 0xC0000409, Python istisnası YOK,
+    # traceback YOK, stderr BOŞ. Aynı süreçte koşan hiçbir test bunu
+    # yakalayamaz çünkü her Qt test modülü içe aktarılırken kendi
+    # QApplication'ını kuruyor -- ortam hatayı maskeliyor. Yakalayan test
+    # `test_main_taze_surecte_qapplication_olmadan_cokmuyor`, ALT SÜREÇTE koşar.
+    #
+    # Molekül ayrıştırma ve SCF'ten SONRA: geçersiz bir geometri ya da
+    # yakınsamayan bir hesap Qt hiç başlatılmadan raporlanır.
+    if QtWidgets.QApplication.instance() is None:
+        QtWidgets.QApplication(sys.argv[:1])
+
+    return OrbitalWindow(result, molecule)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -107,8 +177,38 @@ def main(argv: list[str] | None = None) -> int:
     reconfigure_stdio_utf8()
 
     parser = argparse.ArgumentParser(prog="qlab.app.main")
-    parser.add_argument("scenario", help="YAML senaryo dosyası")
+    parser.add_argument(
+        "scenario", nargs="?", default=None, help="YAML senaryo dosyası (TDSE)"
+    )
+    parser.add_argument(
+        "--molecule",
+        default=None,
+        help='Molekül geometrisi, ör. "O 0 0 0; H 0 0.757 0.587; H 0 -0.757 0.587" '
+        "(ångström). Verilirse RHF koşulur ve orbital penceresi açılır.",
+    )
+    parser.add_argument(
+        "--basis", default="sto-3g", help="Baz seti (yalnızca --molecule ile)"
+    )
     args = parser.parse_args(argv)
+
+    # İki giriş yolu birbirini DIŞLAR. Biri seçilip diğeri sessizce yok
+    # sayılsaydı kullanıcı hangisine baktığını tahmin etmek zorunda kalırdı.
+    if (args.scenario is None) == (args.molecule is None):
+        print(
+            "tam olarak birini verin: bir YAML senaryo dosyası (TDSE) ya da "
+            "--molecule (orbital penceresi).\n"
+            'örnek: python -m qlab.app.main --molecule "H 0 0 0; H 0 0 0.74"',
+            file=sys.stderr,
+        )
+        return 1
+
+    if args.molecule is not None:
+        try:
+            window = _orbital_penceresi(args.molecule, args.basis)
+        except QLabError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        return _pencereyi_goster(window)
 
     try:
         scenario = load_scenario(args.scenario)
@@ -132,11 +232,13 @@ def main(argv: list[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 1
 
-    app = QtWidgets.QApplication(sys.argv[:1])
+    # QApplication, pencere kurulmadan ÖNCE var olmalı (widget'lar ona bağlanır);
+    # kurulumu `_pencereyi_goster` ile paylaşan tek yol `instance()` kontrolüdür.
+    if QtWidgets.QApplication.instance() is None:
+        QtWidgets.QApplication(sys.argv[:1])
     window = TDSEWindow(scenario)
     window.resize(1100, 780)
-    window.show()
-    return app.exec()
+    return _pencereyi_goster(window)
 
 
 if __name__ == "__main__":
