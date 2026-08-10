@@ -181,7 +181,11 @@ def evaluate_orbital(result: HFResult, index: int, grid: VolumeGrid) -> np.ndarr
 
     Baz, result.molecule ve result.basis_name'den build_basis ile yeniden
     kurulur; solve() de basisi ayni sekilde (build_basis(molecule, basis_name))
-    kurdugu icin sutun sirasi result.coefficients ile eslesir.
+    kurdugu icin sutun sirasi result.coefficients ile eslesir. Bu zincir
+    SINANIR (test_orbital_sonucun_bazini_kullaniyor, su/6-31G): baz adinin
+    burada sabit yazilmasi sessiz bir kusurdur, cunku asagidaki zip() fazla
+    katsayilari uyari vermeden KIRPAR -- kardes fonksiyon electron_density
+    ayni hatada np.einsum sayesinde gurultulu cakar, bu yol cakmaz.
     """
     n_basis = result.coefficients.shape[0]
     if not (0 <= index < n_basis):
@@ -204,11 +208,48 @@ class ScalarField:
     `values` sekli grid.shape ile aynidir, yani (nx, ny, nz). `provenance`,
     bu alanin nasil uretildigini ve izgaranin hangi sinirlari tasidigini
     beyan eder -- bkz. electron_density().
+
+    Bu sekil iddiasi DOGRULANIR, yalnizca belgelenmez -- kardes tip
+    viz.isosurface.Mesh'in ayni gerekceyle yaptigi gibi: dogrulama KAYNAKTA
+    olmali, cunku tuketici bozuk bicimi kaynaktan uzakta patlatirdi. Burada
+    "patlatirdi" bile fazla iyimserdi: _ag_cikar indeksleri `values`in
+    seklinden, origin/spacing'i ise `grid`den okur, yani uyusmaz bir cift
+    hic istisna atmadan YANLIS OLCEKLI bir ag uretirdi (olculdu: H2 HOMO'su
+    (20,20,20) degerler + (25,25,25) izgara ile sessizce kuruluyor).
+    Gercekci hata da tam bu sekildedir: yeni cozunurlukte yeniden hesapla,
+    eski izgarayi yeniden kullan. Yanlis ndim zaten pyqtgraph icinde
+    gurultulu cakiyor; sessiz olan tek durum 3B-ama-yanlis-boyuttur.
     """
 
     values: np.ndarray
     grid: VolumeGrid
     provenance: Provenance
+
+    def __post_init__(self) -> None:
+        sekil = tuple(np.asarray(self.values).shape)
+        if sekil != tuple(self.grid.shape):
+            raise InvalidInputError(
+                f"ScalarField.values sekli izgarayla ayni olmali: values "
+                f"{sekil}, grid {tuple(self.grid.shape)}"
+            )
+
+
+def _nucleus_to_wall(molecule: Molecule, grid: VolumeGrid) -> float:
+    """En yakin cekirdek-kutu duvari mesafesi (bohr).
+
+    Kuyruk kesmesini belirleyen olcek budur, izgara araligi DEGIL: olculdu,
+    Li2/STO-3G HOMO normu izgarayi 2.5x inceltince duzelmiyor (0.991352 ->
+    0.990618) ama bu mesafeyi 6'dan 8 bohr'a cikarinca 0.999634'e cikiyor.
+    Aralik zaten diagnostics'te var; bu olmadan tuketici kesmeyi hicbir
+    sayidan goremiyordu.
+
+    Negatif deger, bir cekirdegin kutunun DISINDA kaldigini soyler -- bu bir
+    hata degil, kullanicinin kurdugu izgaranin bir ozelligidir ve
+    gizlenmemelidir.
+    """
+    positions = np.array([atom.position for atom in molecule.atoms])
+    high = grid.origin + grid.spacing * (np.array(grid.shape) - 1)
+    return float(np.minimum(positions - grid.origin, high - positions).min())
 
 
 def electron_density(result: HFResult, grid: VolumeGrid) -> ScalarField:
@@ -221,11 +262,32 @@ def electron_density(result: HFResult, grid: VolumeGrid) -> ScalarField:
     yogunluk matrisiyle kontrakte edilir -- evaluate_orbital isgal edilmis
     orbitaller uzerinde dongu icinde cagrilmaz.
 
-    Donen ScalarField'in provenance'i izgaranin cozunurluk sinirini acikca
-    beyan eder: izgara cekirdek orbitallerini cozmez, bu yuzden hidrojen
-    disi atomlarda integre edilen elektron sayisi eksik cikar (degerlik
-    orbitalleri etkilenmez). diagnostics, olculen ve beklenen elektron
-    sayisini tasir ki sapma sayisal olarak gorunsun.
+    Donen ScalarField'in provenance'i izgaranin IKI ayri sinirini acikca
+    beyan eder:
+
+      (1) COZUNURLUK: izgara cekirdek orbitallerini cozmez. Hatanin YONU tek
+          yonlu DEGILDIR -- Riemann toplami cekirdegin uzerine bir izgara
+          noktasi dusmedigi surece EKSIK, dustugunde ASKIN cikar. Su/STO-3G,
+          VolumeGrid.around(padding=6.0) ile olculdu (integre elektron):
+          n=40 9.197826 / n=41 11.001624 / n=60 9.704596 / n=61 10.093610 /
+          n=80 9.864704 / n=81 10.099615 / n=120 9.973676 / n=121 10.026931.
+          Suyun x-y kutusu 0'a gore simetriktir, bu yuzden TEK sayili her n
+          oksijen cekirdeginin uzerine bir nokta koyar ve toplam ASAR.
+          (Ayni olgu promolecule_density'nin beyaninda serbest O icin
+          zaten yaziliydi; molekuler yogunluga tasinmasi eksikti.)
+
+      (2) SONLU KUTU: kutu disinda kalan kuyruk atilir ve bunu izgarayi
+          INCELTMEK duzeltmez. Kutuphane varsayilanlarinda (padding=6.0,
+          points_per_axis=80) degerlik HOMO normu su icin 1.000000, ama
+          LiH icin 0.998042 ve Li2 icin 0.991199. Li2'de cozunurlugu
+          artirmak normu duzeltmiyor (n=40 0.991352 -> n=200 0.990618),
+          kutuyu buyutmek duzeltiyor (padding=8.0'da 0.999634). Yani
+          "degerlik orbitalleri etkilenmez" iddiasi cozunurluk icin dogru,
+          kutu icin YANLISTI.
+
+    diagnostics olculen ve beklenen elektron sayisini yan yana tasir ki
+    sapmanin YONU metinden tahmin edilmesin, SAYIDAN okunsun; ayrica en
+    yakin cekirdek-duvar mesafesini tasir ki kuyruk kesmesi de gorunsun.
     """
     basis = build_basis(result.molecule, result.basis_name)
     values = np.stack([evaluate_basis_function(function, grid) for function in basis])
@@ -241,20 +303,32 @@ def electron_density(result: HFResult, grid: VolumeGrid) -> ScalarField:
             "tek Slater determinanti",
             "sonlu baz seti",
             f"duzgun kartezyen izgara, aralik {en_buyuk_aralik:.3f} bohr",
+            "sonlu kutu: kutu disinda kalan kuyruk atilir",
         ),
         neglected=("elektron korelasyonu", "goreli etkiler"),
         expected_error=(
-            "izgara cekirdek orbitallerini cozmez: hidrojen disi atomlarda "
-            "integre edilen elektron sayisi eksik cikar (su/STO-3G, 0.203 bohr "
-            "aralik: 9.70 / 10). Degerlik orbitalleri etkilenmez -- ayni izgarada "
-            "HOMO normu 1.000000. Gorsellestirme icin uygundur, integre nicelik "
-            "hesabi icin DEGILDIR."
+            "IKI ayri izgara hatasi vardir. (1) COZUNURLUK: izgara cekirdek "
+            "orbitallerini cozmez ve hata IKI YONE birden gider -- cekirdegin "
+            "uzerine izgara noktasi dusmezse integral eksik, duserse Riemann "
+            "toplami ASAR. Olculdu (su/STO-3G, padding=6.0): cift sayili "
+            "n=60'ta 9.70 / 10, tek sayili n=61'de 10.09 / 10, n=41'de "
+            "11.00 / 10. Yon izgara PARITESINE baglidir, bu yuzden "
+            "diagnostics'teki integrated_electrons ile expected_electrons yan "
+            "yana durur: sapmanin isareti bu metinden tahmin edilmemeli, "
+            "sayidan okunmalidir. (2) SONLU KUTU: kutu disindaki kuyruk "
+            "atilir ve bunu izgarayi inceltmek DUZELTMEZ. Olculdu (STO-3G, "
+            "padding=6.0, points_per_axis=80): degerlik HOMO normu su icin "
+            "1.000000 ama LiH icin 0.998042, Li2 icin 0.991199; Li2'de "
+            "cozunurlugu 2.5x artirmak normu 0.990618'e ceker (duzelmez), "
+            "padding=8.0 ise 0.999634 yapar. Gorsellestirme icin uygundur, "
+            "integre nicelik hesabi icin DEGILDIR."
         ),
         converged=result.provenance.converged,
         diagnostics={
             "integrated_electrons": olculen,
             "expected_electrons": result.molecule.n_electrons,
             "grid_spacing_bohr": en_buyuk_aralik,
+            "nucleus_to_wall_bohr": _nucleus_to_wall(result.molecule, grid),
         },
     )
 
@@ -337,7 +411,16 @@ def _symmetry_blocks(basis: list[BasisFunction]) -> list[list[list[int]]]:
     """Serbest atomun baz fonksiyonlarini simetri (l) bloklarina ayirir.
 
     Her l degeri icin, o l'nin dejenere kartezyen bilesenlerine karsilik gelen
-    indeks listeleri donulur: s icin tek liste, p icin (px, py, pz) uc liste.
+    indeks listeleri donulur: s icin tek liste, p icin uc liste. Uc listenin
+    SIRASI acisal ucluler uzerinde sorted() ile belirlenir, yani
+    (0,0,1) < (0,1,0) < (1,0,0): sira (pz, py, px)'tir, (px, py, pz) DEGIL.
+    (Bu dokstring uzun sure yanlis sirayi yaziyordu; olculdu, O/6-31G'de
+    donen p grubu [[5, 8], [4, 7], [3, 6]] ve karsilik gelen acisal ucluler
+    (0,0,1), (0,1,0), (1,0,0). Sira davranissal olarak onemsizdir -- uc yon
+    simetrik islenir -- ama bu blok promolekul yogunlugunun kuresel
+    simetrisinin dayandigi yerdir ve sira iddiasini okuyup kod yazan biri
+    yanlis esleme kurardi. Sira artik dogrudan sinaniyor, bkz. asagidaki
+    test.)
     Her listenin k. elemani AYNI radyal kabuga aittir -- build_basis her
     kabugu tek seferde ve bilesenleri sabit sirada urettigi icin bu esleme
     kabuk sirasindan gelir. Bu DIGER BIR MODULE (basis.py) ait bir sira
@@ -449,6 +532,16 @@ def _free_atom_density(
 
         change = float(np.abs(new_density - density).max())
         density = new_density
+        # `iteration > 1`: baslangic yogunlugu SIFIR oldugu icin ilk
+        # iterasyonun degisimi ancak n_electrons == 0 iken sifir olabilir --
+        # yani bu kosulun ULASILABILIR TEK etkisi, sifir elektronlu bir
+        # atomun 1 yerine 2 iterasyonda bitmesidir (donen matris iki halde de
+        # sifir). Bir yanlis yakinsamayi engellemiyor; "hic Fock guncellemesi
+        # gormemis bir yogunluk yakinsamis sayilmaz" kuralini kodluyor.
+        # Olculdu ve test_serbest_atom_ilk_iterasyonda_yakinsadi_ilan_etmiyor
+        # ile baglandi (He/STO-3G, n_electrons = 0/1/2 -> hepsinde 2
+        # iterasyon); onceden bu satiri silen mutasyon hicbir testi
+        # kirmiyordu.
         if iteration > 1 and change < _FREE_ATOM_TOLERANCE:
             break
     else:
@@ -503,9 +596,35 @@ def promolecule_density(
     haritasi net -yuk kadar integre olur -- tanimin sonucu, hata degil.
     Beklenen sayi bu yuzden diagnostics'e SUM Z olarak yazilir.
 
-    Donen ScalarField'in provenance'i iki ayri sapmayi acikca beyan eder:
-    referans atomun gercek taban durum olmamasi ve izgaranin cekirdek
+    Donen ScalarField'in provenance'i dort ayri sapmayi acikca beyan eder:
+    referans atomun gercek taban durum olmamasi, referans atomun MOLEKUL
+    icin secilmis bir bazda (STO-3G'nin H usleri zeta=1.24 kodlar) kurulmus
+    olmasi, promolekulun N-temsil edilebilir olmamasi ve izgaranin cekirdek
     kabuklarini cozememesi.
+
+    "SERBEST ATOM" ADI EKSIKTIR ve bu bilincli olarak yaziya dokuldu:
+    referans atom, molekul icin optimize edilmis bir bazda kurulur. STO-3G'nin
+    hidrojen usleri olceksiz kumenin zeta^2 = 1.5376 kati (olculdu: uslerin
+    orani [1.5376, 1.5376, 1.53759996], karekoku [1.24, 1.24, 1.23999999]),
+    yani zeta = 1.24 baza gomuludur. Sonucu olculebilir: bu bazdaki serbest
+    H'nin enerjisi h11/S11 = -0.466582 hartree, gercek deger -0.500000.
+    Fark almayi AYNI bazda yapmak literaturun konvansiyonudur ve BSSE'den
+    kacinir; kusur secim degil, beyan edilmemesiydi. Etkisi: H2 bag
+    bolgesindeki birikim bu referansla +0.055005, olceksiz (zeta=1.00) bir
+    referansla +0.128348 (2.33 kat). YON degismiyor, BUYUKLUK degisiyor.
+
+    N-TEMSIL EDILEBILIRLIK: bu bolumun basindaki turetme notu bir kurulumu
+    "dogal isgal 2.473 > 2, Pauli ihlali" gerekcesiyle REDDEDIYOR. Secilen
+    kurulum serbest ATOMDA o sinnri saglar (olculdu: yedi elementte tam 2.0),
+    ama molekuler bazdaki blok-kosegen TOPLAM saglamaz: olculdu, STO-3G'de
+    H2O 2.690342, CH4 3.175463, N2 3.119660, LiH 2.014243, HF 2.373559 (yalniz
+    H2 1.659873 sinir icinde). Kontrol: ayni yontem RHF yogunluguna
+    uygulanınca hepsinde tam 2.000000000 veriyor. Bu bir kusur DEGIL, "serbest
+    atomlar birbirini gormez" varsayiminin sayisal karsiligidir (CH4'te
+    atomlar arasi ortusme kapatildikca asma 4.4e-16'ya iner) -- ama bu depoda
+    her sapma RAKAMLA yaziliyor, bu da yazildi. Buraya `<= 2` bir assert'i
+    KOYULAMAZ: yazilsa alti sistemin besinde kirilirdi, cunku ozellik tasarim
+    geregi yanlistir.
     """
     basis = build_basis(molecule, basis_name)
     density = np.zeros((len(basis), len(basis)))
@@ -537,33 +656,51 @@ def promolecule_density(
             "kuresel ortalamali atom: kismen dolu kabugun payi kartezyen "
             "yonlere esit ve kesirli dagitilir",
             "notr serbest atom (molekulun yuku atomlara dagitilmaz)",
+            "referans atom MOLEKULUN bazinda kurulur: STO-3G'nin hidrojen "
+            "usleri zeta=1.24 kodlar, yani serbest degil molekul icin "
+            "SIKISTIRILMIS bir atom (bu bazda serbest H'nin enerjisi "
+            "-0.466582 hartree; tam deger -0.500000)",
             "sonlu baz seti",
             f"duzgun kartezyen izgara, aralik {en_buyuk_aralik:.3f} bohr",
+            "sonlu kutu: kutu disinda kalan kuyruk atilir",
         ),
         neglected=(
             "atomlarin GERCEK taban durumu: acik kabuklu atomlarda taban durum "
             "kuresel degildir ve spin-kutupludur (O: 3P)",
             "kesirli isgalli kabukta oz-etkilesimin tam goturulmesi "
             "(kapali kabuk J - K/2 ifadesi kullanilir)",
+            "N-temsil edilebilirlik: molekuler bazdaki blok-kosegen toplamin "
+            "dogal isgal sayilari 2'yi ASAR (olculdu, STO-3G: H2O 2.690342, "
+            "CH4 3.175463, N2 3.119660) -- promolekul tek bir Slater "
+            "determinantinin yogunlugu DEGILDIR. Asma, yukaridaki "
+            "'atomlar birbirini gormez' varsayiminin sayisal karsiligidir ve "
+            "atomlar ayrildikca kaybolur",
             "elektron korelasyonu",
             "goreli etkiler",
         ),
         expected_error=(
             "referans atom gercek taban durum DEGILDIR: kuresel ortalama ve "
             "kesirli isgal bilincli bir secimdir, fark dogrudan yogunluk farki "
-            "haritasina yazilir. Ayrica izgara cekirdek kabuklarini cozmez ve "
-            "hata IKI YONE birden gider: O/STO-3G promolekulu 0.203 bohr "
-            "aralikta 7.697/8 (eksik), 0.101 bohr aralikta 7.990/8; ama bir "
-            "izgara noktasi tam cekirdegin uzerine duserse Riemann toplami "
-            "ASAR (0.250 bohr aralikta 9.923/8). Hidrojende cekirdek/degerlik "
-            "ayrimi yoktur ve integral tamdir (1.000000). Gorsellestirme ve "
-            "fark haritasi icin uygundur, integre nicelik hesabi icin DEGILDIR."
+            "haritasina yazilir. Referans atomun BAZI da serbest atom icin "
+            "degil molekul icin secilmistir (zeta=1.24); bu, literaturun "
+            "konvansiyonudur ve BSSE'den kacinir, ama bedava degildir: fark "
+            "haritasinin YONU bu secimden bagimsiz, BUYUKLUGU degildir -- H2 "
+            "bag bolgesindeki birikim bu referansla +0.055005, olceksiz "
+            "(zeta=1.00) bir referansla +0.128348 olculuyor (2.33 kat). "
+            "Ayrica izgara cekirdek kabuklarini cozmez ve hata IKI YONE "
+            "birden gider: O/STO-3G promolekulu 0.203 bohr aralikta 7.697/8 "
+            "(eksik), 0.101 bohr aralikta 7.990/8; ama bir izgara noktasi tam "
+            "cekirdegin uzerine duserse Riemann toplami ASAR (0.250 bohr "
+            "aralikta 9.923/8). Hidrojende cekirdek/degerlik ayrimi yoktur ve "
+            "integral tamdir (1.000000). Gorsellestirme ve fark haritasi icin "
+            "uygundur, integre nicelik hesabi icin DEGILDIR."
         ),
         converged=True,
         diagnostics={
             "integrated_electrons": olculen,
             "expected_electrons": beklenen,
             "grid_spacing_bohr": en_buyuk_aralik,
+            "nucleus_to_wall_bohr": _nucleus_to_wall(molecule, grid),
             "atom_scf_iterations": iterations,
         },
     )
