@@ -340,16 +340,18 @@ def test_izgara_cekirdek_ve_secici_hepsi_result_molecule_ile_tutarli(su_penceres
 
 @requires_offscreen
 @pytest.mark.parametrize(
-    "gecersiz",
+    ("gecersiz", "gerekce"),
     [
-        pytest.param(0.0, id="sifir"),
-        pytest.param(-0.05, id="negatif"),
-        pytest.param(float("nan"), id="nan"),
-        pytest.param(float("inf"), id="inf"),
-        pytest.param(0.0004, id="kaydirici-cozunurlugunun-altinda"),
+        pytest.param(0.0, "pozitif olmalı", id="sifir"),
+        pytest.param(-0.05, "pozitif olmalı", id="negatif"),
+        pytest.param(float("nan"), "sonlu bir sayı olmalı", id="nan"),
+        pytest.param(float("inf"), "sonlu bir sayı olmalı", id="inf"),
+        pytest.param(0.0004, "çözünürlüğünün", id="kaydirici-cozunurlugunun-altinda"),
     ],
 )
-def test_gecersiz_izoseviye_reddediliyor_ve_durumu_bozmuyor(su_penceresi, gecersiz):
+def test_gecersiz_izoseviye_reddediliyor_ve_durumu_bozmuyor(
+    su_penceresi, gecersiz, gerekce
+):
     """Pozitif olmayan seviye panelin BEYAN ETTİĞİ renk sözleşmesini yalanlar.
 
     `viz/isosurface.py` yükü açıkça çağırana yıkıyor: *"level mutlak değer
@@ -371,11 +373,19 @@ def test_gecersiz_izoseviye_reddediliyor_ve_durumu_bozmuyor(su_penceresi, gecers
     O yüzden doğrulama `_yenile`'den ÖNCE yapılır: reddedilen seviye
     pencerenin HİÇBİR alanına dokunmaz. Kardeşi `set_orbital_index` ile aynı
     sözleşme, ama geri alma yoluyla değil, hiç ilerlememekle sağlanır.
+
+    GEREKÇE de sınanır, yalnızca reddedilme değil. Ölçüldü: pozitiflik
+    kontrolünü düşüren mutasyon yalnızca "reddedildi mi" diye bakan bir
+    testten KAÇIYOR, çünkü 0 ve -0.05 bir alt sınırdaki çözünürlük
+    kontrolüne takılıp yine reddediliyor -- ama bu sefer YANLIŞ sebeple.
+    Yanlış gerekçe gören kullanıcı yanlış düzeltmeyi dener (0.001'in
+    üstüne çıkmayı, oysa sorun işarettir).
     """
     pencere, _ = su_penceresi
     once = _pencere_durumu(pencere)
-    with pytest.raises(InvalidInputError, match="izoyüzey seviyesi"):
+    with pytest.raises(InvalidInputError, match="izoyüzey seviyesi") as hata:
         pencere.set_isosurface_level(gecersiz)
+    assert gerekce in str(hata.value), f"red gerekçesi yanlış: {hata.value}"
     assert _pencere_durumu(pencere) == once
 
 
@@ -383,9 +393,14 @@ def test_gecersiz_izoseviye_reddediliyor_ve_durumu_bozmuyor(su_penceresi, gecers
 def test_kurucu_da_pozitif_olmayan_izoseviyeyi_reddediyor():
     """Aynı şart kurucuda da geçerli; yoksa pencere doğrudan yalanla açılırdı."""
     result = solve(Molecule.from_string("H 0 0 0; H 0 0 0.74"), "sto-3g")
-    for gecersiz in (0.0, -0.05, float("nan")):
-        with pytest.raises(InvalidInputError, match="izoyüzey seviyesi"):
+    for gecersiz, gerekce in (
+        (0.0, "pozitif olmalı"),
+        (-0.05, "pozitif olmalı"),
+        (float("nan"), "sonlu bir sayı olmalı"),
+    ):
+        with pytest.raises(InvalidInputError, match="izoyüzey seviyesi") as hata:
             OrbitalWindow(result, level=gecersiz)
+        assert gerekce in str(hata.value), f"red gerekçesi yanlış: {hata.value}"
 
 
 @requires_offscreen
@@ -618,6 +633,9 @@ def test_kaydirici_seviyeyle_senkron_kaliyor(su_penceresi):
 
     Kırpma yerine aralık genişletilir; kaydırıcının taşıdığı tam sayı
     `round(level * 1000)` olmak zorunda.
+
+    Açılış ARALIĞI burada değil, kendi taze penceresini kuran kardeş testte
+    sınanır; sebebi aşağıda.
     """
     pencere, _ = su_penceresi
     try:
@@ -626,12 +644,45 @@ def test_kaydirici_seviyeyle_senkron_kaliyor(su_penceresi):
         assert pencere._kaydirici.value() == 2000
         assert pencere._kaydirici.maximum() >= 2000
         assert "şu an 2" in pencere.transparency_text()
-        # Kaydırıcı senkronu sinyal yaymamalı; yoksa her seviye değişimi
-        # ikinci bir yeniden hesabı tetiklerdi.
         assert pencere._level == 2.0
     finally:
         pencere.set_isosurface_level(0.05)
     assert pencere._kaydirici.value() == 50
+
+
+@requires_offscreen
+def test_kaydiricinin_acilis_araligi_surukleyebilir_bir_bant():
+    """Kaydırıcının AÇILIŞ aralığı; bilerek TAZE bir pencerede.
+
+    Değer doğru olduğu hâlde aralık işe yaramaz olabilir: açılış üst sınırını
+    900'den 1'e düşüren mutasyonda `_level` yine 0.05, kaydırıcı değeri yine
+    50 çıkıyor (senkron sınırı 50'ye büyütüyor) ama kullanıcı kaydırıcıyı
+    ancak 0.001 ile 0.05 arasında sürükleyebiliyor.
+
+    Bu test neden paylaşılan `su_penceresi` fixture'ını KULLANMIYOR: ölçüldü,
+    aynı iddia orada YAZILIYKEN o mutasyon hâlâ hayatta kalıyordu. Sebep
+    fixture'ın modül kapsamlı olması -- daha erken koşan
+    `test_izoseviye_degisince_ag_kuculuyor` seviyeyi 0.90'a çıkarıyor, bu da
+    üst sınırı 900'e BÜYÜTÜP mutasyonu onarıyor. Aynı mutasyon tek başına
+    (`-k`) koşturulduğunda iki testi birden kırıyordu. Paylaşılan durum
+    üzerinde açılış iddiası sınamak, iddiayı sessizce sırayla ilişkilendirir.
+    """
+    from qlab.app.orbital_window import (
+        _EN_KUCUK_SEVIYE,
+        _KAYDIRICI_OLCEK,
+        _KAYDIRICI_VARSAYILAN_MAKS,
+    )
+
+    pencere = OrbitalWindow(solve(Molecule.from_string("H 0 0 0; H 0 0 0.74"), "sto-3g"))
+    try:
+        assert pencere._kaydirici.value() == 50
+        # Üst sınır açılış varsayılanının altına düşmemeli...
+        assert pencere._kaydirici.maximum() >= _KAYDIRICI_VARSAYILAN_MAKS
+        # ...alt sınır da REDDEDİLECEK bir seviye üretmemeli: kaydırıcı
+        # `_dogrula_seviye`'nin geri çevireceği bir konuma sürüklenememeli.
+        assert pencere._kaydirici.minimum() / _KAYDIRICI_OLCEK >= _EN_KUCUK_SEVIYE
+    finally:
+        pencere.close()
 
 
 @requires_offscreen
