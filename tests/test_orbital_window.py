@@ -666,21 +666,33 @@ def test_kaydiricinin_acilis_araligi_surukleyebilir_bir_bant():
     üst sınırı 900'e BÜYÜTÜP mutasyonu onarıyor. Aynı mutasyon tek başına
     (`-k`) koşturulduğunda iki testi birden kırıyordu. Paylaşılan durum
     üzerinde açılış iddiası sınamak, iddiayı sessizce sırayla ilişkilendirir.
+
+    İKİNCİ TUZAK, ilkini kapatan yamada ortaya çıktı ve ölçülerek düzeltildi:
+    sınırlar bir süre `_KAYDIRICI_VARSAYILAN_MAKS`'ın KENDİSİNE karşı
+    yazılıydı (`maximum() >= _KAYDIRICI_VARSAYILAN_MAKS`). Böyle bir assert
+    sınırladığı sabitle birlikte HAREKET EDER: sabit 900'den 1'e düşünce iddia
+    `maximum() >= 1` olur ve bedavaya geçer -- ölçüldü, o hâliyle mutasyon
+    dosyanın 34 testinin SIFIRINI kırıyordu. Alt sınır daha da kötüydü:
+    `_EN_KUCUK_SEVIYE` zaten `_KAYDIRICI_MIN / _KAYDIRICI_OLCEK` olduğu için
+    o assert bir TOTOLOJİYDİ, hiçbir değişiklikte kırılamazdı.
+
+    Bu yüzden bant LİTERAL sayılarla yazılıyor. 0.01-0.50 keyfi değil: bu
+    pencerenin kendi ölçümünde su HOMO'su 0.02'de 2850, 0.10'da 1112, 0.50'de
+    114 tepe veriyor -- yani kullanıcının gerçekten gezmesi gereken aralık bu.
     """
-    from qlab.app.orbital_window import (
-        _EN_KUCUK_SEVIYE,
-        _KAYDIRICI_OLCEK,
-        _KAYDIRICI_VARSAYILAN_MAKS,
-    )
+    from qlab.app.orbital_window import _KAYDIRICI_OLCEK, _dogrula_seviye
 
     pencere = OrbitalWindow(solve(Molecule.from_string("H 0 0 0; H 0 0 0.74"), "sto-3g"))
     try:
         assert pencere._kaydirici.value() == 50
-        # Üst sınır açılış varsayılanının altına düşmemeli...
-        assert pencere._kaydirici.maximum() >= _KAYDIRICI_VARSAYILAN_MAKS
-        # ...alt sınır da REDDEDİLECEK bir seviye üretmemeli: kaydırıcı
-        # `_dogrula_seviye`'nin geri çevireceği bir konuma sürüklenememeli.
-        assert pencere._kaydirici.minimum() / _KAYDIRICI_OLCEK >= _EN_KUCUK_SEVIYE
+        en_kucuk = pencere._kaydirici.minimum() / _KAYDIRICI_OLCEK
+        en_buyuk = pencere._kaydirici.maximum() / _KAYDIRICI_OLCEK
+        assert en_kucuk <= 0.01, "kullanıcı ince yüzeylere inebilmeli"
+        assert en_buyuk >= 0.50, "kullanıcı kaba yüzeylere çıkabilmeli"
+        # Kaydırıcının TABANI doğrulayıcının reddedeceği bir seviye üretmemeli.
+        # Bu bir totoloji DEĞİL: iki eşiği ayrı ayrı taşıyan iki kod yolunu
+        # karşılaştırır, biri kayarsa kırılır.
+        _dogrula_seviye(en_kucuk)
     finally:
         pencere.close()
 
