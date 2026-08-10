@@ -167,7 +167,10 @@ def _orbital_penceresi(molecule_text: str, basis: str) -> QtWidgets.QWidget:
     if QtWidgets.QApplication.instance() is None:
         QtWidgets.QApplication(sys.argv[:1])
 
-    return OrbitalWindow(result, molecule)
+    # Molekül ikinci bir argüman olarak GEÇİLMEZ: `result` onu zaten taşıyor
+    # ve iki kaynak, uyuşmadıklarında sessizce yanlış bir pencere veriyordu
+    # (bkz. OrbitalWindow sınıf dokstring'i).
+    return OrbitalWindow(result)
 
 
 def main(argv: list[str] | None = None) -> int:

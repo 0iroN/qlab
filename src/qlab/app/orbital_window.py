@@ -12,19 +12,28 @@ seçimin sonucudur ve üçü de hesabın kendisinden GELMEZ:
 1. **İşaret keyfidir.** `psi` bir özvektörse `-psi` de aynı enerjiyle aynı
    çözümdür; global işaret hiçbir fiziksel büyüklüğü değiştirmez. Ölçüldü:
    su/STO-3G'nin 0. orbitalinde (O 1s) pozitif ağ BOŞ çıkıyor (0 tepe),
-   negatif ağ 412 tepe veriyor -- yani o orbital sayısal olarak her yerde
-   negatif. Başka bir kütüphane aynı orbitali ters işaretle verse iki renk
-   yer değiştirirdi ve hiçbir fizik değişmezdi. İki renk yalnızca AYNI
-   orbitalin kendi içindeki bağıl faz farkını gösterir.
+   negatif ağ 412 tepe veriyor. Buradan "orbital her yerde negatif" SONUCU
+   ÇIKMAZ ve bir süre burada öyle yazıyordu -- yanlıştı: aynı orbitalin
+   216000 ızgara noktasının 185036'sı (%85.66) pozitiftir. Doğru ifade,
+   pozitif genliğin hiçbir yerde +0.05'i AŞMAMASIDIR (maks +1.8733e-3,
+   min -4.9041); o yüzden +0.05 izoyüzeyi boş çıkar. Başka bir kütüphane
+   aynı orbitali ters işaretle verse iki renk yer değiştirirdi ve hiçbir
+   fizik değişmezdi. İki renk yalnızca AYNI orbitalin kendi içindeki bağıl
+   faz farkını gösterir.
 2. **İzoyüzey seviyesi bakanın seçimidir.** Ölçüldü (su HOMO, pad=4.0,
    n=60): level 0.02'de 2850 tepe, 0.05'te 1764, 0.50'de 114, 0.90'da hiç.
    Aynı orbital, farklı "şekil". Seviye bu yüzden panelde sayı olarak basılır.
+   Seviye POZİTİF olmak zorundadır (bkz. `_dogrula_seviye`): sıfır ya da
+   negatif bir seviye, panelin beyan ettiği ±faz-renk eşleşmesini yalanlar.
 3. **Izgara çekirdek kabuğunu çözmez.** Ölçüldü: aynı O 1s orbitalinin ızgara
    üzerindeki maksimum genliği n=60'ta 4.9041, n=80'de 5.9271 -- yakınsamamış.
    Çekirdeğe yakın yüzeyler nitel gösterimdir, nicel değil.
 
 Bu üçü şeffaflık paneline motorun kendi `Provenance`'ının ÜSTÜNE eklenir;
-motorunkiler (Born-Oppenheimer, sonlu baz, ızgara aralığı) olduğu gibi taşınır.
+motorunkiler (Born-Oppenheimer, tek Slater determinantı, sonlu baz seti,
+kapalı kabuk) olduğu gibi taşınır. **Izgara aralığı motorun listesinde YOKTUR**
+-- o bu pencerenin kendi tanısıdır (`grid_points_per_axis`) ve burada, gösterim
+katmanında doğar; daha önce motorun beyanı diye sayılıyordu, yanlıştı.
 
 **Ekransız kip.** OpenGL bağlamı ancak boyama sırasında gerekir; kurulum
 (GLViewWidget, GLMeshItem, GLScatterPlotItem, setCentralWidget, close)
@@ -36,12 +45,13 @@ insanın işidir (README, kabul kriteri 3).
 from __future__ import annotations
 
 import dataclasses
+import math
 
 import numpy as np
 import pyqtgraph.opengl as gl
 from PySide6 import QtCore, QtWidgets
 
-from qlab.app.transparency import TransparencyPanel, format_panel
+from qlab.app.transparency import TransparencyPanel
 from qlab.engine.hf.scf import HFResult
 from qlab.errors import InvalidInputError
 from qlab.observable.hf_obs import ScalarField, VolumeGrid, evaluate_orbital
@@ -55,8 +65,66 @@ _POZITIF_RENK = (0.90, 0.25, 0.25, 0.45)
 _NEGATIF_RENK = (0.25, 0.45, 0.95, 0.45)
 _CEKIRDEK_RENK = (0.95, 0.95, 0.95, 1.0)
 
+#: Rengin TEK kaynağı `Mesh.sign`'dır, ağların demet sırası değil. Sıraya
+#: bakan bir eşleme `viz/isosurface.py`'nin özenle taşıdığı işaret
+#: sözleşmesini tüketicide düşürüyordu: ölçüldü, `zip(meshes, (POZ, NEG))`
+#: deseni `level=-0.05` verildiğinde psi=-0.05 yüzeyini KIRMIZI çiziyor.
+#: Beklenmeyen bir işaret sessizce bir renge düşmemeli, `KeyError` vermeli.
+_ISARET_RENKLERI: dict[int, tuple[float, float, float, float]] = {
+    1: _POZITIF_RENK,
+    -1: _NEGATIF_RENK,
+}
+
 #: Kaydırıcı tam sayı taşır; seviye = konum / _KAYDIRICI_OLCEK.
 _KAYDIRICI_OLCEK = 1000.0
+#: Kaydırıcının taşıyabileceği en küçük konum. 0 bilinçli olarak dışarıda:
+#: konum 0, seviye 0 demek olurdu ve seviye 0 düğüm yüzeyidir (aşağıya bkz.).
+_KAYDIRICI_MIN = 1
+#: Açılıştaki üst sınır. Sabit değil, gerekirse büyütülür (`_kaydirici_senkronla`).
+_KAYDIRICI_VARSAYILAN_MAKS = 900
+#: Kaydırıcının gösterebileceği en küçük seviye.
+_EN_KUCUK_SEVIYE = _KAYDIRICI_MIN / _KAYDIRICI_OLCEK
+
+
+def _dogrula_seviye(level: float) -> float:
+    """İzoyüzey seviyesini kabul eder ya da `InvalidInputError` ile reddeder.
+
+    Üç ayrı şart, üçü de ÖLÇÜLMÜŞ bir bozulmaya karşılık gelir (su/STO-3G):
+
+    - **Sonlu olmalı.** `nan` verildiğinde `extract_signed_pair` sessizce boş
+      ağ döndürüyor, çizim (0, 0)'a düşüyor ve panel "şu an nan" basıyordu.
+    - **Pozitif olmalı.** `viz/isosurface.py` yükü açıkça çağırana yıkıyor:
+      *"level mutlak değer olarak yorumlanmaz ... Çağıran, arayüzde ±faz
+      ayrımı istiyorsa pozitif bir level vermelidir."* Bu pencere O ÇAĞIRAN.
+      `level=-0.05`'te `_meshes[0].sign` +1 kalıyor ama `_meshes[0].level`
+      -0.05 oluyor: ağ psi=-0.05 yüzeyi, yani NEGATİF faz, ve `_POZITIF_RENK`
+      ile çiziliyordu -- panelin beyan ettiği renk-faz eşleşmesi yalan olurdu.
+      `level=0.0` ise (3600, 3600) tepe veriyor: çizilen şey orbitalin şekli
+      değil, DÜĞÜM YÜZEYİ.
+    - **Kaydırıcının çözünürlüğünde olmalı** (>= 0.001). Kaydırıcı tam sayı
+      binde-bir taşır; gösteremeyeceği bir seviye, denetimin panelden farklı
+      bir sayı göstermesi demektir. Sessiz desenkronizasyon burada da
+      reddedilir, kırpılmaz.
+    """
+    deger = float(level)
+    if not math.isfinite(deger):
+        raise InvalidInputError(
+            f"izoyüzey seviyesi sonlu bir sayı olmalı, verilen: {level!r}"
+        )
+    if deger <= 0.0:
+        raise InvalidInputError(
+            f"izoyüzey seviyesi pozitif olmalı (±faz ayrımı buna dayanır; "
+            f"0 düğüm yüzeyidir, negatif seviye iki fazın rengini ters "
+            f"çevirir), verilen: {deger:g}"
+        )
+    if deger < _EN_KUCUK_SEVIYE:
+        raise InvalidInputError(
+            f"izoyüzey seviyesi kaydırıcının çözünürlüğünün "
+            f"({_EN_KUCUK_SEVIYE:g}) altında kalıyor; kaydırıcı onu "
+            f"gösteremez ve panelden farklı bir sayı basardı, "
+            f"verilen: {deger:g}"
+        )
+    return deger
 
 _ISARET_BEYANI = (
     "orbital işareti keyfi: ±renkler yalnızca bağıl fazı gösterir, "
@@ -90,25 +158,40 @@ class OrbitalWindow(QtWidgets.QMainWindow):
     `InvalidInputError` fırlatır -- hata `evaluate_orbital`'dan gelir ve
     pencere onu YUTMAZ; yutulsaydı kullanıcı yanlış orbitale baktığını
     bilmezdi. Reddedilen bir seçim pencerenin durumunu da değiştirmez.
+
+    **Molekül AYRI bir argüman değildir.** `HFResult` molekülü zaten taşır
+    (`evaluate_orbital` onu `build_basis`e verir), o yüzden pencere de
+    yalnızca `result.molecule`'den okur. Daha önce ikinci bir `molecule`
+    parametresi vardı ve DOĞRULANMIYORDU: ölçüldü,
+    `OrbitalWindow(su_sonucu, h2_molekulu)` hatasız açılıyor, ızgarayı ve
+    çekirdekleri H2'den, çizilen orbitali sudan alıyor, seçicide suyun yedi
+    orbitalini listeleyip HOMO işaretini 0. satıra koyuyordu -- panel
+    uyuşmazlıktan tek kelime etmeden. İki seçenek vardı: uyuşmazlığı
+    reddetmek ya da parametreyi kaldırmak. Kaldırmak seçildi, çünkü reddetmek
+    "uyuşma"nın doğru tanımını (aynı nesne? aynı geometri? aynı yük ve
+    çokluk?) yazmayı gerektirir ve o tanımın kendisi de yanlış olabilir;
+    parametre yoksa uyuşmazlık TEMSİL EDİLEMEZ.
     """
 
     def __init__(
         self,
         result: HFResult,
-        molecule: Molecule,
         *,
         padding: float = 4.0,
         points_per_axis: int = 60,
         level: float = 0.05,
         parent: QtWidgets.QWidget | None = None,
     ) -> None:
+        # Doğrulama super().__init__'ten önce: reddedilen bir seviye için
+        # yarım kurulmuş bir QMainWindow ortada bırakılmaz.
+        self._level = _dogrula_seviye(level)
         super().__init__(parent)
         self._result = result
+        molecule: Molecule = result.molecule
         self._molecule = molecule
         self._grid = VolumeGrid.around(
             molecule, padding=padding, points_per_axis=points_per_axis
         )
-        self._level = float(level)
         self._orbital_index = molecule.n_electrons // 2 - 1
         self._meshes: tuple[Mesh, Mesh] | None = None
         self._mesh_items: list[gl.GLMeshItem] = []
@@ -141,8 +224,19 @@ class OrbitalWindow(QtWidgets.QMainWindow):
         self._secici_senkronla()
 
     def set_isosurface_level(self, level: float) -> None:
-        """İzoyüzey seviyesini değiştirir ve ağları yeniden çıkarır."""
-        self._level = float(level)
+        """İzoyüzey seviyesini değiştirir ve ağları yeniden çıkarır.
+
+        Geçersiz seviye (`_dogrula_seviye`) pencerenin HİÇBİR alanına
+        dokunmadan reddedilir. Kardeşi `set_orbital_index` bunu geri alarak
+        sağlıyor; burada geri alınacak bir şey yok çünkü doğrulama
+        `_yenile`'den ÖNCE. Fark önemliydi: eski kodda `set_isosurface_level(
+        nan)` `ValueError` fırlatıyordu ama fırlatmadan önce `_yenile` tamamen
+        koşuyordu -- `_level=nan` kalıyor, ağlar (1764, 1764)'ten (0, 0)'a
+        düşüyor, görünümdeki item 3'ten 1'e iniyor, panel "şu an nan" basıyor,
+        kaydırıcı 0.05'te bayat kalıyordu. Yani "hata fırlattı" ile "durum
+        korundu" aynı şey değildir.
+        """
+        self._level = _dogrula_seviye(level)
         self._yenile()
         self._kaydirici_senkronla()
 
@@ -158,12 +252,19 @@ class OrbitalWindow(QtWidgets.QMainWindow):
         return (len(pozitif.vertices), len(negatif.vertices))
 
     def transparency_text(self) -> str:
-        """Şeffaflık panelinin bastığı metnin aynısı.
+        """Şeffaflık panelinin bastığı metin -- PANELDEN okunur.
 
-        Panelin kendisi bir widget olduğu için ekransız kipte okunması
-        zahmetli; bu metot aynı `Provenance`'ı aynı biçimleyiciden geçirir.
+        Eskiden bu metot `format_panel(self._provenance())` ile metni
+        SIFIRDAN üretiyordu, yani "panelin bastığı metnin aynısı" sözü
+        yalnızca bir umuttu. Ölçüldü, söz korunmuyordu: `_yenile`'den
+        `panel.set_provenance` çağrısını silen mutasyonda panel 0 karakter,
+        metot hâlâ 1174 karakter basıyor ve dokuz testin dokuzu geçiyordu;
+        panele motorun HAM provenance'ını veren mutasyonda da panel bu
+        pencerenin üç gösterim beyanının hiçbirini taşımıyor, yine 9/9.
+        Metin artık widget'tan okunduğu için o mutasyonların ikisi de
+        testlerin gözünden kaçamaz -- söz test edilmiyor, YAPISAL.
         """
-        return format_panel(self._provenance())
+        return self._panel.text()
 
     # -- iç yapı -------------------------------------------------------------
 
@@ -178,9 +279,11 @@ class OrbitalWindow(QtWidgets.QMainWindow):
         self._secici.currentIndexChanged.connect(self._secici_degisti)
 
         self._kaydirici = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-        self._kaydirici.setMinimum(2)
-        self._kaydirici.setMaximum(900)
-        self._kaydirici.setValue(int(round(self._level * _KAYDIRICI_OLCEK)))
+        self._kaydirici.setMinimum(_KAYDIRICI_MIN)
+        self._kaydirici.setMaximum(_KAYDIRICI_VARSAYILAN_MAKS)
+        # Değer, kırpılmaya karşı korumalı tek yoldan konur; açılış seviyesi
+        # varsayılan üst sınırın üstünde olabilir (O 1s'in maks genliği 4.90).
+        self._kaydirici_senkronla()
         self._kaydirici.valueChanged.connect(self._kaydirici_degisti)
 
         # 260 px ≈ 15 satır. Ölçüldü (kabul kriteri 3, gerçek ekran): bu
@@ -220,11 +323,11 @@ class OrbitalWindow(QtWidgets.QMainWindow):
             etiketler.append(f"{i} ({ad}) — {enerji:.6f} Ha")
         return etiketler
 
-    def _secici_degisti(self, index: int) -> None:  # pragma: no cover - GUI sinyali
+    def _secici_degisti(self, index: int) -> None:
         if index != self._orbital_index:
             self.set_orbital_index(index)
 
-    def _kaydirici_degisti(self, value: int) -> None:  # pragma: no cover - GUI sinyali
+    def _kaydirici_degisti(self, value: int) -> None:
         self.set_isosurface_level(value / _KAYDIRICI_OLCEK)
 
     def _secici_senkronla(self) -> None:
@@ -234,10 +337,24 @@ class OrbitalWindow(QtWidgets.QMainWindow):
             self._secici.blockSignals(False)
 
     def _kaydirici_senkronla(self) -> None:
+        """Kaydırıcıyı `_level`'a eşitler; gerekirse ARALIĞI BÜYÜTÜR.
+
+        Değişmez: `kaydirici.value() == round(_level * _KAYDIRICI_OLCEK)`.
+        Eskiden aralık sabitti ve değer kırpılıyordu: ölçüldü,
+        `set_isosurface_level(2.0)` `_level`'ı 2.0 yapıyor ama kaydırıcı
+        900'de (0.9) kalıyordu -- panel "şu an 2" derken denetim 0.9
+        gösteriyordu, hiçbir uyarı olmadan. 2.0 uydurma bir seviye de değil:
+        su/STO-3G O 1s'in ızgara üzerindeki maksimum genliği 4.9041.
+        Aşağı yön için kırpma yerine reddetme var (`_dogrula_seviye`), çünkü
+        alt sınırı büyütmek konumu 0'a, yani seviyeyi düğüm yüzeyine iterdi.
+        """
         hedef = int(round(self._level * _KAYDIRICI_OLCEK))
-        if self._kaydirici.value() != hedef:
-            self._kaydirici.blockSignals(True)
+        self._kaydirici.blockSignals(True)
+        try:
+            if hedef > self._kaydirici.maximum():
+                self._kaydirici.setMaximum(hedef)
             self._kaydirici.setValue(hedef)
+        finally:
             self._kaydirici.blockSignals(False)
 
     def _cekirdekleri_ciz(self) -> None:
@@ -266,12 +383,25 @@ class OrbitalWindow(QtWidgets.QMainWindow):
         self._panel.set_provenance(self._provenance())
 
     def _ag_itemlerini_ciz(self, meshes: tuple[Mesh, Mesh]) -> None:
+        """Ağları çizer; renk `Mesh.sign`'dan gelir, demet sırasından DEĞİL.
+
+        Eski kod `zip(meshes, (_POZITIF_RENK, _NEGATIF_RENK))` ile rengi
+        sıraya göre veriyor ve `Mesh.sign`'ı hiç okumuyordu; `isosurface.py`
+        tarafında ayrı ayrı taşınan genlik (`level`) ve faz (`sign`) bilgisi
+        tam burada, tüketicide yere düşüyordu.
+
+        Eski item'lar önce görünümden SİLİNİR. Silinmeseydi sızıntı sessiz
+        değil görsel olurdu: ölçüldü, silme döngüsü olmadan 13 orbital
+        değişiminde görünümdeki item sayısı 3'ten 27'ye çıkıyor ve ekranda
+        yedi orbitalin yüzeyleri üst üste duruyor.
+        """
         for eski in self._mesh_items:
             self._view.removeItem(eski)
         self._mesh_items = []
-        for mesh, renk in zip(meshes, (_POZITIF_RENK, _NEGATIF_RENK)):
+        for mesh in meshes:
             if len(mesh.vertices) == 0:
                 continue
+            renk = _ISARET_RENKLERI[mesh.sign]
             veri = gl.MeshData(
                 vertexes=np.asarray(mesh.vertices, dtype=float),
                 faces=np.asarray(mesh.faces),

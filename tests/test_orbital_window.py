@@ -74,11 +74,13 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 # ATLANIYOR, hiçbiri kırmızı olmuyor. Yani TDD'nin kırmızı adımı sessizce
 # kayboluyordu. Eksik bir kendi modülümüz "platform yok" değil, BOZUK BİR
 # YAPI'dır ve toplama sırasında patlamalıdır.
+import pyqtgraph.opengl as gl
 from PySide6 import QtWidgets
 
 from qlab.app.orbital_window import OrbitalWindow
 from qlab.engine.hf.scf import solve
 from qlab.errors import InvalidInputError
+from qlab.observable.hf_obs import VolumeGrid
 from qlab.types import Molecule
 
 try:
@@ -105,9 +107,31 @@ def su_penceresi():
     (pad=4.0, n=60). Test başına yeniden kurmak gereksiz.
     """
     molecule = Molecule.from_string(_SU)
-    pencere = OrbitalWindow(solve(molecule, "sto-3g"), molecule)
+    pencere = OrbitalWindow(solve(molecule, "sto-3g"))
     yield pencere, molecule
     pencere.close()
+
+
+def _cekirdek_itemi(pencere):
+    """Görünümdeki tek `GLScatterPlotItem` (çekirdekler)."""
+    adaylar = [
+        item
+        for item in pencere._view.items
+        if type(item).__name__ == "GLScatterPlotItem"
+    ]
+    assert len(adaylar) == 1, f"tam olarak bir çekirdek itemi bekleniyordu: {adaylar}"
+    return adaylar[0]
+
+
+def _pencere_durumu(pencere) -> tuple:
+    """Reddedilen bir çağrının BOZMAMASI gereken her şey, tek demette."""
+    return (
+        pencere._level,
+        pencere.mesh_vertex_counts(),
+        len(pencere._view.items),
+        pencere._kaydirici.value(),
+        pencere._panel._text.toPlainText(),
+    )
 
 
 @requires_offscreen
@@ -158,8 +182,12 @@ def test_izoseviye_degisince_ag_kuculuyor(su_penceresi):
         level 0.50 -> ( 114,  114)
         level 0.90 -> (   0,    0)   <- maks|psi|'nin üstünde, yüzey yok
 
-    Bu test bir SIRALAMA iddiasıdır, tam sayı kilidi değil: ızgara değişirse
-    sayılar değişir ama sıralama fizikten gelir.
+    İddianın ÇEKİRDEĞİ bir sıralamadır (yüksek seviye = küçük yüzey) ve o
+    ızgaradan bağımsızdır. Ama gövdedeki `== (0, 0)` bir TAM SAYI KİLİDİDİR
+    ve bilinçlidir: ızgara varsayılanları (pad=4.0, n=60) bu pencerenin
+    kendi sabitleri olduğu için sayı da sabittir. Dokstring önceden
+    "tam sayı kilidi değil" diyerek kendini yanlış tarif ediyordu; kilit
+    doğru, tarif yanlıştı.
     """
     pencere, _ = su_penceresi
     try:
@@ -181,9 +209,15 @@ def test_seffaflik_paneli_isaretin_keyfi_oldugunu_beyan_ediyor(su_penceresi):
     Bir özvektörün global işareti keyfidir: `psi` bir çözümse `-psi` de aynı
     enerjiyle aynı çözümdür. Bu soyut bir uyarı değil, bu depoda ÖLÇÜLEN bir
     olgu -- su/STO-3G'nin 0. orbitalinde (O 1s) pozitif ağ BOŞ çıkıyor
-    (0 tepe) ve negatif ağ 412 tepe veriyor; yani o orbital sayısal olarak
-    her yerde negatif. Aynı hesabı başka bir kütüphane ters işaretle verse
-    renkler yer değiştirirdi ve HİÇBİR FİZİK değişmezdi.
+    (0 tepe) ve negatif ağ 412 tepe veriyor.
+
+    Bu ölçümden "o orbital her yerde negatif" SONUCU ÇIKMAZ ve daha önce
+    burada öyle yazıyordu -- yanlıştı. Yeniden ölçüldü (su/STO-3G orbital 0,
+    pad=4.0, n=60): 216000 ızgara noktasının 185036'sı (%85.66) POZİTİF.
+    Doğru ifade şudur: pozitif genlik hiçbir yerde +0.05'i AŞMIYOR
+    (maks +1.8733e-3, min -4.9041), o yüzden +0.05 izoyüzeyi boş çıkıyor.
+    Aynı hesabı başka bir kütüphane ters işaretle verse renkler yer
+    değiştirirdi ve HİÇBİR FİZİK değişmezdi.
 
     Panel bunu yazmazsa iki renk, hesabın taşımadığı bir anlamı ima eder.
     """
@@ -234,7 +268,7 @@ def test_gecersiz_orbital_secimi_reddediliyor():
     99 geçersizdir. Reddedilen seçim pencerenin durumunu da bozmamalı.
     """
     molecule = Molecule.from_string("H 0 0 0; H 0 0 0.74")
-    pencere = OrbitalWindow(solve(molecule, "sto-3g"), molecule)
+    pencere = OrbitalWindow(solve(molecule, "sto-3g"))
     try:
         with pytest.raises(InvalidInputError, match="orbital"):
             pencere.set_orbital_index(99)
@@ -243,6 +277,392 @@ def test_gecersiz_orbital_secimi_reddediliyor():
         assert pencere.orbital_index == 0, "reddedilen seçim durumu bozmamalı"
     finally:
         pencere.close()
+
+
+# ---------------------------------------------------------------------------
+# Uyuşmazlık: molekül tek kaynaktan gelir
+
+
+@requires_offscreen
+def test_pencere_ayri_bir_molekul_argumani_kabul_etmiyor(su_penceresi):
+    """Uyuşan bir (result, molecule) çifti şart DEĞİL — çift diye bir şey yok.
+
+    ÖLÇÜLDÜ (düzeltmeden önce): `OrbitalWindow(su_sonucu, h2_molekulu)`
+    hatasız açılıyordu. Izgara H2 etrafında kuruluyordu (origin
+    [-4, -4, -4]), çekirdekler H2'nin çekirdekleriydi, ama çizilen orbital
+    SUYUN O 1s'iydi -- ağ (0, 480). Seçici suyun YEDİ orbitalini listeliyor,
+    HOMO işareti 0. satırda duruyordu (su/STO-3G'de HOMO 4'tür). Panel bu
+    uyuşmazlıktan tek kelime etmiyordu.
+
+    `HFResult` molekülü ZATEN taşıyor (`evaluate_orbital` onu `build_basis`e
+    veriyor), yani ikinci argüman fazlalıktı. Doğrulamak yerine KALDIRILDI:
+    reddedilen bir uyuşmazlık hâlâ "uyuşma" tanımını (aynı nesne mi? aynı
+    geometri mi? aynı yük mü?) doğru yazmayı gerektirir ve o tanım da
+    yanlış olabilir. Argüman yoksa uyuşmazlık TEMSİL EDİLEMEZ.
+    """
+    pencere, molecule = su_penceresi
+    with pytest.raises(TypeError):
+        OrbitalWindow(pencere._result, molecule)
+
+
+@requires_offscreen
+def test_izgara_cekirdek_ve_secici_hepsi_result_molecule_ile_tutarli(su_penceresi):
+    """Pencerenin molekülden okuduğu DÖRT şeyin tek ve aynı kaynağı var.
+
+    Uyuşmazlık hatasının kökü şuydu: `__init__` üç şeyi `molecule`
+    parametresinden (ızgara, çekirdek konumları, HOMO indeksi), bir şeyi
+    `result.molecule`'den (orbital katsayıları, `evaluate_orbital` içinden)
+    alıyordu. Bu test dördünü aynı moleküle bağlar.
+    """
+    pencere, molecule = su_penceresi
+    kaynak = pencere._result.molecule
+
+    beklenen_izgara = VolumeGrid.around(kaynak, padding=4.0, points_per_axis=60)
+    assert np.allclose(pencere._grid.origin, beklenen_izgara.origin)
+    assert np.allclose(pencere._grid.spacing, beklenen_izgara.spacing)
+    assert pencere._grid.shape == beklenen_izgara.shape
+
+    konumlar = np.asarray(_cekirdek_itemi(pencere).pos, dtype=float)
+    assert np.allclose(konumlar, [atom.position for atom in kaynak.atoms])
+
+    assert pencere._secici.count() == len(pencere._result.orbital_energies) == 7
+    assert pencere.orbital_index == kaynak.n_electrons // 2 - 1 == 4
+    # Fixture'daki molekül ile sonucunki aynı geometriyi taşımalı; bu test
+    # aksi halde kendi kendini doğrulayan bir totoloji olurdu.
+    assert np.allclose(
+        [a.position for a in kaynak.atoms], [a.position for a in molecule.atoms]
+    )
+
+
+# ---------------------------------------------------------------------------
+# İzoyüzey seviyesi: pozitiflik şartı ve renk-işaret sözleşmesi
+
+
+@requires_offscreen
+@pytest.mark.parametrize(
+    "gecersiz",
+    [
+        pytest.param(0.0, id="sifir"),
+        pytest.param(-0.05, id="negatif"),
+        pytest.param(float("nan"), id="nan"),
+        pytest.param(float("inf"), id="inf"),
+        pytest.param(0.0004, id="kaydirici-cozunurlugunun-altinda"),
+    ],
+)
+def test_gecersiz_izoseviye_reddediliyor_ve_durumu_bozmuyor(su_penceresi, gecersiz):
+    """Pozitif olmayan seviye panelin BEYAN ETTİĞİ renk sözleşmesini yalanlar.
+
+    `viz/isosurface.py` yükü açıkça çağırana yıkıyor: *"level mutlak değer
+    olarak yorumlanmaz ... Çağıran, arayüzde ±faz ayrımı istiyorsa pozitif
+    bir level vermelidir."* Bu pencere O ÇAĞIRAN'dır.
+
+    ÖLÇÜLDÜ (düzeltmeden önce), su HOMO:
+        level=-0.05 -> ağlar (1764, 1764); `_meshes[0].sign == +1` AMA
+            `_meshes[0].level == -0.05`. Yani "pozitif" ağ aslında psi=-0.05
+            yüzeyi ve KIRMIZI (`_POZITIF_RENK`) çiziliyordu. Panel
+            "şu an -0.05" basıp ters çevrilmeden hiç söz etmiyordu.
+        level=0.0   -> (3600, 3600): DÜĞÜM YÜZEYİ "orbitalin şekli" diye.
+        level=nan   -> ValueError (kaydırıcı senkronundan) firliyordu AMA
+            `_yenile` çoktan tamamen koşmuştu: `_level=nan` kalıyor, ağlar
+            (0, 0)'a düşüyor, görünümdeki item 3'ten 1'e iniyor (iki yüzey de
+            silinmiş), panel "şu an nan" basıyor, kaydırıcı 0.05'te bayat
+            kalıyordu.
+
+    O yüzden doğrulama `_yenile`'den ÖNCE yapılır: reddedilen seviye
+    pencerenin HİÇBİR alanına dokunmaz. Kardeşi `set_orbital_index` ile aynı
+    sözleşme, ama geri alma yoluyla değil, hiç ilerlememekle sağlanır.
+    """
+    pencere, _ = su_penceresi
+    once = _pencere_durumu(pencere)
+    with pytest.raises(InvalidInputError, match="izoyüzey seviyesi"):
+        pencere.set_isosurface_level(gecersiz)
+    assert _pencere_durumu(pencere) == once
+
+
+@requires_offscreen
+def test_kurucu_da_pozitif_olmayan_izoseviyeyi_reddediyor():
+    """Aynı şart kurucuda da geçerli; yoksa pencere doğrudan yalanla açılırdı."""
+    result = solve(Molecule.from_string("H 0 0 0; H 0 0 0.74"), "sto-3g")
+    for gecersiz in (0.0, -0.05, float("nan")):
+        with pytest.raises(InvalidInputError, match="izoyüzey seviyesi"):
+            OrbitalWindow(result, level=gecersiz)
+
+
+@requires_offscreen
+def test_ag_renkleri_demet_sirasindan_degil_mesh_isaretinden_geliyor(su_penceresi):
+    """`Mesh.sign` sözleşmesi tüketicide DÜŞMEMELİ.
+
+    ÖLÇÜLDÜ (düzeltmeden önce): `_ag_itemlerini_ciz`
+    `zip(meshes, (_POZITIF_RENK, _NEGATIF_RENK))` ile rengi DEMET SIRASINA
+    göre veriyordu ve `Mesh.sign`'ı hiç okumuyordu -- `viz/isosurface.py`'nin
+    özenle taşıdığı işaret bilgisi burada yere düşüyordu.
+
+    Test çifti bilerek TERS sırada verir: renk sırayı değil işareti izliyorsa
+    çizilen renkler de ters sırada çıkmalı.
+    """
+    from qlab.app.orbital_window import _NEGATIF_RENK, _POZITIF_RENK
+
+    pencere, _ = su_penceresi
+    try:
+        pozitif, negatif = pencere._meshes
+        assert pozitif.sign == 1 and negatif.sign == -1
+        assert len(pozitif.vertices) > 0 and len(negatif.vertices) > 0
+
+        pencere._ag_itemlerini_ciz((pozitif, negatif))
+        assert [it.opts["color"] for it in pencere._mesh_items] == [
+            _POZITIF_RENK,
+            _NEGATIF_RENK,
+        ]
+
+        pencere._ag_itemlerini_ciz((negatif, pozitif))
+        assert [it.opts["color"] for it in pencere._mesh_items] == [
+            _NEGATIF_RENK,
+            _POZITIF_RENK,
+        ], "renk demet sırasını değil Mesh.sign'ı izlemeli"
+
+        # Aynı renk iki ağa da verilseydi ±faz ayrımı diye bir şey kalmazdı;
+        # alfa 0 olsaydı iki yüzey de görünmezdi.
+        assert _POZITIF_RENK[:3] != _NEGATIF_RENK[:3]
+        assert _POZITIF_RENK[3] > 0.0 and _NEGATIF_RENK[3] > 0.0
+    finally:
+        pencere._yenile()
+
+
+# ---------------------------------------------------------------------------
+# Şeffaflık paneli: metin gerçekten PANELE gidiyor mu
+
+
+@requires_offscreen
+def test_panelin_bastigi_metin_transparency_text_ile_ayni(su_penceresi):
+    """`transparency_text()` dokstring'i "panelin bastığı metnin aynısı" diyor.
+
+    ÖLÇÜLDÜ: bu söz KORUNMUYORDU. `transparency_text()` metni
+    `format_panel(self._provenance())` ile SIFIRDAN üretiyor ve `self._panel`
+    widget'ına hiç dokunmuyor; üç "panel beyan ediyor" testi de yalnızca o
+    metot üzerinde assert ediyordu. İki mutasyon 9/9 GEÇİYORDU:
+        - `_yenile`'den `panel.set_provenance` çağrısını sil
+          -> panel metni 0 KARAKTER, `transparency_text()` hâlâ 1174 karakter
+        - panele motorun HAM provenance'ını ver (pencerenin eklemeleri yok)
+          -> panel 843 karakter, üç gösterim beyanının ÜÇÜ DE panelde yok
+    Yani ekranda hiçbir şey yazmasa da takım yemyeşil kalıyordu.
+    """
+    pencere, _ = su_penceresi
+    try:
+        metin = pencere._panel._text.toPlainText()
+        assert metin, "panel boş"
+        assert metin == pencere.transparency_text()
+        assert "işareti keyfi" in metin
+        assert "çekirdek kabuk" in metin
+        assert "şu an 0.05" in metin
+
+        # Seviye değişince PANELDEKİ metin de güncellenmeli, yalnızca
+        # `transparency_text()` değil.
+        pencere.set_isosurface_level(0.20)
+        guncel = pencere._panel._text.toPlainText()
+        assert guncel == pencere.transparency_text()
+        assert "şu an 0.2" in guncel
+    finally:
+        pencere.set_isosurface_level(0.05)
+
+
+@requires_offscreen
+def test_provenance_motorun_beyanindan_hicbir_seyi_silmiyor(su_penceresi):
+    """`_provenance` dokstring'i "pencere hiçbir şeyi SİLMEZ" diye söz veriyor.
+
+    ÖLÇÜLDÜ: sözün 1/3'ü korunuyordu. Motorun `neglected` listesini (5 madde)
+    tamamen düşüren mutasyon panel metnini 1174 -> 931 karaktere indiriyor ve
+    9/9 GEÇİYORDU; `diagnostics`'i düşüren mutasyon 1174 -> 1134, yine 9/9.
+    Yalnızca `approximations` korunuyordu, o da tek bir "Born-Oppenheimer"
+    assert'i sayesinde.
+
+    Bu test metin üzerinden değil, `Provenance` NESNESİ üzerinden bakar:
+    motorun taşıdığı her madde ve her tanı, pencerenin ürettiği beyanda
+    aynen bulunmak zorunda.
+    """
+    pencere, _ = su_penceresi
+    temel = pencere._result.provenance
+    beyan = pencere._provenance()
+
+    # Motorun listeleri boşalırsa bu test totolojiye dönerdi; kaynak
+    # gerçekten dolu olmalı.
+    assert len(temel.approximations) == 4
+    assert len(temel.neglected) == 5
+    assert temel.diagnostics
+
+    assert set(temel.approximations) <= set(beyan.approximations)
+    assert set(temel.neglected) <= set(beyan.neglected)
+    for anahtar, deger in temel.diagnostics.items():
+        assert beyan.diagnostics[anahtar] == deger
+    assert beyan.method == temel.method
+    assert beyan.expected_error == temel.expected_error
+
+    # Pencerenin KENDİ eklediği üç tanı; üçü birden düşürülünce de takım
+    # yeşil kalıyordu.
+    assert beyan.diagnostics["orbital_index"] == pencere.orbital_index
+    assert beyan.diagnostics["isosurface_level"] == pencere._level
+    assert beyan.diagnostics["grid_points_per_axis"] == pencere._grid.shape[0] == 60
+
+
+@requires_offscreen
+def test_gosterim_yaklasimlari_motorunkilerle_karismiyor(su_penceresi):
+    """Modül dokstring'i motorun taşıdıklarını doğru saymak zorunda.
+
+    Dokstring "motorunkiler (Born-Oppenheimer, sonlu baz, ızgara aralığı)"
+    diyordu; motorun `approximations` tuple'ı tam olarak dört madde taşıyor
+    ve "ızgara aralığı" ARALARINDA YOK -- o bu pencerenin kendi tanısı
+    (`grid_points_per_axis`). Yanlış atıf, panelin hangi katmanın neyi
+    beyan ettiği ayrımını bulanıklaştırır.
+    """
+    pencere, _ = su_penceresi
+    assert pencere._result.provenance.approximations == (
+        "Born-Oppenheimer",
+        "tek Slater determinanti",
+        "sonlu baz seti",
+        "kapali kabuk (cift isgal)",
+    )
+    eklenen = set(pencere._provenance().approximations) - set(
+        pencere._result.provenance.approximations
+    )
+    assert len(eklenen) == 2, eklenen
+
+
+# ---------------------------------------------------------------------------
+# Arayüz: görevin GUI şartları
+
+
+@requires_offscreen
+def test_panel_kapatilamaz_ve_gorunum_dondurulebilir(su_penceresi):
+    """Görevin iki açık şartı: panel kapatılamaz, görünüm döndürülebilir.
+
+    ÖLÇÜLDÜ: ikisinin de hiçbir koruması yoktu. `self._panel.setVisible(False)`
+    mutasyonu 9/9 GEÇİYOR (panel ekranda yok ama testler mutlu), `GLViewWidget`
+    layout'a hiç eklenmeyince de 9/9 geçiyordu -- döndürülecek bir şey
+    kalmadığı hâlde.
+
+    Döndürme `GLViewWidget`'in kendi fare olayından gelir; test edilebilir
+    olan, o widget'ın gerçekten kurulup pencereye BAĞLANMASIDIR.
+    """
+    pencere, _ = su_penceresi
+    assert not pencere._panel.isHidden(), "şeffaflık paneli gizlenmiş"
+    assert pencere._panel.parent() is not None, "panel layout'a hiç eklenmemiş"
+
+    assert isinstance(pencere._view, gl.GLViewWidget)
+    assert not pencere._view.isHidden()
+    assert pencere._view.parent() is not None, "3B görünüm layout'a hiç eklenmemiş"
+
+    merkez = pencere.centralWidget()
+    assert merkez is not None
+    assert pencere._panel.isAncestorOf(pencere._panel._text)
+    assert merkez.isAncestorOf(pencere._panel)
+    assert merkez.isAncestorOf(pencere._view)
+
+
+@requires_offscreen
+def test_secici_ve_kaydirici_kullanicida_olu_degil(su_penceresi):
+    """Denetimler gerçekten pencereye bağlı olmalı.
+
+    ÖLÇÜLDÜ: `currentIndexChanged` bağlantısını kaldırmak da `valueChanged`
+    bağlantısını kaldırmak da 9/9 GEÇİYORDU. Yani seçici ve kaydırıcı
+    kullanıcının elinde tamamen ÖLÜ olabilirdi ve testler bunu görmezdi;
+    her iki testi de `set_orbital_index`/`set_isosurface_level`'ı DOĞRUDAN
+    çağırıyordu.
+
+    Burada sinyal gerçekten yayılır (widget üzerinden), pencere durumunun
+    onu izlemesi beklenir.
+    """
+    pencere, _ = su_penceresi
+    homo = pencere.orbital_index
+    try:
+        pencere._secici.setCurrentIndex(0)
+        assert pencere.orbital_index == 0, "seçici pencereye bağlı değil"
+        assert pencere.mesh_vertex_counts() == (0, 412)
+
+        pencere._kaydirici.setValue(200)
+        assert pencere._level == pytest.approx(0.20), "kaydırıcı pencereye bağlı değil"
+    finally:
+        pencere.set_orbital_index(homo)
+        pencere.set_isosurface_level(0.05)
+
+
+@requires_offscreen
+def test_secici_butun_orbitalleri_dogru_etiketle_listeliyor(su_penceresi):
+    """Seçicinin doldurulması ve HOMO/LUMO etiketlerinin YERİ.
+
+    ÖLÇÜLDÜ: seçiciyi hiç doldurmamak da HOMO/LUMO etiketlerini TERS
+    çevirmek de 9/9 GEÇİYORDU. Su/STO-3G'de yedi orbital var, beşi dolu:
+    HOMO indeksi 4, LUMO 5.
+    """
+    pencere, _ = su_penceresi
+    etiketler = [pencere._secici.itemText(i) for i in range(pencere._secici.count())]
+    assert len(etiketler) == 7
+    assert "(HOMO)" in etiketler[4]
+    assert "(LUMO)" in etiketler[5]
+    assert [e for e in etiketler if "(HOMO)" in e] == [etiketler[4]]
+    assert [e for e in etiketler if "(LUMO)" in e] == [etiketler[5]]
+    assert all("(dolu)" in etiketler[i] for i in range(4))
+    assert "(boş)" in etiketler[6]
+    # Enerjiler etiketin içinde; sıra sonucun kendi sırasıdır.
+    for i, enerji in enumerate(pencere._result.orbital_energies):
+        assert f"{enerji:.6f}" in etiketler[i]
+    assert pencere._secici.currentIndex() == pencere.orbital_index
+
+
+@requires_offscreen
+def test_kaydirici_seviyeyle_senkron_kaliyor(su_penceresi):
+    """Kaydırıcı ile panel aynı sayıyı göstermek zorunda.
+
+    ÖLÇÜLDÜ (düzeltmeden önce): `set_isosurface_level(2.0)` `_level`'ı 2.0
+    yapıyor ama kaydırıcı 900'e (0.9) KIRPILIYORDU -- panel "şu an 2" derken
+    kaydırıcı 0.9 gösteriyordu, sessizce. 2.0 uydurma bir değer de değil:
+    su/STO-3G O 1s'in ızgara üzerindeki maksimum genliği 4.9041.
+
+    Kırpma yerine aralık genişletilir; kaydırıcının taşıdığı tam sayı
+    `round(level * 1000)` olmak zorunda.
+    """
+    pencere, _ = su_penceresi
+    try:
+        assert pencere._kaydirici.value() == 50
+        pencere.set_isosurface_level(2.0)
+        assert pencere._kaydirici.value() == 2000
+        assert pencere._kaydirici.maximum() >= 2000
+        assert "şu an 2" in pencere.transparency_text()
+        # Kaydırıcı senkronu sinyal yaymamalı; yoksa her seviye değişimi
+        # ikinci bir yeniden hesabı tetiklerdi.
+        assert pencere._level == 2.0
+    finally:
+        pencere.set_isosurface_level(0.05)
+    assert pencere._kaydirici.value() == 50
+
+
+@requires_offscreen
+def test_orbital_degistikce_ag_itemleri_sizmiyor(su_penceresi):
+    """Eski ağ item'ları görünümden SİLİNMELİ.
+
+    ÖLÇÜLDÜ: silme döngüsünü kaldıran mutasyon 9/9 GEÇİYORDU; 13 orbital
+    değişiminde görünümdeki item sayısı 3'ten 27'ye çıkıyor. Sızıntı sessiz
+    değil, GÖRSEL: eski yüzeyler ekranda üst üste durur ve gösterilen
+    "orbital" artık tek bir orbital olmaz.
+
+    Değişmez: görünümde her zaman 1 çekirdek item'ı + BOŞ OLMAYAN ağ sayısı
+    kadar mesh item'ı bulunur. Boş ağ (su/STO-3G orbital 0'ın pozitif fazı)
+    hiç çizilmez.
+    """
+    pencere, _ = su_penceresi
+    homo = pencere.orbital_index
+    try:
+        for _tur in range(2):
+            for i in range(7):
+                pencere.set_orbital_index(i)
+                dolu = sum(1 for sayi in pencere.mesh_vertex_counts() if sayi > 0)
+                assert len(pencere._mesh_items) == dolu
+                assert len(pencere._view.items) == 1 + dolu
+        assert len(pencere._view.items) <= 3
+        # Orbital 0'da pozitif ağ BOŞ (0 tepe): tek item çizilir.
+        pencere.set_orbital_index(0)
+        assert pencere.mesh_vertex_counts() == (0, 412)
+        assert len(pencere._view.items) == 2
+    finally:
+        pencere.set_orbital_index(homo)
 
 
 # ---------------------------------------------------------------------------

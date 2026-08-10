@@ -55,3 +55,14 @@ class TransparencyPanel(QtWidgets.QGroupBox):
 
     def set_provenance(self, provenance: Provenance) -> None:
         self._text.setPlainText(format_panel(provenance))
+
+    def text(self) -> str:
+        """Panelin ŞU AN bastığı metin.
+
+        Testlerin okuma noktası. Bir pencere "panelin bastığı metin budur"
+        diye bir metot sunuyorsa onu `format_panel`'i ikinci kez çağırarak
+        değil BURADAN üretmelidir: ölçüldü, ikinci çağrı deseni
+        `set_provenance`'ı hiç çağırmayan bir pencereyi de yeşil bırakıyor
+        (panel 0 karakter, metot 1174 karakter, dokuz testin dokuzu geçiyor).
+        """
+        return self._text.toPlainText()
