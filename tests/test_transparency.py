@@ -93,15 +93,22 @@ def test_panel_lines_are_aligned():
 # kötüdür.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+# İçe aktarmalar bilinçli olarak `try` DIŞINDA. Bir süre hepsi probe'un
+# içindeydi ve o hâliyle ÖLÇÜLDÜ: `qlab.app.main` modülü kaybolduğunda bu
+# dosyanın 11 testinden 6'sı KIRMIZI olmuyor, sessizce ATLANIYORDU (takım
+# yemyeşil kalıyor). Eksik bir kendi modülümüz "platform yok" değil, BOZUK BİR
+# YAPI'dır ve toplama sırasında patlamalıdır. `try` yalnızca gerçek ortam
+# sorusunu sarmalı: offscreen platformu kurulabiliyor mu?
+# (Aynı tuzak `tests/test_orbital_window.py`'de de vardı, orada da böyle kapandı.)
+from PySide6 import QtWidgets
+
+from qlab.app.main import TDSEWindow, main
+from qlab.scenario.schema import GridSpec, PacketSpec, PotentialSpec, TDSEScenario
+
 try:
-    from PySide6 import QtWidgets
-
-    from qlab.app.main import TDSEWindow, main
-    from qlab.scenario.schema import GridSpec, PacketSpec, PotentialSpec, TDSEScenario
-
     _qapp = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     _OFFSCREEN_OK = True
-except Exception:  # pragma: no cover - bu ortamda Qt/offscreen kurulamazsa
+except Exception:  # pragma: no cover - bu ortamda offscreen platformu kurulamazsa
     _OFFSCREEN_OK = False
 
 requires_offscreen = pytest.mark.skipif(
