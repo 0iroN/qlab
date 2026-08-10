@@ -82,6 +82,7 @@ from qlab.engine.hf.scf import solve
 from qlab.errors import InvalidInputError
 from qlab.observable.hf_obs import VolumeGrid
 from qlab.types import Molecule
+from qlab.viz.isosurface import EXTRACTION_APPROXIMATIONS
 
 try:
     _qapp = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
@@ -460,22 +461,40 @@ def test_panelin_bastigi_metin_transparency_text_ile_ayni(su_penceresi):
         - panele motorun HAM provenance'ını ver (pencerenin eklemeleri yok)
           -> panel 843 karakter, üç gösterim beyanının ÜÇÜ DE panelde yok
     Yani ekranda hiçbir şey yazmasa da takım yemyeşil kalıyordu.
+
+    EŞİTLİK SATIRI KALDIRILDI, çünkü TOTOLOJİYDİ: `transparency_text()`
+    (orbital_window.py) `self._panel.text()` döndürüyor, o da (transparency.py)
+    `self._text.toPlainText()` -- yani `metin == pencere.transparency_text()`
+    iddiasının iki tarafı BİREBİR aynı ifadeye indirgeniyordu ve satır
+    orbital_window.py'ye uygulanan hiçbir mutasyonla kırılamıyordu. Testin
+    gücü zaten diğer assert'lerden geliyordu; okuyucuyu korumanın o satırdan
+    geldiğine inandırıyordu. Yerine YAPISAL bir sonda kondu.
     """
     pencere, _ = su_penceresi
     try:
         metin = pencere._panel._text.toPlainText()
         assert metin, "panel boş"
-        assert metin == pencere.transparency_text()
         assert "işareti keyfi" in metin
         assert "çekirdek kabuk" in metin
         assert "şu an 0.05" in metin
 
+        # YAPISAL SONDA: panele yabancı bir metin yazılır. `transparency_text()`
+        # paneli OKUYORSA onu döndürür; metni `format_panel(self._provenance())`
+        # ile ikinci kez ÜRETİYORSA sondayı hiç görmez. Bu satır, eşitlik
+        # satırının aksine, gerçekten kırılabilir.
+        pencere._panel._text.setPlainText("SONDA-42")
+        assert pencere.transparency_text() == "SONDA-42", (
+            "transparency_text() paneli okumuyor, metni yeniden üretiyor"
+        )
+        pencere._yenile()
+        assert pencere.transparency_text() != "SONDA-42", (
+            "_yenile paneli tazelemeli; sonda metni ekranda kalmamalı"
+        )
+
         # Seviye değişince PANELDEKİ metin de güncellenmeli, yalnızca
         # `transparency_text()` değil.
         pencere.set_isosurface_level(0.20)
-        guncel = pencere._panel._text.toPlainText()
-        assert guncel == pencere.transparency_text()
-        assert "şu an 0.2" in guncel
+        assert "şu an 0.2" in pencere._panel._text.toPlainText()
     finally:
         pencere.set_isosurface_level(0.05)
 
@@ -538,7 +557,16 @@ def test_gosterim_yaklasimlari_motorunkilerle_karismiyor(su_penceresi):
     eklenen = set(pencere._provenance().approximations) - set(
         pencere._result.provenance.approximations
     )
-    assert len(eklenen) == 2, eklenen
+    # DÖRT madde: pencerenin kendi iki gösterim seçimi (işaret keyfi, izoyüzey
+    # seviyesi) + ağ çıkarımının iki seçimi (float32 dökümü, marching-cubes
+    # doğrusal interpolasyonu). Son ikisi `viz/isosurface.py`'de, yani seçimin
+    # YAPILDIĞI yerde yazılı; `Mesh` kendi Provenance'ını taşımadığı için
+    # ekrana ancak buradan ulaşıyorlar.
+    assert len(eklenen) == 4, eklenen
+    assert set(EXTRACTION_APPROXIMATIONS) <= eklenen
+    metin = pencere.transparency_text().lower()
+    assert "float32" in metin, "tek duyarlıklı döküm panelde beyan edilmiyor"
+    assert "marching" in metin, "marching-cubes interpolasyonu panelde yok"
 
 
 # ---------------------------------------------------------------------------
@@ -729,6 +757,347 @@ def test_orbital_degistikce_ag_itemleri_sizmiyor(su_penceresi):
 
 
 # ---------------------------------------------------------------------------
+# Ekransız ama OKUNABİLİR durum
+#
+# Modül dokstring'i "OpenGL boyaması test edilemez" diyor ve HAKLI: bağlam ancak
+# boyama sırasında gerekir. Ama o sınır bir süre kendinden fazlasını yuttu --
+# panelin yüksekliği, kameranın mesafesi, seçicinin açılış konumu, pencerenin
+# gösterilip gösterilmediği EKRANSIZ KİPTE OKUNABİLİR saf durumdur ve hiçbiri
+# boyamaya bağlı değildir. Aşağıdaki testler o payı geri alıyor; her biri
+# ölçülmüş ve o ölçümde 0 test kıran bir mutasyona karşılık geliyor.
+
+
+@requires_offscreen
+def test_orbital_paneli_varsayilan_kutuyu_kullanmiyor(su_penceresi):
+    """Kabul kriteri 3'ün gerçek ekranda bulduğu TEK kusurun düzeltmesi.
+
+    README: gerçek-ekran doğrulaması "bir kusuru da GÖRÜNÜR KILDI: 12 satırlık
+    beyan 140 px'lik panelde katlanın altında kalıyordu (düzeltildi,
+    TransparencyPanel(max_height=...))". Bu, deponun tek gerçek-ekran
+    doğrulamasının ürettiği tek bulgu ve tam olarak sıfır testle korunuyordu.
+
+    ÖLÇÜLDÜ, iki bağımsız mutasyon, ikisi de 58 testin SIFIRINI kırıyordu:
+        orbital_window.py `TransparencyPanel(max_height=260)` -> `TransparencyPanel()`
+        transparency.py   `setMaximumHeight(max_height)`      -> `setMaximumHeight(140)`
+    Oysa fark ekransız kipte OKUNABİLİR: `_panel._text.maximumHeight()` doğru
+    kodda 260, varsayılan panelde 140 döndürüyor; show() sonrası gerçek widget
+    yüksekliği 192 px'ten 140 px'e düşüyor.
+
+    Çağrılan taraf `tests/test_transparency.py`'de kilitli; burası ÇAĞIRAN
+    taraf. Sayılar LİTERAL: `_VARSAYILAN_YUKSEKLIK`'e karşı yazılan bir iddia
+    sabitle birlikte hareket eder ve hiçbir zaman kırılamazdı.
+    """
+    from qlab.app.transparency import TransparencyPanel
+
+    pencere, _ = su_penceresi
+    assert pencere._panel._text.maximumHeight() == 260
+    assert TransparencyPanel()._text.maximumHeight() == 140
+    assert pencere._panel._text.maximumHeight() > 140, (
+        "orbital penceresinin beyanı TDSE penceresinin kutusuna sığmıyor"
+    )
+
+    # GEREKÇE de sınanır: bu pencerenin beyanı motorunkinden GERÇEKTEN uzun.
+    # Değilse 260 keyfi bir sayı olurdu.
+    from qlab.app.transparency import format_panel
+
+    assert len(pencere.transparency_text()) > len(
+        format_panel(pencere._result.provenance)
+    )
+
+
+@requires_offscreen
+def test_kamera_sahneyi_kadraja_aliyor(su_penceresi):
+    """Kamera mesafesi çarpanı: sahne kadraj dışına düşse takım yeşil kalıyordu.
+
+    ÖLÇÜLDÜ: `setCameraPosition(distance=... * 60.0)` -> `* 1.0` mutasyonu 58
+    testin SIFIRINI kırıyordu. Eşdeğer mutant DEĞİL: `_view.opts['distance']`
+    ekransız kipte okunuyor (su/STO-3G varsayılanlarında 11.045131, H2'de
+    9.557692) ve 1x'te izoyüzey tamamen kameranın içinde kalır.
+
+    İki BAĞIMSIZ sınır yazılıyor, ikisi de kameranın kendi sabitinden değil,
+    BAŞKA nesnelerden türüyor:
+
+    1. Izgara kutusunun en uzun kenarı. pyqtgraph'ın varsayılan görüş açısı
+       60 derece; odak düzleminde görünen dikey açıklık 2*d*tan(30°) = 1.155*d,
+       yani kutunun sığması için d >= 0.866 * kenar. Ölçülen oran 1.016949
+       (hem suda hem H2'de; çünkü mesafe 60*spacing, kenar 59*spacing).
+       Üst sınır 2.0: 60 -> 120 mutasyonu oranı 2.034 yapar ve yakalanır.
+    2. Çizilen ağın kendi yarıçapı. Kamera yüzeyin İÇİNDE kalmamalı; ölçüldü,
+       su HOMO'sunun (level=0.05) maks|r| değeri 2.372238 bohr.
+    """
+    pencere, _ = su_penceresi
+    mesafe = float(pencere._view.opts["distance"])
+
+    kenarlar = np.asarray(pencere._grid.spacing) * (np.asarray(pencere._grid.shape) - 1)
+    en_uzun = float(kenarlar.max())
+    assert mesafe >= 0.87 * en_uzun, (
+        f"kamera çok yakın: kutunun {en_uzun:.3f} bohr'luk kenarı kadraja "
+        f"sığmaz (mesafe {mesafe:.3f})"
+    )
+    assert mesafe <= 2.0 * en_uzun, (
+        f"kamera çok uzak: molekül kadrajda noktaya döner "
+        f"(mesafe {mesafe:.3f}, kenar {en_uzun:.3f})"
+    )
+
+    yaricap = max(
+        float(np.linalg.norm(np.asarray(mesh.vertices, dtype=float), axis=1).max())
+        for mesh in pencere._meshes
+        if len(mesh.vertices) > 0
+    )
+    assert mesafe > yaricap, (
+        f"kamera çizilen yüzeyin İÇİNDE ({mesafe:.3f} <= {yaricap:.3f} bohr)"
+    )
+
+
+@requires_offscreen
+def test_acilista_secici_gosterilen_orbitali_isaret_ediyor():
+    """Açılış durumu, bilerek TAZE bir pencerede -- paylaşılan fixture ONARIYOR.
+
+    BEŞİNCİ MEKANİZMA BURADA NÜKSETMİŞTİ. Kaydırıcının açılış bandı için
+    fixture paylaşımı zaten kusur sayılıp taze pencereye taşınmıştı
+    (`test_kaydiricinin_acilis_araligi_surukleyebilir_bir_bant`), ama SEÇİCİ
+    için aynı şey yapılmamıştı.
+
+    ÖLÇÜLDÜ: `_kur_arayuz`'dan `self._secici.setCurrentIndex(self._orbital_index)`
+    satırını silen mutasyon
+        - tek başına (`-k`)      -> 1 failed, 33 deselected
+        - dosyanın TAMAMINDA     -> 34 passed  (KIRILMA YOK)
+    Sebep: modül kapsamlı `su_penceresi` fixture'ında daha erken koşan testler
+    `set_orbital_index` çağırıyor, o da `_secici_senkronla`'yı çalıştırıp
+    mutasyonu ONARIYOR. Yani açılış iddiası sessizce test SIRASINA bağlanmıştı.
+
+    Su/STO-3G'de yedi orbital var, beşi dolu: HOMO indeksi 4.
+    """
+    pencere = OrbitalWindow(solve(Molecule.from_string(_SU), "sto-3g"))
+    try:
+        assert pencere.orbital_index == 4
+        assert pencere._secici.currentIndex() == 4, (
+            "seçici açılışta gösterilen orbitali işaret etmiyor"
+        )
+        assert pencere._secici.count() == 7
+        assert "(HOMO)" in pencere._secici.currentText()
+        # Kaydırıcının açılış DEĞERİ de aynı sınıftan: literal 50 = 0.05*1000.
+        assert pencere._kaydirici.value() == 50
+        assert pencere._level == 0.05
+        # Başlık, ekrandaki resmin HANGİ hesaptan geldiğini söyleyen tek yer.
+        # ÖLÇÜLDÜ: başlığı sabit "qlab" yapan mutasyon 42 testin SIFIRINI
+        # kırıyordu -- iki farklı bazla açılan iki pencere ayırt edilemezdi.
+        assert "RHF/STO-3G" in pencere.windowTitle()
+    finally:
+        pencere.close()
+
+    baska = OrbitalWindow(solve(Molecule.from_string("H 0 0 0; H 0 0 0.74"), "6-31g"))
+    try:
+        assert "RHF/6-31G" in baska.windowTitle()
+    finally:
+        baska.close()
+
+
+@requires_offscreen
+def test_acilis_boyutu_hem_3b_gorunume_hem_panele_yer_biraliyor():
+    """`resize(960, 800)` korumasızdı; ölçüldü, küçük bir boyutta pencere işlevsiz.
+
+    MUTASYON: `self.resize(960, 800)` -> `self.resize(300, 200)`. Tam takımda
+    0 test kırılıyordu. Oysa fark ekransız kipte OKUNABİLİR ve yıkıcı:
+        960x800 -> 3B görünüm 517 px, panelin metin alanı 190 px
+        300x200 -> 3B görünüm   0 px, panelin metin alanı 107 px
+    Yani orbitali gösteren widget'ın yüksekliği SIFIR oluyor -- pencerenin tek
+    işi ekranda kalmıyor -- ve takım yemyeşil kalıyordu.
+
+    Sınırlar LİTERAL ve ikisi de bir GEREKÇEYE bağlı: 3B görünüm pencerenin
+    asıl nesnesi, panel ise en az TDSE penceresinin kutusu (140 px) kadar yer
+    almalı, yoksa daha uzun olan beyanı daha küçük bir kutuda göstermiş olurdu.
+    """
+    pencere = OrbitalWindow(solve(Molecule.from_string(_SU), "sto-3g"))
+    try:
+        pencere.show()
+        _qapp.processEvents()
+        assert pencere._view.height() >= 300, (
+            f"3B görünüme yer kalmamış ({pencere._view.height()} px); "
+            f"pencerenin tek işi o"
+        )
+        assert pencere._panel._text.viewport().height() >= 140, (
+            f"panelin metin alanı TDSE'nin varsayılan kutusundan bile küçük "
+            f"({pencere._panel._text.viewport().height()} px)"
+        )
+    finally:
+        pencere.close()
+
+
+@requires_offscreen
+def test_kaydiricinin_izgarasina_oturmayan_seviye_reddediliyor(su_penceresi):
+    """`_dogrula_seviye`'nin üçüncü şartı yalnızca ALT sınırı bağlıyordu.
+
+    Dokstring şunu vaat ediyordu: "Kaydırıcının çözünürlüğünde olmalı
+    (>= 0.001). Kaydırıcı tam sayı binde-bir taşır; gösteremeyeceği bir seviye,
+    denetimin panelden farklı bir sayı göstermesi demektir. Sessiz
+    desenkronizasyon burada da reddedilir, kırpılmaz." Kod ise yalnızca
+    `deger < 0.001`'i reddediyordu.
+
+    ÖLÇÜLDÜ (mutasyonsuz HEAD, su/STO-3G) -- `set_isosurface_level` sonrası
+    kaydırıcı konumu / `_level`:
+        0.0155 -> 16 (0.016)   0.0567 -> 57 (0.057)   0.0014 ->   1 (0.001)
+        0.1235 -> 124 (0.124)  0.0015 ->  2 (0.002)   0.0504 ->  50 (0.05)
+    Altısı da DESENKRON; 0.0011'de kaydırıcı en küçük tıkta kilitli kalırken
+    kullanıcı %10 yukarıdaydı, 0.0015'te sapma %33'tü. Eşdeğer de değil:
+    0.0155 ve 0.016 FARKLI yüzeyler veriyor (3178 tepe / 3114 tepe).
+
+    Deponun bu sınıfı ZATEN kusur saydığı yer duruyor: ÜST tarafta aynı
+    şekilli desenkron (2.0 -> kaydırıcı 0.9) düzeltilmiş ve regresyon testi
+    yazılmıştı (`test_kaydirici_seviyeyle_senkron_kaliyor`).
+
+    TOLERANS ŞART, ölçüldü: kaydırıcı 1..5000 konumlarının 82'sinde
+    `(n/1000)*1000` tam sayı DEĞİL (1001 -> 1000.9999999999999); en büyük
+    yuvarlama artığı 4.547e-13. Katı bir tam-sayı kontrolü o 82 konumu
+    reddeder ve sürükleme sırasında istisna Qt'nin sinyal işleyicisinde
+    YUTULUR -- düzeltilmek istenenden daha kötü bir sessiz desenkron doğardı.
+    """
+    from qlab.app.orbital_window import _dogrula_seviye
+
+    pencere, _ = su_penceresi
+    once = _pencere_durumu(pencere)
+
+    for oturmayan in (0.0155, 0.0567, 0.0014, 0.1235, 0.0015, 0.0504):
+        with pytest.raises(InvalidInputError, match="izoyüzey seviyesi") as hata:
+            pencere.set_isosurface_level(oturmayan)
+        assert "binde-bir" in str(hata.value), f"red gerekçesi yanlış: {hata.value}"
+    assert _pencere_durumu(pencere) == once, "reddedilen seviye durumu bozmamalı"
+
+    # Kurucu yolu da aynı şartı taşımalı.
+    with pytest.raises(InvalidInputError, match="binde-bir"):
+        OrbitalWindow(pencere._result, level=0.0155)
+
+    # Izgaraya OTURAN seviyeler kabul edilir (literal sayılarla).
+    for oturan in (0.001, 0.002, 0.016, 0.05, 0.124, 0.9, 2.0, 4.999):
+        assert _dogrula_seviye(oturan) == oturan
+
+    # TOLERANS: kaydırıcının ürettiği HER konum kabul edilmeli. 1001 ve
+    # kardeşleri kayan noktada tam sayı vermiyor; katı bir kontrol onları
+    # reddederdi.
+    for konum in (1001, 1003, 1005, 2001, 4999, 5000):
+        assert _dogrula_seviye(konum / 1000.0) == konum / 1000.0
+
+
+@requires_offscreen
+def test_kaydirici_surukleme_hicbir_konumda_desenkron_kalmiyor(su_penceresi):
+    """Kaydırıcı gerçekten sürüklendiğinde panel ile aynı sayıyı göstermeli.
+
+    Yukarıdaki testin ters yüzü: doğrulayıcı katılaştırılırken kaydırıcının
+    kendi yaydığı değerlerin reddedilmediği BURADA sınanır. Qt sinyal
+    işleyicisinde fırlayan bir istisna YUTULUR, yani böyle bir gerileme
+    testlerde istisna olarak değil sessiz desenkron olarak görünür -- o yüzden
+    iddia istisnaya değil, kaydırıcı konumu ile `_level`'ın eşitliğine bakar.
+
+    1001 bilinçli seçim: `(1001/1000)*1000 = 1000.9999999999999`.
+
+    Bant önce `set_isosurface_level(2.0)` ile büyütülür, çünkü kaydırıcının
+    açılış üst sınırı 900 ve `setValue` onun ötesini SESSİZCE kırpar --
+    kırpılmış bir konumu sınamak, kırpmayı sınamak olurdu (o zaten
+    `test_kaydirici_seviyeyle_senkron_kaliyor`'un işi).
+    """
+    pencere, _ = su_penceresi
+    try:
+        pencere.set_isosurface_level(2.0)
+        assert pencere._kaydirici.maximum() >= 2000
+        for konum in (1, 2, 50, 123, 900, 1001, 1003, 1005, 2000):
+            pencere._kaydirici.setValue(konum)
+            assert pencere._kaydirici.value() == konum, (
+                f"kaydırıcı {konum} konumunu reddetti (sinyal içinde yutulmuş "
+                f"bir istisna olabilir)"
+            )
+            assert pencere._level == konum / 1000.0
+            assert f"şu an {konum / 1000.0:g}" in pencere.transparency_text()
+    finally:
+        pencere.set_isosurface_level(0.05)
+
+
+@requires_offscreen
+def test_panel_izgara_cozunurlugunu_ayirt_edici_bir_sayiyla_beyan_ediyor(su_penceresi):
+    """Beyan edilen sayı çözünürlüğü BELİRLEMELİ, yoksa hiçbir şey söylemez.
+
+    Modül dokstring'i "Izgara aralığı ... bu pencerenin kendi tanısıdır
+    (`grid_points_per_axis`)" diyordu. Ama eksen başına nokta sayısı, kutu
+    genişliği olmadan aralığı vermez.
+
+    ÖLÇÜLDÜ: n=60 sabit, yalnızca padding değişerek
+        pad= 4.0 -> aralık 0.1841 bohr, ağ (1764, 1764)
+        pad=12.0 -> aralık 0.4553 bohr, ağ ( 248,  248)
+        pad=20.0 -> aralık 0.7265 bohr, ağ (  86,   86)
+    ÜÇ PENCERENİN panel metni BİT BİREBİR AYNIYDI (sha256[:16] üçünde de
+    7473027186428447). 4 kat çözünürlük farkı panelde hiç görünmüyordu.
+
+    Kusur varsayılan dışı argüman da gerektirmiyor: yalnızca `--molecule`
+    değişerek H2 0.1593 / HF 0.1650 / H2O 0.1841 / C2H4 0.2145 bohr aralık
+    veriyor, panelde basılan sayı hep 60.
+
+    Izgara ANİZOTROP olduğu için TEK sayı yetmez: aynı ızgarada eksen
+    aralıkları 0.1356 / 0.1841 / 0.1544 bohr. En kaba ve en ince eksen ayrı
+    ayrı beyan edilir; en kaba eksen `observable/hf_obs.py`'nin
+    `grid_spacing_bohr` alışkanlığıyla aynı adı taşır.
+    """
+    pencere, _ = su_penceresi
+    metinler = []
+    for pad in (4.0, 12.0, 20.0):
+        baska = OrbitalWindow(pencere._result, padding=pad)
+        try:
+            metinler.append(baska.transparency_text())
+        finally:
+            baska.close()
+    assert len(set(metinler)) == 3, (
+        "4 kat farklı çözünürlükte panel metni aynı kalıyor -- basılan sayı "
+        "çözünürlüğü belirlemiyor"
+    )
+
+    beyan = pencere._provenance()
+    assert beyan.diagnostics["grid_points_per_axis"] == 60
+    # Sayılar bağımsız kurulan bir ızgaradan doğrulanır; `pencere._grid`
+    # kullanılsaydı iddia totoloji olurdu.
+    beklenen = VolumeGrid.around(
+        pencere._result.molecule, padding=4.0, points_per_axis=60
+    )
+    assert beyan.diagnostics["grid_spacing_bohr"] == pytest.approx(
+        float(np.max(beklenen.spacing))
+    )
+    assert beyan.diagnostics["grid_spacing_min_bohr"] == pytest.approx(
+        float(np.min(beklenen.spacing))
+    )
+    # LİTERAL bant: sayı sessizce başka bir eksene ya da başka bir tanıma
+    # kayarsa burada görünür (ölçüldü: 0.184086 / 0.135593).
+    assert 0.1840 < beyan.diagnostics["grid_spacing_bohr"] < 0.1842
+    assert 0.1355 < beyan.diagnostics["grid_spacing_min_bohr"] < 0.1357
+    assert (
+        beyan.diagnostics["grid_spacing_min_bohr"]
+        < beyan.diagnostics["grid_spacing_bohr"]
+    ), "ızgara anizotrop; iki eksen aynı sayıyı veriyorsa biri yanlış okunmuş"
+
+
+@requires_offscreen
+def test_mesh_vertex_counts_agsiz_durumu_sessizce_gizlemiyor(su_penceresi):
+    """Erişilemez dalın yedeği geçerli bir çıktıdan ayırt edilemiyordu.
+
+    `mesh_vertex_counts` `self._meshes is None` iken `(0, 0)` döndürüyordu ve
+    dal `# pragma: no cover` ile erişilemez ilan edilmişti. Erişilemezlik
+    DOĞRU (kaydırıcı sinyalleri `_kur_arayuz`'da bloklu, `_yenile`
+    `__init__`'in sonuncusu), ama `(0, 0)` bu pencerede GERÇEK bir durumdur:
+    ölçüldü, su HOMO'su level=0.90'da tam olarak (0, 0) veriyor. Yani
+    `_yenile`'yi `__init__`'ten sonraya taşıyan bir refactor, istisna yerine
+    tamamen makul görünen bir sayı döndürürdü.
+
+    Yükseltmek aynı erişilemezlik iddiasını korur ve sessiz yalanı kaldırır;
+    dal artık burada koşulduğu için `pragma` da gereksizleşti.
+    """
+    pencere, _ = su_penceresi
+    yedek = pencere._meshes
+    try:
+        pencere._meshes = None
+        with pytest.raises(AssertionError, match="_yenile"):
+            pencere.mesh_vertex_counts()
+    finally:
+        pencere._meshes = yedek
+    assert pencere.mesh_vertex_counts() == (1764, 1764)
+
+
+# ---------------------------------------------------------------------------
 # CLI bağlantısı (Task 10)
 
 
@@ -883,3 +1252,36 @@ def test_main_taze_surecte_qapplication_olmadan_cokmuyor(arguman):
         f"CLI taze süreçte çöktü (kod {sonuc.returncode}).\n"
         f"stdout: {sonuc.stdout}\nstderr: {sonuc.stderr}"
     )
+
+
+@requires_offscreen
+def test_pencere_gosterilmeden_olay_dongusune_girilmiyor():
+    """`window.show()` korumasızdı: pencere hiç gösterilmeden exec()'e girilebilirdi.
+
+    ÖLÇÜLDÜ: `main.py`'den `window.show()` satırını silen mutasyon 58 testin
+    SIFIRINI kırıyordu. Sebep yapısal: bütün CLI testleri `_pencereyi_goster`'i
+    TAMAMEN yamalıyor (`acilan_pencereler` fixture'ı), yani `show()` çağrısı
+    hiçbir testte hiç koşmuyor ve varlığını kimse doğrulamıyor.
+
+    "Olay döngüsü testte koşturulamaz" DOĞRU bir gerekçe, ama yamanın sınırı
+    bir satır fazla geniş çizilmişti: `show()` olay döngüsü değil, ekransız
+    kipte OKUNABİLİR durumdur -- ölçüldü, `isVisible()` çağrıdan önce False,
+    sonra True.
+
+    Bu test o yüzden `_pencereyi_goster`'i DEĞİL yalnızca `QApplication.exec`'i
+    yamalar. Böylece gerçek gövde koşar ve iki şey birden sınanır: pencere
+    gösteriliyor mu ve olay döngüsünün çıkış kodu geri taşınıyor mu.
+    """
+    from qlab.app import main as app_main
+
+    pencere = OrbitalWindow(solve(Molecule.from_string("H 0 0 0; H 0 0 0.74"), "sto-3g"))
+    orijinal = QtWidgets.QApplication.exec
+    try:
+        assert not pencere.isVisible()
+        QtWidgets.QApplication.exec = lambda self: 7
+        kod = app_main._pencereyi_goster(pencere)
+        assert pencere.isVisible(), "pencere gösterilmeden olay döngüsüne girildi"
+        assert kod == 7, "olay döngüsünün çıkış kodu çağırana taşınmıyor"
+    finally:
+        QtWidgets.QApplication.exec = orijinal
+        pencere.close()

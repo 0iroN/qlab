@@ -465,3 +465,108 @@ def test_mesh_bozuk_bicimi_reddediyor():
     # Boş ağ geçerlidir: pg.isosurface bulunmayan seviye için (0,3) döndürüyor.
     bos = Mesh(vertices=np.zeros((0, 3)), faces=np.zeros((0, 3)), level=1.0, sign=-1)
     assert len(bos.vertices) == 0
+
+
+def test_sonlu_olmayan_seviye_reddediliyor_bos_ag_ile_karistirilmiyor():
+    """`nan`/`inf` "alanda bulunmayan seviye" DEĞİL, GEÇERSİZ seviyedir.
+
+    ÖLÇÜLDÜ (düzeltmeden önce, küre alanı 41^3, [-2,2]^3): `level=nan`,
+    `level=+inf` ve `level=-inf` üçü de sessizce `(0, 3)` tepe / `(0, 3)` yüz
+    döndürüyor ve `Mesh.level` `nan` olarak kalıyordu -- yani dönen nesne,
+    `level=1000.0`'ın (alanda gerçekten bulunmayan sonlu bir seviye) dönüşünden
+    TEPE SAYISIYLA AYIRT EDİLEMİYOR. `warnings.simplefilter("always")` ve
+    `np.errstate(all="raise")` altında bile uyarı sayısı 0'dı; katı bir çağıran
+    bile sinyal alamıyordu.
+
+    Bu sınırın korumasız olduğu mutasyonla ölçüldü: `_ag_cikar`'a sonluluk
+    kontrolü EKLENDİĞİNDE bu dosyanın + test_orbital_window + test_transparency
+    testlerinden SIFIRI kırılıyordu (58 passed → 58 passed). Yani gevşek hâl ile
+    katı hâl takım tarafından ayırt edilemiyordu.
+
+    Kardeş alan `sign` aynı `__post_init__` bloğunda ZATEN doğrulanıyor;
+    asimetri gerçekti. Bir katman yukarıda `app/orbital_window._dogrula_seviye`
+    aynı sınırı kapatıyor, ama korumasız kalan şey PUBLIC viz API'siydi.
+
+    GEREKÇE SINANIR, yalnızca reddedilme değil -- ve bu burada zorunlu, çünkü
+    iki AYRI koruma var: `_ag_cikar` (iki public giriş noktasının tek hunisi)
+    ve `Mesh.__post_init__`. ÖLÇÜLDÜ: yalnızca "istisna atıyor mu" diye bakan
+    ilk hâlde `_ag_cikar`'daki kontrolü SİLEN mutasyon 71 testin SIFIRINI
+    kırıyordu -- `Mesh` kontrolü onu maskeliyor ve test ikisini ayırt
+    edemiyordu. Sayılmayan bir koruma koruma değildir; o yüzden bu test public
+    yolun KENDİ gerekçesini arar (`Mesh.level` iç alan adını değil).
+    """
+    kure = _kure_alani()
+    for gecersiz in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(InvalidInputError, match="bulunmayan seviye") as hata:
+            extract_isosurface(kure, level=gecersiz)
+        assert "Mesh.level" not in str(hata.value), (
+            "public API kendi gerekçesini vermeli, iç alan adını sızdırmamalı"
+        )
+        with pytest.raises(InvalidInputError, match="bulunmayan seviye"):
+            extract_signed_pair(kure, level=gecersiz)
+
+    # KIYAS: alanda bulunmayan SONLU bir seviye hâlâ boş ağ döndürür ve bu
+    # davranış korunur. İki durum artık ayırt edilebilir -- biri istisna, biri
+    # boş ağ.
+    bos = extract_isosurface(kure, level=1000.0)
+    assert len(bos.vertices) == 0
+    assert bos.level == 1000.0
+
+
+def test_mesh_sonlu_olmayan_level_ile_kurulamiyor():
+    """`Mesh` `sign`'ı doğruluyordu, `level`'ı doğrulamıyordu.
+
+    ÖLÇÜLDÜ: `Mesh(vertices=(2,3), faces=(1,3), level=float("nan"), sign=1)`
+    istisnasız kuruluyordu. Boş OLMAYAN böyle bir ağda sınıfın kendi
+    sözleşmesi -- "ağ üzerindeki her nokta için alan == sign * level" --
+    anlamsızlaşır: `nan` ile hiçbir eşitlik doğru değildir.
+
+    Sınır iki uçtan da yazılı: boş ağın `nan` seviyesi de reddedilir, çünkü
+    `Mesh.level` tüketiciye taşınan bir sayıdır (panel onu basıyor) ve
+    `extract_*` yolundan gelmeyen bir `Mesh` de kurulabilir.
+    """
+    for gecersiz in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(InvalidInputError, match="sonlu"):
+            Mesh(
+                vertices=np.zeros((2, 3)),
+                faces=np.zeros((1, 3)),
+                level=gecersiz,
+                sign=1,
+            )
+
+    # Sonlu her seviye (negatif dâhil) geçerli: `extract_signed_pair`'in
+    # dokstring'i negatif seviyeye BELGELENMİŞ bir anlam veriyor (roller yer
+    # değiştirir), yani burada işaret kısıtı YOKTUR.
+    for gecerli in (-1.0, 0.0, 1.0):
+        mesh = Mesh(
+            vertices=np.zeros((2, 3)), faces=np.zeros((1, 3)), level=gecerli, sign=1
+        )
+        assert mesh.level == gecerli
+
+
+def test_ag_cikariminin_gosterim_yaklasimlari_beyan_ediliyor():
+    """`Mesh` hiç `Provenance` taşımıyor; iki gösterim seçimi beyansız kalıyordu.
+
+    `_ag_cikar` alanı `np.float32`'ye döküyor ve tepeleri marching-cubes'un
+    DOĞRUSAL interpolasyonundan alıyor. İkisi de ekranda görünen şeyi
+    etkiliyor -- ölçüldü, analitik kürede yarıçap 0.999215 (float32) yerine
+    0.999225 (float64), 1830 yerine 1854 tepe -- ama ikisi de yalnızca modül
+    dokstring'inde yaşıyordu: `Mesh`'te `provenance` alanı YOK ve
+    `OrbitalWindow._provenance()` çıktısında ne "float32" ne "marching cubes"
+    geçiyordu.
+
+    Beyan metinleri viz katmanında, yani seçimin YAPILDIĞI yerde durur; app
+    katmanı onları kendi paneline taşır (bkz. `test_gosterim_yaklasimlari_
+    motorunkilerle_karismiyor`). Bu test metnin VARLIĞINI ve iki seçimi de
+    ADIYLA andığını kilitler.
+    """
+    from qlab.viz.isosurface import EXTRACTION_APPROXIMATIONS
+
+    assert len(EXTRACTION_APPROXIMATIONS) == 2
+    birlesik = " ".join(EXTRACTION_APPROXIMATIONS).lower()
+    assert "float32" in birlesik
+    assert "marching" in birlesik
+    assert "interpolasyon" in birlesik
+    # Ölçülen etki sayı olarak geçmeli: bu depoda beyan, rakamsız olduğunda
+    # okuyucuya büyüklük hakkında hiçbir şey söylemiyor.
+    assert "0.999215" in birlesik

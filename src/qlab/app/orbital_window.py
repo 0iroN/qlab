@@ -29,17 +29,42 @@ seçimin sonucudur ve üçü de hesabın kendisinden GELMEZ:
    üzerindeki maksimum genliği n=60'ta 4.9041, n=80'de 5.9271 -- yakınsamamış.
    Çekirdeğe yakın yüzeyler nitel gösterimdir, nicel değil.
 
-Bu üçü şeffaflık paneline motorun kendi `Provenance`'ının ÜSTÜNE eklenir;
+Bunlar şeffaflık paneline motorun kendi `Provenance`'ının ÜSTÜNE eklenir;
 motorunkiler (Born-Oppenheimer, tek Slater determinantı, sonlu baz seti,
-kapalı kabuk) olduğu gibi taşınır. **Izgara aralığı motorun listesinde YOKTUR**
--- o bu pencerenin kendi tanısıdır (`grid_points_per_axis`) ve burada, gösterim
-katmanında doğar; daha önce motorun beyanı diye sayılıyordu, yanlıştı.
+kapalı kabuk) olduğu gibi taşınır. Pencere ayrıca `viz/isosurface.py`'nin
+`EXTRACTION_APPROXIMATIONS` maddelerini de taşır (float32 dökümü,
+marching-cubes interpolasyonu): `Mesh` kendi `Provenance`'ını taşımadığı için
+o iki seçim ekrana ancak buradan ulaşır.
 
-**Ekransız kip.** OpenGL bağlamı ancak boyama sırasında gerekir; kurulum
-(GLViewWidget, GLMeshItem, GLScatterPlotItem, setCentralWidget, close)
-`QT_QPA_PLATFORM=offscreen` altında sorunsuz koşar -- ölçüldü. Testler bu
-yüzden pencerenin DURUMUNU doğrular, çizimin kendisini değil. Görsel doğrulama
-insanın işidir (README, kabul kriteri 3).
+**Izgara motorun listesinde YOKTUR** -- ızgarayla ilgili her şey bu pencerenin
+kendi tanısıdır ve burada, gösterim katmanında doğar; daha önce motorun beyanı
+diye sayılıyordu, yanlıştı. Ama bir süre yalnızca `grid_points_per_axis`
+basıldı ve o TEK BAŞINA ÇÖZÜNÜRLÜĞÜ BELİRLEMEZ: aralık = kutu genişliği /
+(n-1) ve kutu genişliği molekülle ve `padding` ile değişir. Ölçüldü, n=60
+sabitken yalnızca `padding` değişerek aralık 0.1841 / 0.4553 / 0.7265 bohr
+oluyordu ve panel metni ÜÇÜNDE DE bit birebir aynıydı. Sadece `--molecule`
+değişse bile (hepsi varsayılan) aralık H2 0.1593, HF 0.1650, H2O 0.1841,
+C2H4 0.2145 bohr; panelde basılan sayı hep 60'tı. Bu yüzden aralık da beyan
+edilir. Izgara ANİZOTROP olduğu için tek sayı yetmez -- aynı ızgarada eksen
+aralıkları 0.1356 / 0.1841 / 0.1544 bohr -- en kaba ve en ince eksen ayrı
+ayrı yazılır.
+
+**Ekransız kip ve testlerin sınırı.** OpenGL bağlamı ancak BOYAMA sırasında
+gerekir; kurulum (GLViewWidget, GLMeshItem, GLScatterPlotItem,
+setCentralWidget, close) `QT_QPA_PLATFORM=offscreen` altında sorunsuz koşar --
+ölçüldü. Test edilemeyen şey **boyanan piksellerdir**: gerçekten çizilen
+görüntünün doğruluğu insanın işidir (README, kabul kriteri 3).
+
+Bu sınır bir süre kendinden fazlasını yuttu ve ölçülerek geri alındı. Ekransız
+kipte OKUNABİLİR olan saf durum -- panelin `maximumHeight`'ı, kameranın
+`opts["distance"]`ı, seçicinin açılış konumu, görünümdeki item sayısı,
+widget'ların gizli olup olmadığı, pencerenin `isVisible()`'ı -- boyamaya
+bağlı DEĞİLDİR ve o sınırın İÇİNDE değildir. Bir süre öyle sanıldı: kamera
+mesafesi çarpanını 60'tan 1'e düşüren, paneli varsayılan yüksekliğe indiren ve
+`window.show()`u tamamen silen üç mutasyonun üçü de takımı yemyeşil bırakıyordu
+(her biri 0 test kırıyordu), oysa üçü de tek satırlık bir okumayla
+yakalanabiliyordu. "Görsel doğrulama insanın işidir" cümlesi çizilen görüntü
+için doğru, pencerenin DURUMU için değil.
 """
 
 from __future__ import annotations
@@ -57,7 +82,11 @@ from qlab.errors import InvalidInputError
 from qlab.observable.hf_obs import ScalarField, VolumeGrid, evaluate_orbital
 from qlab.provenance import Provenance
 from qlab.types import Molecule
-from qlab.viz.isosurface import Mesh, extract_signed_pair
+from qlab.viz.isosurface import (
+    EXTRACTION_APPROXIMATIONS,
+    Mesh,
+    extract_signed_pair,
+)
 
 #: ±faz renkleri (RGBA). Kırmızı/mavi ayrımı yalnızca BAĞIL fazı gösterir;
 #: hangi lobun hangi renk olduğu keyfidir (modül dokstring'i, madde 1).
@@ -84,6 +113,12 @@ _KAYDIRICI_MIN = 1
 _KAYDIRICI_VARSAYILAN_MAKS = 900
 #: Kaydırıcının gösterebileceği en küçük seviye.
 _EN_KUCUK_SEVIYE = _KAYDIRICI_MIN / _KAYDIRICI_OLCEK
+#: "Binde-bir ızgarasına oturuyor mu" kontrolünün toleransı. Sıfır OLAMAZ:
+#: kaydırıcının kendi ürettiği `konum / 1000.0` değerleri 1000 ile çarpılınca
+#: 1..5000 arası 82 konumda tam sayı vermiyor (ölçülen en büyük artık
+#: 4.547e-13). Tolerans o artığın ~2000 katı, gerçek bir hizasızlığın
+#: (en küçüğü 0.5 tık = 500 birim) ise milyarda biri.
+_KAYDIRICI_HIZALAMA_TOLERANSI = 1e-9
 
 
 def _dogrula_seviye(level: float) -> float:
@@ -101,10 +136,30 @@ def _dogrula_seviye(level: float) -> float:
       ile çiziliyordu -- panelin beyan ettiği renk-faz eşleşmesi yalan olurdu.
       `level=0.0` ise (3600, 3600) tepe veriyor: çizilen şey orbitalin şekli
       değil, DÜĞÜM YÜZEYİ.
-    - **Kaydırıcının çözünürlüğünde olmalı** (>= 0.001). Kaydırıcı tam sayı
-      binde-bir taşır; gösteremeyeceği bir seviye, denetimin panelden farklı
-      bir sayı göstermesi demektir. Sessiz desenkronizasyon burada da
-      reddedilir, kırpılmaz.
+    - **Kaydırıcının çözünürlüğünde olmalı.** İKİ ayrı şart, ve bir süre
+      yalnızca birincisi koda geçmişti:
+
+      (a) `>= 0.001` olmalı -- kaydırıcının taşıyabileceği en küçük konum
+          bu (`_KAYDIRICI_MIN / _KAYDIRICI_OLCEK`).
+      (b) binde-bir ızgarasına OTURMALI. Kaydırıcı tam sayı taşır; aradaki
+          bir seviye, denetimin panelden farklı bir sayı göstermesi demektir.
+          Ölçüldü (bu şart yokken): `set_isosurface_level(0.0155)` `_level`'ı
+          0.0155 yapıyor ama kaydırıcı 16'ya, yani 0.016'ya oturuyordu; aynı
+          şekilde 0.0567 -> 0.057, 0.0014 -> 0.001, 0.1235 -> 0.124.
+          0.0011'de kaydırıcı en küçük tıkta kilitli kalırken kullanıcı %10
+          yukarıdaydı, 0.0015'te sapma %33'tü. Bu, `_kaydirici_senkronla`'nın
+          ÜST tarafta düzeltilmiş kusurunun (2.0 -> kaydırıcı 0.9) ara/alt
+          taraftaki aynısıdır. Sessiz desenkronizasyon burada da reddedilir,
+          kırpılmaz.
+
+      Kontrol TOLERANSLIDIR ve bu zorunlu: kaydırıcının kendi yaydığı
+      `konum / 1000.0` değerlerinin bir kısmı 1000 ile çarpılınca tam sayı
+      VERMİYOR -- ölçüldü, 1..5000 arası 82 konumda (1001 -> 1000.999999...),
+      en büyük yuvarlama artığı 4.547e-13. Katı bir tam-sayı kontrolü o 82
+      konumu reddederdi ve istisna Qt'nin sinyal işleyicisinde YUTULACAĞI için
+      sonuç, düzeltilmek istenenden daha kötü bir sessiz desenkron olurdu
+      (ölçüldü: kaydırıcı 1001'e sürüklenince konum 1001'de kalıyor ama
+      `_level` 1.0 oluyordu).
     """
     deger = float(level)
     if not math.isfinite(deger):
@@ -123,6 +178,14 @@ def _dogrula_seviye(level: float) -> float:
             f"({_EN_KUCUK_SEVIYE:g}) altında kalıyor; kaydırıcı onu "
             f"gösteremez ve panelden farklı bir sayı basardı, "
             f"verilen: {deger:g}"
+        )
+    konum = deger * _KAYDIRICI_OLCEK
+    if abs(konum - round(konum)) > _KAYDIRICI_HIZALAMA_TOLERANSI:
+        raise InvalidInputError(
+            f"izoyüzey seviyesi kaydırıcının binde-bir ızgarasına oturmuyor; "
+            f"kaydırıcı {round(konum) / _KAYDIRICI_OLCEK:g} gösterirken panel "
+            f"{deger:g} basardı -- sessiz desenkron. En yakın geçerli seviye: "
+            f"{round(konum) / _KAYDIRICI_OLCEK:g}"
         )
     return deger
 
@@ -143,11 +206,16 @@ def _gosterim_yaklasimlari(level: float) -> tuple[str, ...]:
     `diagnostics`'e de yazılır ama orada `Provenance._format` her float'ı
     bilimsel gösterime çeviriyor (`5.000e-02`). Panel insanın okuduğu yer;
     `%g` biçimi 0.05'i de 0.2'yi de olduğu gibi basar.
+
+    Son iki madde bu modülün değil `viz/isosurface.py`'nin seçimleri; metin
+    orada, seçimin yapıldığı yerde yazılı. `Mesh` kendi `Provenance`'ını
+    taşımadığı için buradan geçmeselerdi ekranda hiç görünmezlerdi.
     """
     return (
         _ISARET_BEYANI,
         f"izoyüzey seviyesi bir gösterim seçimidir, hesabın sonucu değildir "
         f"(şu an {level:g})",
+        *EXTRACTION_APPROXIMATIONS,
     )
 
 
@@ -245,9 +313,24 @@ class OrbitalWindow(QtWidgets.QMainWindow):
 
         Çizimin kendisi ekransız kipte doğrulanamadığı için testler veri
         hattını buradan izler.
+
+        Ağ yokken DÖNMEK yerine YÜKSELTİR. Dal bugün erişilemez (`_kur_arayuz`
+        kaydırıcı sinyallerini bloklar, `setCurrentIndex` connect'ten önce,
+        `_yenile` `__init__`'in sonuncusu) ve bir süre `# pragma: no cover` ile
+        `(0, 0)` döndürüyordu. Ama `(0, 0)` bu pencerede GEÇERLİ bir sonuçtur
+        -- ölçüldü, su HOMO'su level=0.90'da tam olarak (0, 0) veriyor -- yani
+        yedek değer geçerli çıktıdan ayırt edilemiyordu. `_yenile`'yi
+        `__init__`'ten sonraya taşıyan bir refactor, hata yerine tamamen makul
+        görünen bir sayı döndürürdü. Yükseltmek aynı erişilemezlik iddiasını
+        korur, sessiz yalanı kaldırır ve dalı test edilebilir yapar.
         """
-        if self._meshes is None:  # pragma: no cover - _yenile her zaman önce koşar
-            return (0, 0)
+        if self._meshes is None:
+            raise AssertionError(
+                "mesh_vertex_counts ağlar kurulmadan çağrıldı; `_yenile` "
+                "__init__'in son adımıdır ve bu durum erişilemez olmalı. "
+                "Sessizce (0, 0) dönmek yanlış olurdu: (0, 0) geçerli bir "
+                "sonuçtur (su HOMO'su level=0.90'da tam olarak onu verir)."
+            )
         pozitif, negatif = self._meshes
         return (len(pozitif.vertices), len(negatif.vertices))
 
@@ -429,6 +512,13 @@ class OrbitalWindow(QtWidgets.QMainWindow):
         tanilar["orbital_index"] = self._orbital_index
         tanilar["isosurface_level"] = self._level
         tanilar["grid_points_per_axis"] = self._grid.shape[0]
+        # Eksen başına nokta sayısı TEK BAŞINA çözünürlüğü vermez (aralık =
+        # kutu genişliği / (n-1)) ve kutu genişliği molekülle değişir. Aralık
+        # bu yüzden ayrıca basılır; ızgara anizotrop olduğu için en kaba ve en
+        # ince eksen ayrı ayrı. `grid_spacing_bohr` adı ve "en kaba eksen"
+        # anlamı `observable/hf_obs.py` ile aynıdır.
+        tanilar["grid_spacing_bohr"] = float(np.max(self._grid.spacing))
+        tanilar["grid_spacing_min_bohr"] = float(np.min(self._grid.spacing))
         return dataclasses.replace(
             temel,
             approximations=temel.approximations + _gosterim_yaklasimlari(self._level),

@@ -32,10 +32,23 @@ görselleştirme için önemsiz (aynı küre için yarıçap 0.999215 yerine 0.9
 
 Orbital genliği işaretlidir; `extract_signed_pair` `+level` ve `-level` için
 iki ayrı ağ verir, böylece arayüz ±fazı iki renkle çizebilir.
+
+**`Mesh` kendi `Provenance`'ını taşımaz, ve bu bir eksiklikti.** Ağ her zaman
+bir `ScalarField`den doğar; o alanın beyanı MOTORUNdur ve ağı çıkarırken
+yapılan iki seçim (float32 dökümü, marching-cubes'un doğrusal interpolasyonu)
+orada bulunmaz. Bir süre bu iki seçim yalnızca bu dokstring'de yaşadı, yani
+ekranda hiçbir yerde görünmüyordu. Metinleri artık
+`EXTRACTION_APPROXIMATIONS` taşıyor ve tüketici (`app/orbital_window.py`)
+onları kendi panelinin beyanına ekliyor. Beyan burada durur çünkü seçim
+burada yapılıyor. `Mesh`'e bir `provenance` alanı EKLENMEDİ: ağ hiçbir zaman
+tek başına değil, her zaman onu doğuran alanla birlikte tüketiliyor; ağa da
+ayrı bir beyan takmak aynı panelde iki `Provenance` doğurur ve hangi maddenin
+hangi katmandan geldiği bulanıklaşırdı.
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -43,6 +56,19 @@ import pyqtgraph as pg
 
 from qlab.errors import InvalidInputError
 from qlab.observable.hf_obs import ScalarField, VolumeGrid
+
+#: Ağ çıkarımının GÖRÜNTÜYE yansıyan ve motorun beyanında BULUNMAYAN iki
+#: seçimi. Tüketici bunları kendi `Provenance`'ına ekler.
+#:
+#: Metinler bilinçli olarak KISA: şeffaflık paneli sabit yükseklikte ve
+#: ölçüldü, uzun yazılmış hâlleri sarılmış satır sayısını 19'dan 25'e
+#: çıkarıp gizli kalan satırı 7'den 13'e taşıyordu. Ölçülen büyüklükler
+#: yukarıdaki modül dokstring'inde tam hâliyle duruyor; panele yalnızca
+#: seçimin ADI ve mertebesi gidiyor.
+EXTRACTION_APPROXIMATIONS: tuple[str, ...] = (
+    "izoyüzey ağı float32 alandan çıkarılır (kürede yarıçap 0.999215/0.999225)",
+    "ağın köşeleri marching cubes'un doğrusal interpolasyonundan gelir",
+)
 
 
 @dataclass(frozen=True)
@@ -56,11 +82,19 @@ class Mesh:
     - `level`: izoyüzeyin seviyesi, alanın kendi biriminde.
     - `sign`: bu ağın hangi fazı temsil ettiği, +1 ya da -1.
 
-    Bu biçim iddiaları **doğrulanır**, yalnızca belgelenmez: (n, 3) olmayan
-    bir `vertices`/`faces` ya da ±1 olmayan bir `sign` `InvalidInputError`
-    verir. Doğrulama burada olmalı çünkü tüketici `app/orbital_window.py`
-    `faces`'i doğrudan `gl.MeshData`ya veriyor; bozuk biçim orada, kaynaktan
-    uzakta, OpenGL katmanında patlardı.
+    Bu iddialar **doğrulanır**, yalnızca belgelenmez: (n, 3) olmayan bir
+    `vertices`/`faces`, ±1 olmayan bir `sign` ya da sonlu olmayan bir `level`
+    `InvalidInputError` verir. Doğrulama burada olmalı çünkü tüketici
+    `app/orbital_window.py` `faces`'i doğrudan `gl.MeshData`ya veriyor; bozuk
+    biçim orada, kaynaktan uzakta, OpenGL katmanında patlardı.
+
+    `level` bir süre doğrulanmıyordu, kardeşi `sign` doğrulanırken: ölçüldü,
+    `Mesh(vertices=(2,3), faces=(1,3), level=nan, sign=1)` istisnasız
+    kuruluyordu. Boş olmayan böyle bir ağda aşağıdaki sözleşme -- "alan ==
+    sign * level" -- anlamsızlaşır, çünkü `nan` ile hiçbir eşitlik doğru
+    değildir. `level` ayrıca tüketiciye taşınan ve panele basılan bir sayıdır.
+    İşaret kısıtı YOKTUR: negatif `level`'ın belgelenmiş bir anlamı var
+    (`extract_signed_pair`, roller yer değiştirir).
 
     Sözleşme: ağ üzerindeki her nokta için **alan == sign * level**.
     `extract_isosurface` her zaman `sign = +1` bildirir, yani orada
@@ -98,14 +132,27 @@ class Mesh:
                 f"Mesh.sign yalnizca +1 ya da -1 olabilir (agin fazi); "
                 f"verilen: {self.sign!r}"
             )
+        if not math.isfinite(float(self.level)):
+            raise InvalidInputError(
+                f"Mesh.level sonlu bir sayi olmali -- 'alan == sign * level' "
+                f"sozlesmesi nan/inf ile anlamsizlasir ve level panele "
+                f"basilir; verilen: {self.level!r}"
+            )
 
 
 def extract_isosurface(field: ScalarField, level: float) -> Mesh:
     """Alanın `level` izoyüzeyini bohr koordinatlı bir üçgen ağa çevirir.
 
-    Alanda hiç bulunmayan bir seviye istenirse boş ağ döner (0 tepe, 0 üçgen);
-    bu `pg.isosurface`'in kendi davranışıdır, burada eklenen bir koruma
-    değildir.
+    Alanda hiç bulunmayan SONLU bir seviye istenirse boş ağ döner (0 tepe,
+    0 üçgen); bu `pg.isosurface`'in kendi davranışıdır, burada eklenen bir
+    koruma değildir.
+
+    Sonlu OLMAYAN bir seviye ise reddedilir (`InvalidInputError`) -- o bir
+    "bulunmayan seviye" değil, GEÇERSİZ bir seviyedir. Ayrım ölçülmüştü:
+    `nan`/`±inf` de tam olarak `level=1000.0` gibi boş ağ döndürüyordu ve
+    çağıran ikisini tepe sayısından ayırt edemiyordu; uyarı da yoktu
+    (`warnings.simplefilter("always")` + `np.errstate(all="raise")` altında
+    uyarı sayısı 0).
     """
     return _ag_cikar(field.values, field.grid, level=level, sign=1)
 
@@ -146,6 +193,15 @@ def extract_signed_pair(field: ScalarField, level: float) -> tuple[Mesh, Mesh]:
 
 
 def _ag_cikar(values: np.ndarray, grid: VolumeGrid, *, level: float, sign: int) -> Mesh:
+    # İki public giriş noktasının TEK hunisi; sonluluk kontrolü bu yüzden
+    # burada. `Mesh.__post_init__` de aynı şartı taşıyor (doğrudan kurulan
+    # ağlar için), ama hata mesajı burada çağıranın verdiği değeri gösterir.
+    if not math.isfinite(float(level)):
+        raise InvalidInputError(
+            f"izoyuzey seviyesi sonlu bir sayi olmali; nan/inf 'alanda "
+            f"bulunmayan seviye' ile ayni bos agi verir ve ikisi ayirt "
+            f"edilemez, verilen: {level!r}"
+        )
     veri = np.ascontiguousarray(values, dtype=np.float32)
     indeksler, yuzler = pg.isosurface(veri, float(level))
     indeksler = np.asarray(indeksler, dtype=float)

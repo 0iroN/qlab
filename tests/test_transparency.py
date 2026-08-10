@@ -263,3 +263,75 @@ def test_main_rejects_hf_scan_scenario_before_building_the_window(tmp_path, caps
     assert "TDSE" in stderr
     assert "qlab.run" in stderr
     assert "Traceback" not in stderr
+
+
+@requires_offscreen
+def test_panel_yuksekligi_parametreden_geliyor_ve_varsayilani_140():
+    """`max_height` gerçekten widget'a ulaşmalı; sabit yazılırsa kimse görmezdi.
+
+    Bu parametre kabul kriteri 3'ün GERÇEK EKRAN doğrulamasının bulduğu tek
+    kusurun düzeltmesidir (README: "12 satırlık beyan 140 px'lik panelde
+    katlanın altında kalıyordu"). ÖLÇÜLDÜ: düzeltmenin iki ucu da testsizdi --
+    `setMaximumHeight(max_height)` → `setMaximumHeight(140)` mutasyonu
+    tests/test_orbital_window.py + test_isosurface.py + test_transparency.py
+    toplamının 58 testinden SIFIRINI kırıyordu.
+
+    Sayılar LİTERAL: `_VARSAYILAN_YUKSEKLIK`'e karşı yazılsaydı iddia sabitle
+    birlikte hareket eder ve hiçbir zaman kırılamazdı (bu depoda ölçülmüş bir
+    tuzak, bkz. `test_kaydiricinin_acilis_araligi_surukleyebilir_bir_bant`).
+    """
+    from qlab.app.transparency import TransparencyPanel
+
+    varsayilan = TransparencyPanel()
+    assert varsayilan._text.maximumHeight() == 140
+
+    # Parametre ile verilen değer widget'a AYNEN geçmeli. İki farklı değer:
+    # tek değerle sınanan bir sabit-yazım mutasyonu kaçabilirdi.
+    for istenen in (260, 300):
+        panel = TransparencyPanel(max_height=istenen)
+        assert panel._text.maximumHeight() == istenen
+
+
+@requires_offscreen
+def test_daha_yuksek_kutu_ayni_beyanin_daha_cogunu_gosteriyor():
+    """`max_height`'ın AMACI: sayının kendisi değil, okunabilen satır sayısı.
+
+    "Okunmayan bir beyan, beyan etmiş sayılmaz" (sınıf dokstring'i). O gerekçe
+    makine tarafından hiç sınanmıyordu. Burada aynı uzun beyan iki farklı
+    kutuda gösterilir ve gizli kalan satır sayısı karşılaştırılır.
+
+    ÖLÇÜLDÜ (ekransız, 960 px genişlikte, aşağıdaki beyan 33 sarılmış satır
+    sürüyor, satır aralığı 14 px):
+        kutu 140 px -> görünen alan 135 px, kaydırma çubuğu 24 satır gizliyor
+        kutu 260 px -> görünen alan 255 px, kaydırma çubuğu 15 satır gizliyor
+        kutu 400 px -> görünen alan 395 px, kaydırma çubuğu  5 satır gizliyor
+    İddia MUTLAK sayılara değil SIRALAMAYA bağlanıyor: platformun yazı tipi
+    ölçüleri değişse de "daha yüksek kutu daha az satır gizler" bozulmaz.
+    Beyan bilerek uzun tutuldu; kısa bir beyanda üç kutu da her şeyi gösterir
+    ve test hiçbir şey ölçmezdi (ilk taslakta tam bu oldu: üçü de 0 gizledi).
+    """
+    from qlab.app.transparency import TransparencyPanel
+
+    dolgu = tuple(
+        f"yaklaşım {i}: ölçülmüş bir sapmanın uzun uzun anlatıldığı bir madde"
+        for i in range(12)
+    )
+    uzun = dataclasses.replace(
+        PROVENANCE,
+        approximations=PROVENANCE.approximations + dolgu,
+        neglected=PROVENANCE.neglected + dolgu,
+    )
+
+    gizli = {}
+    for kutu in (140, 260, 400):
+        panel = TransparencyPanel(max_height=kutu)
+        panel.set_provenance(uzun)
+        panel.resize(960, kutu + 40)
+        panel.show()
+        _qapp.processEvents()
+        gizli[kutu] = panel._text.verticalScrollBar().maximum()
+        panel.close()
+
+    assert gizli[140] > gizli[260] > gizli[400] >= 0, (
+        f"daha yüksek kutu daha az satır gizlemeli, ölçülen: {gizli}"
+    )
