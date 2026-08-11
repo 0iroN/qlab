@@ -955,28 +955,42 @@ def test_isgal_bazin_kapasitesini_ASARSA_analiz_TIPLI_hata_veriyor():
     n_orbitals") beyanlarini birden bastirirdi -- gercek n_occupied=3,
     n_orbitals=2, yani ham IndexError iki YALAN BEYANLA takas edilirdi.
 
-    KAPSAM: duzeltme analyse()'te. Asil kusur YUKARI AKISTA -- solve()'un bu
-    sistemi hic reddetmemesi -- ve scf.py bu asamanin dosyalari disindadir;
-    asagidaki Tr(PS) iddiasi o kusuru SESSIZ olmaktan cikarip yaziya
-    baglar, boylece scf.py'ye dokunuldugunda burasi kirmizi olur.
+    KAPSAM -- ve BU TEL TUZAGI PATLADI. Test yazildiginda asil kusur YUKARI
+    AKISTAYDI (solve() bu sistemi hic reddetmiyordu) ve scf.py o asamanin
+    dosyalari disindaydi; buradaki Tr(PS)=4 iddiasi kusuru sessiz olmaktan
+    cikarip yaziya baglamisti -- "scf.py'ye dokunuldugunda burasi kirmizi olur"
+    diye. OLDU: solve() artik kapasiteyi denetliyor ve bu molekulu
+    `UnsupportedSystemError` ile reddediyor (scf.py, "Baz setinin KAPASITESI"
+    blogu), dolayisiyla test kendi KURULUMUNDA kirildi.
 
-    Sayilar LITERAL: 6/3/2/4 kod tarafindaki hicbir sabite bagli degil.
+    Tuzak isini yapti; kurulum degisti, SINANAN SEY DEGISMEDI. `analyse()` bir
+    `HFResult` alir ve onu kimin urettigini bilmez; kendi on kosulunu kendisi
+    savunmak zorundadir. Guvenligi solve()'a devretmek, hicbir yerde beyan
+    edilmemis bir bagimlilik kurardi -- ustelik `dataclasses.replace` ile
+    uyusmaz bir HFResult kurmak bir satirlik istir. O yuzden sonuc artik
+    DOGRUDAN kuruluyor: orbital_energies notr H2'nin (iki orbital), molecule
+    ise -4 yuklu (alti elektron iddia eden) H2.
+
+    Sayilar LITERAL: 6/3/2 kod tarafindaki hicbir sabite bagli degil.
     """
-    from qlab.engine.hf.integrals import overlap_matrix
+    import dataclasses
+
     from qlab.errors import QLabError, UnsupportedSystemError
 
-    molecule = Molecule.from_string("H 0 0 0; H 0 0 0.74", charge=-4)
-    assert molecule.n_electrons == 6
-    result = solve(molecule, "sto-3g", stability=False)
-    assert result.orbital_energies.shape[0] == 2, "STO-3G'de H2 iki orbital tasir"
-    assert molecule.n_electrons // 2 == 3 > 2, "isgal bazin kapasitesini asiyor"
+    notr = Molecule.from_string("H 0 0 0; H 0 0 0.74")
+    saglam = solve(notr, "sto-3g", stability=False)
+    assert saglam.orbital_energies.shape[0] == 2, "STO-3G'de H2 iki orbital tasir"
 
-    # YUKARI AKIS KUSURU, yaziya baglandi: solve() bu sistemi kabul ediyor ve
-    # yogunlugu molekulun iddia ettigi elektron sayisini TASIMIYOR.
-    overlap = overlap_matrix(build_basis(molecule, "sto-3g"))
-    assert float(np.trace(result.density @ overlap)) == pytest.approx(
-        4.0, abs=1e-9, rel=0.0
-    ), "yogunluk 4 elektron tasiyor, molekul 6 iddia ediyor -- solve() susuyor"
+    asiri_yuklu = Molecule.from_string("H 0 0 0; H 0 0 0.74", charge=-4)
+    assert asiri_yuklu.n_electrons == 6
+    assert asiri_yuklu.n_electrons // 2 == 3 > 2, "isgal bazin kapasitesini asiyor"
+
+    # Yukari akis artik KAPALI. Bu iddia hem onu kilitliyor hem de asagidaki
+    # elle kurulumun NEDEN gerektigini kanitliyor.
+    with pytest.raises(UnsupportedSystemError, match="baz"):
+        solve(asiri_yuklu, "sto-3g", stability=False)
+
+    result = dataclasses.replace(saglam, molecule=asiri_yuklu)
 
     with pytest.raises(UnsupportedSystemError) as hata:
         analyse(result)

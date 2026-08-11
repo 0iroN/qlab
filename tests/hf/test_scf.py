@@ -275,3 +275,92 @@ def test_diis_extrapolate_drops_oldest_pair_when_b_matrix_is_singular():
     ratio_00 = (result[0, 0] - fock_b[0, 0]) / (fock_c[0, 0] - fock_b[0, 0])
     ratio_11 = (result[1, 1] - fock_b[1, 1]) / (fock_c[1, 1] - fock_b[1, 1])
     assert ratio_00 == pytest.approx(ratio_11, abs=1e-12, rel=0.0)
+
+
+# ---------------------------------------------------------------------------
+# Baz setinin kapasitesi
+
+
+_H2 = "H 0 0 0; H 0 0 0.74"
+
+
+@pytest.mark.parametrize(
+    ("charge", "n_electrons"),
+    [pytest.param(-4, 6, id="6e-2orbital"), pytest.param(-6, 8, id="8e-2orbital")],
+)
+def test_baz_setinin_tasiyamayacagi_elektron_sayisi_reddediliyor(charge, n_electrons):
+    """H2/STO-3G'de iki orbital var; altı elektron oraya SIĞMAZ.
+
+    ÖLÇÜLDÜ (düzeltmeden önce): `solve` sessizce çözüyordu, çünkü
+    `_density_matrix`'teki `coefficients[:, :n_occupied]` dilimi numpy'da
+    KIRPILIYOR — üç işgalli orbital istenip iki tane bulununca fazlası sessizce
+    düşüyordu. Sonuç, üç ayrı kimyasal sistemin BİREBİR AYNI cevabı vermesiydi:
+
+        yük −2 (4e): E = +0.923179, Tr(PS) = 4  <- dürüst, kapasiteye tam oturuyor
+        yük −4 (6e): E = +0.923179, Tr(PS) = 4  <- 6 elektron iddia, 4 hesap
+        yük −6 (8e): E = +0.923179, Tr(PS) = 4  <- 8 elektron iddia, 4 hesap
+
+    `Tr(PS)` elektron sayısını verir; iki kırpılmış durumda molekülün beyan
+    ettiği sayıyla hesabın kullandığı sayı TUTMUYOR ve hiçbir yerde bu
+    söylenmiyordu. Bu deponun taksonomisinde "sessizce yanlış sonuç".
+    """
+    molecule = Molecule.from_string(_H2, charge=charge)
+    assert molecule.n_electrons == n_electrons
+    with pytest.raises(UnsupportedSystemError, match="baz"):
+        solve(molecule, "sto-3g", stability=False)
+
+
+def test_kapasiteye_TAM_oturan_sistem_kabul_ediliyor():
+    """Sınır, kapasiteyi AŞANI reddetmeli; TAM dolduranı değil.
+
+    H2²⁻: dört elektron, iki orbital, ikisi de çift işgalli. Ölçüldü:
+    Tr(PS) = 4.0000000000, yani aritmetik dürüst. Enerji pozitif (+0.923179)
+    ama bu bir hata değil — iki elektron antibağ orbitalinde, sistem bağlı
+    değil. Reddetmek, doğru hesaplanan bir sonucu atmak olurdu.
+    """
+    molecule = Molecule.from_string(_H2, charge=-2)
+    result = solve(molecule, "sto-3g", stability=False)
+    basis = build_basis(molecule, "sto-3g")
+    trace = float(np.trace(result.density @ overlap_matrix(basis)))
+    assert trace == pytest.approx(4.0, abs=1e-10, rel=0.0)
+
+
+@pytest.mark.parametrize(
+    ("charge", "n_electrons"),
+    [pytest.param(4, -2, id="eksi2e"), pytest.param(6, -4, id="eksi4e")],
+)
+def test_negatif_elektron_sayisi_reddediliyor(charge, n_electrons):
+    """Elektron sayısı negatif olamaz; olursa numpy BAŞKA bir sistemi çözer.
+
+    ÖLÇÜLDÜ (düzeltmeden önce): `n_occupied` negatif olunca dilim
+    `coefficients[:, :-1]` hâline geliyor ve SONDAN sütun atıyor. Sonuç:
+
+        yük +4 (−2e): E = −1.116759  <- NÖTR H2'nin enerjisinin ta kendisi
+        yük +6 (−4e): E = +0.715104  <- sıfır elektronlu sistemin enerjisi
+
+    Yani fiziksel olarak anlamsız bir girdi, başka bir molekülün doğru
+    cevabıyla geri dönüyordu. Çift sayı oldukları için açık kabuk kontrolü de
+    bunları geçiriyordu.
+    """
+    molecule = Molecule.from_string(_H2, charge=charge)
+    assert molecule.n_electrons == n_electrons
+    with pytest.raises(UnsupportedSystemError, match="elektron"):
+        solve(molecule, "sto-3g", stability=False)
+
+
+def test_sifir_elektronlu_sistem_hala_cozuluyor_ve_cekirdek_itmesini_veriyor():
+    """Sıfır elektron bir KAPASITE ihlali değil; aritmetiği dürüst.
+
+    H2²⁺ (iki çıplak proton) için elektronik enerji yok, toplam enerji
+    yalnızca çekirdek itmesidir. Ölçüldü: E = +0.715104 ve 1/R = 1/1.398397 =
+    0.715104 — birebir. Tr(PS) = 0, yani beyan edilen elektron sayısıyla
+    hesaplanan tutuyor. Reddedilmemesinin sebebi bu: sınırın işi yanlış
+    cevapları durdurmak, dejenere ama DOĞRU olanları değil.
+    """
+    molecule = Molecule.from_string(_H2, charge=2)
+    result = solve(molecule, "sto-3g", stability=False)
+    assert molecule.n_electrons == 0
+    assert result.energy_total == pytest.approx(
+        molecule.nuclear_repulsion(), abs=1e-12, rel=0.0
+    )
+    assert result.energy_electronic == pytest.approx(0.0, abs=1e-12, rel=0.0)

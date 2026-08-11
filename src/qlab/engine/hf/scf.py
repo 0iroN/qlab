@@ -307,9 +307,43 @@ def solve(
             "yalnizca kapali kabuk (cift elektron) sistemler cozulebilir"
         )
 
-    n_occupied = molecule.n_electrons // 2
+    # Negatif elektron sayisi: CIFT oldugu icin yukaridaki kontrolden GECIYORDU.
+    # Olculdu -- `_density_matrix`'teki `coefficients[:, :n_occupied]` dilimi
+    # negatif n_occupied'da `[:, :-1]` olup SONDAN sutun atiyor, ve fonksiyon
+    # BASKA bir sistemin dogru cevabini donduruyordu: H2 yuk +4 (-2 elektron)
+    # -> E = -1.116759, yani NOTR H2'nin enerjisi; yuk +6 (-4 elektron)
+    # -> E = +0.715104, yani sifir elektronlu sistemin enerjisi.
+    if molecule.n_electrons < 0:
+        raise UnsupportedSystemError(
+            f"negatif elektron sayisi anlamsiz (n_electrons="
+            f"{molecule.n_electrons}, charge={molecule.charge}); "
+            "yuk cekirdek yuklerinin toplamini asamaz"
+        )
 
     basis = build_basis(molecule, basis_name)
+
+    # Baz setinin KAPASITESI. Kapali kabuk RHF her isgalli orbitale iki elektron
+    # koyar, yani n_electrons/2 orbital gerekir; baz o kadarini uretmiyorsa
+    # sistem bu baz setinde COZULEMEZ.
+    #
+    # Kontrol olmadan hata SESSIZDI, cunku numpy dilimi kirpiyor: uc isgalli
+    # orbital istenip iki tane bulununca fazlasi dusuyor ve hesap, molekulun
+    # BEYAN ETTIGINDEN az elektronla yapiliyordu. Olculdu (H2/STO-3G, iki
+    # orbital): yuk -2 (4e) E=+0.923179 Tr(PS)=4 -- durust; yuk -4 (6e) ve
+    # yuk -6 (8e) de AYNI E=+0.923179 ve AYNI Tr(PS)=4. Uc ayri kimyasal
+    # sistem, tek cevap, tek kelime uyari yok.
+    #
+    # Sinir ASANI reddeder, TAM dolduranı degil: H2(2-) dort elektronu iki
+    # orbitale cift isgalle yerlestirir ve Tr(PS)=4.0000000000 ile aritmetigi
+    # durusttur (enerjinin pozitif cikmasi hata degil -- sistem bagli degil).
+    n_occupied = molecule.n_electrons // 2
+    if n_occupied > len(basis):
+        raise UnsupportedSystemError(
+            f"baz seti bu kadar elektronu tasiyamiyor: {molecule.n_electrons} "
+            f"elektron {n_occupied} isgalli orbital ister, ama {basis_name!r} "
+            f"bu molekul icin yalnizca {len(basis)} orbital uretiyor. "
+            "Daha genis bir baz seti gerekir (ornegin '6-31g')."
+        )
     overlap = overlap_matrix(basis)
     core = core_hamiltonian(basis, molecule)
     eri = eri_tensor(basis)
