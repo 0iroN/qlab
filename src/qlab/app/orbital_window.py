@@ -369,10 +369,16 @@ class OrbitalWindow(QtWidgets.QMainWindow):
         self._kaydirici_senkronla()
         self._kaydirici.valueChanged.connect(self._kaydirici_degisti)
 
-        # 260 px ≈ 15 satır. Ölçüldü (kabul kriteri 3, gerçek ekran): bu
-        # pencerenin beyanı 12 satır sürüyor ve varsayılan 140 px'lik kutuda
-        # son satırlar katlanın altında kalıyordu.
-        self._panel = TransparencyPanel(max_height=260)
+        # Üst sınır, pencerenin VARSAYILAN genişliğinde ölçüldü. Bu beyan
+        # 960 px'te 332 px istiyor (dar pencerede daha çok sarıldığı için daha
+        # çok: 800 px'te 388, 700 px'te 458). 340, varsayılan geometride hiçbir
+        # satırı gizlemez ve 3B görünüme ~370 px bırakır. 260 ile varsayılan
+        # geometride 5 satır gizli kalıyordu -- ölçüldü.
+        #
+        # Daha dar pencerelerde kırpma kaçınılmaz; panel o zaman başlığında
+        # "devamı var, kaydırın" der. Sınırı büsbütün kaldırmak 3B görünümü
+        # ezerdi: 700x650'de beyan 458 px isterken pencerenin tamamı 650.
+        self._panel = TransparencyPanel(max_height=340)
 
         ust = QtWidgets.QHBoxLayout()
         ust.addWidget(QtWidgets.QLabel("Orbital:"))

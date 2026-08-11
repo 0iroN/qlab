@@ -788,23 +788,105 @@ def test_orbital_paneli_varsayilan_kutuyu_kullanmiyor(su_penceresi):
     Çağrılan taraf `tests/test_transparency.py`'de kilitli; burası ÇAĞIRAN
     taraf. Sayılar LİTERAL: `_VARSAYILAN_YUKSEKLIK`'e karşı yazılan bir iddia
     sabitle birlikte hareket eder ve hiçbir zaman kırılamazdı.
+
+    SINIR 260'TAN 340'A ÇIKTI, ölçüyle: 260 taşmayı yalnızca AZALTIYORDU.
+    Panel artık yüksekliğini metinden hesaplıyor (bkz. `TransparencyPanel`) ve
+    bu beyan pencerenin varsayılan 960 px genişliğinde **332 px** istiyor;
+    260'lık kutuda 5 satır hâlâ katlanın altında kalıyordu. 340 varsayılan
+    geometride hiçbir satırı gizlemiyor. Sayının İŞE YARADIĞINI ayrı bir test
+    sınıyor: `test_orbital_penceresinde_beyanin_TAMAMI_gorunuyor`.
     """
     from qlab.app.transparency import TransparencyPanel
 
     pencere, _ = su_penceresi
-    assert pencere._panel._text.maximumHeight() == 260
+    assert pencere._panel._text.maximumHeight() == 340
     assert TransparencyPanel()._text.maximumHeight() == 140
     assert pencere._panel._text.maximumHeight() > 140, (
         "orbital penceresinin beyanı TDSE penceresinin kutusuna sığmıyor"
     )
 
     # GEREKÇE de sınanır: bu pencerenin beyanı motorunkinden GERÇEKTEN uzun.
-    # Değilse 260 keyfi bir sayı olurdu.
+    # Değilse 340 keyfi bir sayı olurdu.
     from qlab.app.transparency import format_panel
 
     assert len(pencere.transparency_text()) > len(
         format_panel(pencere._result.provenance)
     )
+
+
+@requires_offscreen
+def test_orbital_penceresinde_beyanin_TAMAMI_gorunuyor():
+    """ASIL ÖLÇÜT: varsayılan geometride gizli satır KALMAMALI.
+
+    Bir üstteki test kutunun SAYISINI kilitler; bu test o sayının İŞE YARAYIP
+    yaramadığını sınar. İkisi ayrı sorular -- 260 da varsayılandan büyüktü ama
+    yetmiyordu, ve o farkı hiçbir test görmüyordu.
+
+    ÖLÇÜLDÜ (960x800, pencerenin kendi varsayılan boyutu):
+        eski (max_height=260, yükseklik sizeHint'ten) -> 5 satır gizli
+        yeni (max_height=340, yükseklik metinden)     -> 0 satır gizli
+    Gereken yükseklik 332 px; 3B görünüme 447 px kalıyor.
+
+    Taze pencere kullanılıyor, paylaşılan `su_penceresi` fixture'ı DEĞİL: bu bir
+    AÇILIŞ durumu iddiası ve bu dosyada paylaşılan fixture'ın bir açılış
+    mutasyonunu ONARDIĞI ölçülmüştü (bkz.
+    `test_kaydiricinin_acilis_araligi_surukleyebilir_bir_bant`).
+    """
+    molecule = Molecule.from_string(_SU)
+    pencere = OrbitalWindow(solve(molecule, "sto-3g"))
+    try:
+        pencere.show()
+        _qapp.processEvents()
+        metin = pencere._panel._text
+        assert metin.verticalScrollBar().maximum() == 0, (
+            "varsayılan geometride beyanın tamamı görünmeli; gizli satır: "
+            f"{metin.verticalScrollBar().maximum()}"
+        )
+        assert "kaydırın" not in pencere._panel.title().lower(), (
+            f"kırpma yokken uyarı da olmamalı: {pencere._panel.title()!r}"
+        )
+        assert pencere._view.height() > 300, (
+            f"panel 3B görünümü ezmemeli, kalan: {pencere._view.height()} px"
+        )
+    finally:
+        pencere.close()
+
+
+@requires_offscreen
+def test_dar_pencerede_kirpma_GERCEKTEN_duyuruluyor():
+    """Kırpma kaçınılmaz olduğunda uyarının yazıldığını `resize`+`show` sırasında sınar.
+
+    Bu sıra önemli: `resize()` çağrılıp SONRA `show()` çağrıldığında Qt'nin
+    yerleşimi `showEvent`'ten de SONRA oturuyor. ÖLÇÜLDÜ -- panelin gecikmeli
+    (sıfır gecikmeli tek atış) yeniden hesabı olmadan 800x700'lük pencerede:
+        panel 304 px'te kalıyor (olması gereken 340 = üst sınır)
+        kaydırma çubuğu 6 satır gizliyor
+        başlıkta uyarı HİÇ yazılmıyor -- yani sessizce kırpıyor
+    O gecikmeli hesabı kaldıran mutasyon, bu test yazılmadan önce 64 testin
+    SIFIRINI kırıyordu.
+
+    800x700 seçildi çünkü ölçüldü: bu beyan orada 388 px istiyor, üst sınır
+    340 -- yani kırpma gerçek ve kaçınılmaz.
+    """
+    molecule = Molecule.from_string(_SU)
+    pencere = OrbitalWindow(solve(molecule, "sto-3g"))
+    try:
+        pencere.resize(800, 700)
+        pencere.show()
+        _qapp.processEvents()
+        metin = pencere._panel._text
+        assert metin.verticalScrollBar().maximum() > 0, (
+            "bu genişlikte beyan sığmamalı; sığıyorsa test artık bir şey ölçmüyor"
+        )
+        assert metin.height() == 340, (
+            f"kırpılırken panel üst sınıra DAYANMALI, yoksa boşuna yer bırakır: "
+            f"{metin.height()} px"
+        )
+        assert "kaydırın" in pencere._panel.title().lower(), (
+            f"sessizce kırpma YOK: {pencere._panel.title()!r}"
+        )
+    finally:
+        pencere.close()
 
 
 @requires_offscreen

@@ -14,7 +14,7 @@ import re
 
 import pytest
 
-from qlab.app.transparency import format_panel
+from qlab.app.transparency import TransparencyPanel, format_panel
 from qlab.provenance import Provenance
 
 PROVENANCE = Provenance(
@@ -335,3 +335,126 @@ def test_daha_yuksek_kutu_ayni_beyanin_daha_cogunu_gosteriyor():
     assert gizli[140] > gizli[260] > gizli[400] >= 0, (
         f"daha yüksek kutu daha az satır gizlemeli, ölçülen: {gizli}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Panelin YÜKSEKLİĞİ: beyan gerçekten okunabiliyor mu?
+
+
+def _uzun_provenance(n_madde: int) -> Provenance:
+    """Sarılmayı zorlayacak kadar uzun, ama uydurma olduğu belli bir beyan."""
+    return dataclasses.replace(
+        PROVENANCE,
+        approximations=tuple(
+            f"uzun yaklasim maddesi {i} " + "x" * 90 for i in range(n_madde)
+        ),
+    )
+
+
+@requires_offscreen
+def test_panel_kisa_beyani_TAMAMEN_gosteriyor():
+    """Sığan bir beyanda kaydırılacak hiçbir şey KALMAMALI.
+
+    ÖLÇÜLDÜ (düzeltmeden önce): `QPlainTextEdit`'in `sizeHint` yüksekliği
+    içerikten BAĞIMSIZ olarak 192 px'tir ve dizilişte panele tam o kadar yer
+    düşüyordu. Sonuç: `max_height` 260, 400 ve 600 AYNI sonucu veriyordu
+    (üçünde de 192 px), yani sayıyı büyütmek hiçbir şey yapmıyordu — yalnızca
+    140 (hint'in ALTI) küçültüyordu. Orbital penceresinin beyanı 1000 px
+    genişlikte 305 px ister; kaydırma sayacı 9 ünitede kalıyordu.
+
+    Düzeltme: panel yüksekliğini İÇERİKTEN hesaplıyor.
+    """
+    panel = TransparencyPanel(max_height=600)
+    panel.set_provenance(PROVENANCE)
+    panel.resize(900, 600)
+    panel.show()
+    _qapp.processEvents()
+    assert panel._text.verticalScrollBar().maximum() == 0, (
+        "sığan bir beyanda gizli satır kalmamalı"
+    )
+    panel.close()
+
+
+@requires_offscreen
+def test_panel_sigmayan_beyanda_UST_SINIRA_uyuyor_ve_bunu_SOYLUYOR():
+    """Sığmıyorsa iki şey birden doğru olmalı: sınır korunmalı VE bu söylenmeli.
+
+    `max_height` gerçek bir üst sınırdır — panelin 3B görünümü ezmesini
+    engeller. Ama sessizce kırpmak, bu deponun tam olarak reddettiği şey:
+    "okunmayan bir beyan, beyan etmiş sayılmaz". O yüzden kırpma olduğunda
+    kutu BAŞLIĞI kaç satırın gizlendiğini yazar; metnin kendisi (`text()`)
+    kirletilmez, çünkü ona karşı eşitlik iddiaları var.
+    """
+    panel = TransparencyPanel(max_height=120)
+    panel.set_provenance(_uzun_provenance(12))
+    panel.resize(600, 400)
+    panel.show()
+    _qapp.processEvents()
+
+    assert panel._text.height() <= 120, "üst sınır aşılmamalı"
+    assert panel._text.verticalScrollBar().maximum() > 0, "gerçekten kırpılmalı"
+    assert "kaydırın" in panel.title().lower(), (
+        f"kırpma başlıkta söylenmeli, başlık: {panel.title()!r}"
+    )
+    # Başlık kaç satırın gizlendiğini SÖYLEMEZ, bilerek: ölçüldü, o sayı
+    # Qt'nin yerleşim sırası yüzünden bayat kalabiliyordu (başlık "3 satır
+    # gizli" derken kaydırma çubuğu 9 satır gizliyordu). Sayısı olmayan doğru
+    # bir uyarı, sayısı olan yanlış bir uyarıdan iyidir.
+    assert not any(k.isdigit() for k in panel.title()), panel.title()
+    assert "x" * 90 in panel.text(), "metnin kendisi kirletilmemeli"
+    panel.close()
+
+
+@requires_offscreen
+def test_panel_sigan_beyanda_baslikta_kirpma_notu_YOK():
+    """Sınırın diğer tarafı: kırpma yokken uyarı da olmamalı.
+
+    Her zaman "gizli satır var" diyen bir başlık, hiç uyarmayan bir başlık
+    kadar işe yaramaz.
+    """
+    panel = TransparencyPanel(max_height=600)
+    panel.set_provenance(PROVENANCE)
+    panel.resize(900, 600)
+    panel.show()
+    _qapp.processEvents()
+    assert "gizli" not in panel.title().lower(), panel.title()
+    panel.close()
+
+
+@requires_offscreen
+def test_panel_genislik_degisince_yuksekligini_YENIDEN_hesapliyor():
+    """Gereken yükseklik pencere GENİŞLİĞİNE bağlıdır; sabit bir sayı olamaz.
+
+    ÖLÇÜLDÜ (orbital penceresinin beyanı, ikili aramayla):
+        1600 px genişlik -> 207 px gerekiyor
+        1000 px genişlik -> 305 px
+         960 px genişlik -> 316 px
+         700 px genişlik -> 439 px
+    Dar pencerede satırlar daha çok sarılıyor. Panel bu yüzden `resizeEvent`'te
+    yeniden hesaplar; tek bir sabit her genişlikte yanlış olurdu.
+
+    İDDİA NEDEN `height()` DEĞİL `minimumHeight()`: ölçüldü, tek başına duran
+    bir `QGroupBox` tek çocuğuna mevcut alanın TAMAMINI veriyor -- iki
+    genişlikte de `height()` 657 px çıkıyor ve düzeltmenin sinyalini hiç
+    taşımıyor. Panelin dizilişte ne kadar yer İSTEDİĞİ `minimumHeight`'tır;
+    orbital penceresinde 3B görünüm esneme payını aldığı için panele fiilen
+    o kadar düşer. Yani ölçülmesi gereken büyüklük bu.
+    """
+    panel = TransparencyPanel(max_height=900)
+    panel.set_provenance(_uzun_provenance(6))
+    panel.show()
+
+    panel.resize(1400, 700)
+    _qapp.processEvents()
+    genis_h = panel._text.minimumHeight()
+
+    panel.resize(500, 700)
+    _qapp.processEvents()
+    dar_h = panel._text.minimumHeight()
+
+    assert dar_h > genis_h, (
+        f"dar pencerede daha çok sarılma, dolayısıyla daha çok yükseklik "
+        f"gerekir: {dar_h} vs {genis_h}"
+    )
+    assert panel._text.verticalScrollBar().maximum() == 0, "ikisinde de sığmalı"
+    panel.close()
