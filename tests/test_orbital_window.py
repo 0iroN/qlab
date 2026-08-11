@@ -36,9 +36,9 @@ def test_pyqtgraph_opengl_import_edilebiliyor():
 
     Bilinçli olarak `importorskip` DEĞİL: PyOpenGL `pyproject.toml`'da
     bağımlılıktır, yani yokluğu bozuk bir ortam demektir. Bu depo
-    `tests/hf/conftest.py`'de aynı gerekçeyle `pytest.skip` yerine
-    `pytest.fail` kullanır — sessizce atlanan bir doğrulama, doğrulama
-    değildir.
+    `tests/conftest.py`'deki referans fixture'larında aynı gerekçeyle
+    `pytest.skip` yerine `pytest.fail` kullanır — sessizce atlanan bir
+    doğrulama, doğrulama değildir.
     """
     import pyqtgraph.opengl as gl
 
@@ -95,8 +95,10 @@ requires_offscreen = pytest.mark.skipif(
 )
 
 #: `reference/hf_energies.json`'daki `h2o.atom` ile aynı geometri. Doğrudan
-#: yazıldı çünkü `hf_energies` fixture'ı yalnızca `tests/hf/conftest.py`'de
-#: tanımlı ve kardeş dizinlere sızmaz.
+#: yazıldı: `hf_energies` fixture'ı artık kök `tests/conftest.py`'de tanımlı
+#: (yol sırasına bağlı kaybolma yüzünden oraya taşındı) ve buradan da
+#: erişilebilir olurdu, ama geometriyi sabit tutmak bu modülü referans
+#: dosyasının varlığından bağımsız kılıyor.
 _SU = "O 0 0 0; H 0 0.757 0.587; H 0 -0.757 0.587"
 
 
@@ -1132,6 +1134,118 @@ def test_main_molekul_argumaniyla_orbital_penceresi_aciyor(acilan_pencereler):
     assert len(acilanlar) == 1
     assert isinstance(acilanlar[0], OrbitalWindow)
     assert acilanlar[0].orbital_index == 0
+
+
+@requires_offscreen
+def test_main_basis_argumani_gercekten_SONUCA_ulasiyor(acilan_pencereler):
+    """`--basis` yolunun sto-3g DIŞINDAKİ dalı hiç kapsanmıyordu.
+
+    Testlerde geçen tek `--basis` değeri 'sto-3g' idi (grep: tek eşleşme).
+    Bayrak sessizce yok sayılsa ve her çağrı sto-3g'ye düşse takım yemyeşil
+    kalırdı -- iki dalın AYNI sonucu vermesi mümkün olduğu için 'sto-3g'
+    dalını test etmek bayrağın taşındığını göstermez.
+
+    ÖLÇÜLDÜ (H2, aynı geometri, yalnızca bayrak değişiyor):
+        --basis sto-3g -> basis_name 'sto-3g', seçicide 2 orbital,
+                          başlık 'qlab — orbital görüntüleyici (RHF/STO-3G)'
+        --basis 6-31g  -> basis_name '6-31g',  seçicide 4 orbital,
+                          başlık 'qlab — orbital görüntüleyici (RHF/6-31G)'
+    Sayılar LİTERAL: 2 ve 4 koddaki hiçbir sabite bağlı değil, H2'nin iki
+    bazdaki gerçek baz fonksiyonu sayısıdır.
+    """
+    app_main, acilanlar = acilan_pencereler
+    olculen = []
+    for baz in ("sto-3g", "6-31g"):
+        acilanlar.clear()
+        kod = app_main.main(["--molecule", "H 0 0 0; H 0 0 0.74", "--basis", baz])
+        assert kod == 0
+        pencere = acilanlar[0]
+        try:
+            assert pencere._result.basis_name == baz, "bayrak sonuca ulaşmıyor"
+            olculen.append((pencere._secici.count(), pencere.windowTitle()))
+        finally:
+            pencere.close()
+
+    (sto_orbital, sto_baslik), (g631_orbital, g631_baslik) = olculen
+    assert sto_orbital == 2 and g631_orbital == 4
+    assert "STO-3G" in sto_baslik and "6-31G" in g631_baslik
+    assert sto_baslik != g631_baslik, "başlık hangi bazın koştuğunu göstermiyor"
+
+
+@requires_offscreen
+def test_main_bilinmeyen_bazi_PENCERE_ACMADAN_reddediyor(acilan_pencereler, capsys):
+    """Geçersiz baz, tipli hataya düşmeli ve hiçbir pencere kurulmamalı.
+
+    ÖLÇÜLDÜ: `--basis cc-pvdz` -> kod 1, stderr «Bilinmeyen baz seti:
+    'cc-pvdz'. Desteklenenler: ('sto-3g', '6-31g')», traceback YOK. Doğru
+    çalışıyordu ama tek bir test bile bunu tutmuyordu.
+
+    KAPSANMAYAN, açıkça: "Qt hiç başlatılmadan" iddiası bu testte
+    SINANAMAZ -- bu modül içe aktarılırken zaten bir QApplication kuruyor,
+    yani süreçte her hâlükârda bir tane var. Sınanan şey gözlemlenebilir
+    olan: pencere KURULMUYOR ve hata kullanıcının düzeltebileceği şeyi
+    (desteklenen baz adlarını) adlandırıyor.
+    """
+    app_main, acilanlar = acilan_pencereler
+    kod = app_main.main(["--molecule", "H 0 0 0; H 0 0 0.74", "--basis", "cc-pvdz"])
+    hata = capsys.readouterr().err
+    assert kod == 1
+    assert acilanlar == [], "geçersiz bazda pencere kurulmamalı"
+    assert "cc-pvdz" in hata, hata
+    # Kullanıcı ne yazabileceğini görmeli; yalnızca "bilinmeyen" demek yetmez.
+    assert "sto-3g" in hata and "6-31g" in hata, hata
+    assert "Traceback" not in hata
+
+
+@requires_offscreen
+def test_main_sonlu_olmayan_koordinat_DOGRU_teshisle_reddediliyor(
+    acilan_pencereler, capsys
+):
+    """`--molecule` geçersiz geometriyi geçersiz geometri diye reddetmeli.
+
+    ÖLÇÜLDÜ (düzeltmeden önce, üç biçim de): `main(["--molecule",
+    "H 0 0 0; H 0 0 nan"])` kod=1 döndürüyordu ama stderr'e şunu basıyordu:
+
+        SCF 100 iterasyonda yakinsamadi (son residual nan). Iterasyon
+        sinirini artirmayi veya baslangic tahminini degistirmeyi deneyin.
+
+    Hata TİPİ doğruydu (SCFConvergenceError → QLabError), ama TEŞHİS yanlıştı
+    ve önerdiği çare kullanıcıyı yanlış düzeltmeye yönlendiriyordu: sorun
+    yakınsama değil, geometrinin kendisi. Bu depo aynı kusur sınıfını
+    `_dogrula_seviye` için açıkça reddediyor ("yanlış gerekçe gören kullanıcı
+    yanlış düzeltmeyi dener"). Üstelik bedeli 100 SCF iterasyonu.
+
+    `inf` ayrıca ölçüldü ve daha da kötüydü: teşhisten ÖNCE
+    `integrals.py:241`'den ham bir `RuntimeWarning: invalid value encountered
+    in subtract` sızıyordu.
+
+    KAPSAM, açıkça: bu koruma CLI sınırında. `Molecule.from_string` ve
+    `Atom.__post_init__` (types.py) sonlu olmayan konumu HÂLÂ kabul ediyor --
+    ölçüldü, kütüphane API'sinden `Molecule.from_string("H 0 0 nan")` sorunsuz
+    kuruluyor. Serbest metin geometriyi bir KULLANICIYA açan tek yüzey
+    `--molecule` olduğu için kapı burada kapatıldı; types.py'deki daha geniş
+    düzeltme ayrı bir iştir ve burada yapılmış SAYILMAZ.
+    """
+    app_main, acilanlar = acilan_pencereler
+    for geometri in (
+        "H 0 0 0; H 0 0 nan",
+        "H 0 0 0; H 0 0 inf",
+        "H 0 0 0; H 0 0 -inf",
+        "H 0 0 nan; H 0 0 0.74",
+    ):
+        kod = app_main.main(["--molecule", geometri])
+        hata = capsys.readouterr().err
+        assert kod == 1, geometri
+        assert acilanlar == [], "geçersiz geometride pencere açılmamalı"
+        assert "yakinsamadi" not in hata, (
+            f"{geometri!r} yakınsama sorunu diye teşhis edildi: {hata!r}"
+        )
+        assert "iterasyon" not in hata.lower(), (
+            f"{geometri!r} için önerilen çare hâlâ iterasyon sınırı: {hata!r}"
+        )
+        # Teşhis, kullanıcının DÜZELTEBİLECEĞİ şeyi adlandırmalı.
+        assert "koordinat" in hata.lower(), hata
+        assert "sonlu" in hata.lower(), hata
 
 
 @requires_offscreen

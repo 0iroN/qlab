@@ -10,6 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -72,3 +74,125 @@ def test_import_contracts_hold():
         env=env,
     )
     assert result.returncode == 0, f"Import sözleşmesi ihlal edildi:\n{result.stdout}\n{result.stderr}"
+
+
+@pytest.mark.parametrize(
+    ("hedef", "ihlal", "sozlesme"),
+    [
+        pytest.param(
+            "src/qlab/engine/hf/scf.py",
+            "from PySide6 import QtWidgets",
+            "engine görselleştirmeyi bilmez",
+            id="engine-PySide6",
+        ),
+        pytest.param(
+            "src/qlab/engine/hf/scf.py",
+            "import pyqtgraph.opengl",
+            "engine görselleştirmeyi bilmez",
+            id="engine-pyqtgraph",
+        ),
+        pytest.param(
+            "src/qlab/engine/hf/scf.py",
+            "import OpenGL",
+            "engine görselleştirmeyi bilmez",
+            id="engine-OpenGL",
+        ),
+        pytest.param(
+            "src/qlab/observable/hf_obs.py",
+            "from PySide6 import QtWidgets",
+            "observable görselleştirmeyi ve GUI'yi bilmez",
+            id="observable-PySide6",
+        ),
+        pytest.param(
+            "src/qlab/observable/hf_obs.py",
+            "import pyqtgraph.opengl",
+            "observable görselleştirmeyi ve GUI'yi bilmez",
+            id="observable-pyqtgraph",
+        ),
+        pytest.param(
+            "src/qlab/observable/hf_obs.py",
+            "import OpenGL",
+            "observable görselleştirmeyi ve GUI'yi bilmez",
+            id="observable-OpenGL",
+        ),
+        pytest.param(
+            "src/qlab/units.py",
+            "import qlab.engine.hf.scf",
+            "Katmanlı mimari",
+            id="units-engine",
+        ),
+        pytest.param(
+            "src/qlab/engine/hf/analysis.py",
+            "import qlab.run",
+            "Katmanlı mimari",
+            id="engine-run",
+        ),
+    ],
+)
+def test_import_sozlesmesi_gercekten_REDDEDIYOR(tmp_path, hedef, ihlal, sozlesme):
+    """Sözleşmenin DİŞİ var mı: ihlal enjekte edilince gerçekten kırılıyor mu?
+
+    `test_import_contracts_hold` yalnızca temiz ağaçta rc==0 olduğunu görür ve
+    bu TEK BAŞINA hiçbir şey kanıtlamaz: `forbidden_modules` boşaltılsa, yanlış
+    yazılsa ya da `include_external_packages` düşürülse o test yine yeşil
+    kalırdı. Bu deponun tekrar eden kusuru tam olarak budur -- yakalaması
+    gerekeni yakalamayan bir test.
+
+    ÖLÇÜLDÜ (düzeltmeden önce, `lint-imports` ile, her biri ayrı ayrı enjekte
+    edilip geri alındı): aşağıdaki BEŞ ihlalin BEŞİ DE rc=0 ile KAÇIYORDU --
+    `engine` doğrudan `PySide6`/`pyqtgraph`/`OpenGL` import edebiliyor,
+    `observable` PySide6 import edebiliyor, `units` engine'e, `engine.hf.analysis`
+    tepe-seviye `qlab.run`'a bağlanabiliyordu. Sözleşmenin ilan edilen amacı
+    "engine görselleştirmeyi bilmez" iken yasak listesi yalnızca `qlab.viz` ve
+    `qlab.app` içeriyordu; dış GUI paketleri ve tepe-seviye modüller hiç
+    adlandırılmamıştı. Kontrol olarak enjekte edilen `engine -> qlab.viz`,
+    `engine -> qlab.app` ve `scenario -> qlab.engine` o zaman da rc=1 ile
+    yakalanıyordu, yani araç çalışıyordu; eksik olan KAPSAMDI.
+
+    Kopya bir ağaçta koşar: gerçek `src/` mutasyona uğratılıp geri alınsaydı
+    eşzamanlı bir koşu yanlış sonuç görebilirdi.
+    """
+    lint_imports_exe = _resolve_lint_imports()
+    assert lint_imports_exe is not None
+
+    kopya = tmp_path / "agac"
+    shutil.copytree(PROJECT_ROOT / "src", kopya / "src")
+    shutil.copy2(PROJECT_ROOT / "pyproject.toml", kopya / "pyproject.toml")
+
+    dosya = kopya / hedef
+    metin = dosya.read_text(encoding="utf-8")
+    isaret = "from __future__ import annotations\n"
+    assert isaret in metin, f"{hedef} beklenen çapayı taşımıyor"
+    dosya.write_text(metin.replace(isaret, isaret + "\n" + ihlal + "\n", 1), encoding="utf-8")
+
+    env = os.environ.copy()
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONPATH"] = str(kopya / "src")
+
+    sonuc = subprocess.run(
+        [lint_imports_exe],
+        cwd=kopya,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+    )
+    cikti = (sonuc.stdout or "") + (sonuc.stderr or "")
+    assert sonuc.returncode != 0, (
+        f"{hedef} içine enjekte edilen {ihlal!r} sözleşmeden KAÇTI:\n{cikti}"
+    )
+    # "BROKEN" ŞART. Sade `sozlesme in cikti` bir TOTOLOJİYDİ ve bunu ölçerek
+    # gördüm: import-linter her sözleşmenin adını "<ad> KEPT" / "<ad> BROKEN"
+    # diye HER KOŞUDA basar, yani ad her zaman çıktıda olur. Somut kaçış:
+    # `forbidden_modules`'tan dış GUI paketlerini SİLEN mutasyon uygulandığında
+    # bu testin beş parametresi de GEÇİYORDU (0/6 kırık) -- çünkü enjekte edilen
+    # `engine.hf.scf -> PySide6` rc=1'i yine üretiyor, ama BAŞKA bir sözleşmeden:
+    # `qlab.observable.hf_obs -> qlab.engine.hf.scf -> PySide6` zinciri
+    # "observable ... bilmez" sözleşmesini kırıyor. Yani ihlal yakalanıyor gibi
+    # görünürken ADI GEÇEN sözleşme hâlâ KEPT'ti. Aşağıdaki satır o farkı
+    # okuyabilen tek iddiadır.
+    assert f"{sozlesme} BROKEN" in cikti, (
+        f"ihlal rc!=0 üretti ama {sozlesme!r} sözleşmesi KIRILMADI "
+        f"(başka bir sözleşme yakalamış olabilir):\n{cikti}"
+    )

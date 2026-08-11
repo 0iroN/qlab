@@ -157,11 +157,30 @@ pytest tests/ -v -m slow
 
 `pyproject.toml` bir `addopts` taşımaz, yani `pytest tests/` yavaş işaretli
 testleri de KOŞAR — ikinci komut ayrı bir küme değil, birincinin alt kümesidir.
-Bu makinede ölçüldü: tam süite **514 test / 127.96 s**, `-m slow` alt kümesi
-**16 test / 106.67 s** — yani toplam sürenin ~%83'ü o 16 testten geliyor (çift
-yarık, kutuda-parçacık ve HF tarama koşuları). Modül 1B2 süiteyi 344'ten
-514'e çıkardı ama süreye neredeyse hiçbir şey eklemedi: orbital penceresi
-testleri ekransız ve saniyenin altında.
+
+Bu makinede ölçüldü (tek oturum, dört ayrı koşu):
+
+| Koşu | Test | Süre |
+|---|---|---|
+| tam süite | 551 | 160.96 s |
+| `-m slow` | 16 | 122.11 s |
+| `-m "not slow"` | 535 | 44.40 s |
+| yalnız B2'nin üç dosyası (`test_orbital_window`, `test_isosurface`, `test_hf_obs`) | 142 | 27.30 s |
+
+Yavaş alt küme toplam sürenin ~%76'sını yiyor (çift yarık, kutuda-parçacık ve
+HF tarama koşuları). Mutlak saniyeler bu makinede eşzamanlı yüke duyarlıdır;
+aşağıdaki yapısal gözlem ise duyarlı değildir.
+
+**Düzeltme — "B2 süreye neredeyse hiçbir şey eklemedi" iddiası yanlıştı.**
+Ölçüldü: 16 yavaş testin **hepsi** B2 ÖNCESİ dosyalarda
+(`tests/hf/test_physical.py` ×4, `tests/hf/test_stability.py` ×5,
+`tests/tdse/test_analytic.py` ×2, `tests/tdse/test_double_slit.py` ×4,
+`tests/tdse/test_tunneling.py` ×1); B2'nin üç dosyasında **sıfır** yavaş test
+var. Yani B2'nin maliyeti tamamen hızlı kısma düşüyor ve orada küçük değil:
+hızlı kısım 44.40 s, bunun 27.30 s'i (~%61) B2'nin üç dosyası. Eski iddia
+toplam sürenin sabit kalmasına dayanıyordu (127.3 → 127.96 s), ama o sabitlik
+bir gürültü iptaliydi: B2'nin hiç dokunmadığı yavaş alt küme aynı iki ölçüm
+arasında 112.6 → 106.67 s "hızlanmıştı".
 
 ## Doğrulama
 
@@ -204,7 +223,7 @@ Aşağıdaki sayılar bu görevde (B1 Task 13) gerçekten çalıştırılıp öl
 | H₂O dipolü | Deneysel 1.85 D | **1.7255 D**, sapma %6.7 |
 | SCF yakınsama hızlandırma (DIIS vs düz Roothaan-Hall, iterasyon sayısı) | `tests/hf/test_scf.py::test_diis_reduces_iteration_count` | H₂O 19→8, LiH 23→7, NH₃ 18→8, CH₄ 12→11 |
 | Yakınsamayan SCF sessizce sayı döndürmemeli | `tests/hf/test_scf.py::test_non_convergence_raises_rather_than_returning` | `SCFConvergenceError` fırlatılır, iterasyon/enerji geçmişi hatanın içinde taşınır |
-| Referans koruması gerçekten korur mu | `reference/hf_energies.json` geçici kaldırılıp `pytest tests/hf/ -v` koşuldu | **kırmızı**, atlanmadı: 134 passed, 64 error — hepsi `pytest.fail`: "Referans dosyasi bulunamadi" |
+| Referans koruması gerçekten korur mu | `reference/hf_energies.json` geçici kaldırılıp `pytest tests/hf/` koşuldu | **kırmızı**, atlanmadı: **92 error + 2 failed, 234 passed, 0 skipped** (toplam 328). 92 hatanın hepsi `pytest.fail`: "Referans dosyasi bulunamadi"; 2 failed, alt süreçte pytest koşan yol-sırası testidir ve o alt süreç de aynı sebeple kırmızıdır |
 
 Not: İntegral satırındaki 2.129e-10'luk artık özyinelemenin kendisinden değil,
 referansı üreten PySCF derlemesinin bohr sabitinden (CODATA 2010,
@@ -227,12 +246,12 @@ taşımaz.
 
 | Test | Referans / tolerans | Ölçülen |
 |---|---|---|
-| Izgara örtüşmesi ↔ analitik `overlap_matrix` (H₂/STO-3G, padding 8 bohr, n=120) | Motorun kendi analitik integrali | en kötü fark **1.610e-11** |
+| Izgara örtüşmesi ↔ analitik `overlap_matrix` (H₂/STO-3G, padding 7 bohr, n=80, `np.einsum`) | Motorun kendi analitik integrali | en kötü fark **2.700e-09** |
 | Elektron sayısı: ∫ρ dV (H₂/STO-3G, padding 6 bohr, n=120) | Tam olarak 2 | **1.9999993405** (kalan kutu kuyruğunun kesilmesinden) |
 | Su HOMO'sunun ızgara normu | Analitik 1 | **1.00000000** |
 | Su çekirdek 1s orbitalinin ızgara normu | Analitik 1 | **0.98760196** — %1.24 eksik; ızgaranın çekirdek tepesini çözemediğinin sayısal kanıtı |
 | Yoğunluk farkı sıfıra integre oluyor mu (H₂) | Molekül ve promolekül aynı elektron sayısını taşır | **−1.411e-08** |
-| **Kovalent bağda elektron birikimi** (H₂, bağ bölgesi \|x\|<1, \|y\|<1, 0.2<z<1.2 bohr) | Yön iddiası: çekirdekler arasında ARTMALI | **+0.055005**; dış bölge (z<−1.0 veya z>2.4) **−0.027068**; maks +0.042281 (z=+0.643 bohr, çekirdekler 0 ve 1.398 arasında) |
+| **Kovalent bağda elektron birikimi** (H₂, bağ bölgesi \|x\|<1, \|y\|<1, 0.2<z<1.2 bohr) | Yön iddiası: çekirdekler arasında ARTMALI | bağ bölgesinde **+0.055005 elektron**, dış bölgede (z<−1.0 veya z>2.4) **−0.027068 elektron** (ikisi de bölge üzerinden İNTEGRE); haritanın ham tepe değeri ayrı bir büyüklüktür: **+0.042281 e/bohr³** (z=+0.643 bohr), ham dip **−0.064390 e/bohr³** |
 | **Polar bağda yük transferi** (HF, r=0.917 Å, orta düzlem z=0.8664 bohr) | Yön iddiası: elektronegatif atoma GİTMELİ | H yarısı **−0.1841**, F yarısı **+0.1841** — üç ayrı ızgarada ±%0.2 |
 | İzoyüzey yarıçapı (analitik küre `x²+y²+z²`, level=1.0, bohr) | Yarıçap 1.0 | ort **0.999215**, std 0.000363; indeks→bohr dönüşümü atlanırsa aynı büyüklük 35.600985 çıkar |
 | İzoyüzey ağının yön tutarlılığı | Her iki fazın normali DIŞARI bakmalı | dışarı-bakan üçgen oranı **1.000 / 1.000** |
@@ -242,10 +261,46 @@ elektron, iki ayrı hesabın (molekül ve etkileşmeyen serbest atomlar) farkın
 OKUNMUŞTUR. Elektronegatiflik de öyle: HF'nin hangi ucuna elektron gittiği
 hiçbir tabloda tanımlı değildir, haritadan çıkar.
 
+**İki birim karışmasın.** Bölge sayıları (`+0.055005`, `−0.027068`) bölge
+üzerinden integre edilmiş ELEKTRON sayılarıdır (`values[maske].sum() *
+volume_element`); `+0.042281` ve `−0.064390` ise haritanın tek bir noktadaki
+HAM yoğunluk farkıdır (e/bohr³). Bunlar aynı büyüklüğün iki okuması değildir:
+ölçüldü, tepe noktasının kendi hücresi üzerinden integrali 4.841e-05
+elektrondur — bağ bölgesi sayısının ~1/1136'sı. Tablo bir süre üçünü aynı
+hücrede, birim ayrımı yapmadan yan yana koyuyordu.
+
+**Izgara örtüşmesi satırının kesinliği hakkında.** Orada `np.einsum` yolunun
+yazılı olması gereksiz bir ayrıntı değil: bu büyüklükteki artıklar float64
+toplama SIRASINA duyarlıdır. Ölçüldü — daha ince bir ızgarada (padding 8 bohr,
+n=120) aynı hesap `np.einsum` ile 1.669e-11, `np.tensordot` ile 1.610e-11
+verir; **%3.6 yayılım**, yani 4. anlamlı hane indirgeme yolunun eseridir.
+Tablodaki satır bu yüzden deponun kendi testinin
+(`test_izgara_ortusmesi_analitik_ortusmeye_oturuyor`) gerçekten koştuğu
+ızgarayı ve kod yolunu bildirir; o ızgarada iki yol 5 haneye kadar örtüşür
+(2.699635e-09 / 2.699516e-09).
+
 ## Mimari kuralı
 
-`engine` paketi `viz` veya `app` import **edemez**. Kural yorumla değil
-import-linter ile korunur: `pytest tests/test_architecture.py`.
+`engine` paketi `viz` veya `app` import **edemez** — ve GUI'nin kendisini de,
+yani `PySide6` / `pyqtgraph` / `OpenGL`'i de. Aynısı `observable` için geçerli.
+Katman sırası `run/app → viz → observable → engine → scenario →
+provenance → types → units/errors`. Kural yorumla değil import-linter ile
+korunur: `pytest tests/test_architecture.py`.
+
+Sözleşmenin kapsamı ÖLÇÜLEREK genişletildi. Önceki hâlinde yasak listesi
+yalnızca `qlab.viz` ve `qlab.app` idi ve şu altı ihlalin altısı da rc=0 ile
+KAÇIYORDU: `engine → PySide6`, `engine → pyqtgraph`, `engine → OpenGL`,
+`observable → PySide6`, `engine.hf.analysis → qlab.run`, `units → engine`.
+Yani "engine görselleştirmeyi bilmez" diyen sözleşme, engine'in doğrudan Qt
+import etmesine izin veriyordu.
+
+`test_import_contracts_hold` tek başına bunu göremezdi: o yalnızca temiz
+ağaçta rc==0 olduğunu görür ve sözleşme boşaltılsa bile yeşil kalırdı. Bu
+yüzden yanına `test_import_sozlesmesi_gercekten_REDDEDIYOR` eklendi — kopya
+bir ağaca ihlal enjekte eder ve **adı geçen sözleşmenin BROKEN raporlandığını**
+şart koşar. O "BROKEN" şartı da ölçümle geldi: yalnızca sözleşme adının
+çıktıda geçmesini aramak totolojiydi, çünkü import-linter her sözleşmenin adını
+her koşuda basar.
 
 ## Kabul kriterleri durumu
 
@@ -255,17 +310,25 @@ Spec §15'teki yedi maddenin gerçek durumu (ölçüm ayrıntıları
 
 | # | Kriter | Durum |
 |---|---|---|
-| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — 514/514 test yeşil (`pytest tests/ -v`), PySCF referans testleri dahil; referans dosyası kaldırıldığında testler ATLANMIYOR, KIRMIZI oluyor — kanıtlandı (134 passed, 64 error) |
+| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — 551/551 test yeşil (`pytest tests/ -v`), PySCF referans testleri dahil; `reference/` geçici olarak kaldırılıp tam süite yeniden koşuldu: testler ATLANMIYOR, KIRMIZI oluyor — ölçüldü, **128 failed + 132 error + 291 passed, 0 skipped** (toplam 551, 154.20 s). Yani 260 test kırmızıya dönüyor ve hiçbiri sessizce atlanmıyor |
 | 2 | Headless koşucu çalışır + H₂ eğrisi bağ uzunluğu ±%8 | **Kapandı** — `python -m qlab.run scenarios/h2_bond_scan.yaml`; denge bağ uzunluğu 0.7156 Å, sapma %3.4 |
 | 3 | GUI'de H₂O HOMO izoyüzeyi döndürülebilir | **Kapandı — bu depoda ilk gerçek-ekran doğrulaması.** `python -m qlab.app.main --molecule "O 0 0 0; H 0 0.757 0.587; H 0 -0.757 0.587"` gerçek Windows platformunda açıldı; su HOMO'su (1b₁) çizildi, ±faz iki renkte, 1764/1764 tepe, çekirdekler ve şeffaflık paneli görüldü. Döndürme ölçüldü: kamera azimutu değişince kare piksel bileşenlerinin **%14.1'i**, elevasyon değişince **%7.2'si** değişiyor — sahne gerçekten 3B ve görünüm tepki veriyor. **Ne ölçülmedi:** fareyle sürükleyerek döndürme; kamera programatik değiştirildi. Kriterin "döndürülebilir" kelimesi bu yüzden yalnızca sahne tarafında kapalıdır, girdi tarafında bir insanın bakması gerekir. Doğrulamanın kendisi bir kusuru da GÖRÜNÜR KILDI: 12 satırlık beyan 140 px'lik panelde katlanın altında kalıyordu (düzeltildi, `TransparencyPanel(max_height=…)`) |
 | 4 | Kaydırıcı ile canlı iletim, analitiğin ±%2'si içinde | **Kapandı** — ölçülen fark %0.07 |
 | 5 | Şeffaflık paneli her hesapta dolu | **Kapandı** — TDSE tarafında pencere paneli; HF tarafında headless koşucu her senaryoda Yöntem/Yaklaşımlar/İhmal edilen/Beklenen hata/Yakınsama satırlarını basar (`h2_bond_scan.yaml` çıktısı) |
 | 6 | Yakınsamayan SCF sessizce sayı döndürmez, test edilmiş | **Kapandı** — `SCFConvergenceError`, `test_non_convergence_raises_rather_than_returning` ile test edilmiştir |
-| 7 | `engine`'in `viz`/`app` bağımlılığı yok, import-linter ile doğrulandı | **Kapandı** |
+| 7 | `engine`'in `viz`/`app` bağımlılığı yok, import-linter ile doğrulandı | **Kapandı** — üç sözleşme (`engine görselleştirmeyi bilmez`, `observable görselleştirmeyi ve GUI'yi bilmez`, `Katmanlı mimari`), hepsi KEPT. Sözleşmenin kendisinin diş taşıdığı da ölçülüyor: enjekte edilen 8 ihlalin 8'i adı geçen sözleşmeyi BROKEN yapıyor (bkz. "Mimari kuralı") |
 
-6/7 madde kapalıdır. Kapanmayan tek kriter 3'tür: GUI'de döndürülebilir H₂O
-HOMO izoyüzeyi, orbital görselleştirme gerektirir ve bu Plan B2'nin kapsamıdır
-(`observable/hf_obs.py`, `viz/volume.py`, GUI entegrasyonu) — burada "geçti"
-gibi gösterilmemiştir. Ayrıca: Qt penceresinin kendisi bu depoda hiçbir gerçek
-ekranda henüz açılmadı; tüm GUI testleri ekransız (`QT_QPA_PLATFORM=offscreen`)
-koşar.
+**7/7 madde kapalıdır.** Kriter 3 Modül 1B2 ile kapandı; yukarıdaki tablonun
+yedi satırı da "Kapandı" der.
+
+(Bu paragraf bir süre kendi tablosuyla çelişti: "6/7 madde kapalıdır, kapanmayan
+tek kriter 3'tür" diyor ve "Qt penceresi bu depoda hiçbir gerçek ekranda henüz
+açılmadı" diye ekliyordu — oysa aynı belgenin üç ayrı yeri, tablonun 3. satırı
+dahil, kriterin B2'de kapandığını ve pencerenin gerçek ekranda **bir kez**
+açıldığını yazıyordu. B2'den kalma güncellenmemiş bir özetti.)
+
+Kriter 3'ün kapanışı kendi sınırını taşıyor ve o sınır hâlâ geçerlidir: sahne
+tarafı ölçüldü, **girdi tarafı ölçülmedi** — fareyle sürükleyerek döndürme
+denenmedi, kamera programatik değiştirildi. TDSE penceresi ise hâlâ hiçbir
+gerçek ekranda görülmedi; onun dışındaki tüm GUI testleri ekransız
+(`QT_QPA_PLATFORM=offscreen`) koşar.

@@ -19,7 +19,7 @@ from PySide6 import QtCore, QtWidgets
 from qlab.app.transparency import TransparencyPanel
 from qlab.engine.tdse import factory
 from qlab.engine.tdse.propagator import evolve
-from qlab.errors import QLabError, ScenarioError
+from qlab.errors import InvalidInputError, QLabError, ScenarioError
 from qlab.run import reconfigure_stdio_utf8
 from qlab.scenario.loader import load_scenario
 from qlab.scenario.schema import TDSEScenario
@@ -147,11 +147,36 @@ def _orbital_penceresi(molecule_text: str, basis: str) -> QtWidgets.QWidget:
     yolunu kullanan biri için o bağımlılığı modül yüklenirken zorunlu kılmak
     gereksiz olurdu.
     """
+    import numpy as np
+
     from qlab.app.orbital_window import OrbitalWindow
     from qlab.engine.hf.scf import solve
     from qlab.types import Molecule
 
     molecule = Molecule.from_string(molecule_text)
+
+    # Sonlu olmayan koordinat, TEŞHİSİ BOZAR. Ölçüldü (düzeltmeden önce, üç
+    # biçimde de): `--molecule "H 0 0 0; H 0 0 nan"` 100 SCF iterasyonu koştuktan
+    # SONRA «SCF 100 iterasyonda yakinsamadi (son residual nan). Iterasyon
+    # sinirini artirmayi veya baslangic tahminini degistirmeyi deneyin.» diyordu.
+    # Hata TİPİ doğruydu, teşhis yanlıştı: sorun yakınsama değil geometri, ve
+    # önerilen çare (iterasyon sınırını artır) kullanıcıyı yanlış düzeltmeye
+    # yönlendiriyordu. `inf` ayrıca `integrals.py:241`'den ham bir
+    # `RuntimeWarning: invalid value encountered in subtract` sızdırıyordu.
+    #
+    # Kontrol BURADA, çünkü serbest metin geometriyi bir kullanıcıya açan tek
+    # yüzey `--molecule`. `Molecule`/`Atom` (types.py) sonlu olmayan konumu
+    # kütüphane API'sinden HÂLÂ kabul ediyor -- ölçüldü; o daha geniş düzeltme
+    # burada YAPILMADI ve yapılmış sayılmamalı.
+    for atom in molecule.atoms:
+        if not np.all(np.isfinite(atom.position)):
+            raise InvalidInputError(
+                f"{atom.symbol!r} atomunun koordinatlari sonlu degil: "
+                f"{tuple(float(x) for x in atom.position)} (bohr). "
+                "Geometrideki her koordinat sonlu bir sayi olmali; "
+                "'nan'/'inf' bir konum degildir."
+            )
+
     result = solve(molecule, basis)
 
     # QApplication, HERHANGİ bir widget'tan ÖNCE var olmak zorunda -- TDSE dalı

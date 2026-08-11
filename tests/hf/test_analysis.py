@@ -222,10 +222,30 @@ def test_rhf_bond_order_of_h2_stays_one_at_any_separation():
     sinirlarindan biridir: RHF bag KIRAMAZ.
     Olculdu: STO-3G 0.74/1.00/2.00/3.00 A -> dordu de 1.0000000000;
     6-31G 0.74/1.50/2.50/4.00 A -> dordu de 1.00000000.
+
+    DUZELTME NOTU: bu dokstring bir zamanlar 6-31G olcumunu ILAN EDIYOR ama
+    govde YALNIZCA sto-3g kosuyordu -- yani beyan edilen olcumun yarisi hic
+    calistirilmiyordu. Analiz fonksiyonlarinda 6-31G'nin depo genelinde hic
+    sinanmamasi da ayni koktendi. Ikinci baz artik gercekten kosuyor;
+    olculdu, dokstringin iddiasi DOGRU cikti (n_basis: sto-3g 2, 6-31g 4;
+    en kotu sapma 6-31G'de 3.3e-15). Bu, analysis.py'nin
+    _ANALYSIS_NEGLECTED metninin atif yaptigi testtir -- oradaki beyan artik
+    kosulan bir olcume dayaniyor.
     """
-    for distance in ("0.74", "1.00", "2.00", "3.00"):
-        result = solve(Molecule.from_string(f"H 0 0 0; H 0 0 {distance}"), "sto-3g")
-        assert mayer_bond_orders(result)[0, 1] == pytest.approx(1.0, abs=1e-9, rel=0.0)
+    for basis_name, distances in (
+        ("sto-3g", ("0.74", "1.00", "2.00", "3.00")),
+        ("6-31g", ("0.74", "1.50", "2.50", "4.00")),
+    ):
+        for distance in distances:
+            result = solve(
+                Molecule.from_string(f"H 0 0 0; H 0 0 {distance}"), basis_name
+            )
+            # Baz gercekten degisiyor mu: iki dal ayni sayiyi verse bile
+            # 6-31G'nin kosuldugunu bu satir gosterir (2 ve 4 LITERAL).
+            assert result.orbital_energies.shape[0] == (2 if basis_name == "sto-3g" else 4)
+            assert mayer_bond_orders(result)[0, 1] == pytest.approx(
+                1.0, abs=1e-9, rel=0.0
+            ), f"{basis_name} @ {distance} A"
 
 
 def test_stretched_heteronuclear_bond_has_lower_order(hf_energies):
@@ -906,6 +926,88 @@ def test_isgal_edilmis_orbital_yoksa_HOMO_uydurulmuyor():
     # charge != 0: dipol orijine baglidir ve rapor bunu beyan etmek zorunda.
     assert rapor.provenance.diagnostics["dipole_origin_dependent"] is True
     assert "orijin" in rapor.provenance.expected_error.lower()
+
+
+def test_isgal_bazin_kapasitesini_ASARSA_analiz_TIPLI_hata_veriyor():
+    """`has_homo` korumasinin ikinci, hic sinanmamis ucu: n_occupied > n_orbitals.
+
+    `has_homo = n_occupied >= 1` yalnizca ALT siniri bagliyordu. Ust ucta
+    `result.orbital_energies[n_occupied - 1]` izgaranin disina tasiyor ve
+    analyse() HAM bir `IndexError` ile patliyordu -- tam olarak kendi
+    dokstringinin "Public bir API'nin ham bir IndexError ile patlamasi ...
+    kabul edilemez" diye reddettigi sey. OLCULDU (H2/STO-3G, charge=-4):
+    `IndexError: index 2 is out of bounds for axis 0 with size 2`,
+    `isinstance(e, QLabError)` False. Ust sinir bir tek testle bile
+    baglanmamisti; olculdu, `has_homo`'ya ust sinir eklemek tests/hf altindaki
+    316 testin SIFIRINI kiriyordu.
+
+    NEDEN None+beyan DEGIL de HATA: bu sistemde eksik olan yalnizca HOMO
+    degil, RAPORUN TAMAMI anlamsiz. Bazda 2 orbital var, sistem 6 elektron
+    iddia ediyor; `scf._density_matrix`'teki `coefficients[:, :n_occupied]`
+    dilimi numpy'da SESSIZCE 2 sutuna kirpiliyor, yani yogunluk 4 elektron
+    tasiyor. Olculdu (ayni sistem): Tr(PS) = 4 (molekul 6 diyor), Mulliken
+    toplami -2.0 (molekulun yuku -4), H2'nin Mayer bag mertebesi 4.0
+    (RHF'de ust sinir 1.0), dipol 3.554 D, ve solve() bunu enerjisi POZITIF
+    (+0.9231791808701104 hartree) bir HFResult olarak NORMAL donduruyor.
+    homo/gap'i None birakip raporu teslim etmek, bu alti sayiyi "olculmus"
+    gorunumuyle tuketiciye vermek olurdu. Ustelik tek satirlik o duzeltme
+    _NO_HOMO_NOTE ("n_occupied == 0") ve _NO_LUMO_NOTE ("n_occupied ==
+    n_orbitals") beyanlarini birden bastirirdi -- gercek n_occupied=3,
+    n_orbitals=2, yani ham IndexError iki YALAN BEYANLA takas edilirdi.
+
+    KAPSAM: duzeltme analyse()'te. Asil kusur YUKARI AKISTA -- solve()'un bu
+    sistemi hic reddetmemesi -- ve scf.py bu asamanin dosyalari disindadir;
+    asagidaki Tr(PS) iddiasi o kusuru SESSIZ olmaktan cikarip yaziya
+    baglar, boylece scf.py'ye dokunuldugunda burasi kirmizi olur.
+
+    Sayilar LITERAL: 6/3/2/4 kod tarafindaki hicbir sabite bagli degil.
+    """
+    from qlab.engine.hf.integrals import overlap_matrix
+    from qlab.errors import QLabError, UnsupportedSystemError
+
+    molecule = Molecule.from_string("H 0 0 0; H 0 0 0.74", charge=-4)
+    assert molecule.n_electrons == 6
+    result = solve(molecule, "sto-3g", stability=False)
+    assert result.orbital_energies.shape[0] == 2, "STO-3G'de H2 iki orbital tasir"
+    assert molecule.n_electrons // 2 == 3 > 2, "isgal bazin kapasitesini asiyor"
+
+    # YUKARI AKIS KUSURU, yaziya baglandi: solve() bu sistemi kabul ediyor ve
+    # yogunlugu molekulun iddia ettigi elektron sayisini TASIMIYOR.
+    overlap = overlap_matrix(build_basis(molecule, "sto-3g"))
+    assert float(np.trace(result.density @ overlap)) == pytest.approx(
+        4.0, abs=1e-9, rel=0.0
+    ), "yogunluk 4 elektron tasiyor, molekul 6 iddia ediyor -- solve() susuyor"
+
+    with pytest.raises(UnsupportedSystemError) as hata:
+        analyse(result)
+
+    assert isinstance(hata.value, QLabError)
+    assert not isinstance(hata.value, IndexError)
+    mesaj = str(hata.value)
+    # Tani icin gereken uc sayi da mesajda olmali (errors.py modul dokstringi:
+    # "Her istisna, taniyi yapabilmek icin gereken sayisal baglami tasir").
+    assert "6" in mesaj and "3" in mesaj and "2" in mesaj
+    assert "sto-3g" in mesaj.lower()
+
+
+def test_isgal_kapasiteye_TAM_oturdugunda_analiz_kosuyor():
+    """Yeni sinirin YANLIS TARAFA kaymadigini baglar: n_occupied == n_orbitals GECERLI.
+
+    Ust sinir `>=` yazilsaydi He/STO-3G (n_occupied = n_orbitals = 1) ve
+    He2/STO-3G (2 = 2) reddedilirdi; ikisi de LUMO'su olmayan MESRU sistemler
+    ve zaten iki ayri testle korunuyorlar. Bu test siniri diger yonden
+    sikistirir: kapasiteye tam oturan sistem hata ALMAZ.
+
+    Olculdu: He/STO-3G n_occupied=1, n_orbitals=1; He2/STO-3G (r=2.0 A)
+    n_occupied=2, n_orbitals=2. Sayilar LITERAL.
+    """
+    for geometri, isgal in (("He 0 0 0", 1), ("He 0 0 0; He 0 0 2.0", 2)):
+        result = solve(Molecule.from_string(geometri), "sto-3g")
+        assert result.molecule.n_electrons // 2 == isgal
+        assert int(result.orbital_energies.shape[0]) == isgal
+        rapor = analyse(result)
+        assert rapor.homo is not None
+        assert rapor.lumo is None and rapor.gap is None
 
 
 def test_merged_beyanlari_sirayi_bozmadan_tekrarsiz_birlestiriyor():

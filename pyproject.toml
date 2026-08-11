@@ -28,12 +28,41 @@ markers = ["slow: uzun süren fizik doğrulama testleri"]
 
 [tool.importlinter]
 root_package = "qlab"
+# DIŞ paketleri (PySide6, pyqtgraph, OpenGL) yasak listesine koyabilmenin
+# koşulu; bu bayrak olmadan import-linter "The top level configuration must
+# have include_external_packages=True when there are external forbidden
+# modules." diyerek hiçbir sözleşmeyi koşmadan çıkıyor.
+include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "engine görselleştirmeyi bilmez"
 type = "forbidden"
 source_modules = ["qlab.engine"]
-forbidden_modules = ["qlab.viz", "qlab.app"]
+# DIŞ GUI paketleri de listede, ve bu boşluk ÖLÇÜLEREK bulundu: sözleşmenin
+# ilan edilen amacı "engine görselleştirmeyi bilmez" iken, yalnızca `qlab.viz`
+# ve `qlab.app` yasaklıydı. 9 ihlal tek tek enjekte edilip `lint-imports`
+# koşuldu (altısı bu boşlukları, üçü kontrol); `engine/hf/scf.py`'ye eklenen
+# `from PySide6 import QtWidgets`, `import pyqtgraph.opengl` ve
+# `import OpenGL` ÜÇÜ DE rc=0 ile geçiyordu -- yani engine doğrudan Qt'ye
+# bağlanabilir ve sözleşme susardı. Kontrol olarak enjekte edilen
+# `engine -> qlab.viz`, `engine -> qlab.app` ve `scenario -> qlab.engine`
+# rc=1 ile yakalanıyordu, yani araç çalışıyordu; eksik olan KAPSAMDI.
+forbidden_modules = [
+    "qlab.viz",
+    "qlab.app",
+    "PySide6",
+    "pyqtgraph",
+    "OpenGL",
+]
+
+[[tool.importlinter.contracts]]
+name = "observable görselleştirmeyi ve GUI'yi bilmez"
+type = "forbidden"
+source_modules = ["qlab.observable"]
+# Aynı ölçümde `observable/hf_obs.py` -> `from PySide6 import QtWidgets` de
+# rc=0 ile kaçıyordu. `observable -> qlab.viz/qlab.app` katman sözleşmesince
+# zaten yakalanıyor; kaçan yalnızca DIŞ GUI bağımlılıklarıydı.
+forbidden_modules = ["PySide6", "pyqtgraph", "OpenGL"]
 
 [[tool.importlinter.contracts]]
 name = "Katmanlı mimari"
@@ -43,10 +72,22 @@ type = "layers"
 # çıkacağı için (Task 3'te qlab.engine, sonrasında diğerleri) sözleşme her
 # aşamada geçerliliğini korur; var olan katmanlar arasındaki sıralama yine
 # tam olarak zorlanır.
+#
+# TEPE-SEVİYE MODÜLLER de artık adlandırılmış durumda. Ölçüldü: listede
+# olmadıkları için `engine.hf.analysis -> qlab.run` ve `qlab.units ->
+# qlab.engine.hf.scf` ihlalleri rc=0 ile kaçıyordu. `qlab.run` bir CLI giriş
+# noktasıdır ve app'in yanında, en üstte durur; `qlab.provenance`,
+# `qlab.types`, `qlab.units`, `qlab.errors` ise yaprak sözleşme tipleridir ve
+# en altta. (İkisi dolaylı olarak zaten yakalanıyordu -- katmanlı modüller
+# TARAFINDAN import edildikleri için zincir katman kesiyordu -- ama `run` ve
+# `units` yakalanmıyordu; artık dördü de açıkça adlandırılmış.)
 layers = [
-    "(qlab.app)",
+    "(qlab.run) : (qlab.app)",
     "(qlab.viz)",
     "(qlab.observable)",
     "(qlab.engine)",
     "(qlab.scenario)",
+    "(qlab.provenance)",
+    "(qlab.types)",
+    "(qlab.units) : (qlab.errors)",
 ]

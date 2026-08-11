@@ -40,6 +40,7 @@ from qlab.engine.hf.stability import (
     analyse_stability,
     orbital_hessian,
 )
+from qlab.errors import UnsupportedSystemError
 from qlab.provenance import Provenance
 from qlab.units import AU_DIPOLE_TO_DEBYE
 
@@ -257,7 +258,8 @@ _ANALYSIS_NEGLECTED: tuple[str, ...] = (
     "enerjisi -eps_HOMO'ya esit ALINAMAZ, iki ihmal ters yonde calisir ve "
     "burada olculmemistir",
     "Mayer bag mertebesi RHF'de ayrismayi GOSTERMEZ: H2'nin bag mertebesi "
-    "her mesafede tam 1.0 kalir (olculdu 0.74/1.00/2.00/3.00 A, bkz. "
+    "her mesafede tam 1.0 kalir (olculdu STO-3G 0.74/1.00/2.00/3.00 A ve "
+    "6-31G 0.74/1.50/2.50/4.00 A, bkz. "
     "test_rhf_bond_order_of_h2_stays_one_at_any_separation)",
 )
 
@@ -389,6 +391,34 @@ def analyse(result: HFResult) -> AnalysisReport:
     provenance bunu ACIKCA beyan eder. homo_lumo()'nun KENDI davranisi
     degistirilmemistir -- o ayri, onceden var olan bir kusurdur.
 
+    UCUNCU DURUM, ve bu bir None DEGIL bir HATA: n_occupied > n_orbitals.
+    Bu ne bir "yok" hali ne bir yaklasimdir -- sistem kapali kabuk RHF'de hic
+    temsil edilemez. Isgal edilecek orbital sayisi bazin tasidigindan fazla
+    oldugunda scf._density_matrix'in `coefficients[:, :n_occupied]` dilimi
+    numpy'da SESSIZCE kirpilir ve yogunluk molekulun iddia ettigi elektron
+    sayisini tasimaz. Olculdu (H2/STO-3G, charge=-4; n_electrons=6,
+    n_occupied=3, n_orbitals=2): solve() bunu NORMAL bir HFResult olarak,
+    enerjisi POZITIF (+0.9231791808701104 hartree) donduruyor; Tr(PS) = 4
+    (molekul 6 der), Mulliken toplami -2.0 (yuk -4), H2'nin Mayer bag
+    mertebesi 4.0 (RHF'de ust sinir 1.0), dipol 3.554 D. Bu alti sayiyi bir
+    rapora koyup yalnizca homo/gap'i None birakmak, anlamsiz bir sonucu
+    "olculmus" gorunumuyle teslim etmek olurdu; ustelik _NO_HOMO_NOTE
+    ("n_occupied == 0") ve _NO_LUMO_NOTE ("n_occupied == n_orbitals")
+    beyanlarinin IKISI DE burada YALAN olurdu. Bu yuzden analyse()
+    UnsupportedSystemError yukseltir (ayni tip, scf.solve()'un acik kabuk
+    sistemleri reddederken kullandigi tiptir) ve tani icin gereken uc sayiyi
+    mesajinda tasir.
+
+    KAPSAM UYARISI -- asil kusur YUKARI AKISTA: bu sistemi ilk kabul eden yer
+    solve()'un kendisidir ve orada bir kapasite kontrolu YOKTUR (olculdu).
+    Duzeltme burada, cunku analyse() bu sonucun ilk PUBLIC tuketicisidir ve
+    ham IndexError buradan cikiyordu; solve()'un ayni siniri kendi girisinde
+    reddetmesi ayri ve daha genis bir degisikliktir (evaluate_orbital,
+    electron_density gibi HFResult okuyan her yolu ilgilendirir). O bosluk
+    burada kapatilmis SAYILMAZ; tests/hf/test_analysis.py'deki
+    "test_isgal_bazin_kapasitesini_ASARSA_analiz_TIPLI_hata_veriyor"
+    testi yukari akistaki kusuru Tr(PS) = 4 iddiasiyla yaziya baglar.
+
     NE TASINIR: rapor kendi beyanlarini (Mulliken'in baz duyarliligi,
     Koopmans, Mayer'in ayrisma korlugu) dalga fonksiyonunun beyanlarinin
     USTUNE ekler; SCF'in yaklasimlari, ihmalleri, diagnostics'i, `converged`
@@ -419,14 +449,33 @@ def analyse(result: HFResult) -> AnalysisReport:
     modulde zaten var: _basis_and_atom_index uc fonksiyon tarafindan ayri
     ayri cagrilir.
     """
+    n_occupied = result.molecule.n_electrons // 2
+    n_orbitals = int(result.orbital_energies.shape[0])
+    # Bu kontrol HER SEYDEN ONCE: asagidaki bes hesabin hicbiri patlamaz ama
+    # hepsi anlamsiz sayi uretir (olculdu, H2/STO-3G charge=-4: Mulliken
+    # toplami -2.0 iken molekulun yuku -4, Mayer bag mertebesi 4.0 iken RHF'de
+    # ust sinir 1.0). Onlari hesaplayip sonra reddetmek, tuketiciye bir sey
+    # vermese de kusurun nerede DOGDUGU sorusunu bulandirirdi.
+    if n_occupied > n_orbitals:
+        raise UnsupportedSystemError(
+            f"isgal edilmesi gereken orbital sayisi ({n_occupied}) bazin "
+            f"tasidigi orbital sayisini ({n_orbitals}) asiyor: "
+            f"n_electrons={result.molecule.n_electrons}, "
+            f"charge={result.molecule.charge}, baz={result.basis_name!r}. "
+            "Bu sistem kapali kabuk RHF'de temsil EDILEMEZ ve elinizdeki "
+            "HFResult ona ait degildir: yogunluk matrisi yalnizca "
+            f"{2 * n_orbitals} elektron tasir (molekul "
+            f"{result.molecule.n_electrons} iddia eder), cunku SCF'in "
+            "isgal dilimi baz kapasitesinde sessizce kirpilir. Daha buyuk "
+            "bir baz secin veya yuku duzeltin."
+        )
+
     mulliken = _read_only(mulliken_charges(result))
     lowdin = _read_only(lowdin_charges(result))
     dipole_au = _read_only(dipole_moment(result))
     debye = dipole_debye(result)
     bond_orders = _read_only(mayer_bond_orders(result))
 
-    n_occupied = result.molecule.n_electrons // 2
-    n_orbitals = int(result.orbital_energies.shape[0])
     has_homo = n_occupied >= 1
     has_lumo = n_occupied < n_orbitals
 
