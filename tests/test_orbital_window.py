@@ -103,6 +103,19 @@ _SU = "O 0 0 0; H 0 0.757 0.587; H 0 -0.757 0.587"
 
 
 @pytest.fixture(scope="module")
+def su_sonucu():
+    """Su/STO-3G'nin SCF sonucu; TAZE pencere kuran testler bunu paylaşır.
+
+    Paylaşılan olan SONUÇ, PENCERE DEĞİL. Açılış durumu iddiaları paylaşılan
+    bir pencerede sınanamaz (bkz. `test_kaydiricinin_acilis_araligi_...`: modül
+    kapsamlı fixture bir açılış mutasyonunu ONARIYORDU), ama SCF'i her test
+    için yeniden koşmak da gereksiz -- `HFResult` dondurulmuş bir sonuçtur ve
+    pencere onu yalnızca OKUR.
+    """
+    return solve(Molecule.from_string(_SU), "sto-3g")
+
+
+@pytest.fixture(scope="module")
 def su_penceresi():
     """Su/STO-3G için tek bir pencere; SCF ve ızgara testler arasında paylaşılır.
 
@@ -559,12 +572,18 @@ def test_gosterim_yaklasimlari_motorunkilerle_karismiyor(su_penceresi):
     eklenen = set(pencere._provenance().approximations) - set(
         pencere._result.provenance.approximations
     )
-    # DÖRT madde: pencerenin kendi iki gösterim seçimi (işaret keyfi, izoyüzey
-    # seviyesi) + ağ çıkarımının iki seçimi (float32 dökümü, marching-cubes
-    # doğrusal interpolasyonu). Son ikisi `viz/isosurface.py`'de, yani seçimin
-    # YAPILDIĞI yerde yazılı; `Mesh` kendi Provenance'ını taşımadığı için
-    # ekrana ancak buradan ulaşıyorlar.
-    assert len(eklenen) == 4, eklenen
+    # YEDİ madde, ÜÇ ayrı katmandan:
+    #   2 -- pencerenin kendi gösterim seçimleri (renk/işaretin ne demek
+    #        olduğu, izoyüzey seviyesi)
+    #   2 -- ağ çıkarımının seçimleri (float32 dökümü, marching-cubes doğrusal
+    #        interpolasyonu). İkisi de `viz/isosurface.py`'de, yani seçimin
+    #        YAPILDIĞI yerde yazılı; `Mesh` kendi Provenance'ını taşımadığı
+    #        için ekrana ancak buradan ulaşıyorlar.
+    #   3 -- `analyse()`in beyanı (Mulliken/Löwdin baz duyarlılığı, iyonik
+    #        karakterin dipolden okunması, Koopmans). Sayı 4'ten 7'ye ÇIKTI
+    #        çünkü pencere artık `analyse()`in sayılarını da basıyor; bir
+    #        sayıyı ekrana koyup onun beyanını koymamak bu depoda kusurdur.
+    assert len(eklenen) == 7, eklenen
     assert set(EXTRACTION_APPROXIMATIONS) <= eklenen
     metin = pencere.transparency_text().lower()
     assert "float32" in metin, "tek duyarlıklı döküm panelde beyan edilmiyor"
@@ -789,17 +808,20 @@ def test_orbital_paneli_varsayilan_kutuyu_kullanmiyor(su_penceresi):
     taraf. Sayılar LİTERAL: `_VARSAYILAN_YUKSEKLIK`'e karşı yazılan bir iddia
     sabitle birlikte hareket eder ve hiçbir zaman kırılamazdı.
 
-    SINIR 260'TAN 340'A ÇIKTI, ölçüyle: 260 taşmayı yalnızca AZALTIYORDU.
-    Panel artık yüksekliğini metinden hesaplıyor (bkz. `TransparencyPanel`) ve
-    bu beyan pencerenin varsayılan 960 px genişliğinde **332 px** istiyor;
-    260'lık kutuda 5 satır hâlâ katlanın altında kalıyordu. 340 varsayılan
-    geometride hiçbir satırı gizlemiyor. Sayının İŞE YARADIĞINI ayrı bir test
-    sınıyor: `test_orbital_penceresinde_beyanin_TAMAMI_gorunuyor`.
+    SINIR 260 -> 340 -> 440 diye İKİ KEZ, ikisi de ölçüyle büyüdü. 260 taşmayı
+    yalnızca AZALTIYORDU; 340, panel yüksekliğini metinden hesaplamaya
+    başladıktan sonra 960 px genişlikte gereken 332 px'i karşılıyordu. 440 ise
+    beyanın kendisi büyüdüğü için gerekti: pencere artık üç alan türünü,
+    `analyse()`in üç uyarısını ve fark alanında promolekül referansını
+    taşıyor. Ölçüldü (su/STO-3G, 1400 px genişlik): orbital 2484 karakter /
+    388 px, elektron yoğunluğu 3294 / 500 px, yoğunluk farkı 4645 / 682 px.
+    Sayının İŞE YARADIĞINI ayrı bir test sınıyor:
+    `test_orbital_penceresinde_beyanin_TAMAMI_gorunuyor`.
     """
     from qlab.app.transparency import TransparencyPanel
 
     pencere, _ = su_penceresi
-    assert pencere._panel._text.maximumHeight() == 340
+    assert pencere._panel._text.maximumHeight() == 440
     assert TransparencyPanel()._text.maximumHeight() == 140
     assert pencere._panel._text.maximumHeight() > 140, (
         "orbital penceresinin beyanı TDSE penceresinin kutusuna sığmıyor"
@@ -822,10 +844,14 @@ def test_orbital_penceresinde_beyanin_TAMAMI_gorunuyor():
     yaramadığını sınar. İkisi ayrı sorular -- 260 da varsayılandan büyüktü ama
     yetmiyordu, ve o farkı hiçbir test görmüyordu.
 
-    ÖLÇÜLDÜ (960x800, pencerenin kendi varsayılan boyutu):
-        eski (max_height=260, yükseklik sizeHint'ten) -> 5 satır gizli
-        yeni (max_height=340, yükseklik metinden)     -> 0 satır gizli
-    Gereken yükseklik 332 px; 3B görünüme 447 px kalıyor.
+    ÖLÇÜLDÜ (1400x950, pencerenin kendi varsayılan boyutu, max_height=440):
+        orbital alanı -> gereken 388 px, 0 satır gizli, 3B görünüm 565 px
+
+    KAPSAM, açıkça: iddia AÇILIŞ ALANI (orbital) içindir. Öteki iki alanda
+    beyan daha uzun (elektron yoğunluğu 500 px, yoğunluk farkı 682 px) ve
+    kırpma KAÇINILMAZ -- 682 px'i sığdırmak 3B görünüme 131 px bırakırdı.
+    O durumda kırpmanın DUYURULDUĞUNU kardeş test sınıyor:
+    `test_yogunluk_ve_fark_alanlarinda_kirpma_DUYURULUYOR`.
 
     Taze pencere kullanılıyor, paylaşılan `su_penceresi` fixture'ı DEĞİL: bu bir
     AÇILIŞ durumu iddiası ve bu dosyada paylaşılan fixture'ın bir açılış
@@ -836,6 +862,7 @@ def test_orbital_penceresinde_beyanin_TAMAMI_gorunuyor():
     pencere = OrbitalWindow(solve(molecule, "sto-3g"))
     try:
         pencere.show()
+        _qapp.processEvents()
         _qapp.processEvents()
         metin = pencere._panel._text
         assert metin.verticalScrollBar().maximum() == 0, (
@@ -853,6 +880,55 @@ def test_orbital_penceresinde_beyanin_TAMAMI_gorunuyor():
 
 
 @requires_offscreen
+def test_yogunluk_ve_fark_alanlarinda_kirpma_DUYURULUYOR(su_sonucu):
+    """Kırpma kabul edildi, ama SESSİZ değil.
+
+    Bir üstteki test açılış alanının (orbital) tam göründüğünü kilitler; bu
+    test onun BEDELİNİ kilitler. ÖLÇÜLDÜ (1400x950, max_height=440):
+        elektron yoğunluğu -> gereken 500 px,  4 satır gizli
+        yoğunluk farkı     -> gereken 682 px, 17 satır gizli
+    "Okunmayan bir beyan, beyan etmiş sayılmaz" ölçütü, gizlenenin VARLIĞINI
+    duyurmayı da kapsar; metnin kendisi (`transparency_text()`) kırpılmaz ve
+    3B görünüm ezilmez.
+
+    BU ORTAMA ÖZGÜ, açıkça yazılıyor: yukarıdaki sayılar EKRANSIZ (offscreen)
+    platformun font metriklerinde ölçüldü. GERÇEK ekranda aynı pencere daha
+    dar sarıyor ve üçü de sığıyor -- ölçüldü (2560x1440, devicePixelRatio 1.50,
+    Windows 11, panel genişliği 1344 px): orbital 250 px, elektron yoğunluğu
+    306 px, yoğunluk farkı 390 px, üçü de 440'ın altında ve kırpma uyarısı
+    hiç çıkmıyor. Yani 440 sınırı bu makinede DEVREDE DEĞİL; asıl işi dar
+    pencerelerde ve daha büyük yazı tiplerinde görüyor. Test yine de değerli:
+    kırpma yolunun kendisi ancak burada koşuyor.
+    """
+    from qlab.app.orbital_window import ALAN_FARK, ALAN_YOGUNLUK
+
+    for ad in (ALAN_YOGUNLUK, ALAN_FARK):
+        pencere = OrbitalWindow(su_sonucu, field=ad)
+        try:
+            pencere.show()
+            _qapp.processEvents()
+            _qapp.processEvents()
+            metin = pencere._panel._text
+            assert metin.verticalScrollBar().maximum() > 0, (
+                f"{ad!r} beyanı sığıyorsa bu test artık bir şey ölçmüyor"
+            )
+            assert metin.height() == 440, (
+                f"{ad!r}: kırpılırken panel üst sınıra DAYANMALI, "
+                f"{metin.height()} px'te kalmış"
+            )
+            assert "kaydırın" in pencere._panel.title().lower(), (
+                f"{ad!r} alanında sessizce kırpılıyor: {pencere._panel.title()!r}"
+            )
+            assert pencere._view.height() > 300, (
+                f"{ad!r}: 3B görünüm ezilmiş ({pencere._view.height()} px)"
+            )
+            # Metnin KENDİSİ kırpılmaz; yalnızca görünen kısım kısalır.
+            assert len(pencere.transparency_text()) > 3000, ad
+        finally:
+            pencere.close()
+
+
+@requires_offscreen
 def test_dar_pencerede_kirpma_GERCEKTEN_duyuruluyor():
     """Kırpma kaçınılmaz olduğunda uyarının yazıldığını `resize`+`show` sırasında sınar.
 
@@ -865,8 +941,10 @@ def test_dar_pencerede_kirpma_GERCEKTEN_duyuruluyor():
     O gecikmeli hesabı kaldıran mutasyon, bu test yazılmadan önce 64 testin
     SIFIRINI kırıyordu.
 
-    800x700 seçildi çünkü ölçüldü: bu beyan orada 388 px istiyor, üst sınır
-    340 -- yani kırpma gerçek ve kaçınılmaz.
+    800x700 seçildi çünkü ölçüldü: orbital alanının beyanı orada 528 px
+    istiyor, üst sınır 440 -- yani kırpma gerçek ve kaçınılmaz (6 satır
+    gizli). Bu, pencerenin VARSAYILAN boyutundan (1400x950) bilinçle çok daha
+    dar bir kutu; varsayılanda orbital beyanı tam sığıyor.
     """
     molecule = Molecule.from_string(_SU)
     pencere = OrbitalWindow(solve(molecule, "sto-3g"))
@@ -878,7 +956,7 @@ def test_dar_pencerede_kirpma_GERCEKTEN_duyuruluyor():
         assert metin.verticalScrollBar().maximum() > 0, (
             "bu genişlikte beyan sığmamalı; sığıyorsa test artık bir şey ölçmüyor"
         )
-        assert metin.height() == 340, (
+        assert metin.height() == 440, (
             f"kırpılırken panel üst sınıra DAYANMALI, yoksa boşuna yer bırakır: "
             f"{metin.height()} px"
         )
@@ -1044,11 +1122,20 @@ def test_kaydiricinin_izgarasina_oturmayan_seviye_reddediliyor(su_penceresi):
     for oturmayan in (0.0155, 0.0567, 0.0014, 0.1235, 0.0015, 0.0504):
         with pytest.raises(InvalidInputError, match="izoyüzey seviyesi") as hata:
             pencere.set_isosurface_level(oturmayan)
-        assert "binde-bir" in str(hata.value), f"red gerekçesi yanlış: {hata.value}"
+        # Metin "binde-bir" DEĞİL, adımın SAYISINI taşıyor: kaydırıcının ölçeği
+        # artık alan başına ayrı (orbital 1/1000, yoğunluk farkı 1/10000) ve
+        # sabit bir kelime ikisinden birinde yalan olurdu. Adım aynı zamanda
+        # kullanıcının düzeltebileceği şey.
+        assert "ızgarasına oturmuyor" in str(hata.value), (
+            f"red gerekçesi yanlış: {hata.value}"
+        )
+        assert "adım 0.001" in str(hata.value), (
+            f"orbital alanının adımı basılmıyor: {hata.value}"
+        )
     assert _pencere_durumu(pencere) == once, "reddedilen seviye durumu bozmamalı"
 
     # Kurucu yolu da aynı şartı taşımalı.
-    with pytest.raises(InvalidInputError, match="binde-bir"):
+    with pytest.raises(InvalidInputError, match="ızgarasına oturmuyor"):
         OrbitalWindow(pencere._result, level=0.0155)
 
     # Izgaraya OTURAN seviyeler kabul edilir (literal sayılarla).
@@ -1481,3 +1568,681 @@ def test_pencere_gosterilmeden_olay_dongusune_girilmiyor():
     finally:
         QtWidgets.QApplication.exec = orijinal
         pencere.close()
+
+
+# ---------------------------------------------------------------------------
+# B2'nin dört public yüzeyi: ÜRETİM YOLU
+#
+# `density_difference`, `extract_isosurface`, `analyse` ve
+# `free_atom_density_matrix` bugüne kadar YALNIZCA testlerden çağrılıyordu.
+# Yani modülün manşet iddiaları -- "bağ kodda tanımlanmaz, ölçülür" ve
+# "elektronegatiflik yoğunluk farkından okunur" -- hiçbir kullanıcı kodundan
+# geçmiyordu; kimse onları GÖREMİYORDU. Aşağıdaki testler o dördünü
+# pencerenin içine bağlar.
+
+
+@requires_offscreen
+def test_alan_secici_uc_alan_turunu_de_listeliyor(su_sonucu):
+    """Seçici üç ALAN TÜRÜ taşır ve açılışta orbitalde durur.
+
+    TAZE pencere, bilinçli: bu bir AÇILIŞ durumu iddiası ve bu dosyada
+    paylaşılan `su_penceresi` fixture'ının açılış mutasyonlarını ONARDIĞI
+    ölçülmüştü (bkz. `test_kaydiricinin_acilis_araligi_surukleyebilir_bir_bant`
+    ve `test_acilista_secici_gosterilen_orbitali_isaret_ediyor`).
+    """
+    from qlab.app.orbital_window import ALAN_FARK, ALAN_ORBITAL, ALAN_YOGUNLUK
+
+    pencere = OrbitalWindow(su_sonucu)
+    try:
+        etiketler = [
+            pencere._alan_secici.itemText(i)
+            for i in range(pencere._alan_secici.count())
+        ]
+        assert etiketler == [ALAN_ORBITAL, ALAN_YOGUNLUK, ALAN_FARK]
+        assert etiketler == ["orbital", "elektron yoğunluğu", "yoğunluk farkı"]
+        assert pencere.field_kind == ALAN_ORBITAL
+        assert pencere._alan_secici.currentIndex() == 0
+    finally:
+        pencere.close()
+
+
+@requires_offscreen
+def test_her_alan_turu_KENDI_ureticisinden_geliyor(su_sonucu):
+    """Üç alanın üçü de AYRI bir üreticiden gelmeli; ikisi aynıya bağlanamaz.
+
+    Bu testin işi bir sayı kilidi değil, bir EŞLEME kilidi: pencerenin
+    gösterdiği değerler, o alan türünün adını taşıyan `observable` fonksiyonunun
+    BAĞIMSIZ olarak yeniden hesaplanmış çıktısıyla birebir aynı olmalı.
+    Üç alan pairwise farklı olduğu için (aşağıda ölçülüyor) yanlış eşleme
+    sessiz kalamaz.
+
+    ÖLÇÜLDÜ (su/STO-3G, pad=4.0, n=60 -- pencerenin kendi varsayılanları):
+        orbital (HOMO)     aralık [-0.697796, +0.697796]
+        elektron yoğunluğu aralık [ 0.000000, 49.960388]
+        yoğunluk farkı     aralık [-0.283034, +0.318152]
+    """
+    from qlab.app.orbital_window import ALAN_FARK, ALAN_ORBITAL, ALAN_YOGUNLUK
+    from qlab.observable.hf_obs import (
+        ScalarField,
+        density_difference,
+        electron_density,
+        evaluate_orbital,
+    )
+
+    izgara = VolumeGrid.around(su_sonucu.molecule, padding=4.0, points_per_axis=60)
+    beklenen = {
+        ALAN_ORBITAL: evaluate_orbital(su_sonucu, 4, izgara),
+        ALAN_YOGUNLUK: electron_density(su_sonucu, izgara).values,
+        ALAN_FARK: density_difference(su_sonucu, izgara).values,
+    }
+    # İddia totoloji OLMASIN: üç alan gerçekten farklı olmalı.
+    assert not np.allclose(beklenen[ALAN_ORBITAL], beklenen[ALAN_YOGUNLUK])
+    assert not np.allclose(beklenen[ALAN_YOGUNLUK], beklenen[ALAN_FARK])
+    assert not np.allclose(beklenen[ALAN_ORBITAL], beklenen[ALAN_FARK])
+    assert beklenen[ALAN_YOGUNLUK].min() >= 0.0, "elektron yoğunluğu kesin pozitif"
+    assert beklenen[ALAN_FARK].min() < 0.0, "fark haritasında boşalma da olmalı"
+
+    pencere = OrbitalWindow(su_sonucu)
+    try:
+        for ad, degerler in beklenen.items():
+            pencere.set_field_kind(ad)
+            assert isinstance(pencere._alan, ScalarField)
+            assert np.allclose(pencere._alan.values, degerler), (
+                f"{ad!r} alanı başka bir üreticiye bağlanmış"
+            )
+    finally:
+        pencere.close()
+
+
+@requires_offscreen
+def test_yogunluk_ISARETSIZ_cikarimla_geliyor(su_sonucu):
+    """`extract_isosurface`'in var olma sebebi tam olarak bu alan.
+
+    Elektron yoğunluğu KESİN POZİTİFTİR (ölçüldü: minimum 0.000000), yani
+    `-level` izoyüzeyi hiçbir zaman yoktur. ÖLÇÜLDÜ (su/STO-3G, pad=4.0, n=60,
+    level=0.1): `extract_signed_pair` (+2196, -0) veriyor -- ikinci ağ HER
+    ZAMAN boş. `extract_isosurface` tek ağ verir ve ±faz renk sözleşmesini hiç
+    ima etmez.
+
+    `extract_signed_pair`'e "sadeleştiren" bir mutasyon burada görünür: ağ
+    sayısı 1'den 2'ye çıkar ve `mesh_vertex_counts()` (2196,) yerine (2196, 0)
+    döner.
+    """
+    from qlab.app.orbital_window import ALAN_YOGUNLUK
+    from qlab.viz.isosurface import extract_signed_pair
+
+    pencere = OrbitalWindow(su_sonucu, field=ALAN_YOGUNLUK)
+    try:
+        assert pencere._level == 0.1
+        assert pencere.mesh_vertex_counts() == (2196,)
+        assert len(pencere._meshes) == 1
+        assert pencere._meshes[0].sign == 1
+        assert pencere._meshes[0].level == 0.1
+        # İşaretli çift AYNI alanda ne verirdi: ikinci ağ boş.
+        p, n = extract_signed_pair(pencere._alan, 0.1)
+        assert (len(p.vertices), len(n.vertices)) == (2196, 0)
+        # Çizilen item sayısı: 1 çekirdek + 1 ağ.
+        assert len(pencere._mesh_items) == 1
+        assert len(pencere._view.items) == 2
+    finally:
+        pencere.close()
+
+
+@requires_offscreen
+def test_fark_ISARETLI_cift_uretiyor(su_sonucu):
+    """Fark haritasında işaret FİZİKSELDİR: + birikim, − boşalma.
+
+    Orbitalin global işareti keyfidir (aynı özvektörün -1 katı aynı çözümdür),
+    ama fark haritasının işareti keyfi DEĞİLDİR: `rho_molekul - rho_pro`
+    pozitifse orada elektron BİRİKMİŞTİR. İki ağ da gerçekten dolu olmalı,
+    yoksa iddia gösterilemez.
+
+    ÖLÇÜLDÜ (su/STO-3G, pad=4.0, n=60, level=0.01): (+1764, -2020).
+    """
+    from qlab.app.orbital_window import ALAN_FARK
+
+    pencere = OrbitalWindow(su_sonucu, field=ALAN_FARK)
+    try:
+        assert pencere._level == 0.01
+        assert pencere.mesh_vertex_counts() == (1764, 2020)
+        assert len(pencere._meshes) == 2
+        assert [m.sign for m in pencere._meshes] == [1, -1]
+        assert len(pencere._mesh_items) == 2
+        assert len(pencere._view.items) == 3
+    finally:
+        pencere.close()
+
+
+@requires_offscreen
+def test_her_alanin_KENDI_seviye_araligi_var(su_sonucu):
+    """Tek bir kaydırıcı aralığı üç alanın ikisinde YANLIŞTIR.
+
+    ÖLÇÜLDÜ (su/STO-3G, pad=4.0, n=60), alanların gerçek genlikleri:
+        orbital            maks|psi| = 0.697796
+        elektron yoğunluğu aralık [0.000000, 49.960388]  (çekirdek tepesi)
+        yoğunluk farkı     aralık [-0.283034, +0.318152]
+    Eski tek aralık 0.001..0.900 idi: yoğunlukta üst sınır tepenin 55'te
+    biri, farkta ise kullanışlı bant (0.002-0.01) kaydırıcının ilk %1'ine
+    sıkışıyordu.
+
+    ÇÖZÜNÜRLÜK de alan başına ölçüldü. Fark haritasında 0.0001 adımlar AYRI
+    yüzeyler veriyor -- 0.0020 (+3208,-4704) / 0.0021 (+3196,-4596) /
+    0.0022 (+3156,-4544) / 0.0023 (+3108,-4476) -- yani binde-bir çözünürlük o
+    banttaki yapıyı GERÇEKTEN gizler; fark alanı bu yüzden on-binde-bir
+    taşır. Yoğunlukta binde-bir yetiyor: 0.095 (2260) / 0.096 (2248) /
+    0.097 (2228) zaten ayrı.
+
+    Bantların uçları da ölçüm: yoğunluk 0.01'de 4892, 2.0'da 108 tepe
+    (2.0'ın üstü yalnızca ızgaranın ÇÖZMEDİĞİ çekirdek tepesidir); fark
+    0.0005'te (+4184,-7368), 0.3'te (+20,-0) ve 0.32'de tamamen boş
+    (maks 0.318152).
+
+    Sayılar LİTERAL. Alan türünün kendi sabitine karşı yazılan bir iddia o
+    sabitle birlikte hareket eder ve hiçbir zaman kırılamaz -- bu depoda
+    gerçekten oldu (`maximum() >= _KAYDIRICI_VARSAYILAN_MAKS`).
+    """
+    from qlab.app.orbital_window import ALAN_FARK, ALAN_ORBITAL, ALAN_YOGUNLUK
+
+    beklenen = {
+        #  alan            seviye  kaydırıcı (değer, min, maks)
+        ALAN_ORBITAL: (0.05, 50, 1, 900),
+        ALAN_YOGUNLUK: (0.1, 100, 10, 2000),
+        ALAN_FARK: (0.01, 100, 5, 3000),
+    }
+    for ad, (seviye, deger, en_az, en_cok) in beklenen.items():
+        pencere = OrbitalWindow(su_sonucu, field=ad)
+        try:
+            assert pencere._level == seviye, ad
+            assert pencere._kaydirici.value() == deger, ad
+            assert pencere._kaydirici.minimum() == en_az, ad
+            assert pencere._kaydirici.maximum() == en_cok, ad
+        finally:
+            pencere.close()
+
+    # Üç aralığın ÜÇÜ DE farklı olmalı; tek bir sabite çökertilirse burası
+    # kırılır.
+    assert len({(v[1], v[2], v[3]) for v in beklenen.values()}) == 3
+
+
+@requires_offscreen
+def test_her_alanin_KENDI_renk_isaret_beyani_var(su_sonucu):
+    """Aynı iki renk üç alanda ÜÇ AYRI şey demek; tek metin ikisinde yalan.
+
+    ÖLÇÜLDÜ: bu test yazılmadan önce, `_gosterim_yaklasimlari`'nın alan
+    beyanını sabit olarak ORBİTALİNKİNE çeviren mutasyon dosyanın 68 testinin
+    SIFIRINI kırıyordu -- yani fark haritasının panelinde "orbital işareti
+    keyfi ... global işaret fiziksel değildir" yazsa hiçbir test görmezdi.
+
+    Oysa üçü birbirinin ZIDDI:
+      * orbital -- işaret KEYFİ: `psi` bir çözümse `-psi` de aynı enerjiyle
+        aynı çözümdür, renkler yalnızca bağıl fazı gösterir.
+      * elektron yoğunluğu -- işaret diye bir şey YOK: alan kesin pozitif
+        (ölçülen aralık [0.000000, 49.960388]), ikinci ağ hep boş.
+      * yoğunluk farkı -- işaret FİZİKSEL: + birikim, - boşalma. Burada
+        "işaret keyfidir" yazmak, modülün manşet iddiasını yalanlardı.
+
+    O yüzden hem BULUNMASI hem BULUNMAMASI gerekenler sınanıyor.
+    """
+    from qlab.app.orbital_window import ALAN_FARK, ALAN_ORBITAL, ALAN_YOGUNLUK
+
+    beklenen = {
+        ALAN_ORBITAL: "işareti keyfi",
+        ALAN_YOGUNLUK: "kesin pozitiftir",
+        ALAN_FARK: "işaret FİZİKSELDİR",
+    }
+    pencere = OrbitalWindow(su_sonucu)
+    try:
+        for ad, capa in beklenen.items():
+            pencere.set_field_kind(ad)
+            metin = pencere.transparency_text()
+            assert capa in metin, f"{ad!r} alanının beyanı panelde yok: {capa!r}"
+            for baska_ad, baska_capa in beklenen.items():
+                if baska_ad != ad:
+                    assert baska_capa not in metin, (
+                        f"{ad!r} alanında {baska_ad!r} alanının beyanı basılıyor: "
+                        f"{baska_capa!r}"
+                    )
+    finally:
+        pencere.close()
+
+
+@requires_offscreen
+def test_alan_degisince_seviye_alanin_KENDI_varsayilanina_donuyor(su_sonucu):
+    """Alan değişince eski seviye taşınmaz -- taşınsa çoğu zaman GEÇERSİZ olurdu.
+
+    ÖLÇÜLDÜ: orbitalin 0.9 seviyesi fark haritasında hâlâ geçerli bir sayı
+    (aralık 0.3'e kadar boş yüzey verir) ama yoğunlukta 0.9 kaba bir çekirdek
+    yüzeyidir; tersine farkın 0.0005'i orbital kaydırıcısının çözünürlüğünün
+    ALTINDA kalır ve `_dogrula_seviye` tarafından reddedilirdi. Taşımak yerine
+    her alan kendi varsayılanına döner ve kaydırıcı da onunla gider.
+    """
+    from qlab.app.orbital_window import ALAN_FARK, ALAN_ORBITAL, ALAN_YOGUNLUK
+
+    pencere = OrbitalWindow(su_sonucu)
+    try:
+        pencere.set_isosurface_level(0.5)
+        assert pencere._level == 0.5
+
+        pencere.set_field_kind(ALAN_FARK)
+        assert pencere._level == 0.01
+        assert pencere._kaydirici.value() == 100
+        assert pencere._kaydirici.maximum() == 3000
+
+        pencere.set_field_kind(ALAN_YOGUNLUK)
+        assert pencere._level == 0.1
+        assert pencere._kaydirici.value() == 100
+        assert pencere._kaydirici.maximum() == 2000
+
+        pencere.set_field_kind(ALAN_ORBITAL)
+        assert pencere._level == 0.05
+        assert pencere._kaydirici.value() == 50
+        assert pencere._kaydirici.maximum() == 900
+    finally:
+        pencere.close()
+
+
+@requires_offscreen
+def test_fark_alaninda_seviye_ONBINDE_BIR_izgarasina_baglaniyor(su_sonucu):
+    """Fark alanının kaydırıcısı on-binde-bir taşır; doğrulama da öyle olmalı.
+
+    Doğrulayıcı alan türünden BAĞIMSIZ tek bir ölçeğe bağlı kalsaydı iki yönlü
+    sessiz desenkron doğardı: fark alanında 0.0007 (kaydırıcının 7. tıkı)
+    reddedilir, 0.0155 gibi binde-bir ızgarasına oturmayan bir sayı ise kabul
+    edilirdi. İkisi de burada sınanıyor, LİTERAL sayılarla.
+    """
+    from qlab.app.orbital_window import ALAN_FARK
+
+    pencere = OrbitalWindow(su_sonucu, field=ALAN_FARK)
+    try:
+        # Kaydırıcının kendi ürettiği her konum kabul edilmeli.
+        for konum in (5, 7, 100, 155, 1001, 3000):
+            pencere._kaydirici.setValue(konum)
+            assert pencere._kaydirici.value() == konum
+            assert pencere._level == konum / 10000.0
+
+        # On-binde-bir ızgarasına OTURMAYAN seviye reddedilir. Sayı bandın
+        # İÇİNDEN seçildi (0.0005 <= 0.00155 <= 0.3): bandın altındaki bir
+        # değer ÖNCEKİ kontrole takılır ve bu şartı hiç sınamazdı -- ilk
+        # yazılışında tam olarak öyle oldu ve gerekçe iddiası yakaladı.
+        with pytest.raises(InvalidInputError, match="izoyüzey seviyesi") as hata:
+            pencere.set_isosurface_level(0.00155)
+        assert "ızgarasına oturmuyor" in str(hata.value), hata.value
+        assert "0.0001" in str(hata.value), hata.value
+        assert "0.0016" in str(hata.value), "en yakın geçerli seviye önerilmiyor"
+
+        # Bandın ALTI reddedilir: kaydırıcı 0.0005'in altını gösteremez.
+        with pytest.raises(InvalidInputError, match="çözünürlüğünün") as hata:
+            pencere.set_isosurface_level(0.0001)
+        assert "0.0005" in str(hata.value), hata.value
+        assert pencere._level == 0.3, "reddedilen seviye durumu bozmamalı"
+    finally:
+        pencere.close()
+
+
+@requires_offscreen
+def test_yogunluk_alaninda_bandin_alti_reddediliyor(su_sonucu):
+    """Yoğunluk kaydırıcısının tabanı 0.01; altı gösterilemez, kırpılmaz.
+
+    ÖLÇÜLDÜ: `QSlider.setValue` aralığın dışını SESSİZCE kırpar. 0.005
+    istenip kaydırıcı 0.01'de kalsaydı panel ile denetim farklı sayı
+    gösterirdi -- deponun `_kaydirici_senkronla`'da zaten reddettiği kusurun
+    aynısı.
+    """
+    from qlab.app.orbital_window import ALAN_YOGUNLUK
+
+    pencere = OrbitalWindow(su_sonucu, field=ALAN_YOGUNLUK)
+    try:
+        with pytest.raises(InvalidInputError, match="çözünürlüğünün") as hata:
+            pencere.set_isosurface_level(0.005)
+        assert "0.01" in str(hata.value), hata.value
+        assert pencere._level == 0.1, "reddedilen seviye durumu bozmamalı"
+        assert pencere._kaydirici.value() == 100
+    finally:
+        pencere.close()
+
+
+@requires_offscreen
+def test_gecersiz_alan_turu_reddediliyor_ve_durumu_bozmuyor(su_penceresi):
+    """Bilinmeyen alan adı sessizce bir alana düşmemeli."""
+    pencere, _ = su_penceresi
+    once = _pencere_durumu(pencere)
+    with pytest.raises(InvalidInputError, match="alan türü") as hata:
+        pencere.set_field_kind("elektron yogunlugu")  # diyakritiksiz: YOK
+    # Kullanıcı ne yazabileceğini görmeli.
+    assert "orbital" in str(hata.value)
+    assert "yoğunluk farkı" in str(hata.value)
+    assert _pencere_durumu(pencere) == once
+    assert pencere.field_kind == "orbital"
+
+    with pytest.raises(InvalidInputError, match="alan türü"):
+        OrbitalWindow(pencere._result, field="rho")
+
+
+@requires_offscreen
+def test_orbital_secici_yalnizca_orbital_alaninda_ETKIN(su_sonucu):
+    """Yoğunluk ve fark alanında "hangi orbital" sorusunun karşılığı YOKTUR.
+
+    İkisi de yoğunluk MATRİSİNDEN üretilir (`electron_density` P ile kontrakte
+    eder), tek bir orbitalden değil. Seçici etkin bırakılsaydı kullanıcı onu
+    çevirir ve ekranda hiçbir şey değişmezdi -- "etkin ama etkisiz" bir
+    denetim yalan söyler. Aynı karar `TDSEWindow`'da bariyeri olmayan
+    senaryolar için zaten verilmiş durumda.
+    """
+    from qlab.app.orbital_window import ALAN_FARK, ALAN_ORBITAL, ALAN_YOGUNLUK
+
+    pencere = OrbitalWindow(su_sonucu)
+    try:
+        assert pencere._secici.isEnabled()
+        for ad in (ALAN_YOGUNLUK, ALAN_FARK):
+            pencere.set_field_kind(ad)
+            assert not pencere._secici.isEnabled(), ad
+        pencere.set_field_kind(ALAN_ORBITAL)
+        assert pencere._secici.isEnabled()
+    finally:
+        pencere.close()
+
+
+@requires_offscreen
+def test_alan_secici_kullanicida_olu_degil(su_sonucu):
+    """Sinyal gerçekten yayılmalı; `set_field_kind`'ı doğrudan çağırmak yetmez.
+
+    ÖLÇÜLDÜ (bu deponun kardeş kusuru): `currentIndexChanged` bağlantısını
+    kaldırmak, orbital seçicisi için 9/9 test geçiriyordu -- çünkü bütün
+    testler ilgili metodu DOĞRUDAN çağırıyordu.
+    """
+    pencere = OrbitalWindow(su_sonucu)
+    try:
+        pencere._alan_secici.setCurrentIndex(2)
+        assert pencere.field_kind == "yoğunluk farkı", "alan seçici pencereye bağlı değil"
+        assert pencere.mesh_vertex_counts() == (1764, 2020)
+        pencere._alan_secici.setCurrentIndex(1)
+        assert pencere.field_kind == "elektron yoğunluğu"
+        assert pencere.mesh_vertex_counts() == (2196,)
+    finally:
+        pencere.close()
+
+
+@requires_offscreen
+def test_alan_degistikce_ag_itemleri_sizmiyor(su_sonucu):
+    """Alan değişiminde de eski ağlar görünümden silinmeli.
+
+    Orbital değişimi için aynı sızıntı ölçülmüştü (13 değişimde item sayısı
+    3'ten 27'ye çıkıyordu); alan değişimi ikinci bir yol ve kendi kilidi
+    olmalı. Değişmez: 1 çekirdek item'ı + BOŞ OLMAYAN ağ sayısı.
+    """
+    from qlab.app.orbital_window import ALAN_FARK, ALAN_ORBITAL, ALAN_YOGUNLUK
+
+    pencere = OrbitalWindow(su_sonucu)
+    try:
+        for _tur in range(3):
+            for ad in (ALAN_ORBITAL, ALAN_YOGUNLUK, ALAN_FARK):
+                pencere.set_field_kind(ad)
+                dolu = sum(1 for sayi in pencere.mesh_vertex_counts() if sayi > 0)
+                assert len(pencere._mesh_items) == dolu, ad
+                assert len(pencere._view.items) == 1 + dolu, ad
+        assert len(pencere._view.items) <= 3
+    finally:
+        pencere.close()
+
+
+# ---------------------------------------------------------------------------
+# `analyse()` -- rapor ekranda
+
+
+@requires_offscreen
+def test_analiz_okuma_satiri_OLCULEN_sayilari_basiyor(su_penceresi):
+    """`analyse()` bugüne kadar hiçbir kullanıcı kodundan geçmiyordu.
+
+    ÖLÇÜLDÜ (su/STO-3G):
+        Mulliken  [-0.365510, +0.182755, +0.182755]  (toplam 0, molekül nötr)
+        Löwdin    [-0.252869, +0.126434, +0.126434]
+        dipol     1.725514 D
+        HOMO      -0.391274   LUMO 0.605136   aralık 0.996410 hartree
+        Mayer     O1-H2 0.954201, O1-H3 0.954201, H2-H3 0.012400
+
+    Metin PANELDEN/WIDGET'tan okunur, ikinci kez üretilerek değil -- kardeş
+    `transparency_text()` için ölçülmüştü ki ikinci-üretim deseni, widget'a
+    hiç yazmayan bir mutasyonu da yeşil bırakıyor (panel 0 karakter, metot
+    1174 karakter, 9/9 geçiyordu).
+    """
+    pencere, _ = su_penceresi
+    metin = pencere.analysis_text()
+    assert metin, "okuma satırı boş"
+
+    for parca in (
+        "O1 -0.3655",
+        "H2 +0.1828",
+        "H3 +0.1828",
+        "1.7255 D",
+        "-0.391274",
+        "0.605136",
+        "0.996410",
+        "O1-H2 0.9542",
+        "H2-H3 0.0124",
+    ):
+        assert parca in metin, f"{parca!r} okuma satırında yok:\n{metin}"
+
+    # YAPISAL SONDA: metot widget'ı OKUYOR mu, yoksa ikinci kez mi üretiyor?
+    pencere._okuma.setText("SONDA-42")
+    try:
+        assert pencere.analysis_text() == "SONDA-42", (
+            "analysis_text() widget'ı okumuyor, metni yeniden üretiyor"
+        )
+    finally:
+        pencere._okuma_satirini_guncelle()
+    assert pencere.analysis_text() != "SONDA-42"
+
+
+@requires_offscreen
+def test_analiz_okuma_satiri_gercekten_PENCEREDE(su_penceresi):
+    """Okuma satırı düzene eklenmiş ve görünür olmalı.
+
+    ÖLÇÜLDÜ (kardeş kusur, aynı dosya): `self._panel.setVisible(False)`
+    mutasyonu 9/9 geçiyordu -- widget ekranda yokken testler mutluydu.
+    """
+    pencere, _ = su_penceresi
+    assert not pencere._okuma.isHidden(), "okuma satırı gizlenmiş"
+    assert pencere._okuma.parent() is not None, "okuma satırı düzene eklenmemiş"
+    assert pencere.centralWidget().isAncestorOf(pencere._okuma)
+
+
+@requires_offscreen
+def test_analiz_beyani_seffaflik_paneline_KATILIYOR(su_penceresi):
+    """Ekranda yük görünüyorsa, o yükün üç ölçülmüş uyarısı da görünmeli.
+
+    `analyse()`in `Provenance`'ı üç uyarı taşır ve üçü de bu pencerede
+    basılan sayılara doğrudan dokunur:
+      1. Mulliken/Löwdin baz duyarlılığı -- LiH/STO-3G'de İŞARET bile ters
+         çıkıyor (Li'ye -0.016028455; PySCF aynı sayıyı veriyor).
+      2. Mayer bağ mertebesi RHF'de AYRIŞMAYI göstermez: H2'nin mertebesi her
+         mesafede tam 1.0 kalıyor.
+      3. HOMO/LUMO Koopmans düzeyindedir; iyonlaşma enerjisi -eps_HOMO'ya
+         eşit ALINAMAZ.
+    Ekranda -0.3655 yazıp bu üçünü yazmamak, sayıya hak etmediği bir kesinlik
+    verirdi.
+    """
+    from qlab.engine.hf.analysis import analyse
+
+    pencere, _ = su_penceresi
+    metin = pencere.transparency_text()
+    rapor = analyse(pencere._result)
+
+    # Motorun kendi maddeleri ZATEN vardı; eklenmesi gerekenler analizinkiler.
+    analiz_ozel = [
+        m
+        for m in rapor.provenance.approximations + rapor.provenance.neglected
+        if m not in pencere._result.provenance.approximations
+        and m not in pencere._result.provenance.neglected
+    ]
+    assert len(analiz_ozel) == 5, analiz_ozel
+    for madde in analiz_ozel:
+        assert madde in metin, f"analiz beyanı panelde yok: {madde[:70]!r}"
+
+    # Üç uyarının okunabilir izleri (metin sarılabilir; kısa çapalar):
+    assert "Mulliken" in metin
+    assert "Koopmans" in metin
+    assert "Mayer" in metin
+
+
+@requires_offscreen
+def test_kararlilik_hukmu_ALAN_DEGISINCE_de_panelde_kaliyor(su_sonucu):
+    """Kararlılık hükmü DALGA FONKSİYONUNUN özelliğidir, alanın değil.
+
+    `electron_density` ve `density_difference` kendi `Provenance`'larında
+    `stability` alanını `None` bırakıyor (ölçüldü) -- doğru, çünkü onlar
+    kararlılık ölçmüyor. Ama pencere o beyanı OLDUĞU GİBİ taşısaydı, kullanıcı
+    alanı değiştirdiğinde panelin "Kararlılık" satırı ORTADAN KALKARDI ve
+    bu "sorun yok" diye okunurdu. Aynı gerekçe `Provenance.stability`
+    dokstring'inde ve `analyse()`in "provenance'ı sıfırdan kurup stability'yi
+    None bırakmak..." notunda zaten yazılı.
+
+    Su/STO-3G'de hüküm KARARLI ve en düşük Hessian özdeğeri 10 dönme üzerinden
+    ölçülüyor; satırın metni `StabilityVerdict.as_line()`'dan gelir.
+    """
+    from qlab.app.orbital_window import ALAN_FARK, ALAN_ORBITAL, ALAN_YOGUNLUK
+
+    assert su_sonucu.provenance.stability is not None, (
+        "motor kararlılık ölçmediyse bu test totoloji olurdu"
+    )
+    pencere = OrbitalWindow(su_sonucu)
+    try:
+        for ad in (ALAN_ORBITAL, ALAN_YOGUNLUK, ALAN_FARK):
+            pencere.set_field_kind(ad)
+            beyan = pencere._provenance()
+            assert beyan.stability == su_sonucu.provenance.stability, ad
+            assert "Kararlılık" in pencere.transparency_text(), ad
+            assert "10 dönme" in pencere.transparency_text(), ad
+    finally:
+        pencere.close()
+
+
+@requires_offscreen
+def test_LUMOSUZ_sistemde_okuma_satiri_YOK_diyor(su_sonucu):
+    """He/STO-3G'de boş orbital yoktur; 0.0 yazmak "boşluk yok" diye okunurdu.
+
+    ÖLÇÜLDÜ (He/STO-3G): tek orbital, HOMO -0.876036, LUMO None, aralık None.
+    `AnalysisReport` bu durumu None ile taşır ve okuma satırı da onu None'a
+    sadık basmalı.
+
+    KAPSAM DIŞI, açıkça: gerekçenin uzun metni (`_NO_LUMO_NOTE`) `analyse()`in
+    `expected_error`'ındadır ve o alan panele KATILMIYOR (bkz. `_provenance`
+    dokstring'i). Burada aranan şey de o değil: "yok" kelimesi kendini
+    açıklar, `AnalysisReport`'un reddettiği şey 0.000000 BASMAKTI -- çünkü
+    okuyan onu "boşluk yok, metalik" diye okurdu. Test o farkı sınıyor.
+
+    Bağ ÇİFTİ olmayan tek atomlu bir sistem aynı zamanda "Mayer bağ
+    mertebeleri:" başlığının boş basılmadığını da sınar.
+    """
+    del su_sonucu  # bu test kendi molekülünü kurar
+    pencere = OrbitalWindow(solve(Molecule.from_string("He 0 0 0"), "sto-3g"))
+    try:
+        metin = pencere.analysis_text()
+        assert "HOMO -0.876036" in metin, metin
+        assert "LUMO yok" in metin, metin
+        assert "aralık yok" in metin, metin
+        assert "0.000000" not in metin, f"olmayan bir aralık sayı gibi basılmış:\n{metin}"
+        assert "Mayer" not in metin, f"bağ çifti yokken boş liste basılmış:\n{metin}"
+    finally:
+        pencere.close()
+
+
+# ---------------------------------------------------------------------------
+# `free_atom_density_matrix` -- fark haritasının REFERANSI
+
+
+@requires_offscreen
+def test_fark_alani_serbest_atom_referansini_SAYIYLA_beyan_ediyor(su_sonucu):
+    """Fark haritasının bütün anlamı referansına dayanır.
+
+    `rho_molekul - rho_promolekul` haritasında "bağ" diye gösterilen şey,
+    promolekülün ne olduğu bilinmeden okunamaz. Provenance bunu bugüne kadar
+    yalnızca NESİR olarak söylüyordu ("SAD tipi, küresel ortalamalı serbest
+    atom"); `free_atom_density_matrix` aynı şeyi KONTROL EDİLEBİLİR bir
+    sayıyla söylemeyi mümkün kılıyor.
+
+    ÖLÇÜLDÜ (STO-3G): O 5 baz fonksiyonu, Tr(PS) = 8.0000000000 (Z=8);
+    H 1 baz fonksiyonu, Tr(PS) = 1.0000000000 (Z=1). Maliyet ihmal edilebilir:
+    H 0.5 ms, O 19.3 ms.
+
+    Beyan YALNIZCA fark alanında görünür: orbital ya da yoğunluk alanında
+    promolekül diye bir şey yoktur ve oraya yazmak yalan olurdu.
+    """
+    from qlab.app.orbital_window import ALAN_FARK, ALAN_ORBITAL, ALAN_YOGUNLUK
+
+    pencere = OrbitalWindow(su_sonucu, field=ALAN_FARK)
+    try:
+        metin = pencere.transparency_text()
+        assert "Tr(PS)" in metin, metin
+        assert "O 5 baz fonksiyonu" in metin, metin
+        assert "8.000000" in metin, metin
+        assert "H 1 baz fonksiyonu" in metin, metin
+        assert "1.000000" in metin, metin
+        assert "Z=8" in metin and "Z=1" in metin, metin
+
+        # Metnin yanında MAKİNE-OKUNUR bir toplam da durur ve komşusuyla
+        # birlikte anlam kazanır: referansın taşıdığı elektron TAM 10.000000
+        # (2x1 + 8), ızgara üzerinden integre edilen promolekül ise ölçüldü
+        # 9.8907 -- aradaki fark doğrudan ızgaranın kestiği miktardır.
+        beyan = pencere._provenance()
+        assert beyan.diagnostics["promolecule_reference_electrons"] == pytest.approx(
+            10.0, abs=1e-9
+        )
+        integre = beyan.diagnostics["integrated_electrons_promolecule"]
+        assert 9.88 < integre < 9.90, integre
+        assert integre < beyan.diagnostics["promolecule_reference_electrons"]
+
+        for ad in (ALAN_ORBITAL, ALAN_YOGUNLUK):
+            pencere.set_field_kind(ad)
+            assert "Tr(PS)" not in pencere.transparency_text(), (
+                f"{ad!r} alanında promolekül referansı beyan edilmemeli"
+            )
+            assert "promolecule_reference_electrons" not in (
+                pencere._provenance().diagnostics
+            ), f"{ad!r} alanında promolekül diye bir şey yok"
+    finally:
+        pencere.close()
+
+
+def test_serbest_atom_onbellegi_element_VE_BAZ_ile_anahtarlaniyor():
+    """Yalnız elemente göre anahtarlanan bir önbellek 6-31G ile sto-3g'yi karıştırır.
+
+    Tr(PS) TEK BAŞINA bu kusuru görmez -- ölçüldü, iki bazda da aynı sayı
+    (H 1.0000000000, O 8.0000000000), çünkü nötr atomun elektron sayısı baza
+    bağlı değildir. Ayrımı YAPAN şey referansın BOYUTUDUR: ölçüldü,
+    H sto-3g 1 / 6-31G 2 baz fonksiyonu, O sto-3g 5 / 6-31G 9.
+
+    Önbelleğin GERÇEKTEN önbellek olduğu da yapısal olarak sınanır: hiç
+    önbelleğe bakmayan bir uygulamada anahtar sorusunun bir anlamı kalmazdı.
+    """
+    from qlab.app.orbital_window import (
+        _SERBEST_ATOM_ONBELLEGI,
+        _serbest_atom_referansi,
+    )
+
+    _SERBEST_ATOM_ONBELLEGI.clear()
+    try:
+        olculen = {
+            (sembol, baz): _serbest_atom_referansi(sembol, baz)
+            for sembol in ("H", "O")
+            for baz in ("sto-3g", "6-31g")
+        }
+        assert olculen[("H", "sto-3g")][0] == 1
+        assert olculen[("H", "6-31g")][0] == 2
+        assert olculen[("O", "sto-3g")][0] == 5
+        assert olculen[("O", "6-31g")][0] == 9
+        for anahtar, (_n, iz) in olculen.items():
+            beklenen = 1.0 if anahtar[0] == "H" else 8.0
+            assert iz == pytest.approx(beklenen, abs=1e-9), anahtar
+
+        assert set(_SERBEST_ATOM_ONBELLEGI) == set(olculen), (
+            "önbellek element+baz çiftiyle anahtarlanmıyor"
+        )
+
+        # YAPISAL SONDA: önbelleğe yabancı bir değer konur. Fonksiyon
+        # önbelleği OKUYORSA onu döndürür.
+        _SERBEST_ATOM_ONBELLEGI[("O", "sto-3g")] = (999, -1.0)
+        assert _serbest_atom_referansi("O", "sto-3g") == (999, -1.0), (
+            "sonuç önbelleğe alınmıyor; aynı element iki kez çözülüyor"
+        )
+    finally:
+        _SERBEST_ATOM_ONBELLEGI.clear()
