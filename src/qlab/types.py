@@ -39,6 +39,31 @@ class Atom:
                 f"Atom konumu uc bilesenli olmali, verilen sekil: "
                 f"{np.shape(self.position)}"
             )
+        # Sonluluk EN ERKEN sinirda denetlenir, cunku HER kurulum yolu
+        # (dogrudan, from_string, dataclasses.replace) buradan gecer.
+        #
+        # Olculdu -- kontrol yokken hata cok sonra ve YANLIS YERDEN geliyordu:
+        # `solve()` yuz SCF iterasyonu kosup "SCF 100 iterasyonda yakinsamadi
+        # (son residual nan)" firlatiyordu (scf.py:406), yani tani yakinsamayi
+        # sucluyordu. Yol boyunca integrals.py'nin bes ayri satirindan
+        # RuntimeWarning yagiyordu.
+        #
+        # Uc ayri SESSIZ yol daha vardi:
+        #   - Molecule'un cakisik-cekirdek kontrolu DELINIYORDU: nan'da
+        #     `distance < _MIN_SEPARATION_BOHR` False doner, yani BIREBIR AYNI
+        #     nan konumundaki iki atom "cakisik degil" sayiliyordu; iki atom da
+        #     +inf'teyken de oyle (inf - inf = nan).
+        #   - `nuclear_repulsion()` sonsuzdaki bir atom icin **0.0** veriyordu
+        #     (Z1*Z2/inf). Sifir, bir enerji dokumunde tamamen makul gorunur;
+        #     nan en azindan kendini belli eder.
+        #   - `float("1e400")` sessizce `inf`'e tasar: girdide sonsuz diye bir
+        #     sey YAZMAZ ama sonucu sonsuzdur.
+        if not np.all(np.isfinite(np.asarray(self.position, dtype=float))):
+            raise InvalidInputError(
+                f"{self.symbol!r} atomunun koordinatlari sonlu degil: "
+                f"{tuple(float(x) for x in np.asarray(self.position, dtype=float))}. "
+                "Her koordinat sonlu bir sayi olmali; 'nan'/'inf' bir konum degildir."
+            )
 
     @property
     def atomic_number(self) -> int:
