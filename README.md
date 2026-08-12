@@ -162,22 +162,23 @@ Bu makinede ölçüldü (tek oturum, dört ayrı koşu):
 
 | Koşu | Test | Süre |
 |---|---|---|
-| tam süite | 551 | 160.96 s |
-| `-m slow` | 16 | 122.11 s |
-| `-m "not slow"` | 535 | 44.40 s |
-| yalnız B2'nin üç dosyası (`test_orbital_window`, `test_isosurface`, `test_hf_obs`) | 142 | 27.30 s |
+| tam süite | 601 | 180.65 s |
+| `-m slow` | 18 | 117.61 s |
+| `-m "not slow"` | 583 | 51.24 s |
+| yalnız B2'nin üç dosyası (`test_orbital_window`, `test_isosurface`, `test_hf_obs`) | 165 | 32.34 s |
 
-Yavaş alt küme toplam sürenin ~%76'sını yiyor (çift yarık, kutuda-parçacık ve
+Yavaş alt küme toplam sürenin ~%65'ini yiyor (çift yarık, kutuda-parçacık ve
 HF tarama koşuları). Mutlak saniyeler bu makinede eşzamanlı yüke duyarlıdır;
 aşağıdaki yapısal gözlem ise duyarlı değildir.
 
 **Düzeltme — "B2 süreye neredeyse hiçbir şey eklemedi" iddiası yanlıştı.**
-Ölçüldü: 16 yavaş testin **hepsi** B2 ÖNCESİ dosyalarda
-(`tests/hf/test_physical.py` ×4, `tests/hf/test_stability.py` ×5,
-`tests/tdse/test_analytic.py` ×2, `tests/tdse/test_double_slit.py` ×4,
-`tests/tdse/test_tunneling.py` ×1); B2'nin üç dosyasında **sıfır** yavaş test
-var. Yani B2'nin maliyeti tamamen hızlı kısma düşüyor ve orada küçük değil:
-hızlı kısım 44.40 s, bunun 27.30 s'i (~%61) B2'nin üç dosyası. Eski iddia
+Ölçüldü: 18 yavaş testin **hepsi** B2 ÖNCESİ dosyalarda
+(`tests/hf/test_physical.py` ×5, `tests/hf/test_stability.py` ×5,
+`tests/tdse/test_double_slit.py` ×4, `tests/tdse/test_analytic.py` ×2,
+`tests/tdse/test_tunneling.py` ×1, `tests/test_scenario.py` ×1); B2'nin üç
+dosyasında **sıfır** yavaş test var. Yani B2'nin maliyeti tamamen hızlı kısma
+düşüyor ve orada küçük değil:
+hızlı kısım 51.24 s, bunun 32.34 s'i (~%63) B2'nin üç dosyası. Eski iddia
 toplam sürenin sabit kalmasına dayanıyordu (127.3 → 127.96 s), ama o sabitlik
 bir gürültü iptaliydi: B2'nin hiç dokunmadığı yavaş alt küme aynı iki ölçüm
 arasında 112.6 → 106.67 s "hızlanmıştı".
@@ -217,13 +218,43 @@ Aşağıdaki sayılar bu görevde (B1 Task 13) gerçekten çalıştırılıp öl
 |---|---|---|
 | PySCF toplam enerji uyumu (9 sistem: He, H₂ @0.74/1.00/2.00 Å, LiH, HF, H₂O, NH₃, CH₄; STO-3G) | `tests/hf/test_scf.py::test_total_energy_matches_pyscf`, sınır `abs=1e-10, rel=0.0` (kabul kriteri 1e-6'dır; test ölçülen sapmanın ~7.6 katında bağlayıcı tutulur) | en kötü sapma **1.32e-11 hartree** (H₂, R=2.00 Å); su -74.9630631297 hartree (fark 4.56e-12) |
 | İntegral uyumu (S, T, V, ERI; H₂ ve H₂O, STO-3G) | `tests/hf/test_integrals.py`, atol=1e-10..3e-10 | en kötü mutlak sapma **2.129e-10** (su çekirdek-çekim matrisi, [5,1]) |
-| H₂ denge bağ uzunluğu | Deneysel 0.741 Å, tolerans ±%8 | **0.7156 Å**, sapma %3.4 |
+| H₂ denge bağ uzunluğu | Deneysel 0.741 Å, tolerans ±%8 | Yöntemin gerçek minimumu **0.71223 Å** (sapma %3.9), E = -1.117505885116 hartree. Parabol fiti kullanan taramalar bunun biraz üstünü verir: dağıtılan senaryo **0.71348 Å** (%3.7), `test_physical`'ın 40 noktalı düzgün ızgarası **0.71558 Å** (%3.4). İkisi de denge değil, ızgara eseridir — aşağıdaki nota bakın |
 | H₂ bağlanma enerjisi (RHF/STO-3G, 0.74→8.0 Å) | Deneysel ayrışma enerjisi 4.75 eV | **14.6350 eV** — RHF ayrışma kusuru yüzünden ~3 kat fazla, korelasyon eksikliği DEĞİL (bkz. "Ne iddia etmiyor") |
 | H₂O denge açısı | Deneysel 104.5°, tolerans ±%8 | **100.97°**, sapma %3.4 |
 | H₂O dipolü | Deneysel 1.85 D | **1.7255 D**, sapma %6.7 |
 | SCF yakınsama hızlandırma (DIIS vs düz Roothaan-Hall, iterasyon sayısı) | `tests/hf/test_scf.py::test_diis_reduces_iteration_count` | H₂O 19→8, LiH 23→7, NH₃ 18→8, CH₄ 12→11 |
 | Yakınsamayan SCF sessizce sayı döndürmemeli | `tests/hf/test_scf.py::test_non_convergence_raises_rather_than_returning` | `SCFConvergenceError` fırlatılır, iterasyon/enerji geçmişi hatanın içinde taşınır |
 | Referans koruması gerçekten korur mu | `reference/hf_energies.json` geçici kaldırılıp `pytest tests/hf/` koşuldu | **kırmızı**, atlanmadı: **92 error + 2 failed, 234 passed, 0 skipped** (toplam 328). 92 hatanın hepsi `pytest.fail`: "Referans dosyasi bulunamadi"; 2 failed, alt süreçte pytest koşan yol-sırası testidir ve o alt süreç de aynı sebeple kırmızıdır |
+
+Not (bağ uzunluğu — neden üç sayı): Bu README bir süre yalnızca 0.7156 Å'yı
+bildirdi ve onu "denge bağ uzunluğu — ölçülen" diye sundu. İki ayrı hata
+vardı. Birincisi: o sayı bir taramanın çıktısıdır, yöntemin dengesi değil.
+İkincisi: kabul kriteri 2 kanıt olarak `h2_bond_scan.yaml` komutunu gösterip
+o komutun **üretmediği** bir sayıyı bildiriyordu — 0.7156 Å, testteki
+`linspace(0.4, 3.0, 40)` ızgarasından (adım 0.0667 Å) geliyordu.
+
+Parabol fiti, minimumun etrafındaki üç ızgara noktasına oturtulur ve kaba
+ızgarada minimumu yukarı kaydırır. Ölçülen üç sayı:
+
+| Kaynak | Minimum civarındaki örnekleme | Fit | Gerçek minimumdan yanlılık |
+|---|---|---|---|
+| Brent (ızgarasız arama) | — | **0.7122299 Å** | 0 (tanım gereği) |
+| `scenarios/h2_bond_scan.yaml` | 0.65 / 0.70 / 0.74 Å | **0.7134824 Å** | **+0.0012525 Å** |
+| `test_h2_potential_curve_has_a_minimum_near_experiment` | 0.0667 Å düzgün adım | **0.7155781 Å** | **+0.0033483 Å** |
+
+Sıralama iddiayı ölçüyor: minimum civarında daha sık örnekleyen ızgara daha
+küçük yanlılık veriyor — yani eser gerçekten ızgaradan geliyor, yöntemden
+değil. Bu sıralamanın kendisi
+`test_shipped_h2_scan_fit_is_grid_biased_but_less_than_the_uniform_grid`
+ile kilitli.
+
+Fark akademik değil, çünkü kuvvet üç büyüklük mertebesi farklı: sayısal
+|dE/dr| gerçek minimumda **8.7e-09 hartree/bohr** (yani sıfır, gürültü
+seviyesi), 0.7156 Å'da **3.589e-03 hartree/bohr**. Modül 2'nin moleküler
+dinamik testleri "denge" diye kaba fite demirlerse, molekülü dengede
+sandıkları noktada iterken bulurlar. Gerçek minimum ve kaba fit
+`test_coarse_scan_fit_sits_above_the_true_sto3g_minimum` ile ayrı ayrı
+kilitli: hangisinin hangisi olduğu artık nesirle değil testle korunuyor.
 
 Not: İntegral satırındaki 2.129e-10'luk artık özyinelemenin kendisinden değil,
 referansı üreten PySCF derlemesinin bohr sabitinden (CODATA 2010,
@@ -310,8 +341,8 @@ Spec §15'teki yedi maddenin gerçek durumu (ölçüm ayrıntıları
 
 | # | Kriter | Durum |
 |---|---|---|
-| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — 551/551 test yeşil (`pytest tests/ -v`), PySCF referans testleri dahil; `reference/` geçici olarak kaldırılıp tam süite yeniden koşuldu: testler ATLANMIYOR, KIRMIZI oluyor — ölçüldü, **128 failed + 132 error + 291 passed, 0 skipped** (toplam 551, 154.20 s). Yani 260 test kırmızıya dönüyor ve hiçbiri sessizce atlanmıyor |
-| 2 | Headless koşucu çalışır + H₂ eğrisi bağ uzunluğu ±%8 | **Kapandı** — `python -m qlab.run scenarios/h2_bond_scan.yaml`; denge bağ uzunluğu 0.7156 Å, sapma %3.4 |
+| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — **601/601 test yeşil** (`pytest tests/`, 180.65 s), PySCF referans testleri dahil. Ayrıca `reference/` geçici olarak kaldırılıp tam süite yeniden koşuldu: testler ATLANMIYOR, KIRMIZI oluyor — ölçüldü, **128 failed + 132 error + 291 passed, 0 skipped** (toplam 551, 154.20 s). Yani 260 test kırmızıya dönüyor ve hiçbiri sessizce atlanmıyor. Dikkat: bu ikinci deney süite 551 testliyken yapıldı ve o günün sayılarını taşır; yeniden koşulmadı, sayıları 601'e uydurmak ölçüm değil uydurma olurdu |
+| 2 | Headless koşucu çalışır + H₂ eğrisi bağ uzunluğu ±%8 | **Kapandı** — `python -m qlab.run scenarios/h2_bond_scan.yaml -o h2_curve.npz`; taramanın parabol fiti **0.71348 Å**, deneyselden sapma %3.7, kriterin istediği ±%8 sağlanıyor. Bu sayı yöntemin denge uzunluğu DEĞİL: STO-3G'nin gerçek minimumu 0.71223 Å, fark taramanın ızgara eseridir (Modül 1B tablosunun altındaki nota bakın). Bu satır bir zamanlar 0.7156 Å diyordu — o sayı bu komuttan değil, `test_physical`'ın ayrı ızgarasından geliyordu; artık `test_shipped_h2_scan_fit_is_grid_biased_but_less_than_the_uniform_grid` senaryonun kendi sayısını kilitliyor |
 | 3 | GUI'de H₂O HOMO izoyüzeyi döndürülebilir | **Kapandı — bu depoda ilk gerçek-ekran doğrulaması.** `python -m qlab.app.main --molecule "O 0 0 0; H 0 0.757 0.587; H 0 -0.757 0.587"` gerçek Windows platformunda açıldı; su HOMO'su (1b₁) çizildi, ±faz iki renkte, 1764/1764 tepe, çekirdekler ve şeffaflık paneli görüldü. Döndürme ölçüldü: kamera azimutu değişince kare piksel bileşenlerinin **%14.1'i**, elevasyon değişince **%7.2'si** değişiyor — sahne gerçekten 3B ve görünüm tepki veriyor. **Ne ölçülmedi:** fareyle sürükleyerek döndürme; kamera programatik değiştirildi. Kriterin "döndürülebilir" kelimesi bu yüzden yalnızca sahne tarafında kapalıdır, girdi tarafında bir insanın bakması gerekir. Doğrulamanın kendisi bir kusuru da GÖRÜNÜR KILDI: 12 satırlık beyan 140 px'lik panelde katlanın altında kalıyordu (düzeltildi, `TransparencyPanel(max_height=…)`) |
 | 4 | Kaydırıcı ile canlı iletim, analitiğin ±%2'si içinde | **Kapandı** — ölçülen fark %0.07 |
 | 5 | Şeffaflık paneli her hesapta dolu | **Kapandı** — TDSE tarafında pencere paneli; HF tarafında headless koşucu her senaryoda Yöntem/Yaklaşımlar/İhmal edilen/Beklenen hata/Yakınsama satırlarını basar (`h2_bond_scan.yaml` çıktısı) |

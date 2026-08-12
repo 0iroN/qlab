@@ -283,3 +283,49 @@ def test_shipped_scenario_loads_and_runs(scenario_path):
     assert np.all(np.isfinite(potential))
     norm = float(np.sum(np.abs(psi0) ** 2) * grid.dx)
     assert norm == pytest.approx(1.0, abs=1e-10, rel=0.0)
+
+
+# STO-3G'nin H2 icin GERCEK denge uzunlugu; Brent ile olculur ve
+# tests/hf/test_physical.py::test_coarse_scan_fit_sits_above_the_true_sto3g_minimum
+# tarafindan kilitlenir. Burada yalnizca referans olarak kullanilir.
+_TRUE_STO3G_MINIMUM_ANGSTROM = 0.7122299
+
+
+@pytest.mark.slow
+def test_shipped_h2_scan_fit_is_grid_biased_but_less_than_the_uniform_grid():
+    """Kabul kriteri 2'nin bildirdigi sayi BU senaryodan cikmali.
+
+    README bir zamanlar bu komutu kanit gosterip 0.7156 A bildiriyordu; o
+    sayi baska bir izgaranin (test_physical'daki linspace(0.4, 3.0, 40),
+    adim 0.0667 A) ciktisiydi. Dagitilan senaryo minimum civarinda daha
+    sik ortuyor (0.65 / 0.70 / 0.74) ve baska bir sayi verir.
+
+    Test ayni zamanda "izgara siklastikca es kaybolur" iddiasini ISPATLAR:
+    daha sik izgaranin yanliligi daha kucuk cikmali. Bu bir aciklama degil,
+    olculen bir siralamadir.
+    """
+    scenario = load_scenario(_SCENARIO_DIR / "h2_bond_scan.yaml")
+    assert isinstance(scenario, HFScanScenario)
+
+    result = run_scan(scenario)
+    values = np.asarray(scenario.values, dtype=float)
+    index = int(np.argmin(result.energies))
+    assert 0 < index < len(values) - 1, "minimum taranan aralikta olmali"
+
+    a, b, _ = np.polyfit(
+        values[index - 1 : index + 2], result.energies[index - 1 : index + 2], 2
+    )
+    fit = -b / (2 * a)
+
+    assert fit == pytest.approx(0.7134824, abs=2e-5), (
+        "kabul kriteri 2'nin bildirdigi sayi; degistiyse README de degismeli"
+    )
+    assert abs(fit - 0.741) / 0.741 < 0.08, "kriterin kendisi: deneyselden ±%8"
+
+    bias = fit - _TRUE_STO3G_MINIMUM_ANGSTROM
+    uniform_grid_bias = 0.0033483  # linspace(0.4, 3.0, 40), adim 0.0667 A
+    assert bias > 0, "parabol fiti gercek minimumun USTUNDE kalir"
+    assert bias < uniform_grid_bias, (
+        "minimum civarinda daha sik ortulen izgara daha kucuk yanlilik vermeli; "
+        f"olculen {bias:.7f} A, kaba izgara {uniform_grid_bias:.7f} A"
+    )
