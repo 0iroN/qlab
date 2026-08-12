@@ -54,3 +54,61 @@ def test_energy_roundtrip(value):
     assert units.ev_to_hartree(units.hartree_to_ev(value)) == pytest.approx(
         value, rel=1e-15, abs=0.0
     )
+
+
+def test_md_sabitleri_codata_2018_ile_uyusuyor():
+    """MD'nin üç sabiti; hepsi türetilmiş, hiçbiri elle yazılmış değil.
+
+    HARTREE_TO_WAVENUMBER bir zamanlar çıplak literaldi ve bu dokstring
+    yalan söylüyordu; artık E_h/(h c)'den türetiliyor. ÖLÇÜLDÜ: türetilen
+    değer 219474.63136319647, CODATA tablo değerinden bağıl farkı 1.60e-14
+    -- aşağıdaki rel=1e-10 sınırının 6000 katı altında.
+
+    HANGİ HATAYI YAKALAR (ölçüldü): kB ters çevrilmiş (h/kB) 1 test;
+    dalga sayısında c unutulmuş (E_h/h) 1 test.
+    """
+    from qlab.units import (
+        AMU_TO_ELECTRON_MASS,
+        HARTREE_TO_WAVENUMBER,
+        KB_HARTREE_PER_KELVIN,
+    )
+
+    assert KB_HARTREE_PER_KELVIN == pytest.approx(3.166811563455608e-06, rel=1e-12, abs=0.0)
+    assert AMU_TO_ELECTRON_MASS == pytest.approx(1822.888486209, rel=1e-10, abs=0.0)
+    assert HARTREE_TO_WAVENUMBER == pytest.approx(219474.6313632, rel=1e-10, abs=0.0)
+
+
+def test_amu_donusumu_gercek_cekirdek_kutlelerini_veriyor():
+    """Kütle dönüşümü MD'nin en tehlikeli hatasının tek savunmasıdır.
+
+    ÖLÇÜLDÜ: `amu_to_electron_mass` çağrılmayan kod 1822.888486x hafif bir
+    molekül simüle eder. H2'nin periyodu 313.322877 a.u. yerine 7.338580
+    a.u. çıkar -- çarpan 42.695298 = sqrt(AMU_TO_ELECTRON_MASS) -- ve
+    HİÇBİR ŞEY PATLAMAZ. dt periyoda göre seçildiği için MD "çalışır
+    görünür", üstelik enerjiyi de KORUR: N=200 adım/periyotta
+    max|dE|/E0 = 2.467401e-04 = pi^2/N^2, ve bu sayı doğru ile hatalı
+    kütlede BİREBİR AYNIDIR (bağıl salınım yalnız N'ye bağlıdır, kütleye
+    değil). Titreşim frekansı 4401.39 cm^-1 yerine 187918.70 cm^-1 okunur.
+
+    Sayılar LİTERAL: sabite karşı yazılsalardı sabitle birlikte hareket
+    ederlerdi ve hiçbir zaman kırılamazlardı. ÖLÇÜLDÜ:
+    `AMU_TO_ELECTRON_MASS = 1.0` mutantı bu dosyada 2 testi kırıyor.
+
+    TOLERANS: proton için abs=1e-4; ölçülen hata 4.41e-07, marj 227x. Bir
+    önceki hali (kırpılmış 1.007276 + abs=1e-3) bütçesinin %87'sini kırpma
+    hatasına harcıyordu ve CODATA protonunu kırpılmış protondan AYIRT
+    EDEMİYORDU -- ölçüldü: kırpılmış sabit artık 1 testi kırmızı yapıyor.
+    """
+    from qlab.units import amu_to_electron_mass
+
+    assert amu_to_electron_mass(1.007276466621) == pytest.approx(
+        1836.152673, abs=1e-4, rel=0.0
+    )
+    assert amu_to_electron_mass(1.00782503207) == pytest.approx(1837.1526, abs=1e-3, rel=0.0)
+    assert amu_to_electron_mass(39.948) == pytest.approx(72820.749, abs=1e-2, rel=0.0)
+    np.testing.assert_allclose(
+        amu_to_electron_mass(np.array([1.00782503207, 39.948])),
+        np.array([1837.1526, 72820.749]),
+        rtol=0.0,
+        atol=1e-2,
+    )
