@@ -93,3 +93,71 @@ class Morse:
         dv_dr = 2.0 * self.d_e * self.a * ussel * (1.0 - ussel)
         birim = delta / r
         return enerji, np.vstack([dv_dr * birim, -dv_dr * birim])
+@dataclass(frozen=True)
+class LennardJones:
+    """Periyodik kutuda 12-6 Lennard-Jones, kaydırılmış kesmeyle.
+
+    V(r) = 4 eps [(sigma/r)^12 - (sigma/r)^6] - V(r_c)   (r < r_c)
+
+    KAYDIRMA ZORUNLUDUR: kaydırılmamış kesme r_c'de enerjiyi sıçratır ve
+    enerji korunumunu bozar (ölçüldü, tasarım §4.4).
+
+    KESME < KUTU/2 ZORUNLUDUR: aksi halde minimum görüntü konvansiyonu bozulur
+    ve aynı çift birden çok kez sayılır.
+
+    ÖLÇÜLMÜŞ UYARI: bu alanın Maxwell-Boltzmann üretmesi onu DOĞRULAMAZ --
+    eps x10, eps x0.1, sigma x0.9 ve WCA da kusursuz MB veriyor. Doğrulama
+    analitik çıpalarla yapılır.
+    """
+
+    epsilon: float
+    sigma: float
+    box_length: float
+    cutoff: float
+
+    def __post_init__(self) -> None:
+        for ad, deger in (
+            ("epsilon", self.epsilon),
+            ("sigma", self.sigma),
+            ("kutu kenarı", self.box_length),
+            ("kesme yarıçapı", self.cutoff),
+        ):
+            if not np.isfinite(deger) or deger <= 0.0:
+                raise InvalidInputError(f"{ad} pozitif ve sonlu olmalı: {deger}")
+        if self.cutoff > 0.5 * self.box_length:
+            raise InvalidInputError(
+                f"kesme yarıçapı kutu kenarının yarısını aşamaz "
+                f"(minimum görüntü bozulur): {self.cutoff} > {0.5 * self.box_length}"
+            )
+
+    def _ham(self, r2: np.ndarray) -> np.ndarray:
+        oran6 = (self.sigma**2 / r2) ** 3
+        return 4.0 * self.epsilon * (oran6**2 - oran6)
+
+    def __call__(self, positions: np.ndarray) -> tuple[float, np.ndarray]:
+        # ŞEKİL MUHAFAZASI: kardeş sınıf `Morse` bunu yapıyor, LJ yapmıyordu.
+        # ÖLÇÜLDÜ -- (2,2) şekli SESSİZCE kabul ediliyor ve sonuç (2,2) çıkıyor,
+        # yani 2 boyutlu koordinatla fizik yapılıyordu; 1B (3,) ham `IndexError`,
+        # int dtype ham `UFuncTypeError` veriyordu. İkisi de QLabError DEĞİL.
+        pos = np.asarray(positions, dtype=float)
+        if pos.ndim != 2 or pos.shape[1] != 3:
+            raise InvalidInputError(
+                f"konumlar (N,3) şeklinde olmalı, verilen: {np.shape(positions)}"
+            )
+        positions = pos
+        delta = positions[:, None, :] - positions[None, :, :]
+        delta -= self.box_length * np.round(delta / self.box_length)
+        r2 = (delta**2).sum(axis=-1)
+        np.fill_diagonal(r2, np.inf)
+
+        icinde = r2 < self.cutoff**2
+        kaydirma = float(self._ham(np.array([self.cutoff**2]))[0])
+
+        enerji = float(np.where(icinde, self._ham(r2) - kaydirma, 0.0).sum()) / 2.0
+
+        oran6 = np.where(icinde, (self.sigma**2 / r2) ** 3, 0.0)
+        katsayi = np.where(
+            icinde, 24.0 * self.epsilon * (2 * oran6**2 - oran6) / r2, 0.0
+        )
+        kuvvet = (katsayi[:, :, None] * delta).sum(axis=1)
+        return enerji, kuvvet
