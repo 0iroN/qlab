@@ -18,7 +18,7 @@ import pytest
 from qlab.engine.md.forcefields import Harmonic
 from qlab.engine.md.integrator import velocity_verlet_step
 from qlab.engine.md.state import MDState
-from qlab.engine.md.thermostats import Langevin
+from qlab.engine.md.thermostats import Langevin, NoseHoover
 from qlab.errors import InvalidInputError
 from qlab.observable.md_obs import instantaneous_temperature
 from qlab.units import KB_HARTREE_PER_KELVIN
@@ -203,3 +203,317 @@ def test_langevin_gecersiz_parametreleri_reddediyor():
         Langevin(target_temperature_kelvin=0.0, friction=1.0, seed=1)
     with pytest.raises(InvalidInputError, match="sürtünme"):
         Langevin(target_temperature_kelvin=300.0, friction=-1.0, seed=1)
+
+
+# ========================================================================
+# Task 10 -- Nosé-Hoover ve ergodiklik kusurunun ÖLÇÜLMESİ.
+# 
+# Ergodiklik kusuru KÜÇÜK sistemin özelliğidir. Ölçülen: 200 bağımsız osilatörü
+# tek global zeta'ya bağlayan kurulumda kusur GÖRÜNMEZ (üç bağımsız kurulum,
+# Langevin kontrolü +0.017 +- 0.096 %). Bu yüzden burada GERÇEK tek serbestlik
+# dereceli osilatör kullanılır: (1,3) durumunun y,z bileşenleri tam sıfır
+# tutulur (harmonik kuvvet sıfır, termostat hızları düzgün ölçekler -> ölçülen
+# yan sapma 0.0e+00) ve `n_dof=1` verilir.
+# ========================================================================
+
+M = 918.576324
+K = 0.3693947966
+OMEGA = float(np.sqrt(K / M))
+PERIYOT = 2 * np.pi / OMEGA
+
+HEDEF_K = 300.0
+TAU_ERGODIK = PERIYOT / (2 * np.pi)   # = 49.86688461471631 a.u. = 1/OMEGA
+DT_ERGODIK = PERIYOT / 50             # = 6.2664575345201055 a.u.
+N_PERIYOT = 40                        # ilk yarısı denge, ikinci yarısı ölçüm
+N_BLOK = 4
+N_REPLIKA = 384
+
+X2_KANONIK = KB_HARTREE_PER_KELVIN * HEDEF_K / K   # = 2.571891856033476e-3
+V2_KANONIK = KB_HARTREE_PER_KELVIN * HEDEF_K / M   # = 1.0342564294490596e-6
+
+
+def _tek_dof_durum(x: float, v: float) -> MDState:
+    """Tek parçacık, yalnız x yönü canlı. y,z tam sıfır kalır (test eder)."""
+    konum = np.zeros((1, 3))
+    konum[0, 0] = x
+    hiz = np.zeros((1, 3))
+    hiz[0, 0] = v
+    return MDState(positions=konum, velocities=hiz, masses=np.full(1, M))
+
+
+def _tek_dof_topluluk(zincir: int, tohum: int, n_replika: int = N_REPLIKA) -> dict:
+    """n_replika BAĞIMSIZ 1-dof osilatör; her biri KENDİ termostatını taşır.
+
+    Her replika kanonikten ayrı çekilir (sigma_x = 0.0507138231257857 bohr);
+    ortak başlangıç noktası veya gevşetilmemiş ofset YOKTUR -- aksi halde
+    ölçülen şey ergodiklik değil, ofsetin kalıcı izi olur.
+
+    Döndürülen `pencere_orani` = s(tek blok) / s(tüm pencere); replikalar
+    arası saçılımın ortalama süresiyle küçülüp küçülmediğini ölçer.
+    Ergodik dinamikte sqrt(N_BLOK) = 2.0 beklenir, ergodik olmayanda 1.0.
+    """
+    alan = Harmonic(k=K, center=np.zeros((1, 3)))
+    n_adim = int(round(N_PERIYOT * PERIYOT / DT_ERGODIK))
+    n_denge = n_adim // 2
+    blok_uzun = (n_adim - n_denge) // N_BLOK
+
+    uretici = np.random.default_rng(tohum)
+    x0 = uretici.normal(size=n_replika) * float(np.sqrt(X2_KANONIK))
+    v0 = uretici.normal(size=n_replika) * float(np.sqrt(V2_KANONIK))
+    assert len(np.unique(x0)) == n_replika, "replikalar bağımsız olmalı"
+
+    bloklar = np.zeros((n_replika, N_BLOK))
+    v_kare = np.zeros(n_replika)
+    yan_sapma = 0.0
+    for r in range(n_replika):
+        durum = _tek_dof_durum(float(x0[r]), float(v0[r]))
+        termostat = NoseHoover(
+            target_temperature_kelvin=HEDEF_K,
+            relaxation_time=TAU_ERGODIK,
+            chain_length=zincir,
+            n_dof=1,
+        )
+        _, kuvvetler = alan(durum.positions)
+        for _ in range(n_denge):
+            durum, _, kuvvetler = termostat.step(durum, kuvvetler, alan, DT_ERGODIK)
+        for j in range(N_BLOK):
+            toplam = 0.0
+            for _ in range(blok_uzun):
+                durum, _, kuvvetler = termostat.step(
+                    durum, kuvvetler, alan, DT_ERGODIK
+                )
+                toplam += float(durum.positions[0, 0] ** 2)
+                v_kare[r] += float(durum.velocities[0, 0] ** 2)
+            bloklar[r, j] = toplam / blok_uzun
+        yan_sapma = max(
+            yan_sapma,
+            float(np.abs(durum.positions[0, 1:]).max()),
+            float(np.abs(durum.velocities[0, 1:]).max()),
+        )
+
+    assert yan_sapma == 0.0, (
+        f"y,z tam sıfır kalmalıydı; ancak o zaman n_dof=1 doğrudur: {yan_sapma}"
+    )
+    bloklar /= X2_KANONIK
+    v_kare /= blok_uzun * N_BLOK * V2_KANONIK
+    kisa = float(np.mean([bloklar[:, j].std(ddof=1) for j in range(N_BLOK)]))
+    uzun = float(bloklar.mean(axis=1).std(ddof=1))
+    return {
+        "x2_sapma": float(bloklar.mean()) - 1.0,
+        "v2_sapma": float(v_kare.mean()) - 1.0,
+        "pencere_orani": kisa / uzun,
+        "sacilim": uzun,
+    }
+
+
+def test_nose_hoover_termostat_kutlesi_belgelenmis_formulu_izliyor():
+    """Q = k_B T tau^2. Bağımsız hesaplanmış LİTERAL değere karşı.
+
+    k_B = 3.166811563455608e-6 Ha/K, T = 300 K, tau = 1/OMEGA
+    = 49.86688461471631 a.u.  ->  Q = 2.3624789668407673.
+    Bu bir formül kontrolüdür, fizik ölçümü değildir; ama `q = 2 k_B T tau^2`
+    mutantını KIRAN TEK iddiadır (ölçüldü: o mutant fiziksel gözlemlerin
+    hiçbirinde eşik dışına çıkmıyor -- düz <x^2> -4.6432 % ile -4 % eşiğini
+    geçemiyor, oran 1.1539 < 1.35, <v^2> -0.1520 %).
+    """
+    termostat = NoseHoover(
+        target_temperature_kelvin=HEDEF_K, relaxation_time=TAU_ERGODIK
+    )
+    assert termostat.thermostat_mass == pytest.approx(2.3624789668407673, rel=1e-12)
+
+
+def test_nose_hoover_adimi_zaman_tersinir():
+    """NH adımı zaman-tersinir olmalı: ileri N adım, (v,zeta) ters, geri N adım.
+
+    ÖLÇÜLDÜ (dt = PERIYOT/500, N = 500, 8 parçacık, tohum 4242):
+      önerilen (eşlenik geri yarım-adım): 1.499e-15 / 1.833e-15 / 2.166e-15
+        (zincir 1/2/3)  -> eşiğin 6.7e5 katı ALTINDA
+      geri yarım-adım ileriyle AYNI sırada olursa (bugünkü hata):
+        4.852e-03 / 4.925e-03 / 1.094e-03 -> eşiğin 1.1e6 katı ÜSTÜNDE
+    Ayrım 12 mertebe. Bu testin gerekçesi kozmetik değil: aynı sıralama hatası
+    <x^2> ölçümünü dt = PERIYOT/16000'e kadar YAKINSAMAZ kılıyor (ölçüldü:
+    dt=P/50'de +33.94 %, P/200'de +1.72 %, P/1000'de -6.28 %, yakınsak
+    değer -8.31 %).
+
+    YAKALADIĞI (UYGULAMADA ÖLÇÜLDÜ, tasarım tersini söylüyordu): zincir
+    döngüsünün YÖN hatası da bu testle kırmızı oluyor. Tasarım belgesi
+    "ayırt edilemez (1.67e-15 vs 2.71e-15)" diyordu; ölçülen dönüş hatası
+    zincir=3'te İLERİ yarımda 2.973e-04, GERİ yarımda 2.975e-04 -- yani
+    doğru koddan (1.499e-15) 11 mertebe uzakta. Fiziksel olarak beklenen
+    sonuç budur: eşlenik özelliği alt adımların SIRASINA bağlıdır.
+    Ergodiklik testleri ise o mutantı gerçekten ayırt EDEMİYOR (ölçüldü:
+    yalnız bu test kırmızı oluyor).
+    """
+    alan = Harmonic(k=K, center=np.zeros((8, 3)))
+    dt = PERIYOT / 500
+    n_adim = 500
+    for zincir in (1, 2, 3):
+        uretici = np.random.default_rng(4242)
+        x0 = uretici.normal(size=(8, 3)) * float(np.sqrt(X2_KANONIK))
+        v0 = uretici.normal(size=(8, 3)) * float(np.sqrt(V2_KANONIK))
+        durum = MDState(positions=x0, velocities=v0, masses=np.full(8, M))
+        termostat = NoseHoover(
+            target_temperature_kelvin=HEDEF_K,
+            relaxation_time=TAU_ERGODIK,
+            chain_length=zincir,
+        )
+        _, kuvvetler = alan(durum.positions)
+        for _ in range(n_adim):
+            durum, _, kuvvetler = termostat.step(durum, kuvvetler, alan, dt)
+        durum = MDState(
+            positions=durum.positions,
+            velocities=-durum.velocities,
+            masses=durum.masses,
+        )
+        termostat.zeta = -termostat.zeta
+        _, kuvvetler = alan(durum.positions)
+        for _ in range(n_adim):
+            durum, _, kuvvetler = termostat.step(durum, kuvvetler, alan, dt)
+        hata = float(np.abs(durum.positions - x0).max() / np.abs(x0).max())
+        assert hata < 1e-9, f"zincir={zincir}: dönüş hatası {hata:.3e}"
+
+
+def test_nose_hoover_kinetik_sicakligi_tutturuyor():
+    """400 osilatör, zincirli NH, dt = PERIYOT/400.
+
+    dt seçimi ÖLÇÜMDEN: bu kurulumda (tau=PERIYOT) sapma dt ile
+    -3.730 % (P/50), -1.684 % (P/100), -0.315 % (P/200), +0.012 % (P/400)
+    şeklinde gidiyor; rel=0.005 eşiği ancak P/400'de anlamlı.
+    Planın dt = PERIYOT/50 seçimi bu testte 7 kat marjla çökerdi.
+    """
+    hedef, n = 300.0, 400
+    uretici = np.random.default_rng(11)
+    durum = MDState(
+        positions=uretici.normal(size=(n, 3)) * float(np.sqrt(X2_KANONIK)),
+        velocities=uretici.normal(size=(n, 3)) * float(np.sqrt(V2_KANONIK)),
+        masses=np.full(n, M),
+    )
+    alan = Harmonic(k=K, center=np.zeros((n, 3)))
+    termostat = NoseHoover(
+        target_temperature_kelvin=hedef, relaxation_time=PERIYOT, chain_length=3
+    )
+    dt = PERIYOT / 400
+    n_adim = 200 * 400
+    _, kuvvetler = alan(durum.positions)
+    sicakliklar = []
+    for adim in range(n_adim):
+        durum, _, kuvvetler = termostat.step(durum, kuvvetler, alan, dt)
+        if adim > n_adim // 2:
+            sicakliklar.append(instantaneous_temperature(durum, n_constraints=0))
+    assert float(np.mean(sicakliklar)) == pytest.approx(hedef, rel=0.005, abs=0.0)
+
+
+@pytest.fixture(scope="module")
+def tek_dof_olcum() -> dict:
+    """İki koşu (düz ve zincirli), iki test tarafından paylaşılır (~35 s)."""
+    return {
+        "duz": _tek_dof_topluluk(zincir=1, tohum=20260812),
+        "zincirli": _tek_dof_topluluk(zincir=3, tohum=20260812),
+    }
+
+
+@pytest.mark.slow
+def test_nose_hoover_ergodiklik_kusuru_TEK_osilatorde_olculuyor(tek_dof_olcum):
+    """Düz NH tek osilatörün konum dağılımını kaçırır; zincir düzeltir.
+
+    ÖLÇÜLEN (bu konfigürasyon, 40 tohum, R = 384):
+      düz      <x^2> sapma: -8.1796 %  (tohum-std 1.1541, aralık -10.634..-5.420)
+      zincirli <x^2> sapma: +0.1461 %  (tohum-std 0.6810, aralık  -1.526..+1.386)
+      düz      <v^2> sapma: +0.0188 %  (|maks| 0.1133)
+      zincirli <v^2> sapma: +0.3317 %  (|maks| 1.5750)
+    Bu tohumda (20260812): düz -7.2723 %, zincirli -0.0729 %.
+
+    EŞİKLER ve gürültü tabanına oranı:
+      düz  < -4 %   : gürültü tabanı (tohum-std) 1.1541 puan -> eşik ortalamadan
+                      3.62 sigma; 40 tohumun EN KÖTÜSÜ -5.420 % (1.36x marj)
+      |zin| <  3 %  : gürültü tabanı 0.6810 puan -> 4.41 sigma; en kötü
+                      |1.526| % (1.97x marj)
+      |düz <v^2>| < 1 % : en kötü 0.1133 % (8.83x marj) -- kusurun KONUMDA
+                      olduğunu, kinetik sıcaklıkta olmadığını ölçer
+      |zin <v^2>| < 3 % : en kötü 1.5750 % (1.90x marj)
+
+    KIRDIĞI MUTANTLAR (R=384, tohum 20260812, ölçülmüş):
+      geri yarım-adım ileriyle aynı sırada : düz +44.0619 % (İŞARET ters) RED
+      n_dof yok sayılıp v.size kullanılır  : düz +183.7024 %, <v^2> +199.9034 %,
+                                             zin +55.7381 %, zin <v^2> +165.4744 % RED
+      zincir yarım-adımında 0.5*dt yerine dt: düz +5.8142 % RED
+      hedef ndof*kT yerine ndof*kT/2       : <v^2> -50.0231 %, zin -35.3340 % RED
+      q = k_B T tau (kare unutulmuş)       : zin +67225.89 %, zin <v^2> +66909.48 % RED
+
+    YAKALAMADIĞI (dürüst olumsuz, ölçülmüş):
+      q = 2 k_B T tau^2 : düz -4.6432 % -> -4 % eşiğini GEÇEMİYOR, geçer.
+        Bunu yalnızca `thermostat_mass` literal testi kırar.
+      zincir döngüsünün YÖNÜ : zincir=1'de ölü kod (bire bir aynı yörünge);
+        zincir=3'te düz +0.1828 % vs doğru -0.0729 %, 20 tohumda fark
+        -0.3014 +- 1.1234 puan, tohum gürültüsü 0.8617 puan -> ayırt EDİLEMİYOR.
+        Bu iddia bu test paketiyle savunulmuyor.
+    """
+    duz, zincirli = tek_dof_olcum["duz"], tek_dof_olcum["zincirli"]
+    assert duz["x2_sapma"] < -0.04, (
+        f"düz NH'nin <x^2> kusuru görünmedi: %{duz['x2_sapma'] * 100:.3f}"
+    )
+    assert abs(zincirli["x2_sapma"]) < 0.03, (
+        f"zincir kusuru gidermeliydi: %{zincirli['x2_sapma'] * 100:.3f}"
+    )
+    assert abs(duz["v2_sapma"]) < 0.01, (
+        f"kusur KONUMDA olmalı, kinetik sıcaklıkta değil: "
+        f"%{duz['v2_sapma'] * 100:.3f}"
+    )
+    assert abs(zincirli["v2_sapma"]) < 0.03, (
+        f"zincirli kinetik sıcaklık: %{zincirli['v2_sapma'] * 100:.3f}"
+    )
+
+
+@pytest.mark.slow
+def test_nose_hoover_ergodiklik_imzasi_ZAMAN_ORTALAMASI_ile_kuculmuyor(
+    tek_dof_olcum,
+):
+    """Ergodikliğin ASIL imzası: saçılım ortalama süresiyle küçülüyor mu?
+
+    Ergodik dinamikte yörünge-başına zaman ortalamalarının saçılımı 1/sqrt(T)
+    ile küçülür; ergodik olmayanda her yörünge kendi torusunda kilitli kalır ve
+    saçılım küçülmez. ÖLÇÜLDÜ (tau=P/(2pi), dt=P/50, R=1024, palindrom):
+      düz      : 21.203 % (8P pencere) -> 21.326 % (40P) -> 21.170 % (160P)
+                 20 kat pencerede HİÇ küçülmüyor
+      zincirli : 18.941 % -> 8.824 % -> 4.186 %  (4.52x; ideal sqrt(20)=4.472)
+
+    Bu testte kullanılan oran = s(tek blok)/s(tüm pencere), N_BLOK=4
+    (ergodik beklenti sqrt(4) = 2.0).
+    ÖLÇÜLEN (40 tohum, R=384): düz 1.0363 +- 0.0075 (aralık 1.0210..1.0527),
+    zincirli 1.9995 +- 0.0598 (aralık 1.8821..2.1428).
+    Bu tohumda: düz 1.0510, zincirli 2.0273.
+
+    EŞİKLER ve gürültü tabanına oranı:
+      düz  < 1.35 : gürültü tabanı 0.0075 -> eşik ortalamadan 41.8 sigma;
+                    40 tohumun en kötüsü 1.0527 (1.28x marj)
+      zin  > 1.55 : gürültü tabanı 0.0598 -> 7.52 sigma; en kötü 1.8821 (1.21x)
+
+    KIRDIĞI MUTANT: q = k_B T tau (düz 1.9300 -> 1.35 eşiğini aşar; zincirli
+    1.0000 -> 1.55 eşiğinin altında kalır) -- iki iddiayı birden kırar.
+    YAKALAMADIĞI: geri yarım-adım sırası (düz 1.1358, zin 2.0388 -- ikisi de
+    geçer; onu zaman-tersinirlik testi yakalar), n_dof (düz 1.0730, zin 6.9377),
+    q=2kTtau^2 (1.1539 / 2.0344), 0.5*dt->dt (1.1182 / 1.7440),
+    ndof*kT/2 (1.1283 / 1.8207), zincir yönü (1.0510 / 1.9811).
+    """
+    duz, zincirli = tek_dof_olcum["duz"], tek_dof_olcum["zincirli"]
+    assert duz["pencere_orani"] < 1.35, (
+        f"düz NH'de saçılım küçülmemeliydi (oran {duz['pencere_orani']:.4f}, "
+        f"saçılım %{duz['sacilim'] * 100:.2f})"
+    )
+    assert zincirli["pencere_orani"] > 1.55, (
+        f"zincirli NH'de saçılım 1/sqrt(T) ile küçülmeliydi "
+        f"(oran {zincirli['pencere_orani']:.4f})"
+    )
+
+
+def test_nose_hoover_gecersiz_parametreleri_reddediyor():
+    with pytest.raises(InvalidInputError, match="zincir"):
+        NoseHoover(
+            target_temperature_kelvin=300.0, relaxation_time=1.0, chain_length=0
+        )
+    with pytest.raises(InvalidInputError, match="serbestlik"):
+        NoseHoover(target_temperature_kelvin=300.0, relaxation_time=1.0, n_dof=0)
+    with pytest.raises(InvalidInputError, match="gevşeme"):
+        NoseHoover(target_temperature_kelvin=300.0, relaxation_time=0.0)
+    with pytest.raises(InvalidInputError, match="sıcaklık"):
+        NoseHoover(target_temperature_kelvin=0.0, relaxation_time=1.0)
