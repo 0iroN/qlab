@@ -2,6 +2,7 @@ import io
 import json
 import sys
 import textwrap
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -232,3 +233,33 @@ def test_main_outputs_turkish_text_through_cp1252_stream_for_hf_scan(
     finally:
         sys.stdout = old_stdout
         sys.stderr = old_stderr
+
+
+def test_md_senaryosu_CLI_dan_kosuyor_ve_npz_yaziyor(tmp_path):
+    """MD dalı `main`e BAĞLI mı -- B08'in bıraktığı iş.
+
+    ÖLÇÜLDÜ (onarım öncesi): `_run_md` hiçbir yerden çağrılmıyordu ve
+    `python -m qlab.run scenarios/h2_morse.yaml -o x.npz` yakalanmayan bir
+    `AttributeError: 'MDScenario' object has no attribute 'grid'` veriyordu
+    (main yalnız QLabError yakalar). Bu test o dalı uçtan uca kilitler.
+
+    Sayılar LİTERAL: h2_morse.yaml 4000 adım / save_every 4 -> 1001 kayıt,
+    ve dt = 0.783307192 a.u. ile son an 75.78917958522622 fs.
+    """
+    from qlab.run import main
+
+    cikti = tmp_path / "md.npz"
+    kok = Path(__file__).resolve().parents[1]
+    assert main([str(kok / "scenarios" / "h2_morse.yaml"), "-o", str(cikti)]) == 0
+
+    veri = np.load(cikti)
+    assert sorted(veri) == [
+        "kinetic", "positions", "potential", "temperature_kelvin",
+        "times_fs", "total", "velocities",
+    ]
+    assert veri["total"].shape == (1001,)
+    assert veri["times_fs"][-1] == pytest.approx(75.78917958522622, rel=1e-9, abs=0.0)
+    # ilk karede v0 = 0 -> kinetik ve sıcaklık TAM sıfır (yön testi)
+    assert veri["kinetic"][0] == 0.0
+    assert veri["temperature_kelvin"][0] == 0.0
+    assert veri["potential"][0] > 0.0

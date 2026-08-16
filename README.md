@@ -39,9 +39,17 @@ Tasarım belgesi: `../docs/superpowers/specs/2026-08-05-qlab-kuantum-cekirdegi-d
   **PyVista değil `pyqtgraph.opengl` + PyOpenGL**: ~150 MB yerine ~2 MB ve
   depoda zaten kullanılan tek render yığını — spec'ten bilinçli sapma.
   Kabul kriteri 3 kapandı ve bu, depodaki **ilk gerçek-ekran doğrulamasıdır**.
-- **Modül 2 — moleküler dinamik: planlanıyor.** Henüz başlamadı. Bu modülün
-  ürettiği yoğunluk farkı haritası orada zamana bağlı hâle gelir; bağın
-  kopuşu görünür olur.
+- **Modül 2 (Plan C) — klasik moleküler dinamik: tamam.** Kuvvetten bağımsız
+  bir MD çekirdeği: `MDState` + `ForceField` protokolü, velocity-Verlet,
+  üç analitik kuvvet alanı (harmonik, Morse, Lennard-Jones — periyodik kutu
+  ve kaydırılmış kesmeyle), iki termostat (Langevin BAOAB, Nosé-Hoover +
+  zincir), sıcaklık/hız-dağılımı gözlemleri, YAML senaryo katmanı ve headless
+  koşucu (`h2_morse.yaml`, `argon_nvt.yaml`), zaman serisi çizim yükü.
+  Ölçülen sayılar aşağıdaki Doğrulama tablosundadır.
+  **Plan D (ab initio MD) henüz başlamadı:** Hartree-Fock sayısal gradyanı
+  bu çekirdeğe dördüncü bir kuvvet alanı olarak takılacak ve integratöre,
+  termostata, gözlemlere hiç dokunmayacak. Yoğunluk farkı haritasının zamana
+  bağlı hâle gelmesi orada olur.
 
 ## Ne iddia etmiyor
 
@@ -133,6 +141,21 @@ GUI olmadan senaryo koştur:
 python -m qlab.run scenarios/tunneling.yaml -o out.npz
 ```
 
+Klasik moleküler dinamik (Modül 2) — H₂'nin Morse potansiyelinde titreşimi
+ve 108 argon atomunun Langevin termostatıyla dengelenmesi:
+
+```bash
+python -m qlab.run scenarios/h2_morse.yaml -o h2md.npz
+```
+
+```bash
+python -m qlab.run scenarios/argon_nvt.yaml -o argon.npz
+```
+
+Çıktı `.npz`'si `times_fs`, `positions`, `velocities`, `kinetic`, `potential`,
+`total` ve `temperature_kelvin` taşır; şeffaflık paneli koşunun yöntemini,
+yaklaşımlarını ve enerji sürüklenmesini stdout'a basar.
+
 Etkileşimli TDSE penceresi:
 
 ```bash
@@ -162,12 +185,13 @@ Bu makinede ölçüldü (tek oturum, dört ayrı koşu):
 
 | Koşu | Test | Süre |
 |---|---|---|
-| tam süite | 601 | 180.65 s |
-| `-m slow` | 18 | 117.61 s |
-| `-m "not slow"` | 583 | 51.24 s |
-| yalnız B2'nin üç dosyası (`test_orbital_window`, `test_isosurface`, `test_hf_obs`) | 165 | 32.34 s |
+| tam süite | 680 | 242.79 s |
+| `-m slow` | 22 | 170.74 s |
+| `-m "not slow"` | 658 | 62.05 s |
+| yalnız B2'nin üç dosyası (`test_orbital_window`, `test_isosurface`, `test_hf_obs`) | 165 | 37.30 s |
+| yalnız Modül 2 (`tests/md/`) | 74 | 50.66 s |
 
-Yavaş alt küme toplam sürenin ~%65'ini yiyor (çift yarık, kutuda-parçacık ve
+Yavaş alt küme toplam sürenin ~%70'ini yiyor (çift yarık, kutuda-parçacık ve
 HF tarama koşuları). Mutlak saniyeler bu makinede eşzamanlı yüke duyarlıdır;
 aşağıdaki yapısal gözlem ise duyarlı değildir.
 
@@ -310,6 +334,75 @@ Tablodaki satır bu yüzden deponun kendi testinin
 ızgarayı ve kod yolunu bildirir; o ızgarada iki yol 5 haneye kadar örtüşür
 (2.699635e-09 / 2.699516e-09).
 
+### Modül 2 — klasik moleküler dinamik
+
+Aşağıdaki sayılar bu görevde gerçekten çalıştırılıp ölçülmüştür. Modülün
+iddiası tek cümleyle: **integratör kuvvetin nereden geldiğini bilmez** —
+tek sözleşme `(konumlar) -> (enerji, kuvvetler)`, ve harmonik/Morse/
+Lennard-Jones onun üç uygulamasıdır.
+
+| Test | Referans / sınır | Ölçülen |
+|---|---|---|
+| Periyot analitiğe oturuyor | T = 2π√(m/k), sınır \|T/T_analitik − 1\| < 1e-3, N ≥ 200 şart | bağıl hata **4.11e-05**, kapalı form −π²/(6N²) ile 4 hanede uyuşuyor |
+| Enerji SÜRÜKLENMİYOR | blok-ortalama baş-son farkı < 1e-6 (N=200, 1e5 adım, save_every=10) | **2.32e-10**, marj 4305× |
+| Enerji SALINIMI kapalı forma uyuyor | tepe-tepe/E₀ = π²/N², sınır \|oran − 1\| < 0.05 | oran **1.0000** (üç N değerinde) |
+| Global hata ikinci mertebeden | dt yarılanınca oran 4.0 ± %35, beş dt | **4.0018 → 4.0000** |
+| Fiziksel çıpa — H₂ titreşimi | Deneysel ω_e = 4401.21 cm⁻¹, sınır ±5.0 | **4401.39 cm⁻¹** (ölçülen periyottan; ayrıklaştırma yanlılığı +π²/6N²) |
+| Anharmoniklik: ω(E) = ω₀√(1−E/Dₑ) | sınır 2e-3, 800 adım/periyot | E/Dₑ=0.10 **0.948686** (marj 590×), 0.50 **0.707120** (155×), 0.90 **0.316508** (7.1×) |
+| Morse dış dönüş noktası | analitik 4.287169 bohr, bant 4.2–4.4 | **4.280174** |
+| LJ analitik çıpaları | r_min = 2^(1/6)σ, V(r_min) = −ε | **7.2225016416 bohr**, oran **1.00000000000000** |
+| LJ kesme sürekliliği | sınır 1e-9 (prob 1e-6) | **2.299439e-12**, marj 435× |
+| Langevin hedef sıcaklığa oturuyor | 300 K, ±%2 (400 replika, seed=7) | **297.785 K** (−%0.738), marj 2.71× |
+| BAOAB sürtünmesiz limitte velocity-Verlet | γ=1e-14, 40 adım, sınır 1e-5 bohr | **1.08e-07** |
+| Nosé-Hoover ergodiklik kusuru (1 dof) | düz NH < −4 %, zincirli \|·\| < 3 % | düz **−8.18 %**, zincirli **+0.15 %** (40 tohum) |
+| Kusur KONUMDA, sıcaklıkta değil | \|düz ⟨v²⟩ sapması\| < 1 % | **+0.019 %** (marj 8.8×) |
+| Maxwell-Boltzmann kendiliğinden çıkıyor | R4 = 5/3, 4σ; artı ⟨T⟩ = 87.2 K ±%10 | R4 sınır içinde; ⟨T⟩ **87.295 ± 1.763 K** (16 tohum) |
+| MD senaryosu CLI'dan uçtan uca | `python -m qlab.run scenarios/h2_morse.yaml -o md.npz` | çıkış 0, 1001 kayıt, son an **75.78917958522622 fs** |
+
+**Bu tablodaki her satır bir mutasyon sınavından geçti.** velocity-Verlet'in
+yedi mutantı (forward Euler, simplektik Euler, yarım tekme eksik, a=F,
+kuvvet işareti ters, a=F/m², bayat kuvvet) tek tek koşuldu ve **yedisi de**
+en az bir testi kırmızı yapıyor.
+
+**Kütle boru hattı — modülün en tehlikeli hatası.** Atomik birimde kütlenin
+birimi elektron kütlesidir; "1 amu = 1" yazan kod 1822.888486× hafif bir
+molekül simüle eder. Ölçüldü: periyot 313.322877 → 7.338580 a.u.
+(çarpan 42.695298 = √AMU_TO_ELECTRON_MASS) ve **hiçbir şey patlamaz** —
+enerji bile korunur, çünkü N=200 adım/periyotta bağıl salınım
+π²/N² = 2.467401e-04'tür ve bu sayı doğru ile hatalı kütlede **birebir
+aynıdır**. Yakalayan tek şey fiziksel çıpadır: 4401.39 yerine 187918.70 cm⁻¹.
+Bu yüzden `MU_H2` testte literal DEĞİL, `amu_to_electron_mass`'ten geçer —
+literal olduğu sürece `AMU_TO_ELECTRON_MASS = 1.0` mutantı Task 4'ün altı
+testini de geçiyordu (ölçüldü).
+
+**Nosé-Hoover'ın ergodiklik kusuru nerede DEĞİL.** 200–400 bağımsız osilatörü
+tek global ζ'ya bağlayan kurulumda kusur ölçüm çözünürlüğünün altındadır
+(Langevin kontrolü aynı kurulumda +0.017 ± 0.096 %). Kusur **tek** serbestlik
+dereceli osilatörün özelliğidir ve testler orada kurulur. Ergodikliğin asıl
+imzası sapmanın büyüklüğü bile değil, zaman ortalamalarının saçılımının
+pencereyle küçülmemesidir:
+
+| ölçüm penceresi | düz NH | zincirli (M=3) |
+|---|---|---|
+| 8 P | 21.203 % | 18.941 % |
+| 40 P | 21.326 % | 8.824 % |
+| 160 P | **21.170 %** | **4.186 %** |
+
+20 kat pencerede düz NH'de saçılım hiç küçülmüyor; zincirlide 4.52 kat
+küçülüyor (ideal √20 = 4.472).
+
+**Dürüst olumsuzlar (ölçüldü, gizlenmiyor):**
+
+- Maxwell-Boltzmann bir **kuvvet alanı sınavı değildir**. ε×10, ε×0.1, σ×0.9
+  ve WCA kusursuz MB veriyor; dahası kuvvet alanı TAMAMEN kaldırılsa (ideal
+  gaz) bile test geçiyor. Ölçek çıpası (kinetik sıcaklık) bu yüzden şart:
+  termostat kaldırılınca ⟨T⟩ = **6.24e-26 K** ve test ancak o çıpayla kırmızı olur.
+- Morse'un V(∞) testi `a`yı yalnızca **alttan** sınırlar; büyümesini asla
+  yakalamaz (a=2.058 ve a=1e6 için sapma tam 0.0). Üst sınır V″(r_e)
+  testinden gelir.
+- Termostat kütlesi Q → 2Q hatası fiziksel gözlemlerin hiçbirinde eşiği
+  aşmıyor; onu yalnızca `thermostat_mass`ın literal testi kırıyor.
+
 ## Mimari kuralı
 
 `engine` paketi `viz` veya `app` import **edemez** — ve GUI'nin kendisini de,
@@ -341,7 +434,7 @@ Spec §15'teki yedi maddenin gerçek durumu (ölçüm ayrıntıları
 
 | # | Kriter | Durum |
 |---|---|---|
-| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — **601/601 test yeşil** (`pytest tests/`, 180.65 s), PySCF referans testleri dahil. Ayrıca `reference/` geçici olarak kaldırılıp tam süite yeniden koşuldu: testler ATLANMIYOR, KIRMIZI oluyor — ölçüldü, **128 failed + 132 error + 291 passed, 0 skipped** (toplam 551, 154.20 s). Yani 260 test kırmızıya dönüyor ve hiçbiri sessizce atlanmıyor. Dikkat: bu ikinci deney süite 551 testliyken yapıldı ve o günün sayılarını taşır; yeniden koşulmadı, sayıları 601'e uydurmak ölçüm değil uydurma olurdu |
+| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — **680/680 test yeşil** (`pytest tests/`, 242.79 s), PySCF referans testleri dahil. Ayrıca `reference/` geçici olarak kaldırılıp tam süite yeniden koşuldu: testler ATLANMIYOR, KIRMIZI oluyor — ölçüldü, **128 failed + 132 error + 291 passed, 0 skipped** (toplam 551, 154.20 s). Yani 260 test kırmızıya dönüyor ve hiçbiri sessizce atlanmıyor. Dikkat: bu ikinci deney süite 551 testliyken yapıldı ve o günün sayılarını taşır; yeniden koşulmadı, sayıları 680'e uydurmak ölçüm değil uydurma olurdu |
 | 2 | Headless koşucu çalışır + H₂ eğrisi bağ uzunluğu ±%8 | **Kapandı** — `python -m qlab.run scenarios/h2_bond_scan.yaml -o h2_curve.npz`; taramanın parabol fiti **0.71348 Å**, deneyselden sapma %3.7, kriterin istediği ±%8 sağlanıyor. Bu sayı yöntemin denge uzunluğu DEĞİL: STO-3G'nin gerçek minimumu 0.71223 Å, fark taramanın ızgara eseridir (Modül 1B tablosunun altındaki nota bakın). Bu satır bir zamanlar 0.7156 Å diyordu — o sayı bu komuttan değil, `test_physical`'ın ayrı ızgarasından geliyordu; artık `test_shipped_h2_scan_fit_is_grid_biased_but_less_than_the_uniform_grid` senaryonun kendi sayısını kilitliyor |
 | 3 | GUI'de H₂O HOMO izoyüzeyi döndürülebilir | **Kapandı — bu depoda ilk gerçek-ekran doğrulaması.** `python -m qlab.app.main --molecule "O 0 0 0; H 0 0.757 0.587; H 0 -0.757 0.587"` gerçek Windows platformunda açıldı; su HOMO'su (1b₁) çizildi, ±faz iki renkte, 1764/1764 tepe, çekirdekler ve şeffaflık paneli görüldü. Döndürme ölçüldü: kamera azimutu değişince kare piksel bileşenlerinin **%14.1'i**, elevasyon değişince **%7.2'si** değişiyor — sahne gerçekten 3B ve görünüm tepki veriyor. **Ne ölçülmedi:** fareyle sürükleyerek döndürme; kamera programatik değiştirildi. Kriterin "döndürülebilir" kelimesi bu yüzden yalnızca sahne tarafında kapalıdır, girdi tarafında bir insanın bakması gerekir. Doğrulamanın kendisi bir kusuru da GÖRÜNÜR KILDI: 12 satırlık beyan 140 px'lik panelde katlanın altında kalıyordu (düzeltildi, `TransparencyPanel(max_height=…)`) |
 | 4 | Kaydırıcı ile canlı iletim, analitiğin ±%2'si içinde | **Kapandı** — ölçülen fark %0.07 |
