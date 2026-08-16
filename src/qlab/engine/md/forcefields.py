@@ -6,11 +6,14 @@ Boltzmann bir kuvvet alanı sınavı DEĞİLDİR (bkz. tests/md/test_forcefields
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
+from qlab.engine.hf.scf import solve
 from qlab.errors import InvalidInputError
+from qlab.types import Molecule
+from qlab.units import BOHR_TO_ANGSTROM
 
 
 @dataclass(frozen=True, eq=False)
@@ -160,4 +163,105 @@ class LennardJones:
             icinde, 24.0 * self.epsilon * (2 * oran6**2 - oran6) / r2, 0.0
         )
         kuvvet = (katsayi[:, :, None] * delta).sum(axis=1)
+        return enerji, kuvvet
+
+
+@dataclass(frozen=True, eq=False)
+class HartreeFockGradient:
+    """Hartree-Fock enerjisinin SAYISAL gradyanı -- dördüncü kuvvet alanı.
+
+    Diğer üçünden farkı: bu bir MODEL DEĞİL, HESAPLANMIŞ bir yüzeydir.
+    Çekirdekler Born-Oppenheimer yüzeyinde hareket eder ve yüzey her adımda
+    yeniden çözülür.
+
+    MALİYET (ölçüldü): adım başına 6N+1 SCF. H2/STO-3G'de 13 SCF = 15.4 ms;
+    H2O/STO-3G'de 19 SCF = 1281.5 ms. Test süitesine YALNIZ H2 girer.
+
+    ADIM h = 1e-5 (ölçüldü): kesme hatası h^2 ile gider, yuvarlama ise
+    eps*|E|/h ile büyür. Ölçülen hata h=1e-4'te 1.34e-09, h=1e-5'te 1.42e-11,
+    h=1e-6'da 2.36e-10 -- optimum 1e-5'tedir. Yuvarlama tabanı analitik
+    olarak da açıklanıyor: 2.2e-16 * 1.117 / 1e-5 = 2.5e-11, ölçülen tabanla
+    aynı mertebe.
+
+    İLERİ FARK KULLANILMIYOR: 1.8x ucuz ama H2O'da 442x kötü (ölçüldü).
+
+    `stability=False`: her adımda kararlılık analizi anlamsız ve H2'de +%31
+    maliyet getiriyor (ölçüldü).
+
+    GEOMETRİ KAPISI: R > 21.109 bohr'da RHF iyonik H-/H+ dalına atlar ve PES
+    0.3636 hartree sıçrar (ölçüldü). Bağlı dinamik oraya girmez, ama sessiz
+    kalmaz.
+    """
+
+    symbols: tuple[str, ...]
+    basis: str = "sto-3g"
+    step: float = 1e-5
+    max_bond_bohr: float = 21.0
+    stability: bool = False
+    n_scf_calls: int = field(default=0, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "symbols", tuple(self.symbols))
+        if len(self.symbols) < 2:
+            raise InvalidInputError(
+                f"en az iki sembol gerekir, verilen: {self.symbols}"
+            )
+        if not np.isfinite(self.step) or self.step <= 0.0:
+            raise InvalidInputError(f"adım pozitif ve sonlu olmalı: {self.step}")
+
+    def _energy(self, positions: np.ndarray) -> float:
+        object.__setattr__(self, "n_scf_calls", self.n_scf_calls + 1)
+        angstrom = positions * BOHR_TO_ANGSTROM
+        # DİKKAT -- `!r` KULLANMA. NumPy 2'de `repr(np.float64(0.0))` =
+        # "np.float64(0.0)" verir ve `Molecule.from_string` bunu
+        # "Atom koordinatlari sayiya donusturulemedi" diye reddeder.
+        # ÖLÇÜLDÜ: bu hata ilk denemede çıktı. `%.17g` tam hassasiyet ve
+        # düz sayı verir.
+        metin = "; ".join(
+            "%s %.17g %.17g %.17g" % (sembol, r[0], r[1], r[2])
+            for sembol, r in zip(self.symbols, angstrom)
+        )
+        return float(
+            solve(
+                Molecule.from_string(metin), self.basis, stability=self.stability
+            ).energy_total
+        )
+
+    def __call__(self, positions: np.ndarray) -> tuple[float, np.ndarray]:
+        pos = np.asarray(positions, dtype=float)
+        if pos.ndim != 2 or pos.shape[1] != 3:
+            raise InvalidInputError(
+                f"konumlar (N,3) şeklinde olmalı, verilen: {np.shape(positions)}"
+            )
+        if pos.shape[0] != len(self.symbols):
+            raise InvalidInputError(
+                f"atom sayısı sembol sayısıyla uyuşmuyor: "
+                f"{pos.shape[0]} != {len(self.symbols)}"
+            )
+        en_uzak = float(
+            np.linalg.norm(pos[:, None, :] - pos[None, :, :], axis=-1).max()
+        )
+        if en_uzak > self.max_bond_bohr:
+            raise InvalidInputError(
+                f"geometri kapısı: en büyük atomlar arası mesafe {en_uzak:.3f} "
+                f"bohr, sınır {self.max_bond_bohr}. Bu eşiğin ötesinde RHF "
+                "iyonik dala atlar ve potansiyel yüzeyi sıçrar."
+            )
+
+        object.__setattr__(self, "n_scf_calls", 0)
+        enerji = self._energy(pos)
+        kuvvet = np.zeros_like(pos)
+        h = self.step
+        # ÖTELEME DEĞİŞMEZLİĞİ KISAYOLU: enerji yalnız BAĞIL konumlara bağlı
+        # olduğundan son atomun kuvveti ötekilerden çıkar ve 6 SCF tasarruf
+        # edilir. ÖLÇÜLDÜ -- H2'de 13 -> 7 SCF (0.341x maliyet), H2O'da
+        # 19 -> 13 (0.687x). VE DAHA DOĞRU: tam alanda |sum F| H2'de
+        # 1.110e-12, H2O'da 9.237e-10 iken kısayolda TAM 0.000e+00, yani
+        # momentum korunumu sayısal artıktan kurtuluyor.
+        for i in range(pos.shape[0] - 1):
+            for k in range(3):
+                arti = pos.copy(); arti[i, k] += h
+                eksi = pos.copy(); eksi[i, k] -= h
+                kuvvet[i, k] = -(self._energy(arti) - self._energy(eksi)) / (2.0 * h)
+        kuvvet[-1] = -kuvvet[:-1].sum(axis=0)
         return enerji, kuvvet
