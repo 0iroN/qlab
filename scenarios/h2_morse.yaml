@@ -1,0 +1,14 @@
+# H2'nin Morse potansiyelinde titreşimi. dt = T0/400 seçildi: ölçüldü,
+# velocity-Verlet omega*dt = 2.0'da patlar ve N = 400 o sınırın çok
+# altındadır (omega*dt = 0.0157).
+kind: md
+name: H2 Morse titresimi
+force_field:
+  kind: morse
+  params: {d_e: 0.174434333, r_e: 1.401118538, a: 1.028997701}
+initial:
+  positions_bohr: [[0.0, 0.0, 0.0], [0.0, 0.0, 1.701118538]]
+  masses_amu: [1.00782503207, 1.00782503207]
+dt: 0.783307192
+n_steps: 4000
+save_every: 4

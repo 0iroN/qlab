@@ -51,3 +51,24 @@ class HFScanScenario:
     parameter: str
     values: tuple[float, ...]
     unit: str = "angstrom"
+
+
+MD_FORCE_FIELD_KINDS = ("harmonic", "morse", "lennard_jones")
+MD_THERMOSTAT_KINDS = ("langevin", "nose_hoover")
+
+
+@dataclass(frozen=True)
+class MDScenario:
+    """Klasik moleküler dinamik senaryosu.
+
+    `initial["masses_amu"]` AMU'dur; motor içi elektron kütlesine `factory`
+    tarafından çevrilir (bkz. qlab.units.amu_to_electron_mass).
+    """
+
+    name: str
+    force_field: dict
+    initial: dict
+    thermostat: dict | None
+    dt: float
+    n_steps: int
+    save_every: int = 1

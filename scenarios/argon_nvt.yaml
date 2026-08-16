@@ -1,0 +1,26 @@
+# 108 argon atomu, Langevin termostatı, 87.2 K.
+# N = 108 EN KÜÇÜK GEÇERLİ DEĞERDİR: rho* = 0.8442 ve r_c = 2.5 sigma için
+# L > 2 r_c şartı N >= 105.5 gerektiriyor, en küçük FCC değeri 108.
+# Başlangıç konumları koşucu tarafından FCC kafesten kurulur.
+kind: md
+name: Argon NVT (Langevin, 87.2 K)
+force_field:
+  kind: lennard_jones
+  params:
+    epsilon: 3.7938402530e-04
+    sigma: 6.4345174543
+    # box_length YAZILMAZ: fcc dalında density_reduced'dan türetilir
+    # (ölçüldü: 32.422173 bohr). Eskiden 33.0656 yazıyordu ve beyan edilen
+    # yoğunlukla çelişiyordu -- gerçek rho* 0.795871, yani -%5.72.
+    cutoff: 16.0862936
+initial:
+  lattice: fcc
+  n_particles: 108
+  density_reduced: 0.8442
+  masses_amu: [39.948]
+thermostat:
+  kind: langevin
+  params: {target_temperature_kelvin: 87.2, friction: 2.2434e-05, seed: 2026}
+dt: 445.732231
+n_steps: 20000
+save_every: 50

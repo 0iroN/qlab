@@ -22,6 +22,7 @@ from qlab.scenario.schema import (
     GridSpec,
     HFScanScenario,
     PacketSpec,
+    MDScenario,
     PotentialSpec,
     TDSEScenario,
 )
@@ -37,10 +38,16 @@ _HF_TOP_LEVEL = {
 }
 _HF_REQUIRED = {"name", "molecule_template", "basis", "parameter", "values"}
 
-_KNOWN_KINDS = ("tdse", "hf_scan")
+_MD_TOP_LEVEL = {
+    "kind", "name", "force_field", "initial", "thermostat",
+    "dt", "n_steps", "save_every",
+}
+_MD_REQUIRED = {"name", "force_field", "initial", "dt", "n_steps"}
+
+_KNOWN_KINDS = ("tdse", "hf_scan", "md")
 
 
-def load_scenario(path: str | Path) -> TDSEScenario | HFScanScenario:
+def load_scenario(path: str | Path) -> TDSEScenario | HFScanScenario | MDScenario:
     file_path = Path(path)
     if not file_path.is_file():
         raise ScenarioError(f"Senaryo dosyası bulunamadı: {file_path}")
@@ -62,6 +69,8 @@ def load_scenario(path: str | Path) -> TDSEScenario | HFScanScenario:
         return _load_tdse_scenario(raw, file_path)
     if kind == "hf_scan":
         return _load_hf_scan_scenario(raw, file_path)
+    if kind == "md":
+        return _load_md_scenario(raw, file_path)
     raise ScenarioError(
         f"Bilinmeyen senaryo türü (kind): {kind!r}. Geçerli türler: {list(_KNOWN_KINDS)}"
     )
@@ -188,3 +197,24 @@ def _load_hf_scan_scenario(raw: dict, file_path: Path) -> HFScanScenario:
         )
     except (TypeError, ValueError) as exc:
         raise ScenarioError(f"Senaryo alanları hatalı ({file_path}): {exc}") from exc
+
+
+def _load_md_scenario(raw: dict, file_path: Path) -> MDScenario:
+    unknown = set(raw) - _MD_TOP_LEVEL
+    if unknown:
+        raise ScenarioError(
+            f"Bilinmeyen anahtar(lar): {sorted(unknown)}. "
+            f"Geçerli anahtarlar: {sorted(_MD_TOP_LEVEL)}"
+        )
+    missing = _MD_REQUIRED - set(raw)
+    if missing:
+        raise ScenarioError(f"Eksik anahtar(lar): {sorted(missing)}")
+    return MDScenario(
+        name=str(raw["name"]),
+        force_field=dict(raw["force_field"]),
+        initial=dict(raw["initial"]),
+        thermostat=dict(raw["thermostat"]) if raw.get("thermostat") else None,
+        dt=float(raw["dt"]),
+        n_steps=int(raw["n_steps"]),
+        save_every=int(raw.get("save_every", 1)),
+    )

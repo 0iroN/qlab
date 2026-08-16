@@ -30,7 +30,7 @@ from qlab.engine.tdse.propagator import evolve
 from qlab.errors import QLabError
 from qlab.provenance import Provenance
 from qlab.scenario.loader import load_scenario
-from qlab.scenario.schema import HFScanScenario, TDSEScenario
+from qlab.scenario.schema import HFScanScenario, MDScenario, TDSEScenario
 
 
 @dataclass
@@ -44,8 +44,10 @@ class RunResult:
 
 
 def run_scenario(path: str | Path) -> RunResult | ScanResult:
-    scenario = load_scenario(path)
+    return _run_loaded(load_scenario(path))
 
+
+def _run_loaded(scenario) -> RunResult | ScanResult:
     if isinstance(scenario, HFScanScenario):
         return run_scan(scenario)
 
@@ -133,7 +135,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        result = run_scenario(args.scenario)
+        scenario = load_scenario(args.scenario)
+        # MD DALI: `_run_md` kendi panelini basar ve kendi .npz'sini yazar,
+        # bu yuzden `save()` yolundan gecmez. Bu dagitim eskiden YOKTU ve
+        # `python -m qlab.run scenarios/h2_morse.yaml` yakalanmayan bir
+        # `AttributeError: 'MDScenario' object has no attribute 'grid'`
+        # veriyordu (main yalniz QLabError yakaliyor).
+        if isinstance(scenario, MDScenario):
+            return _run_md(scenario, args.output)
+        result = _run_loaded(scenario)
     except QLabError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -145,6 +155,80 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{result.scenario.name}: {len(result.times)} kare -> {args.output}")
     for label, value in result.provenance.as_lines():
         print(f"  {label:<14} {value}")
+    return 0
+
+
+def _run_md(scenario: MDScenario, output: str | None) -> int:
+    """MD senaryosunu koşturur ve şeffaflık panelini basar."""
+    from qlab.engine.md.factory import build, provenance_for
+    from qlab.engine.md.integrator import Trajectory, run
+
+    durum, alan, termostat = build(scenario)
+    durum = durum.remove_center_of_mass_motion()
+
+    if termostat is None:
+        yorunge = run(
+            durum, alan, dt=scenario.dt, n_steps=scenario.n_steps,
+            save_every=scenario.save_every,
+        )
+    else:
+        # Termostatlı koşu: `step` imzası velocity_verlet_step ile aynıdır.
+        _, kuvvetler = alan(durum.positions)
+        zamanlar, konumlar, hizlar, kinetik, potansiyel = [0.0], [durum.positions], \
+            [durum.velocities], [durum.kinetic_energy()], [alan(durum.positions)[0]]
+        for adim in range(1, scenario.n_steps + 1):
+            durum, enerji, kuvvetler = termostat.step(durum, kuvvetler, alan, scenario.dt)
+            if adim % scenario.save_every == 0:
+                zamanlar.append(adim * scenario.dt)
+                konumlar.append(durum.positions)
+                hizlar.append(durum.velocities)
+                kinetik.append(durum.kinetic_energy())
+                potansiyel.append(enerji)
+        yorunge = Trajectory(
+            times=np.array(zamanlar), positions=np.array(konumlar),
+            velocities=np.array(hizlar), kinetic=np.array(kinetik),
+            potential=np.array(potansiyel),
+        )
+
+    toplam = yorunge.kinetic + yorunge.potential
+    # SÜRÜKLENME, salınım DEĞİL: blok ortalamalarının baş-son farkı.
+    # BLOK SAYISI VERİYE GÖRE: ÖLÇÜLDÜ -- 10 sabit blokla M < 10 kayıtta
+    # `reshape` boş dilim üretiyor, sürüklenme `nan` çıkıyor ve panel onun
+    # YANINDA ✓ basıyordu (M=3 ve M=9'da görüldü; ilk sağlam değer M=10).
+    if len(toplam) < 2:
+        raise InvalidInputError(
+            f"sürüklenme ölçmek için en az 2 kayıt gerekir, {len(toplam)} var; "
+            "n_steps/save_every oranını büyütün"
+        )
+    n_blok = min(10, len(toplam))
+    blok = toplam[: (len(toplam) // n_blok) * n_blok].reshape(n_blok, -1).mean(axis=1)
+    suruklenme = float(abs(blok[-1] - blok[0]) / abs(blok[0]))
+
+    # KISIT SAYISI TERMOSTATA BAĞLIDIR: ÖLÇÜLDÜ -- Langevin kütle merkezini
+    # YENİDEN ISITIYOR (<KE_COM>/(1.5kT) = 1.098, çıkarılmış kalsaydı 0.000),
+    # yani NVT koşusunda 3N-3 kullanmak <T>'yi %0.935 yukarı kaydırıyor
+    # (89.393 K yerine 88.565 K). Task 8'in varsayılanı COM'un çıkarılmış
+    # KALDIĞI ön koşuluna dayanır ve o ön koşul burada geçerli değil.
+    kisit = 3 if termostat is None else 0
+
+    provenance = provenance_for(scenario, energy_drift=suruklenme, n_constraints=kisit)
+    for etiket, deger in provenance.as_lines():
+        print(f"{etiket:<14}: {deger}")
+
+    if output is not None:
+        # Task 13'ün modülü BURADA import edilir: Task 12 tek başına
+        # commit edildiğinde CLI'ın kırık olmaması için (ölçüldü -- koşulsuz
+        # import `ModuleNotFoundError` veriyordu).
+        from qlab.viz.md_frames import build_md_payload
+
+        yuk = build_md_payload(yorunge, durum.masses, n_constraints=kisit)
+        np.savez(
+            output,
+            times_fs=yuk.times_fs, positions=yorunge.positions,
+            velocities=yorunge.velocities, kinetic=yuk.kinetic,
+            potential=yuk.potential, total=yuk.total,
+            temperature_kelvin=yuk.temperature_kelvin,
+        )
     return 0
 
 

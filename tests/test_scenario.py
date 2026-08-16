@@ -6,10 +6,11 @@ import numpy as np
 import pytest
 
 from qlab.engine.hf.factory import run_scan
+from qlab.engine.md import factory as md_factory
 from qlab.engine.tdse import factory
 from qlab.errors import ScenarioError
 from qlab.scenario.loader import load_scenario
-from qlab.scenario.schema import HFScanScenario, TDSEScenario
+from qlab.scenario.schema import HFScanScenario, MDScenario, TDSEScenario
 
 VALID_YAML = textwrap.dedent(
     """
@@ -242,6 +243,10 @@ def test_factory_rejects_absorbing_width_as_list(tmp_path):
 _SCENARIO_DIR = Path(__file__).resolve().parents[1] / "scenarios"
 _SHIPPED_SCENARIOS = sorted(_SCENARIO_DIR.glob("*.yaml"))
 _HF_SCAN_SAMPLE_POINTS = 2
+#: MD senaryolarinda TAM kosu YAPILMAZ: argon_nvt.yaml 20000 adimdir ve bu
+#: test dosyanin CALISIRLIGINI sinar, fizigi degil. `_HF_SCAN_SAMPLE_POINTS`
+#: ile ayni gerekce.
+_MD_SAMPLE_STEPS = 5
 
 
 def test_scenario_directory_is_not_empty():
@@ -275,6 +280,17 @@ def test_shipped_scenario_loads_and_runs(scenario_path):
             "yakınsamadı (enerji NaN)"
         )
         assert result.provenance.converged is True
+        return
+
+    if isinstance(scenario, MDScenario):
+        kisa = dataclasses.replace(scenario, n_steps=_MD_SAMPLE_STEPS, save_every=1)
+        durum, alan, termostat = md_factory.build(kisa)
+        enerji, kuvvetler = alan(durum.positions)
+        assert kuvvetler.shape == durum.positions.shape
+        assert np.all(np.isfinite(kuvvetler)), (
+            f"{scenario_path.name}: ilk kuvvet hesabı sonlu değil"
+        )
+        assert np.isfinite(enerji)
         return
 
     assert isinstance(scenario, TDSEScenario)
