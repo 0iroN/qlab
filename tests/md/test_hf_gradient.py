@@ -126,6 +126,25 @@ def test_kararlilik_analizi_KAPALI():
     assert HartreeFockGradient(["H", "H"]).stability is False
 
 
+def test_VARSAYILAN_adim_olculmus_degerde_kalıyor():
+    """Varsayılan h'yi hiçbir fizik testi KORUMUYOR -- mutasyonla bulundu.
+
+    ÖLÇÜLDÜ: varsayılanı 1e-3 yapan mutant AIMD testlerini GEÇİYOR (salınım
+    oranı 1.0891, sınır 1.0833±0.01 içinde), oysa gradyan hatası 1.34e-07 --
+    yani 5e-5'teki değerin 10^4 katı. Sistematik ve küçük olduğu için
+    dinamik onu görmüyor.
+
+    5e-5 SEÇİMİNİN GEREKÇESİ: H2'nin kendi optimumu 1e-5'tir ama H2O'nun
+    platosu 1.8e-5..1e-4 ve 1e-5 orada plato DIŞINDA. 5e-5 kesişim.
+    Tek molekülde optimize etmek yanıltıcıdır.
+
+    Richardson doğruluk testi bu varsayılana bağlı DEĞİL: `step=1e-5`'i
+    açıkça verir ve marjlarını (540x/39.6x/70x) korur; varsayılan 5e-5 ile
+    denge noktasında 1.29x'e düşerdi.
+    """
+    assert HartreeFockGradient(["H", "H"]).step == 5e-5
+
+
 def test_geometri_kapisi_iyonik_dala_atlamayi_engelliyor():
     """R > 21.109 bohr'da RHF iyonik H-/H+ dalına atlıyor ve PES 0.3636
     hartree SIÇRIYOR (ölçüldü).

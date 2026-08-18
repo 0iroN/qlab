@@ -177,11 +177,18 @@ class HartreeFockGradient:
     MALİYET (ölçüldü): adım başına 6N+1 SCF. H2/STO-3G'de 13 SCF = 15.4 ms;
     H2O/STO-3G'de 19 SCF = 1281.5 ms. Test süitesine YALNIZ H2 girer.
 
-    ADIM h = 1e-5 (ölçüldü): kesme hatası h^2 ile gider, yuvarlama ise
-    eps*|E|/h ile büyür. Ölçülen hata h=1e-4'te 1.34e-09, h=1e-5'te 1.42e-11,
-    h=1e-6'da 2.36e-10 -- optimum 1e-5'tedir. Yuvarlama tabanı analitik
-    olarak da açıklanıyor: 2.2e-16 * 1.117 / 1e-5 = 2.5e-11, ölçülen tabanla
-    aynı mertebe.
+    ADIM h = 5e-5. TEK MOLEKÜLDE OPTİMİZE ETMEK YANILTICI: H2'nin kendi
+    optimumu 1e-5'tir (ölçülen hata h=1e-4'te 1.34e-09, 1e-5'te 1.42e-11,
+    1e-6'da 2.36e-10), ama H2O'nun platosu 1.8e-5..1e-4 aralığındadır ve
+    1e-5 orada plato DIŞINDA kalır. 5e-5 iki platonun kesişimidir.
+
+    Yuvarlama tabanı analitik olarak da açıklanıyor: eps*|E|/h; h=1e-5'te
+    2.2e-16 * 1.117 / 1e-5 = 2.5e-11, ölçülen tabanla aynı mertebe.
+
+    VARSAYILAN h TESTLERİ ETKİLEMEZ, ölçüldü: Richardson doğruluk testi
+    `step=1e-5`'i AÇIKÇA verir (marjları 540x/39.6x/70x korur; 5e-5 ile
+    denge noktasında 1.29x'e düşerdi), ve AIMD salınım oranı h'ye duyarsız
+    (h = 1e-5 / 5e-5 / 1e-4 -> 1.0836 / 1.0836 / 1.0835).
 
     İLERİ FARK KULLANILMIYOR: 1.8x ucuz ama H2O'da 442x kötü (ölçüldü).
 
@@ -195,7 +202,7 @@ class HartreeFockGradient:
 
     symbols: tuple[str, ...]
     basis: str = "sto-3g"
-    step: float = 1e-5
+    step: float = 5e-5
     max_bond_bohr: float = 21.0
     stability: bool = False
     n_scf_calls: int = field(default=0, init=False, repr=False)
