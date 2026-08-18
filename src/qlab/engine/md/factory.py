@@ -4,13 +4,37 @@ from __future__ import annotations
 
 import numpy as np
 
-from qlab.engine.md.forcefields import Harmonic, LennardJones, Morse
+from qlab.engine.md.forcefields import (
+    Harmonic,
+    HartreeFockGradient,
+    LennardJones,
+    Morse,
+)
 from qlab.engine.md.state import MDState
 from qlab.engine.md.thermostats import Langevin, NoseHoover
 from qlab.errors import ScenarioError
 from qlab.provenance import Provenance
 from qlab.scenario.schema import MDScenario
 from qlab.units import AMU_TO_ELECTRON_MASS, amu_to_electron_mass
+
+#: HF dalı KENDİ yaklaşım listesini taşır. `_YAKLASIMLAR`'ın ÜÇ satırından
+#: İKİSİ Plan D için YALAN olur ve şeffaflık panelinde basılırdı (ölçüldü,
+#: Plan D §0.2): "elektron yok" -- oysa elektronlar her adımda çözülüyor --
+#: ve "kuvvet alanı analitik bir modeldir" -- tam tersi.
+#:
+#: DİKKAT -- aranabilirlik: bu dizgiler testte `.lower()` sonrası aranır ve
+#: Python'da "SAYISAL".lower() ASCII "sayisal" üretir ("sayısal" DEĞİL).
+#: Aranan ifadeler bu yüzden küçük harfle yazılıdır.
+_HF_YAKLASIMLAR = (
+    "Born-Oppenheimer: çekirdekler klasik, elektronlar her adımda anlık çözülür",
+    "RHF: tek Slater determinantı, kapalı kabuk (çift işgal)",
+    "sonlu baz seti",
+    "çekirdekler klasik: sıfır nokta enerjisi ve çekirdek tünellemesi yok",
+    "kuvvetler sayısal gradyan ile alınır (merkezi fark); analitik (Pulay) "
+    "gradyan bu depoda yoktur",
+    "dt kararlılık denetimi HF dalında yapılmaz: omega analitik değildir, "
+    "bu yüzden omega*dt < 2 kuralı denetlenmiyor -- dt'yi kullanıcı seçer",
+)
 
 _YAKLASIMLAR = (
     "klasik dinamik: çekirdekler nokta parçacık, elektron yok",
@@ -99,6 +123,10 @@ def build(scenario: MDScenario):
         alan = Morse(**p)
     elif tur == "lennard_jones":
         alan = LennardJones(**p)
+    elif tur == "hartree_fock":
+        # dt kararlılık denetimi BU DALDA YOK: omega analitik değil.
+        # Atlandığı _HF_YAKLASIMLAR'da beyan edilir (sessiz atlama değil).
+        alan = HartreeFockGradient(**p)
     else:
         raise ScenarioError(f"bilinmeyen kuvvet alanı: {tur!r}")
 
@@ -159,7 +187,11 @@ def provenance_for(
 
     return Provenance(
         method=yontem,
-        approximations=_YAKLASIMLAR,
+        approximations=(
+            _HF_YAKLASIMLAR
+            if scenario.force_field["kind"] == "hartree_fock"
+            else _YAKLASIMLAR
+        ),
         neglected=_IHMALLER,
         expected_error=beklenen,
         converged=yakinsadi,
@@ -167,6 +199,8 @@ def provenance_for(
             "dt": scenario.dt,
             "n_steps": scenario.n_steps,
             "energy_drift": energy_drift,
+            "basis": scenario.force_field.get("params", {}).get("basis"),
+            "gradient_step_bohr": scenario.force_field.get("params", {}).get("step"),
             "n_constraints": n_constraints,
             "masses_electron_mass": np.round(kutleler, 4).tolist(),
             "amu_to_electron_mass": AMU_TO_ELECTRON_MASS,

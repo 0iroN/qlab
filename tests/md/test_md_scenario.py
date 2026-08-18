@@ -141,3 +141,90 @@ def test_fcc_kafes_kurulumu_dogru_sayida_parcacik_veriyor():
     np.testing.assert_allclose(
         durum.masses, np.full(108, 39.948 * 1822.888486209), rtol=0.0, atol=1e-6
     )
+
+
+def test_hartree_fock_kuvvet_alani_fabrikadan_kuruluyor():
+    """`hartree_fock` dalı olmadan Plan D YAML'dan çağrılamaz.
+
+    Dağıtım KAPALI bir sayımdır (`else: raise ScenarioError`), yani dal
+    eklenmeden senaryo ham hata verir.
+    """
+    senaryo = MDScenario(
+        name="t",
+        force_field={
+            "kind": "hartree_fock",
+            "params": {"symbols": ["H", "H"], "basis": "sto-3g", "step": 1e-5},
+        },
+        initial={
+            "positions_bohr": [[0.0, 0.0, 0.0], [0.0, 0.0, 1.3959193602]],
+            "masses_amu": [1.00782503207, 1.00782503207],
+        },
+        thermostat=None,
+        dt=5.0,
+        n_steps=1,
+    )
+    durum, alan, termostat = build(senaryo)
+    assert alan.__class__.__name__ == "HartreeFockGradient"
+    assert alan.step == pytest.approx(1e-5, rel=0.0, abs=0.0)
+    assert termostat is None
+
+
+def test_HF_dalinda_yaklasim_listesi_ANALITIK_MODEL_DEMIYOR():
+    """Şeffaflık panelinin YALAN söylememesi.
+
+    `_YAKLASIMLAR` listesindeki "kuvvet alanı analitik bir modeldir,
+    hesaplanmış bir yüzey değildir" satırı Plan D için DÜZ YALANDIR ve
+    panelde basılır. HF dalı kendi listesini taşımak zorunda.
+
+    Bu test o yalanı kilitler: HF provenance'ında o cümle GEÇMEMELİ, ve
+    HF'ye özgü dört şey GEÇMELİ.
+    """
+    senaryo = MDScenario(
+        name="t",
+        force_field={
+            "kind": "hartree_fock",
+            "params": {"symbols": ["H", "H"], "basis": "sto-3g", "step": 1e-5},
+        },
+        initial={
+            "positions_bohr": [[0.0, 0.0, 0.0], [0.0, 0.0, 1.3959193602]],
+            "masses_amu": [1.00782503207, 1.00782503207],
+        },
+        thermostat=None,
+        dt=5.0,
+        n_steps=1,
+    )
+    prov = provenance_for(senaryo, energy_drift=1e-10)
+    metin = " ".join(prov.approximations + prov.neglected).lower()
+
+    # İKİ yalan da gitmiş olmalı (factory.py:16 ve :18 -- kaynak okundu)
+    assert "analitik bir model" not in metin
+    assert "elektron yok" not in metin
+    for beklenen in ("born-oppenheimer", "tek slater", "sonlu baz", "sayısal gradyan"):
+        assert beklenen in metin, f"HF beyanında eksik: {beklenen}"
+    assert "sto-3g" in " ".join(str(v) for v in prov.diagnostics.values()).lower()
+    assert prov.diagnostics["gradient_step_bohr"] == pytest.approx(1e-5)
+
+
+def test_HF_dalinda_kararlilik_denetiminin_ATLANDIGI_beyan_ediliyor():
+    """`omega*dt < 2` denetimi yalnız `harmonic` dalındadır; HF'de omega
+    analitik DEĞİLDİR ve denetim atlanır.
+
+    Atlamak meşru bir seçimdir; SESSİZ atlamak değildir.
+    """
+    senaryo = MDScenario(
+        name="t",
+        force_field={
+            "kind": "hartree_fock",
+            "params": {"symbols": ["H", "H"], "basis": "sto-3g"},
+        },
+        initial={
+            "positions_bohr": [[0.0, 0.0, 0.0], [0.0, 0.0, 1.3959193602]],
+            "masses_amu": [1.00782503207, 1.00782503207],
+        },
+        thermostat=None,
+        dt=5.0,
+        n_steps=1,
+    )
+    prov = provenance_for(senaryo, energy_drift=1e-10)
+    metin = " ".join(prov.approximations + prov.neglected).lower()
+    assert "kararlılık" in metin and "denetlenmiyor" in metin

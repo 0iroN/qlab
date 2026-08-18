@@ -1,0 +1,20 @@
+# H2'nin Hartree-Fock yuzeyinde titresimi (Plan D).
+# dt = T_HF/50 = 5.031 a.u.; T_HF = 251.585 a.u., HF/STO-3G yuzeyinin KENDI
+# periyodu (olculdu, k = 0.5729363 hartree/bohr^2).
+# MALIYET (olculdu): adim basina 7 SCF (oteleme kisayolu) = 8.5 ms
+# -> 200 adim ~ 1.7 s.
+# Baslangic 1.3959193602 bohr = denge + 0.05 bohr genlik.
+kind: md
+name: H2 ab initio titresim (HF/STO-3G)
+force_field:
+  kind: hartree_fock
+  params:
+    symbols: ["H", "H"]
+    basis: sto-3g
+    step: 1.0e-5
+initial:
+  positions_bohr: [[0.0, 0.0, 0.0], [0.0, 0.0, 1.3959193602]]
+  masses_amu: [1.00782503207, 1.00782503207]
+dt: 5.031487
+n_steps: 200
+save_every: 2
