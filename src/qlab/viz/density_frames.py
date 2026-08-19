@@ -1,0 +1,98 @@
+"""Zamana bağlı yoğunluk farkı filmi -- çizim YÜKÜ.
+
+Bu katman görüntü üretmez. `.mp4`/PNG yazmak yeni bağımlılık ve yeni katman
+demektir; depo deseni (viz/frames.py, viz/md_frames.py) yük üretmektir.
+
+BELLEK SÖZLEŞMESİ (ölçüldü): alan küpü SAKLANMAZ. (M,n,n,n) float64 M=100 /
+n=80 için 0.410 GB tutar; izoyüzey ağları ise kare başına 354-1370 tepe.
+Alan üretilir, ağ çıkarılır, alan atılır.
+
+MALİYET (ölçüldü, kare başına): n=41 -> 20.2 ms, n=61 -> 62.7 ms,
+n=81 -> 137.4 ms. Dağılım: yoğunluk alanı %63, izoyüzey %35, SCF %2'den az.
+100 karelik film 2.0 / 6.3 / 13.7 s.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+
+from qlab.engine.hf.scf import solve
+from qlab.engine.md.integrator import Trajectory
+from qlab.errors import InvalidInputError
+from qlab.observable.hf_obs import (
+    bond_midpoint_difference,
+    density_difference,
+    symmetric_box,
+)
+from qlab.types import Molecule
+from qlab.units import AU_TIME_TO_FEMTOSECOND, BOHR_TO_ANGSTROM
+from qlab.viz.isosurface import Mesh, extract_signed_pair
+
+
+@dataclass(frozen=True, eq=False)
+class DensityFilmPayload:
+    """Kare dizisi. `meshes` kare başına (+faz, -faz) ağ çifti."""
+
+    times_fs: np.ndarray
+    bond_length_bohr: np.ndarray
+    midpoint: np.ndarray
+    meshes: list[tuple[Mesh, Mesh]]
+    grid_origin: np.ndarray
+    grid_shape: tuple[int, int, int]
+    isolevel: float
+
+
+def build_density_film(
+    trajectory: Trajectory,
+    *,
+    symbols: tuple[str, ...],
+    half_width_bohr: float,
+    n: int,
+    basis: str = "sto-3g",
+    isolevel: float = 0.01,
+) -> DensityFilmPayload:
+    """Yörüngenin her karesinde SCF çözer ve yoğunluk farkını okur.
+
+    Kutu BİR KEZ kurulur ve tüm kareler boyunca sabit kalır (ölçüldü:
+    kare başına kutu seçimi filmi kadraj hareketine çevirir).
+    """
+    semboller = tuple(symbols)
+    if len(semboller) != trajectory.positions.shape[1]:
+        raise InvalidInputError(
+            f"sembol sayısı atom sayısıyla uyuşmuyor: {len(semboller)} != "
+            f"{trajectory.positions.shape[1]}"
+        )
+    izgara = symmetric_box(half_width_bohr, n)  # parite muhafazası burada
+
+    uzunluk, orta, agalar = [], [], []
+    for kare in range(trajectory.positions.shape[0]):
+        konum = trajectory.positions[kare]
+        merkez = konum.mean(axis=0)
+        # KUTU SABİT: molekül kutuya taşınır, kutu moleküle DEĞİL.
+        yerlesik = konum - merkez
+        angstrom = yerlesik * BOHR_TO_ANGSTROM
+        # DİKKAT -- `!r` KULLANMA. NumPy 2'de repr(np.float64(0.0)) =
+        # "np.float64(0.0)" ve Molecule.from_string bunu reddediyor.
+        metin = "; ".join(
+            "%s %.17g %.17g %.17g" % (s, r[0], r[1], r[2])
+            for s, r in zip(semboller, angstrom)
+        )
+        sonuc = solve(Molecule.from_string(metin), basis, stability=False)
+
+        uzunluk.append(float(np.linalg.norm(yerlesik[1] - yerlesik[0])))
+        orta.append(bond_midpoint_difference(sonuc, izgara, a=0, b=1))
+        alan = density_difference(sonuc, izgara)
+        agalar.append(extract_signed_pair(alan, isolevel))
+        del alan  # alan küpü SAKLANMAZ
+
+    return DensityFilmPayload(
+        times_fs=np.asarray(trajectory.times) * AU_TIME_TO_FEMTOSECOND,
+        bond_length_bohr=np.asarray(uzunluk),
+        midpoint=np.asarray(orta),
+        meshes=agalar,
+        grid_origin=izgara.origin,
+        grid_shape=izgara.shape,
+        isolevel=isolevel,
+    )
