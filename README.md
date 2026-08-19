@@ -55,10 +55,19 @@ Tasarım belgesi: `../docs/superpowers/specs/2026-08-05-qlab-kuantum-cekirdegi-d
   ve `md_obs.py` üçlüsünde **0 satır** değişti; `factory.py` ise değişmek
   zorundaydı (dağıtım dalı + HF'ye özgü şeffaflık beyanı). Ölçülen sayılar
   aşağıdaki Doğrulama tablosundadır.
-  **Kapsam dışı bırakıldı:** zamana bağlı yoğunluk farkı filmi. Ölçüm onu
-  ayırdı — maliyetin %97'si ızgarada baz değerlendirmesinden geliyor, kuvvet
-  alanından değil; film ab initio kuvvet gerektirmiyor ve kendi planına
-  bırakıldı.
+  **Kendi planına bırakılan** zamana bağlı yoğunluk farkı filmi Modül 2E'de
+  yapıldı (aşağıda).
+- **Modül 2E — zamana bağlı yoğunluk farkı: tamam.** Bağ orta noktasındaki
+  yoğunluk farkı (`bond_midpoint_difference`) ve kare dizisi yükü
+  (`viz/density_frames.py`). Modülün asıl kazancı bir kod değil bir **eleme**:
+  en doğal görünen aday `max|fark|` ölçülerek **elendi** — bağ zayıflarken
+  ters yöne gidiyor, değeri ızgaraya bağlı, ve asimetrik bağda orta noktayla
+  işareti bile zıt. Kalan gözlemlenebilir çözünürlükten de kutu boyutundan da
+  bağımsız (0.043821, dört kutuda altı hane aynı) ve kopuş boyunca sayısal
+  sıfıra tek yönlü oturuyor. Yük **alan küpü taşımaz** (60×–269× tasarruf) ve
+  bu test edilir. **Filmden enerji okunmaz:** RHF'in ayrışma enerjisi 14.875 eV
+  (deneysel 4.75) ile felakettir, yoğunluğu ise doğrudur. Ölçülen sayılar
+  aşağıdaki Doğrulama tablosundadır.
 
 ## Ne iddia etmiyor
 
@@ -201,16 +210,22 @@ Bu makinede ölçüldü (tek oturum, dört ayrı koşu):
 
 | Koşu | Test | Süre |
 |---|---|---|
-| tam süite | 700 | 258.73 s |
-| `-m "not slow"` | 675 | 54.00 s |
-| yalnız B2'nin üç dosyası (`test_orbital_window`, `test_isosurface`, `test_hf_obs`) | 165 | 29.07 s |
-| yalnız Modül 2 + 2D (`tests/md/`) | 93 | 66.82 s |
-| aynısı, `-m "not slow"` | 86 | 5.98 s |
+| tam süite | 717 | 229.24 s |
+| `-m "not slow"` | 692 | 53.62 s |
+| yalnız `-m slow` | 25 | 167.51 s |
+| yalnız B2'nin üç dosyası (`test_orbital_window`, `test_isosurface`, `test_hf_obs`) | 165 | 29.84 s |
+| yalnız Modül 2 + 2D + 2E (`tests/md/`) | 100 | 69.23 s |
+| aynısı, `-m "not slow"` | 93 | 7.07 s |
 
-Yavaş alt küme (25 test, 167.36 s) toplam sürenin **~%65'ini** yiyor. Mutlak
+Yavaş alt küme (25 test, 167.51 s) toplam sürenin **~%73'ünü** yiyor. Mutlak
 saniyeler bu makinede eşzamanlı yüke duyarlıdır — aynı tam süite ayrı
 koşularda 215.53 s ile 258.73 s arasında ölçüldü; aşağıdaki yapısal gözlemler
 ise duyarlı değildir.
+
+**Modül 2E hiç yavaş test eklemedi.** Plan E'nin planı üç testi
+`@pytest.mark.slow` işaretliyordu; ölçüldü ve kaldırıldı — en yavaşı 0.35 s,
+yani hepsi "saniye altı çıpa" kuralının içine düşüyor. Sonuç: yavaş şerit
+25 testte sabit kaldı, eklenen 17 testin **17'si de** hızlı şeritte.
 
 **Yavaş testlerin dağılımı (ölçüldü):** `hf/test_physical.py` ×5,
 `hf/test_stability.py` ×5, `tdse/test_double_slit.py` ×4, `md/test_aimd.py`
@@ -226,8 +241,8 @@ Plan D'nin **üç** yavaş testi ve tüm hızlı testleri toplam ~3 s ekledi.
 
 **Düzeltme — "B2 süreye neredeyse hiçbir şey eklemedi" iddiası yanlıştı.**
 Ölçüldü: B2'nin üç dosyasında **sıfır** yavaş test var, yani maliyeti tamamen
-hızlı kısma düşüyor ve orada küçük değil: hızlı kısım 54.00 s, bunun
-29.09 s'i (~%54) B2'nin üç dosyası. Eski iddia toplam sürenin sabit kalmasına
+hızlı kısma düşüyor ve orada küçük değil: hızlı kısım 53.62 s, bunun
+29.84 s'i (~%56) B2'nin üç dosyası. Eski iddia toplam sürenin sabit kalmasına
 dayanıyordu (127.3 → 127.96 s), ama o sabitlik bir gürültü iptaliydi:
 B2'nin hiç dokunmadığı yavaş alt küme aynı iki ölçüm arasında
 112.6 → 106.67 s "hızlanmıştı".
@@ -238,8 +253,9 @@ B2'nin hiç dokunmadığı yavaş alt küme aynı iki ölçüm arasında
 bu tablonun *ölçümleriydi* ve yanlışlıkla limite çevrilmişti. Yerine geçen
 kural ölçüme dayanıyor: yeni testler `@pytest.mark.slow` şeridine girer,
 varsayılan şeride yalnız saniye altı çıpalar konur; çünkü hızlı şerit
-(54.00 s) günlük çalışma döngüsüdür ve korunması tam süiteden daha
-değerlidir.
+(53.62 s) günlük çalışma döngüsüdür ve korunması tam süiteden daha
+değerlidir. Kural Modül 2E'de iki kez iş gördü: plan dört testi yavaş
+işaretlemişti, ölçüm dördünü de hızlı şeride geri gönderdi.
 
 ## Doğrulama
 
@@ -528,12 +544,104 @@ ekledi; `engine/md/integrator.py`, `engine/md/thermostats.py` ve
 satırından ikisi ("elektron yok", "analitik bir modeldir") HF dalında düz
 yalan olurdu ve şeffaflık panelinde basılırdı.
 
-**Kapsam dışı — zamana bağlı yoğunluk filmi.** Plan B2'nin kapanış notu bunu
-istiyordu ama ölçüm onu Plan D'den ayırdı: bir karenin maliyetinin **%97'si**
-ızgarada baz değerlendirmesinden geliyor, kuvvet alanından değil; mevcut
-Morse alanıyla sürülen 20 karelik bağ-kopuşu filmi 0.64 s tutuyor ve yörünge
-için **sıfır SCF** çağırıyor. Yani film ab initio kuvvet gerektirmiyor.
-Kendi planına bırakıldı.
+**Ayrı plana bırakılan — zamana bağlı yoğunluk filmi.** Plan B2'nin kapanış
+notu bunu istiyordu ama ölçüm onu Plan D'den ayırdı: bir karenin maliyeti
+ızgarada baz değerlendirmesinden geliyor, kuvvet alanından değil; yörünge için
+**sıfır SCF** gerekiyor. Yani film ab initio kuvvet gerektirmiyor. Modül 2E'de
+yapıldı ve oradaki uçtan uca ölçüm bunu doğruladı: kare maliyetinin ~%64'ü
+yoğunluk alanı, %31–35'i izoyüzey, SCF **%6'nın altında** ve n büyüdükçe %1'in
+altına iniyor.
+
+### Modül 2E — zamana bağlı yoğunluk farkı (Plan E)
+
+Plan D'nin kapanışı bu filmi kapsam dışı bırakırken bir ölçüme dayanmıştı:
+maliyet kuvvet alanından değil ızgaradan geliyor, dolayısıyla film ab initio
+kuvvet **gerektirmiyor**. Plan E o ayrımı doğruladı ve filmin asıl sorusunu
+değiştirdi: mesele kareleri üretmek değil, **hangi sayının bağın zayıflamasını
+ölçtüğü**.
+
+| Test | Referans / sınır | Ölçülen |
+|---|---|---|
+| Orta nokta değeri çözünürlükten bağımsız | n = 41 / 61 / 81, tolerans 1e-6 | üçünde de **0.043821** — altı hanede aynı |
+| …ve kutu boyutundan da bağımsız | yarı genişlik 6.0 vs 7.0 | **0.043821** (7.0 / n=51'de de) |
+| Gerilme serisi tek yönlü çöküyor | monoton azalan | 1.3459 → **0.043821**, 1.8 → **0.039467**, 2.5 → **0.028001**, 4.0 → **0.006847** |
+| Kopuş serisi (sevk edilen modül) | sayısal sıfıra oturmalı | r = 1.3459 → 0.043821, 4.1649 → 0.005686, 6.2559 → **0.000541**, 8.2587 → 0.000044, 10.2504 → 0.000002, 12.24 ve ötesi → **0.000000** |
+| Çift ızgara reddediliyor | `InvalidInputError` | n = 40 / 60 / 80 → 0.033640 / 0.038969 / 0.041031, yani **%23 / %11 / %6 eksik** |
+| Kutu tüm kareler boyunca sabit | `origin` ve `shape` değişmez | `[-8,-8,-8]`, `(41,41,41)` |
+| Kayan kütle merkezi kutuya taşınıyor | ağ ağırlık merkezi orijinde | yörünge COM'u 5 karede **1.92 bohr** kayarken ağ merkezi max \|z\| ≈ **9e-09** |
+| Yük alan küpü taşımıyor | hiçbir dizi `ndim > 2`, toplam < 300 KB | 4 karede **36.792 bayt** (küple 2.205.472 → **60×**) |
+| Alan kare başına bir kez hesaplanıyor | çağrı sayısı = kare sayısı | **4 / 4** (düzeltmeden önce 8) |
+
+**Neden `max|fark|` değil.** En doğal görünen aday — fark haritasının mutlak
+maksimumu — bir bağ gözlemlenebiliri **değildir**, ve bu iddia iki bağımsız
+ölçümle kilitlenmiştir:
+
+| | r = 1.3459 | r = 1.8 |
+|---|---|---|
+| bağ orta noktası | 0.043821 | **0.039467** (düştü) |
+| `max\|fark\|` (n=61) | 0.064559 | **0.073424** (YÜKSELDİ) |
+
+Yön yanlış olmakla kalmıyor, **değer ızgaraya bağlı**: aynı iki mesafede
+`max|fark|` n = 41 / 61 / 81'de 0.061516 / 0.064559 / 0.063294 — n ile tek
+yönlü bile değil. Orta nokta üç ızgarada da 0.043821'dir. Sebep fiziksel:
+mutlak maksimum çekirdek yakınındaki keskin yapıdadır, bağ bölgesini hiç
+görmez, ve kovaladığı çekirdek sivriliği ızgara inceldikçe sınırsız
+keskinleşir. **Çözünürlüğe bağlı bir büyüklük gözlemlenebilir değildir.**
+
+Asimetrik bağda ayrım daha da sert. HF molekülünde orta nokta **negatiftir**
+(−0.194841, n = 41/61/81'in üçünde de altı hane sabit) — iyonik bağda orta
+nokta zayıflar, yoğunluk F'ye kaçar — oysa `max` **+0.235735**, işaretleri
+bile zıttır. Simetrik H2 bu ayrımı yapamaz: ölçüldü, orada işaretli maksimum
+**tam olarak** bağ orta noktasındadır (argmax indisi (30,30,30), fark
+0.00e+00, dört germe mesafesinin dördünde de).
+
+**Izgara paritesi tuzağı.** Bağ orta noktası ancak `n` **tekse** gerçek bir
+ızgara düğümüdür. Çift `n`'de en yakın düğüm okunur ve değer sessizce eksik
+çıkar: n=40'ta %23, n=60'ta %11, n=80'de %6. Tuzağın asıl tehlikesi sayının
+büyüklüğü değil **şekli**: hata n büyüdükçe küçüldüğü için bir *yakınsama
+sorunu gibi görünür* ve insanı ızgarayı büyütmeye iter — maliyet n³ ile artar.
+Oysa doğru düzeltme `n`'i tek yapmaktır ve bedavadır. Bu yüzden `symmetric_box`
+çift `n`'i sessizce kabul etmez, hata fırlatır.
+
+**Bellek kararı: ağ sakla, alan saklama.** (M,n,n,n) float64 bir küp M=100 /
+n=80 için **0.410 GB** tutar; bir film için kabul edilemez. İzoyüzey ağları
+ise kare başına yalnız **50–410 tepe**. Aynı 9 karenin ağ yükü 29.5 / 78.3 /
+142.0 KB, alan küpleri 4.96 / 16.3 / 38.3 MB — **168× / 209× / 269×**. Alan
+üretilir, ağ çıkarılır, alan atılır. Bu bir yorum değil test edilen bir
+sözleşmedir: yükteki hiçbir dizi `ndim > 2` olamaz.
+
+**Kare maliyeti** (uçtan uca, ölçüldü): n=41 → 21.6 ms, n=61 → 63.1 ms,
+n=81 → 141.5 ms; 100 karelik film 2.16 / 6.31 / 14.15 s. Dağılım: yoğunluk
+alanı ~%64, izoyüzey %31–35, SCF %6'dan az ve n büyüdükçe %1'in altına iner.
+**Pahalı olan elektronik yapıyı çözmek değil, onu örneklemektir** — Plan D'nin
+"film ab initio kuvvet gerektirmiyor" hükmünün sayısal karşılığı budur.
+
+#### Dürüst olumsuzlar
+
+- **RHF'in enerjisi ayrışmada felakettir, yoğunluğu doğrudur.** Ölçüldü:
+  D_e = E(20 bohr) − E(r_e) = −0.570861 − (−1.117506) = **0.546645 hartree =
+  14.875 eV**, deneysel değer **4.75 eV** — üç katından fazla. Doğru ayrışma
+  limiti iki H atomu için −1.000000 hartree'dir; RHF 10 bohr'da −0.595971
+  verir. Sebep yapısaldır: tek determinant kısıtlı dalga fonksiyonu H2'yi
+  doğru ayrıştıramaz. Buna karşın *yoğunluk farkı* orta noktada doğru
+  davranır ve sayısal sıfıra oturur. **Bu yüzden filmden enerji okunmaz** —
+  film bir yoğunluk anlatısıdır, bir enerjetik iddia değil.
+- **Video/görüntü üretimi kapsam dışıdır** ve bu bir eksiklik değil bir
+  sınır. Deponun `viz/` katmanı hep *yük* üretir (`frames.py`,
+  `md_frames.py`); `.mp4`/PNG yazmak yeni bir bağımlılık ve yeni bir katman
+  demektir. `build_density_film` kare dizisini verir, onu neyin çizeceği
+  çağıranın işidir.
+- **H2 üstü ölçülmedi.** Film yalnız iki atomlu bir bağ için sınandı;
+  `bond_midpoint_difference` iki atom indisi alır ve çok-bağlı bir molekülde
+  hangi bağın anlatıldığı çağıranın kararıdır. H2O ve üstü için ne maliyet
+  ne doğruluk ölçülmüştür.
+- **Dış kararlılık analizi bu yolda koşulmaz** (`stability=False`). RHF
+  çözümünün kısıtlamayı kaldırınca kararlı kalıp kalmadığı — ki gerilmiş H2'de
+  kalmaz — sorulmamıştır.
+- **Film ab initio kuvvet gerektirmiyor.** Buradaki yörüngeler Morse alanıyla
+  üretildi ve kare başına SCF maliyeti %6'nın altında. Yani "kopuş filmi"
+  görüntüsü, kuvvetlerin Hartree-Fock'tan geldiğini **kanıtlamaz**; onu
+  kanıtlayan Modül 2D'nin çıpasıdır.
 
 ## Mimari kuralı
 
@@ -566,7 +674,7 @@ Spec §15'teki yedi maddenin gerçek durumu (ölçüm ayrıntıları
 
 | # | Kriter | Durum |
 |---|---|---|
-| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — **700/700 test yeşil** (`pytest tests/`, 258.73 s), PySCF referans testleri dahil. Ayrıca `reference/` geçici olarak kaldırılıp tam süite yeniden koşuldu: testler ATLANMIYOR, KIRMIZI oluyor — ölçüldü, **128 failed + 132 error + 291 passed, 0 skipped** (toplam 551, 154.20 s). Yani 260 test kırmızıya dönüyor ve hiçbiri sessizce atlanmıyor. Dikkat: bu ikinci deney süite 551 testliyken yapıldı ve o günün sayılarını taşır; yeniden koşulmadı, sayıları 700'e uydurmak ölçüm değil uydurma olurdu |
+| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — **717/717 test yeşil** (`pytest tests/`, 229.24 s), PySCF referans testleri dahil. Ayrıca `reference/` geçici olarak kaldırılıp tam süite yeniden koşuldu: testler ATLANMIYOR, KIRMIZI oluyor — ölçüldü, **128 failed + 132 error + 291 passed, 0 skipped** (toplam 551, 154.20 s). Yani 260 test kırmızıya dönüyor ve hiçbiri sessizce atlanmıyor. Dikkat: bu ikinci deney süite 551 testliyken yapıldı ve o günün sayılarını taşır; yeniden koşulmadı, sayıları 717'ye uydurmak ölçüm değil uydurma olurdu |
 | 2 | Headless koşucu çalışır + H₂ eğrisi bağ uzunluğu ±%8 | **Kapandı** — `python -m qlab.run scenarios/h2_bond_scan.yaml -o h2_curve.npz`; taramanın parabol fiti **0.71348 Å**, deneyselden sapma %3.7, kriterin istediği ±%8 sağlanıyor. Bu sayı yöntemin denge uzunluğu DEĞİL: STO-3G'nin gerçek minimumu 0.71223 Å, fark taramanın ızgara eseridir (Modül 1B tablosunun altındaki nota bakın). Bu satır bir zamanlar 0.7156 Å diyordu — o sayı bu komuttan değil, `test_physical`'ın ayrı ızgarasından geliyordu; artık `test_shipped_h2_scan_fit_is_grid_biased_but_less_than_the_uniform_grid` senaryonun kendi sayısını kilitliyor |
 | 3 | GUI'de H₂O HOMO izoyüzeyi döndürülebilir | **Kapandı — bu depoda ilk gerçek-ekran doğrulaması.** `python -m qlab.app.main --molecule "O 0 0 0; H 0 0.757 0.587; H 0 -0.757 0.587"` gerçek Windows platformunda açıldı; su HOMO'su (1b₁) çizildi, ±faz iki renkte, 1764/1764 tepe, çekirdekler ve şeffaflık paneli görüldü. Döndürme ölçüldü: kamera azimutu değişince kare piksel bileşenlerinin **%14.1'i**, elevasyon değişince **%7.2'si** değişiyor — sahne gerçekten 3B ve görünüm tepki veriyor. **Ne ölçülmedi:** fareyle sürükleyerek döndürme; kamera programatik değiştirildi. Kriterin "döndürülebilir" kelimesi bu yüzden yalnızca sahne tarafında kapalıdır, girdi tarafında bir insanın bakması gerekir. Doğrulamanın kendisi bir kusuru da GÖRÜNÜR KILDI: 12 satırlık beyan 140 px'lik panelde katlanın altında kalıyordu (düzeltildi, `TransparencyPanel(max_height=…)`) |
 | 4 | Kaydırıcı ile canlı iletim, analitiğin ±%2'si içinde | **Kapandı** — ölçülen fark %0.07 |
