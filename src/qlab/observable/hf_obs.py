@@ -854,18 +854,40 @@ def bond_midpoint_difference(
     (olculdu: 0.043821 -> 0.000003, r = 1.3459 -> 10.0 bohr).
 
     NEDEN `max|fark|` DEGIL: olculdu, o buyukluk bagin zayiflamasini
-    OLCEMEZ ve ilginc aralikta ters yone gider (r = 1.3459 -> 1.8 bohr
-    arasinda 0.063294 -> 0.072512 YUKSELIR). Mutlak maksimum cekirdek
-    yakinindaki keskin yapidadir ve bag bolgesini gormez.
+    OLCEMEZ ve ilginc aralikta ters yone gider (yari genislik 6.0 / n=61
+    kutusunda r = 1.3459 -> 1.8 bohr arasinda 0.064559 -> 0.073424
+    YUKSELIR). Mutlak maksimum cekirdek yakinindaki keskin yapidadir ve
+    bag bolgesini gormez; ustelik cozunurlukle de oynar (ayni iki mesafe
+    n=41/61/81'de 0.061516/0.064559/0.063294) cunku kovaladigi cekirdek
+    sivriligi izgara inceldikce sinirsiz keskinlesir. Orta nokta uc
+    izgarada da 0.043821'dir.
     """
-    konumlar = np.asarray([atom.position for atom in result.molecule.atoms])
+    return bond_midpoint_of(
+        density_difference(result, grid), result.molecule, a=a, b=b
+    )
+
+
+def bond_midpoint_of(
+    field: ScalarField, molecule: Molecule, *, a: int, b: int
+) -> float:
+    """Aynisi, ama alan ZATEN hesaplanmisken.
+
+    `bond_midpoint_difference` alani kendi uretir; bu surum disaridan
+    alir. Ayrim performans icin degil DOGRULUK icin onemli oldu:
+    olculdu, `viz/density_frames.py` kare basina alani IKI KEZ
+    hesapliyordu (biri burada, biri izoyuzey icin) ve alan kare
+    maliyetinin %64'u oldugundan uctan uca maliyet bilesen toplaminin
+    1.65 katina cikiyordu (n=41'de 33.5 ms yerine 20.4 ms olmaliydi).
+    Bir filmde bu, her karede odenen bir bedeldir.
+    """
+    konumlar = np.asarray([atom.position for atom in molecule.atoms])
     if not (0 <= a < len(konumlar)) or not (0 <= b < len(konumlar)):
         raise InvalidInputError(
             f"atom indisi aralik disi: a={a}, b={b}, atom sayisi {len(konumlar)}"
         )
     orta = 0.5 * (konumlar[a] + konumlar[b])
 
-    alan = density_difference(result, grid)
+    grid = field.grid
     indis = np.rint((orta - grid.origin) / grid.spacing).astype(int)
     geri = grid.origin + grid.spacing * indis
     sapma = float(np.abs(geri - orta).max())
@@ -875,4 +897,4 @@ def bond_midpoint_difference(
             "`symmetric_box` ile kurun ve cekirdekleri orijine simetrik "
             "yerlestirin."
         )
-    return float(alan.values[tuple(indis)])
+    return float(field.values[tuple(indis)])

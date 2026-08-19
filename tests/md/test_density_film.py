@@ -65,9 +65,11 @@ def _tum_diziler(nesne, yol="yuk", derinlik=0):
 def test_film_ORTA_NOKTA_serisi_cokuyor():
     """Filmin ANLATTIGI sey bu seridir: kovalent birikim cokuyor.
 
-    OLCULDU (gercek HF-MD kopus yorungesi): 0.043821 (r=1.346) ->
-    0.000577 (r=6.198) -> 0.000008 (r=9.415) -> sayisal sifir.
-    Buradaki kisa yorunge ayni yonu gostermek zorunda.
+    OLCULDU, SEVK EDILEN modulle (Morse yorungesi v0=0.011, kutu yari
+    genislik 12.0, n=41): r = 1.3459 -> 0.043821, 4.1649 -> 0.005686,
+    6.2559 -> 0.000541, 8.2587 -> 0.000044, 10.2504 -> 0.000002,
+    12.2405 ve otesi -> 0.000000. Bes mertebe inip sayisal sifira
+    oturuyor. Buradaki kisa yorunge ayni yonu gostermek zorunda.
     """
     yuk = build_density_film(
         _gerilme_yorungesi(), symbols=("H", "H"), half_width_bohr=8.0, n=41
@@ -155,3 +157,40 @@ def test_film_sembol_sayisi_uyusmazligini_reddediyor():
         build_density_film(
             _gerilme_yorungesi(3), symbols=("H",), half_width_bohr=8.0, n=41
         )
+
+
+def test_film_kare_basina_alani_BIR_KEZ_hesapliyor(monkeypatch):
+    """Yogunluk farki alani kare basina TEK sefer uretilmeli.
+
+    OLCULDU, bu test yazilmadan once modul alani kare basina IKI KEZ
+    hesapliyordu: bir kez `bond_midpoint_difference` icinde, bir kez de ag
+    icin. Alan kare maliyetinin %64'u oldugundan bu, uctan uca maliyeti
+    bilesen toplaminin 1.65 katina cikariyordu (n=41'de 33.5 ms yerine
+    olmasi gereken ~20 ms).
+
+    Sayac IKI ad alanina birden takiliyor: `viz.density_frames` kendi
+    `density_difference` bagini `from ... import` ile aldi, `hf_obs` ise
+    kendi modul-genelini kullanir. Yalniz birini yamalamak digerini
+    gormez -- ve tam da bu korluk, cift hesabin fark edilmeden gecmesini
+    saglardi.
+    """
+    import qlab.observable.hf_obs as hf_obs
+    import qlab.viz.density_frames as film
+
+    sayac = {"n": 0}
+    gercek = hf_obs.density_difference
+
+    def sayan(*args, **kwargs):
+        sayac["n"] += 1
+        return gercek(*args, **kwargs)
+
+    monkeypatch.setattr(hf_obs, "density_difference", sayan)
+    monkeypatch.setattr(film, "density_difference", sayan)
+
+    n_kare = 4
+    build_density_film(
+        _gerilme_yorungesi(n_kare), symbols=("H", "H"), half_width_bohr=8.0, n=41
+    )
+    assert sayac["n"] == n_kare, (
+        f"kare basina {sayac['n'] / n_kare:.1f} alan hesabi -- 1.0 olmali"
+    )

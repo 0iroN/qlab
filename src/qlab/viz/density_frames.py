@@ -4,12 +4,19 @@ Bu katman görüntü üretmez. `.mp4`/PNG yazmak yeni bağımlılık ve yeni kat
 demektir; depo deseni (viz/frames.py, viz/md_frames.py) yük üretmektir.
 
 BELLEK SÖZLEŞMESİ (ölçüldü): alan küpü SAKLANMAZ. (M,n,n,n) float64 M=100 /
-n=80 için 0.410 GB tutar; izoyüzey ağları ise kare başına 354-1370 tepe.
-Alan üretilir, ağ çıkarılır, alan atılır.
+n=80 için 0.410 GB tutar; izoyüzey ağları ise kare başına yalnızca 50-410 tepe
+(n=41...81). Aynı 9 karenin ağ yükü 29.5 / 78.3 / 142.0 KB, alan küpleri ise
+4.96 / 16.3 / 38.3 MB -- 168x / 209x / 269x. Alan üretilir, ağ çıkarılır,
+alan atılır.
 
-MALİYET (ölçüldü, kare başına): n=41 -> 20.2 ms, n=61 -> 62.7 ms,
-n=81 -> 137.4 ms. Dağılım: yoğunluk alanı %63, izoyüzey %35, SCF %2'den az.
-100 karelik film 2.0 / 6.3 / 13.7 s.
+MALİYET (ölçüldü, uçtan uca, kare başına): n=41 -> 21.6 ms, n=61 -> 63.1 ms,
+n=81 -> 141.5 ms; 100 karelik film 2.16 / 6.31 / 14.15 s. Dağılım: yoğunluk
+alanı ~%64, izoyüzey %31-35, SCF %6'dan az (n büyüdükçe %1'in altına iner --
+pahalı olan elektronik yapı değil, ONU ÖRNEKLEMEKTİR).
+
+Alan kare başına TAM BİR KEZ hesaplanır ve bu bir test tarafından sayılarak
+kilitlenir. Ölçüldü: iki kez hesaplayan ilk sürüm uçtan uca maliyeti 1.65
+katına çıkarıyordu (n=41'de 33.5 ms).
 """
 
 from __future__ import annotations
@@ -22,7 +29,7 @@ from qlab.engine.hf.scf import solve
 from qlab.engine.md.integrator import Trajectory
 from qlab.errors import InvalidInputError
 from qlab.observable.hf_obs import (
-    bond_midpoint_difference,
+    bond_midpoint_of,
     density_difference,
     symmetric_box,
 )
@@ -82,8 +89,11 @@ def build_density_film(
         sonuc = solve(Molecule.from_string(metin), basis, stability=False)
 
         uzunluk.append(float(np.linalg.norm(yerlesik[1] - yerlesik[0])))
-        orta.append(bond_midpoint_difference(sonuc, izgara, a=0, b=1))
+        # Alan kare başına TAM BİR KEZ: hem orta nokta hem izoyüzey aynı
+        # küpten okunur. Ölçüldü, iki kez hesaplamak kare maliyetini 1.65
+        # katına çıkarıyordu (n=41'de 33.5 ms yerine 20.4 ms).
         alan = density_difference(sonuc, izgara)
+        orta.append(bond_midpoint_of(alan, sonuc.molecule, a=0, b=1))
         agalar.append(extract_signed_pair(alan, isolevel))
         del alan  # alan küpü SAKLANMAZ
 

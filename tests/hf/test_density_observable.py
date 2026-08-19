@@ -62,11 +62,22 @@ def test_max_fark_bag_gozlemlenebiliri_DEGILDIR():
     """DURUST OLUMSUZ, olcularak kilitleniyor.
 
     `max|fark|` bagin zayiflamasini olcemez -- yalnizca duyarsiz degil,
-    fiziksel olarak ilginc aralikta TERS YONE gider. OLCULDU:
-      r = 1.3459 -> max 0.063294, orta-nokta 0.043821
-      r = 1.8    -> max 0.072512 (YUKSELDI), orta-nokta 0.039467 (dustu)
+    fiziksel olarak ilginc aralikta TERS YONE gider. OLCULDU, bu testin
+    kullandigi kutuda (yari genislik 6.0, n=61):
+      r = 1.3459 -> max 0.064559, orta-nokta 0.043821
+      r = 1.8    -> max 0.073424 (YUKSELDI), orta-nokta 0.039467 (dustu)
     Sebep: mutlak maksimum cekirdek yakinindaki keskin yapidadir ve bag
     bolgesini hic gormez.
+
+    IZGARA HER SAYIYI DEGISTIRIR, ve bu da basli basina bir kanit.
+    Ayni iki mesafede `max|fark|` uc cozunurlukte:
+      n=41 -> 0.061516 / 0.069238
+      n=61 -> 0.064559 / 0.073424
+      n=81 -> 0.063294 / 0.072512
+    Yalnizca yon degil DEGER de oynuyor, ustelik n ile tek yonlu bile
+    degil. Orta nokta ise ucunde de 0.043821 / 0.039467. (Bu dokstring
+    bir sure n=81'in sayilarini tasiyordu, oysa test n=61'de kosuyor --
+    tam da burada uyarilan hatanin kendisi.
 
     Bu test o gercegi kilitler: biri gozlemlenebiri `max`'a cevirirse
     kirmizi olur.
