@@ -816,3 +816,63 @@ def density_difference(result: HFResult, grid: VolumeGrid) -> ScalarField:
     )
 
     return ScalarField(values=fark, grid=grid, provenance=provenance)
+
+
+def symmetric_box(half_width_bohr: float, n: int) -> VolumeGrid:
+    """Orijine simetrik kubik izgara. `n` TEK olmak ZORUNDA.
+
+    Bag orta noktasi (0,0,0) ancak `n` tekse gercek bir izgara noktasidir.
+    OLCULDU: tek n'de deger cozunurlukten bagimsiz (n=41/61/81 -> 0.043821,
+    alti hanede ayni); cift n'de n=40 gercek degerin %23 ALTINDA kaliyor
+    (0.033640) ve bu hata bir YAKINSAMA SORUNU gibi gorunup insani izgarayi
+    buyutmeye iter -- oysa dogru duzeltme n'i tek yapmaktir ve bedavadir.
+    """
+    if not np.isfinite(half_width_bohr) or half_width_bohr <= 0.0:
+        raise InvalidInputError(
+            f"kutu yari genisligi pozitif ve sonlu olmali: {half_width_bohr}"
+        )
+    if n < 3 or n % 2 == 0:
+        raise InvalidInputError(
+            f"izgara noktasi sayisi TEK ve >= 3 olmali, verilen: {n}. "
+            "Cift izgarada orijin bir izgara noktasi DEGILDIR ve bag orta "
+            "noktasi interpolasyonsuz okunamaz (olculdu: n=40'ta %23 eksik)."
+        )
+    aralik = 2.0 * half_width_bohr / (n - 1)
+    return VolumeGrid(
+        origin=np.array([-half_width_bohr] * 3),
+        spacing=np.array([aralik] * 3),
+        shape=(n, n, n),
+    )
+
+
+def bond_midpoint_difference(
+    result: HFResult, grid: VolumeGrid, *, a: int, b: int
+) -> float:
+    """Iki cekirdegin ORTA NOKTASINDAKI yogunluk farki (elektron/bohr^3).
+
+    Kovalent birikimin olcusudur ve bag zayifladikca tek yonlu coker
+    (olculdu: 0.043821 -> 0.000003, r = 1.3459 -> 10.0 bohr).
+
+    NEDEN `max|fark|` DEGIL: olculdu, o buyukluk bagin zayiflamasini
+    OLCEMEZ ve ilginc aralikta ters yone gider (r = 1.3459 -> 1.8 bohr
+    arasinda 0.063294 -> 0.072512 YUKSELIR). Mutlak maksimum cekirdek
+    yakinindaki keskin yapidadir ve bag bolgesini gormez.
+    """
+    konumlar = np.asarray([atom.position for atom in result.molecule.atoms])
+    if not (0 <= a < len(konumlar)) or not (0 <= b < len(konumlar)):
+        raise InvalidInputError(
+            f"atom indisi aralik disi: a={a}, b={b}, atom sayisi {len(konumlar)}"
+        )
+    orta = 0.5 * (konumlar[a] + konumlar[b])
+
+    alan = density_difference(result, grid)
+    indis = np.rint((orta - grid.origin) / grid.spacing).astype(int)
+    geri = grid.origin + grid.spacing * indis
+    sapma = float(np.abs(geri - orta).max())
+    if sapma > 1e-9:
+        raise InvalidInputError(
+            f"orta nokta izgarada degil (sapma {sapma:.3e} bohr). Kutuyu "
+            "`symmetric_box` ile kurun ve cekirdekleri orijine simetrik "
+            "yerlestirin."
+        )
+    return float(alan.values[tuple(indis)])
