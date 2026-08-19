@@ -46,10 +46,19 @@ Tasarım belgesi: `../docs/superpowers/specs/2026-08-05-qlab-kuantum-cekirdegi-d
   zincir), sıcaklık/hız-dağılımı gözlemleri, YAML senaryo katmanı ve headless
   koşucu (`h2_morse.yaml`, `argon_nvt.yaml`), zaman serisi çizim yükü.
   Ölçülen sayılar aşağıdaki Doğrulama tablosundadır.
-  **Plan D (ab initio MD) henüz başlamadı:** Hartree-Fock sayısal gradyanı
-  bu çekirdeğe dördüncü bir kuvvet alanı olarak takılacak ve integratöre,
-  termostata, gözlemlere hiç dokunmayacak. Yoğunluk farkı haritasının zamana
-  bağlı hâle gelmesi orada olur.
+- **Modül 2D (Plan D) — ab initio moleküler dinamik: tamam.** Hartree-Fock
+  enerjisinin sayısal gradyanı **dördüncü kuvvet alanı** olarak takıldı
+  (`HartreeFockGradient`); çekirdekler artık Born-Oppenheimer yüzeyinde
+  hareket ediyor ve modül **dairesel olmayan** bir fiziksel çıpa kazandı —
+  titreşim frekansı yüzeyin kendisinden, iki bağımsız yoldan çıkıyor.
+  Mimari sözü tutuldu ve git ile ölçüldü: `integrator.py`, `thermostats.py`
+  ve `md_obs.py` üçlüsünde **0 satır** değişti; `factory.py` ise değişmek
+  zorundaydı (dağıtım dalı + HF'ye özgü şeffaflık beyanı). Ölçülen sayılar
+  aşağıdaki Doğrulama tablosundadır.
+  **Kapsam dışı bırakıldı:** zamana bağlı yoğunluk farkı filmi. Ölçüm onu
+  ayırdı — maliyetin %97'si ızgarada baz değerlendirmesinden geliyor, kuvvet
+  alanından değil; film ab initio kuvvet gerektirmiyor ve kendi planına
+  bırakıldı.
 
 ## Ne iddia etmiyor
 
@@ -156,6 +165,13 @@ python -m qlab.run scenarios/argon_nvt.yaml -o argon.npz
 `total` ve `temperature_kelvin` taşır; şeffaflık paneli koşunun yöntemini,
 yaklaşımlarını ve enerji sürüklenmesini stdout'a basar.
 
+Ab initio MD (Modül 2D) — H₂ Hartree-Fock yüzeyinde titreşiyor, kuvvetler
+her adımda SCF ile yeniden çözülüyor (adım başına 7 SCF, ~8.5 ms):
+
+```bash
+python -m qlab.run scenarios/h2_aimd.yaml -o h2aimd.npz
+```
+
 Etkileşimli TDSE penceresi:
 
 ```bash
@@ -185,27 +201,45 @@ Bu makinede ölçüldü (tek oturum, dört ayrı koşu):
 
 | Koşu | Test | Süre |
 |---|---|---|
-| tam süite | 680 | 242.79 s |
-| `-m slow` | 22 | 170.74 s |
-| `-m "not slow"` | 658 | 62.05 s |
-| yalnız B2'nin üç dosyası (`test_orbital_window`, `test_isosurface`, `test_hf_obs`) | 165 | 37.30 s |
-| yalnız Modül 2 (`tests/md/`) | 74 | 50.66 s |
+| tam süite | 700 | 258.73 s |
+| `-m "not slow"` | 675 | 54.00 s |
+| yalnız B2'nin üç dosyası (`test_orbital_window`, `test_isosurface`, `test_hf_obs`) | 165 | 29.07 s |
+| yalnız Modül 2 + 2D (`tests/md/`) | 93 | 66.82 s |
+| aynısı, `-m "not slow"` | 86 | 5.98 s |
 
-Yavaş alt küme toplam sürenin ~%70'ini yiyor (çift yarık, kutuda-parçacık ve
-HF tarama koşuları). Mutlak saniyeler bu makinede eşzamanlı yüke duyarlıdır;
-aşağıdaki yapısal gözlem ise duyarlı değildir.
+Yavaş alt küme (25 test, 167.36 s) toplam sürenin **~%65'ini** yiyor. Mutlak
+saniyeler bu makinede eşzamanlı yüke duyarlıdır — aynı tam süite ayrı
+koşularda 215.53 s ile 258.73 s arasında ölçüldü; aşağıdaki yapısal gözlemler
+ise duyarlı değildir.
+
+**Yavaş testlerin dağılımı (ölçüldü):** `hf/test_physical.py` ×5,
+`hf/test_stability.py` ×5, `tdse/test_double_slit.py` ×4, `md/test_aimd.py`
+×3, `md/test_maxwell_boltzmann.py` ×2, `md/test_thermostats.py` ×2,
+`tdse/test_analytic.py` ×2, `tdse/test_tunneling.py` ×1,
+`test_scenario.py` ×1.
+
+**Süreyi kim yiyor:** en yavaş beş test tek başına ~169 s ediyor ve
+**dördü MD değil TDSE**: `test_particle_in_box_ground_state_via_engine`
+44.56 s, üç çift-yarık testi ~28.6 s'er; Nosé-Hoover ergodiklik fixture'ı
+38.94 s ile ikinci sırada. Yani modül eklemek süreyi yiyen şey olmadı —
+Plan D'nin **üç** yavaş testi ve tüm hızlı testleri toplam ~3 s ekledi.
 
 **Düzeltme — "B2 süreye neredeyse hiçbir şey eklemedi" iddiası yanlıştı.**
-Ölçüldü: 18 yavaş testin **hepsi** B2 ÖNCESİ dosyalarda
-(`tests/hf/test_physical.py` ×5, `tests/hf/test_stability.py` ×5,
-`tests/tdse/test_double_slit.py` ×4, `tests/tdse/test_analytic.py` ×2,
-`tests/tdse/test_tunneling.py` ×1, `tests/test_scenario.py` ×1); B2'nin üç
-dosyasında **sıfır** yavaş test var. Yani B2'nin maliyeti tamamen hızlı kısma
-düşüyor ve orada küçük değil:
-hızlı kısım 51.24 s, bunun 32.34 s'i (~%63) B2'nin üç dosyası. Eski iddia
-toplam sürenin sabit kalmasına dayanıyordu (127.3 → 127.96 s), ama o sabitlik
-bir gürültü iptaliydi: B2'nin hiç dokunmadığı yavaş alt küme aynı iki ölçüm
-arasında 112.6 → 106.67 s "hızlanmıştı".
+Ölçüldü: B2'nin üç dosyasında **sıfır** yavaş test var, yani maliyeti tamamen
+hızlı kısma düşüyor ve orada küçük değil: hızlı kısım 54.00 s, bunun
+29.09 s'i (~%54) B2'nin üç dosyası. Eski iddia toplam sürenin sabit kalmasına
+dayanıyordu (127.3 → 127.96 s), ama o sabitlik bir gürültü iptaliydi:
+B2'nin hiç dokunmadığı yavaş alt küme aynı iki ölçüm arasında
+112.6 → 106.67 s "hızlanmıştı".
+
+**İlan edilmiş bir test bütçesi YOKTUR.** Plan D'nin ilk taslağı "`tests/md`
+≤ 50 s, tam süite ≤ 240 s" diye bir kısıt varsayıyordu; `README.md` ve
+`pyproject.toml` tarandı, öyle bir sınır **hiç tanımlı değil** — o sayılar
+bu tablonun *ölçümleriydi* ve yanlışlıkla limite çevrilmişti. Yerine geçen
+kural ölçüme dayanıyor: yeni testler `@pytest.mark.slow` şeridine girer,
+varsayılan şeride yalnız saniye altı çıpalar konur; çünkü hızlı şerit
+(54.00 s) günlük çalışma döngüsüdür ve korunması tam süiteden daha
+değerlidir.
 
 ## Doğrulama
 
@@ -403,6 +437,104 @@ küçülüyor (ideal √20 = 4.472).
 - Termostat kütlesi Q → 2Q hatası fiziksel gözlemlerin hiçbirinde eşiği
   aşmıyor; onu yalnızca `thermostat_mass`ın literal testi kırıyor.
 
+### Modül 2D — ab initio moleküler dinamik (Plan D)
+
+Modülün asıl kazancı burada: **çıpa artık dairesel değil.** Plan C'nin Morse
+alanında `a` parametresi zaten deneysel ω_e'den türetilmişti, yani 4401.21
+cm⁻¹ çıkması H2 fiziğini doğrulamıyordu — yalnız formüllerin tutarlılığını.
+Plan D'de Hartree-Fock **kendi eğrisini üretir**; hiçbir deneysel sayı girdi
+değildir.
+
+| Test | Referans / sınır | Ölçülen |
+|---|---|---|
+| Kuvvet ↔ bağımsız referans | Richardson ekstrapolasyonu (h=1e-3/5e-4, 4. mertebe), sınır 1e-9 | hata **1.85e-12** (r_e), **2.52e-11** (1.6 bohr), **1.43e-11** (2.0 bohr) — marj 540× / 39.6× / 70× |
+| Dengede kuvvet h ile sıfıra gidiyor | `\|F\|` < 5h² (sabit eşik YASAK — h'ye bağlı) | h=1e-3 → **3.06e-07**, h=1e-4 → **3.84e-09**; marj 16.3× / 13.0× |
+| Newton III (toplam kuvvet sıfır) | atol 1e-9 | **tam 0.000e+00** (öteleme kısayolu sayesinde) |
+| Adım maliyeti | sözleşme 6(N−1)+1 SCF | H2'de **7 SCF**, adım **8.5 ms** (tam alan 13 SCF / 15.9 ms olurdu) |
+| BO yüzeyinde enerji SALINIMI | (tepe-tepe/E_titreşim)/(π²/N²) = 1.0833 ± 0.01 | **1.0836** (N=50), 1.0829–1.0836 dört konfigürasyonda; saçılım 0.0007, marj 14× |
+| **ω — YOL A (statik)** | enerji eğrisinin ikinci türevi, kuvvet KULLANILMAZ | **5481.25336 cm⁻¹** |
+| **ω — YOL B (dinamik)** | MD periyodu, ikinci türev ALINMAZ | **5481.22946 cm⁻¹** |
+| **İki yolun uyuşması** | \|ω_B/ω_A − 1\| < 1e-4 | **−4.36e-06** — milyonda 4.4; marj 23× |
+| Geometri kapısı | R > 21.1 bohr'da hata fırlatır | E(21.10) = −0.5695574096 → E(21.20) = −0.2057275665, **ΔE = +0.36383 hartree** |
+| MD senaryosu CLI'dan uçtan uca | `python -m qlab.run scenarios/h2_aimd.yaml -o h2aimd.npz` | çıkış 0, `energy_drift=8.78e-08`, panelde `gradient_step_bohr=1e-05` |
+
+**İki yolun bağımsızlığı iddia değil, ölçüm.** Kuvvetleri ×1.001 ile bozan
+bir mutant çalıştırıldı:
+
+| | bozulmamış | kuvvet ×1.001 |
+|---|---|---|
+| ω_A (statik) | 5481.25336 | **5481.25336** — birebir aynı |
+| ω_B (dinamik) | 5481.22946 | 5483.96942 |
+| ω_B/ω_A − 1 | −4.36e-06 | **+4.96e-04** → test kırmızı |
+
+ω_A gradyan kodundan **yapısal olarak** etkilenemiyor (yalnız enerjileri
+kullanır), ω_B ise ikinci türevi hiç almaz. İkisinin aynı hesap olması
+imkânsızdır. Gradyan adımı değiştirildiğinde de aynı desen: h = 5e-5 / 1e-3 /
+1e-2 için ω_A üçünde de 5481.25336, ω_B ise 5481.22946 / 5481.22952 /
+5481.23607.
+
+**İki düzeltme olmadan bu uyuşma elde edilemez** ve ikisi de ölçüldü.
+(a) *Anharmoniklik:* sonlu genlikte frekans düşer — A=0.01 → 5481.24125,
+0.02 → 5480.56669, 0.04 → 5477.93574 cm⁻¹. Tek genlikle karşılaştırmak
+0.687 cm⁻¹ sahte fark üretir; A² → 0 ekstrapolasyonu şart.
+(b) *velocity-Verlet dispersiyonu:* ayrık integratörün frekansı sürekli
+olandan yüksektir, Ω = (2/dt)·arcsin(ω dt/2); tersi uygulanır. Etki 0.225 cm⁻¹.
+
+**HF/STO-3G deneyselden %24.54 sapıyor — ve bu bir KUSUR değil, YÖNTEMİN
+BEYANIDIR.** Ölçülen 5481.25 cm⁻¹, deneysel ω_e 4401.21 cm⁻¹. Bu depoda
+deneysel sayıya yaklaşma hedefi ya da toleransı **yoktur**. Sapmanın
+yöntemden geldiğinin bağımsız kanıtı baz setiyle gelir: 6-31G ile sapma
+**+%5.57**'ye iner, yani hata 4.4 kat azalır — bir kodlama hatası baz
+setiyle böyle davranmazdı.
+
+**432× payda tuzağı — bir sonraki okuyucu için.** BO yüzeyinde toplam enerji
+≈ −1.1175 hartree, titreşim enerjisi ise 2.582381e-03; oran **431.75**. Plan
+C'nin enerji testleri paydaya `|E_toplam|` yazar. O satır buraya kopyalanırsa
+her enerji ölçütü 432 kat zayıflar. Payda **E_titreşim**'dir.
+
+**Sürüklenme bir kabul ölçütü DEĞİLDİR** ve bu ölçülerek anlaşıldı. Planın
+ilk hâli `sürüklenme < 1e-8` yazıyordu; ölçülen değer **9.42e-05** (N=50) ve
+**1.94e-05** (N=100) — yani dt ile ölçekleniyor, bir gürültü tabanı değil
+ayrıklaştırma eseri. O sınır 9421 kat dışarıda kalırdı. Ölçüt salınım
+oranıdır; salınım temiz π²/N² yasasına uyuyor (N ikiye katlanınca 4.0016).
+
+**Dürüst olumsuzlar (ölçüldü, gizlenmiyor):**
+
+- **Langevin 300 K'ya OTURMADI.** 200 adımda ⟨T⟩ = 218.4 K, std 106.1 K. Bu
+  bir kod hatası değil: tek titreşim serbestliği olan iki atomlu sistem
+  ergodik değil ve 200 adım istatistik için yetersiz. **Termostatın HF ile
+  KOŞTUĞU kanıtlandı; hedef sıcaklığa OTURDUĞU kanıtlanmadı** ve iddia
+  edilmiyor. (Nosé-Hoover'da ⟨T⟩ = 289.2 K ama T_max 974.3 K — aynı uyarı.)
+- **"Isı bağı kırar" hikâyesi RHF'e TAŞINMAZ.** Ölçüldü: RHF/STO-3G ayrışma
+  limiti −0.5709 hartree, doğrusu −1.000000. Plan C'nin Morse ayrışması nicel
+  bir iddiaydı; RHF'te aynı iddia kurulamaz.
+- **Varsayılan gradyan adımını hiçbir FİZİK testi korumuyor.** Ölçüldü:
+  h=1e-3 yapan mutant bütün AIMD testlerini geçiyor (salınım oranı 1.0891,
+  sınırın içinde) oysa gradyan hatası 1.34e-07 — 5e-5'tekinin 10⁴ katı. Hata
+  sistematik ve kuvvete göre küçük olduğu için dinamik onu görmüyor. Bu
+  yüzden varsayılanı **doğrudan kilitleyen** ayrı bir test var.
+- **Analitik HF gradyanı (Pulay kuvvetleri) ÖLÇÜLEMEDİ** — bu depoda yok.
+  "Analitik gradyan 6N+1 SCF'yi 1'e indirir" bir tahmindir ve buraya
+  yazılmıyor. Aynı şekilde **sıcak başlangıç** (önceki yoğunluğu tohum verme)
+  kazancı da ölçülemedi: `scf.solve` imzasında başlangıç yoğunluğu yok.
+- **Maliyet kapsamı dar.** Ölçüldü: H2 1000 adım ~0.14 dk, H2O ~15.4 dk,
+  CH4 ~77 dk. Test süitesine **yalnız H2** girer.
+
+**Mimari sözü tutuldu ve git ile ölçüldü.** Plan D dördüncü kuvvet alanını
+ekledi; `engine/md/integrator.py`, `engine/md/thermostats.py` ve
+`observable/md_obs.py` üçlüsünde **0 satır** değişti (`git diff --stat
+82c65c4..HEAD` boş). Ama iddia dardır: `engine/md/factory.py` değişmek
+**zorundaydı** — dağıtım kapalı bir sayımdı ve `_YAKLASIMLAR` listesinin üç
+satırından ikisi ("elektron yok", "analitik bir modeldir") HF dalında düz
+yalan olurdu ve şeffaflık panelinde basılırdı.
+
+**Kapsam dışı — zamana bağlı yoğunluk filmi.** Plan B2'nin kapanış notu bunu
+istiyordu ama ölçüm onu Plan D'den ayırdı: bir karenin maliyetinin **%97'si**
+ızgarada baz değerlendirmesinden geliyor, kuvvet alanından değil; mevcut
+Morse alanıyla sürülen 20 karelik bağ-kopuşu filmi 0.64 s tutuyor ve yörünge
+için **sıfır SCF** çağırıyor. Yani film ab initio kuvvet gerektirmiyor.
+Kendi planına bırakıldı.
+
 ## Mimari kuralı
 
 `engine` paketi `viz` veya `app` import **edemez** — ve GUI'nin kendisini de,
@@ -434,7 +566,7 @@ Spec §15'teki yedi maddenin gerçek durumu (ölçüm ayrıntıları
 
 | # | Kriter | Durum |
 |---|---|---|
-| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — **680/680 test yeşil** (`pytest tests/`, 242.79 s), PySCF referans testleri dahil. Ayrıca `reference/` geçici olarak kaldırılıp tam süite yeniden koşuldu: testler ATLANMIYOR, KIRMIZI oluyor — ölçüldü, **128 failed + 132 error + 291 passed, 0 skipped** (toplam 551, 154.20 s). Yani 260 test kırmızıya dönüyor ve hiçbiri sessizce atlanmıyor. Dikkat: bu ikinci deney süite 551 testliyken yapıldı ve o günün sayılarını taşır; yeniden koşulmadı, sayıları 680'e uydurmak ölçüm değil uydurma olurdu |
+| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — **700/700 test yeşil** (`pytest tests/`, 258.73 s), PySCF referans testleri dahil. Ayrıca `reference/` geçici olarak kaldırılıp tam süite yeniden koşuldu: testler ATLANMIYOR, KIRMIZI oluyor — ölçüldü, **128 failed + 132 error + 291 passed, 0 skipped** (toplam 551, 154.20 s). Yani 260 test kırmızıya dönüyor ve hiçbiri sessizce atlanmıyor. Dikkat: bu ikinci deney süite 551 testliyken yapıldı ve o günün sayılarını taşır; yeniden koşulmadı, sayıları 700'e uydurmak ölçüm değil uydurma olurdu |
 | 2 | Headless koşucu çalışır + H₂ eğrisi bağ uzunluğu ±%8 | **Kapandı** — `python -m qlab.run scenarios/h2_bond_scan.yaml -o h2_curve.npz`; taramanın parabol fiti **0.71348 Å**, deneyselden sapma %3.7, kriterin istediği ±%8 sağlanıyor. Bu sayı yöntemin denge uzunluğu DEĞİL: STO-3G'nin gerçek minimumu 0.71223 Å, fark taramanın ızgara eseridir (Modül 1B tablosunun altındaki nota bakın). Bu satır bir zamanlar 0.7156 Å diyordu — o sayı bu komuttan değil, `test_physical`'ın ayrı ızgarasından geliyordu; artık `test_shipped_h2_scan_fit_is_grid_biased_but_less_than_the_uniform_grid` senaryonun kendi sayısını kilitliyor |
 | 3 | GUI'de H₂O HOMO izoyüzeyi döndürülebilir | **Kapandı — bu depoda ilk gerçek-ekran doğrulaması.** `python -m qlab.app.main --molecule "O 0 0 0; H 0 0.757 0.587; H 0 -0.757 0.587"` gerçek Windows platformunda açıldı; su HOMO'su (1b₁) çizildi, ±faz iki renkte, 1764/1764 tepe, çekirdekler ve şeffaflık paneli görüldü. Döndürme ölçüldü: kamera azimutu değişince kare piksel bileşenlerinin **%14.1'i**, elevasyon değişince **%7.2'si** değişiyor — sahne gerçekten 3B ve görünüm tepki veriyor. **Ne ölçülmedi:** fareyle sürükleyerek döndürme; kamera programatik değiştirildi. Kriterin "döndürülebilir" kelimesi bu yüzden yalnızca sahne tarafında kapalıdır, girdi tarafında bir insanın bakması gerekir. Doğrulamanın kendisi bir kusuru da GÖRÜNÜR KILDI: 12 satırlık beyan 140 px'lik panelde katlanın altında kalıyordu (düzeltildi, `TransparencyPanel(max_height=…)`) |
 | 4 | Kaydırıcı ile canlı iletim, analitiğin ±%2'si içinde | **Kapandı** — ölçülen fark %0.07 |
