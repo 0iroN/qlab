@@ -72,3 +72,36 @@ class MDScenario:
     dt: float
     n_steps: int
     save_every: int = 1
+
+
+@dataclass(frozen=True)
+class TBHopping:
+    """Tek bir hoplama yolu. `t_ev` ELEKTRONVOLTTUR.
+
+    Depo içi birim hartree'dir; dönüşüm `engine/tb/factory.py` sınırında
+    yapılır (bkz. md/factory.py'nin amu_to_electron_mass çağrısı).
+    """
+
+    i: int
+    j: int
+    cell: tuple[int, int, int]
+    t_ev: float
+
+
+@dataclass(frozen=True)
+class TBScenario:
+    """Tight-binding senaryosu.
+
+    `onsite_ev` ve `hoppings[*].t_ev` ELEKTRONVOLTTUR; örgü ve taban
+    BOHR'dur. TB literatürü eV'de yayınlandığı için giriş birimi eV
+    seçilmiştir ve dönüşüm tek bir sınırda yapılır.
+    """
+
+    name: str
+    lattice_vectors_bohr: tuple[tuple[float, float, float], ...]
+    basis_bohr: tuple[tuple[float, float, float], ...]
+    onsite_ev: tuple[float, ...]
+    hoppings: tuple[TBHopping, ...]
+    n_electron_per_cell: int
+    k_points: int
+

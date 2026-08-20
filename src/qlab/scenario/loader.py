@@ -24,6 +24,8 @@ from qlab.scenario.schema import (
     PacketSpec,
     MDScenario,
     PotentialSpec,
+    TBHopping,
+    TBScenario,
     TDSEScenario,
 )
 
@@ -44,7 +46,16 @@ _MD_TOP_LEVEL = {
 }
 _MD_REQUIRED = {"name", "force_field", "initial", "dt", "n_steps"}
 
-_KNOWN_KINDS = ("tdse", "hf_scan", "md")
+_TB_TOP_LEVEL = {
+    "kind", "name", "lattice_vectors_bohr", "basis_bohr", "onsite_ev",
+    "hoppings", "n_electron_per_cell", "k_points",
+}
+_TB_REQUIRED = {
+    "name", "lattice_vectors_bohr", "basis_bohr", "onsite_ev", "hoppings",
+    "n_electron_per_cell", "k_points",
+}
+
+_KNOWN_KINDS = ("tdse", "hf_scan", "md", "tb")
 
 
 def load_scenario(path: str | Path) -> TDSEScenario | HFScanScenario | MDScenario:
@@ -71,6 +82,8 @@ def load_scenario(path: str | Path) -> TDSEScenario | HFScanScenario | MDScenari
         return _load_hf_scan_scenario(raw, file_path)
     if kind == "md":
         return _load_md_scenario(raw, file_path)
+    if kind == "tb":
+        return _load_tb_scenario(raw, file_path)
     raise ScenarioError(
         f"Bilinmeyen senaryo türü (kind): {kind!r}. Geçerli türler: {list(_KNOWN_KINDS)}"
     )
@@ -218,3 +231,54 @@ def _load_md_scenario(raw: dict, file_path: Path) -> MDScenario:
         n_steps=int(raw["n_steps"]),
         save_every=int(raw.get("save_every", 1)),
     )
+
+
+def _load_tb_scenario(raw: dict, file_path: Path) -> TBScenario:
+    unknown = set(raw) - _TB_TOP_LEVEL
+    if unknown:
+        raise ScenarioError(
+            f"Bilinmeyen anahtar(lar): {sorted(unknown)}. "
+            f"Geçerli anahtarlar: {sorted(_TB_TOP_LEVEL)}"
+        )
+    missing = _TB_REQUIRED - set(raw)
+    if missing:
+        raise ScenarioError(f"Eksik anahtar(lar): {sorted(missing)}")
+
+    hoplamalar = []
+    for indis, ham in enumerate(raw["hoppings"]):
+        if not isinstance(ham, dict):
+            raise ScenarioError(
+                f"'hoppings[{indis}]' bir sözlük olmalı, "
+                f"{type(ham).__name__} verildi"
+            )
+        eksik = {"i", "j", "cell", "t_ev"} - set(ham)
+        if eksik:
+            raise ScenarioError(
+                f"'hoppings[{indis}]' eksik anahtar(lar): {sorted(eksik)}"
+            )
+        hucre = tuple(int(x) for x in ham["cell"])
+        if len(hucre) != 3:
+            raise ScenarioError(
+                f"'hoppings[{indis}].cell' üç tam sayı olmalı: {ham['cell']!r}"
+            )
+        hoplamalar.append(
+            TBHopping(
+                i=int(ham["i"]),
+                j=int(ham["j"]),
+                cell=hucre,
+                t_ev=float(ham["t_ev"]),
+            )
+        )
+
+    return TBScenario(
+        name=str(raw["name"]),
+        lattice_vectors_bohr=tuple(
+            tuple(float(x) for x in v) for v in raw["lattice_vectors_bohr"]
+        ),
+        basis_bohr=tuple(tuple(float(x) for x in v) for v in raw["basis_bohr"]),
+        onsite_ev=tuple(float(x) for x in raw["onsite_ev"]),
+        hoppings=tuple(hoplamalar),
+        n_electron_per_cell=int(raw["n_electron_per_cell"]),
+        k_points=int(raw["k_points"]),
+    )
+

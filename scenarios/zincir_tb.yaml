@@ -1,0 +1,14 @@
+kind: tb
+name: tek boyutlu zincir
+lattice_vectors_bohr: [[2.5, 0.0, 0.0]]
+basis_bohr: [[0.0, 0.0, 0.0]]
+onsite_ev: [-5.3]
+hoppings:
+  - {i: 0, j: 0, cell: [1, 0, 0], t_ev: -1.7}
+  - {i: 0, j: 0, cell: [-1, 0, 0], t_ev: -1.7}
+n_electron_per_cell: 1
+# k_points CIFT secildi ve bu bilinclidir. Olculdu (Task 4): tekbicim
+# izgarada bant kenarlari TEK n icin sistematik eksik cikiyor
+# (2|t|(1+cos(pi/n)); n=101'de %0.024), CIFT n icin TAM dogru. Tek n=101
+# ile `converged` yanlislikla degil DOGRU olarak False donuyordu.
+k_points: 100

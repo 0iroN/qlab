@@ -30,7 +30,12 @@ from qlab.engine.tdse.propagator import evolve
 from qlab.errors import QLabError
 from qlab.provenance import Provenance
 from qlab.scenario.loader import load_scenario
-from qlab.scenario.schema import HFScanScenario, MDScenario, TDSEScenario
+from qlab.scenario.schema import (
+    HFScanScenario,
+    MDScenario,
+    TBScenario,
+    TDSEScenario,
+)
 
 
 @dataclass
@@ -143,6 +148,11 @@ def main(argv: list[str] | None = None) -> int:
         # veriyordu (main yalniz QLabError yakaliyor).
         if isinstance(scenario, MDScenario):
             return _run_md(scenario, args.output)
+        # TB DALI: `_run_md` ile ayni gerekce -- `TBScenario` da `grid`
+        # tasimaz, dolayisiyla `_run_loaded` yolundan gecerse ayni
+        # yakalanmayan AttributeError'i verirdi.
+        if isinstance(scenario, TBScenario):
+            return _run_tb(scenario, args.output)
         result = _run_loaded(scenario)
     except QLabError as exc:
         print(str(exc), file=sys.stderr)
@@ -155,6 +165,53 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{result.scenario.name}: {len(result.times)} kare -> {args.output}")
     for label, value in result.provenance.as_lines():
         print(f"  {label:<14} {value}")
+    return 0
+
+
+def _run_tb(scenario: TBScenario, output: str | None) -> int:
+    """TB senaryosunu koşturur ve şeffaflık panelini basar.
+
+    `_run_md` gibi kendi panelini basar ve kendi .npz'sini yazar; `save()`
+    yolundan geçmez, çünkü `RunResult` bir zaman serisi varsayar ve bant
+    yapısı zaman serisi değildir.
+    """
+    from qlab.engine.tb.bands import band_structure, k_path, uniform_k_grid
+    from qlab.engine.tb.factory import build_tb
+    from qlab.engine.tb.lattice import reciprocal_vectors
+    from qlab.observable.tb_obs import fermi_level, is_metal
+
+    model, provenance = build_tb(scenario)
+    izgara = uniform_k_grid(model.lattice, scenario.k_points)
+    enerjiler = band_structure(model, izgara)
+    metal = is_metal(enerjiler, scenario.n_electron_per_cell)
+    e_fermi = fermi_level(enerjiler, scenario.n_electron_per_cell)
+
+    print(f"{scenario.name}: {model.n_orbital} bant, {len(izgara)} k-noktası")
+    print(f"  İletkenlik    : {'metal' if metal else 'yalıtkan'}")
+    for etiket, deger in provenance.as_lines():
+        print(f"{etiket:<14}: {deger}")
+
+    if output is not None:
+        # Task 6'nın modülü BURADA import edilir -- Task 7 tek başına commit
+        # edildiğinde CLI'ın kırık olmaması için (aynı gerekçe `_run_md`'de
+        # ölçülmüştü: koşulsuz import `ModuleNotFoundError` veriyordu).
+        from qlab.viz.band_frames import build_band_payload
+
+        b = reciprocal_vectors(model.lattice)
+        yol = k_path((np.zeros(3), 0.5 * b[0]), n_per_segment=scenario.k_points)
+        yuk = build_band_payload(
+            model, yol, tick_labels=("G", "X"), fermi_hartree=e_fermi
+        )
+        np.savez(
+            output,
+            k_distance=yuk.k_distance,
+            energies_ev=yuk.energies_ev,
+            orbital_weights=yuk.orbital_weights,
+            tick_distances=yuk.tick_distances,
+            tick_labels=np.array(yuk.tick_labels),
+            fermi_ev=np.array(yuk.fermi_ev),
+            is_metal=np.array(metal),
+        )
     return 0
 
 

@@ -10,7 +10,12 @@ from qlab.engine.md import factory as md_factory
 from qlab.engine.tdse import factory
 from qlab.errors import ScenarioError
 from qlab.scenario.loader import load_scenario
-from qlab.scenario.schema import HFScanScenario, MDScenario, TDSEScenario
+from qlab.scenario.schema import (
+    HFScanScenario,
+    MDScenario,
+    TBScenario,
+    TDSEScenario,
+)
 
 VALID_YAML = textwrap.dedent(
     """
@@ -247,6 +252,7 @@ _HF_SCAN_SAMPLE_POINTS = 2
 #: test dosyanin CALISIRLIGINI sinar, fizigi degil. `_HF_SCAN_SAMPLE_POINTS`
 #: ile ayni gerekce.
 _MD_SAMPLE_STEPS = 5
+_TB_SAMPLE_K_POINTS = 10
 
 
 def test_scenario_directory_is_not_empty():
@@ -291,6 +297,31 @@ def test_shipped_scenario_loads_and_runs(scenario_path):
             f"{scenario_path.name}: ilk kuvvet hesabı sonlu değil"
         )
         assert np.isfinite(enerji)
+        return
+
+    if isinstance(scenario, TBScenario):
+        # TB tarafinda "kosturulabilir" demek: model kurulabiliyor, bant
+        # yapisi sonlu cikiyor ve iletkenlik hukmu verilebiliyor. Izgara
+        # KUCULTULUR (senaryonun kendi k_points'i degil), cunku burada
+        # aranan sey fizik degil dosyanin calisir olmasidir.
+        from qlab.engine.tb.bands import band_structure, uniform_k_grid
+        from qlab.engine.tb.factory import build_tb
+        from qlab.observable.tb_obs import is_metal
+
+        model, provenance = build_tb(
+            dataclasses.replace(scenario, k_points=_TB_SAMPLE_K_POINTS)
+        )
+        enerjiler = band_structure(
+            model, uniform_k_grid(model.lattice, _TB_SAMPLE_K_POINTS)
+        )
+        assert enerjiler.shape[1] == model.n_orbital
+        assert np.all(np.isfinite(enerjiler)), (
+            f"{scenario_path.name}: bant enerjileri sonlu degil"
+        )
+        assert isinstance(
+            is_metal(enerjiler, scenario.n_electron_per_cell), bool
+        )
+        assert provenance.method.startswith("tight-binding")
         return
 
     assert isinstance(scenario, TDSEScenario)
