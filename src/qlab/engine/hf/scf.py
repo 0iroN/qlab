@@ -53,7 +53,11 @@ import numpy as np
 from qlab.engine.hf.basis import build_basis
 from qlab.engine.hf.integrals import core_hamiltonian, eri_tensor, overlap_matrix
 from qlab.engine.hf.stability import StabilityResult, analyse_stability, orbital_hessian
-from qlab.errors import SCFConvergenceError, UnsupportedSystemError
+from qlab.errors import (
+    InvalidInputError,
+    SCFConvergenceError,
+    UnsupportedSystemError,
+)
 from qlab.provenance import Provenance, StabilityVerdict
 from qlab.types import Molecule
 
@@ -276,6 +280,7 @@ def solve(
     residual_tolerance: float = 1e-8,
     use_diis: bool = True,
     stability: bool = True,
+    initial_bias: np.ndarray | None = None,
 ) -> HFResult:
     """Kapali kabuk RHF enerjisini Roothaan-Hall SCF donguleriyle cozer.
 
@@ -352,7 +357,25 @@ def solve(
     x = _orthogonalisation_matrix(overlap)
 
     # Baslangic tahmini: core guess (P=0 ile Fock = Hcore).
-    fock_prime = x.T @ core @ x
+    #
+    # `initial_bias` verilirse cekirdek Hamiltoniyenine kosegen bir sapma
+    # eklenir ve SCF BASKA bir havzadan baslar. Varsayilan None ile davranis
+    # BIREBIR korunur (testle kilitli).
+    #
+    # NEDEN VAR: olculdu, tek baslangicli SCF bazi geometrilerde taban durum
+    # OLMAYAN bir cozume yakinsiyor -- N2'de R=1.30...2.00 A arasinda
+    # 0.278...0.498 hartree yukarida ve orada 3-4 AYRI cozum var. Bu, DIIS'ten
+    # bagimsiz bir kusurdur (ayrintili ayrim: multistart.py modul dokstringi).
+    if initial_bias is None:
+        baslangic_fock = core
+    else:
+        bias = np.asarray(initial_bias, dtype=float)
+        if bias.shape != (len(basis),):
+            raise InvalidInputError(
+                f"initial_bias ({len(basis)},) olmali, verilen: {bias.shape}"
+            )
+        baslangic_fock = core + np.diag(bias)
+    fock_prime = x.T @ baslangic_fock @ x
     _, coefficients_prime = np.linalg.eigh(fock_prime)
     coefficients = x @ coefficients_prime
     density = _density_matrix(coefficients, n_occupied)
