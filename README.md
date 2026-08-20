@@ -68,6 +68,20 @@ Tasarım belgesi: `../docs/superpowers/specs/2026-08-05-qlab-kuantum-cekirdegi-d
   bu test edilir. **Filmden enerji okunmaz:** RHF'in ayrışma enerjisi 14.875 eV
   (deneysel 4.75) ile felakettir, yoğunluğu ise doğrudur. Ölçülen sayılar
   aşağıdaki Doğrulama tablosundadır.
+- **Modül 3F — tight-binding çekirdeği: tamam.** Örgü/komşu kurulumu,
+  `H(k)`, bant yapısı, elektron sayımı, bant yükü ve `kind: tb` senaryosu.
+  Modülün asıl çıktısı bir sayı değil bir **hüküm**: yol haritasının
+  "bakır/silisyum bant aralığı" hedefinin ilk yarısı ölçümle **geçersiz
+  kılındı** — TB'de bant aralığının *değeri* bir tahmin değil, girilen fit
+  parametresinin geri okunmasıdır (silisyumda 1.17 eV için gereken tek
+  parametre 5.376670 eV; aynı kadran Ge'yi ve V=7.0'da metali de veriyor).
+  Geriye kalan gerçek: **iletken yarısı sayımdan** gelir ve parametrelerden
+  bağımsızdır (tek elektron → 300/300 metal), **yalıtkan yarısı fit'ten**
+  gelir (çift sayım yalıtkanlığı garanti etmez: 1B %67, 2B %34, 3B %20 metal).
+  Bant kenarları ızgaradan **okunmuyor** — ölçüldü, ızgarayı sıklaştırmak
+  hatayı monoton küçültmüyor. Parametreleri qlab'ın kendi Hartree-Fock'undan
+  türetmek Plan G'ye bırakıldı. Ölçülen sayılar aşağıdaki Doğrulama
+  tablosundadır.
 
 ## Ne iddia etmiyor
 
@@ -210,17 +224,25 @@ Bu makinede ölçüldü (tek oturum, dört ayrı koşu):
 
 | Koşu | Test | Süre |
 |---|---|---|
-| tam süite | 717 | 229.24 s |
-| `-m "not slow"` | 692 | 53.62 s |
-| yalnız `-m slow` | 25 | 167.51 s |
+| tam süite | 801 | 239.62 s |
+| `-m "not slow"` | 776 | 57.64 s |
+| yalnız `-m slow` | 25 | 183.15 s |
+| yalnız Modül 3F (`tests/tb/`) | 80 | 4.19 s |
 | yalnız B2'nin üç dosyası (`test_orbital_window`, `test_isosurface`, `test_hf_obs`) | 165 | 29.84 s |
 | yalnız Modül 2 + 2D + 2E (`tests/md/`) | 100 | 69.23 s |
 | aynısı, `-m "not slow"` | 93 | 7.07 s |
 
-Yavaş alt küme (25 test, 167.51 s) toplam sürenin **~%73'ünü** yiyor. Mutlak
+Yavaş alt küme (25 test, 183.15 s) toplam sürenin **~%76'sını** yiyor. Mutlak
 saniyeler bu makinede eşzamanlı yüke duyarlıdır — aynı tam süite ayrı
 koşularda 215.53 s ile 258.73 s arasında ölçüldü; aşağıdaki yapısal gözlemler
 ise duyarlı değildir.
+
+**Modül 3F de hiç yavaş test eklemedi** — eklenen **84 testin 84'ü de**
+hızlı şeritte (692 → 776) ve yavaş şerit 25'te sabit kaldı. En yavaş yeni test
+0.80 s; dört ayrı yerde plan `@pytest.mark.slow` öneriyordu, dördü de ölçümle
+kaldırıldı. Bir kez de tersi oldu: 2.90 s süren bir test referansı ızgaradan
+**algebraya** çevrilerek 0.32 s'ye indi — yavaş bir testin çaresi her zaman
+markerlemek değildir.
 
 **Modül 2E hiç yavaş test eklemedi.** Plan E'nin planı üç testi
 `@pytest.mark.slow` işaretliyordu; ölçüldü ve kaldırıldı — en yavaşı 0.35 s,
@@ -643,10 +665,155 @@ alanı ~%64, izoyüzey %31–35, SCF %6'dan az ve n büyüdükçe %1'in altına 
   görüntüsü, kuvvetlerin Hartree-Fock'tan geldiğini **kanıtlamaz**; onu
   kanıtlayan Modül 2D'nin çıpasıdır.
 
+### Modül 3F — tight-binding çekirdeği (Plan F)
+
+Bu modülün en önemli çıktısı bir sayı değil bir **hüküm**: yol haritasının
+Modül 3 için ilan ettiği doğrulama hedefinin ilk yarısı — "bakır/silisyum bant
+aralığı" — ölçümle **geçersiz kılındı**. Bir tight-binding modelinde bant
+aralığının *değeri* bir tahmin değil, girilen fit parametresinin geri
+okunmasıdır.
+
+| Test | Referans / sınır | Ölçülen |
+|---|---|---|
+| **Gerçek-uzay ↔ Bloch çapraz kontrolü** (çekirdek çıpa) | hata/‖H‖ < 1e-13, N = 4…256 | N=12'de **8.882e-16**; hata √N ile büyüyor (log-log eğim **0.5025**), hata/‖H‖ N=4→4096 boyunca 3.165e-15 |
+| Ters örgü konvansiyonu | b_i·a_j = 2π δ_ij, atol 1e-12 | eğik örgüde artık **1.178e-16** (yanlış sürümde 2.173) |
+| Kesme yarıçapı, fcc | 12 komşu, 11 örgü sabitinde | **11/11** (bağıl toleranssız 5'inde **0** komşu seçiliyordu) |
+| `eigh` UPLO tuzağı | üst üçgene +1000 | özdeğer değişimi **tam 0.000e+00** |
+| Gauge (hücre vs atom) | özdeğerler eşit kalmalı | H elemanları farkı > 1e-3, özdeğerler 1e-14'te aynı |
+| Faz konvansiyonu | H[0,1] işaretli | **−0.10362686 + 0.03983523j** (ters işarette özdeğerler **aynı**) |
+| **Tek elektron sayımı → metal** | parametre-bağımsız | **300/300** (1B/2B/3B × 100 rastgele model) |
+| Yapı oranı W²/μ₂ = 4z | ε ∈ (−500,500), t ∈ (−50,50) | 1B **8.000000000** (2.22e-16), 2B **16**, 3B **24** |
+| Bant genişliği, tek n | kapalı form 2\|t\|(1+cos(π/n)) | fark **2.78e-17**; oranlar 0.750000 / 0.950484 / 0.991487 / 0.999758 |
+| Ağırlıklar gauge-bağımsız | özvektörler değil | özvektör farkı **0.814887**, ağırlık farkı **3.331e-16** |
+| Şeffaflık paneli daireselliği beyan ediyor | tam cümle | CLI çıktısında doğrulandı |
+| Süite | — | **801 test yeşil**, `tests/tb/` 80 test / 4.19 s |
+
+#### Bu modül bant aralığı TAHMİN ETMEZ
+
+Vogl-Hjalmarson-Dow (1983) sp³s\* parametrizasyonuyla silisyum kuruldu ve
+bağımsız bir uygulamayla yeniden üretildi:
+
+| ölçüm | değer |
+|---|---|
+| dolaylı bant aralığı | 1.171338 eV (deneysel 1.12) |
+| E_gap = 1.17 eV için gereken `V(s*a,pc)` | **5.376670 eV** — yayınlanan 5.3749, fark %0.033 |
+| kazanç dE_gap/dV | −0.7561 eV/eV |
+| aynı kadran | Ge'yi (0.66 eV), GaAs'ı ve V=7.0'da **metali** veriyor |
+| Γ noktası özdeğerleri | analitik olarak E_s ± \|V_ss\| — **doğrudan girdiler** |
+
+Aynı şey 1B'de doğrudan gösterildi: hedef aralık seçilip `t` ondan cebirsel
+türetildiğinde çözücü hedefi geri veriyor (1.12 → 1.120000000000000, 0 ULP).
+
+**Fit edilmeyen tek nicelik yanlış çıkıyor:** iletim bandı minimumunun konumu
+**0.731066 X**, deneysel **0.85 X** — **%14.0 hata**. Model onu tahmin etmeye
+çalıştı ve ıskaladı. Doğrulanabilir olan tek şey buydu ve doğrulanmadı.
+
+#### İletken yarısı sayımdan, yalıtkan yarısı fit'ten
+
+Modülün ölçülmüş asimetrisi budur. **Tek** elektron sayımı her zaman metal
+verir — bir bandı ancak yarı doldurabilir, dolayısıyla hüküm bir hesap değil
+bir **sayımdır** (300/300, iki bağımsız uygulamayla). Ama **çift** sayım
+yalıtkanlığı **garanti etmez**: bant örtüşmesi yüzünden metal çıkma oranı
+1B %67, 2B %34, 3B %20 ölçüldü. Silisyumun yarıiletkenliği sayımdan çıkmıyor.
+
+#### Tautoloji-çıpa — bu depoda üçüncü kez
+
+Ön ölçümde "çıpa" ilan edilenlerin çoğu karşıt doğrulamada düştü:
+
+| iddia edilen çıpa | hüküm |
+|---|---|
+| "sayısal = analitik, 1 ULP" | **tautoloji** — `eigvalsh(1×1)` ile `H[0,0].real` arası 0 ULP; 1 ULP'in tamamı birleşme sırası |
+| "bant katlanması, 0 ULP" | **tautoloji** — iki matris bit bit aynı |
+| "durum sayımı" | 6 kasıtlı bozulmanın **0'ını** yakaladı |
+| grafende K'de sıfır aralık "korunuyor" | **çürütüldü** — Haldane terimi A,B özdeş kalırken 0.519615242 eV açıyor |
+| `E(Γ)/E(M) = 3` gibi oranlar | model kesiminin geri okunması |
+
+Körlük doğrudan sergilendi ve testle kilitlendi: tek orbitalli zincirde
+`eigvalsh` 1×1 matriste **yalnız gerçek kısmı** okur, dolayısıyla üç farklı
+Hamiltoniyen aynı özdeğeri verir — doğrusu (−0.17251924+0j), hücre çarpanı
+düşürülmüş olan (**−0.17251924 − 0.12299824j**, Hermityen bile değil) ve fazı
+tamamen kaybetmiş olan; üçünün de `eigvalsh`'i −0.172519243044.
+
+**Ayırıcı sınav ölçüldü:** aynı altı mutanta karşı çekirdek çıpa **6/6**,
+tautoloji-çıpa **1/6** yakaladı.
+
+> **Kural.** 1e-12 altında uyuşan iki "bağımsız yol" kanıt değil şüphedir.
+> Sahte-çıpa sınavı (fiziğe ait olmayan rastgele girdi) şüpheyi *işaret eder*
+> ama tek başına ayırmaz — **ayıran şey mutasyondur**: bir yolu bozunca öteki
+> yakalıyor mu?
+
+#### k-uzayı parite tuzağı — Modül 2E'nin kardeşi, ama daha kötü
+
+Grafende ölçüldü: 601×601 ızgara Dirac noktasını yakalıyor (**2.471886e-15 eV**),
+600×600 sahte bir **1.635969e-02 eV** aralık uyduruyor — ve **daha sık** olan
+1000×1000 **1.698157e-02 eV**, yani 601'den **13 mertebe kötü**. Sıklaştırmak
+düzeltmiyor.
+
+1B'de iki ayrı biçimde çıkıyor. Birincisi parite: bant genişliği tek n'de
+sistematik eksik, çift n'de tam. İkincisi daha sinsi — **hata monoton bile
+değil**:
+
+| n | bant minimumu hatası |
+|---|---|
+| 5 | **2.426e-06** |
+| 7 | 1.934e-02 |
+| 12 | 7.031e-03 |
+| 13 | **7.370e-03** (n=12'den kötü) |
+| 2001 | 1.936e-09 |
+| 20001 | **3.849e-09** (on kat sık ızgara iki kat kötü) |
+
+n=5, n=13'ten ~3000 kat iyi. Bu yüzden `band_edges` ızgarayı **hiç
+kullanmıyor**, sürekli minimizasyon yapıyor — ve ölçüldü, 201×201 ızgaradan
+(1.79 s) hem **daha doğru** hem 8× hızlı (0.23 s).
+
+Parite kodda **sihirli sayıyla** sabitlenmiyor: ön ölçümde iki ajan iki farklı
+ızgara konvansiyonunda iki farklı "doğru N" ölçtü (601 ve N%3==0), ikisi de
+kendi konvansiyonunda doğru. Bunun yerine çağıran hangi k noktalarının ızgarada
+bulunması gerektiğini söylüyor, kod **denetliyor** (`must_include`).
+
+#### Dürüst olumsuzlar
+
+- **`band_structure` çıktısı sıralamadır, bant kimliği değildir.** Ölçüldü:
+  sıralı "bant 0"ın etkin kütlesi −6.42e-05, gerçek bandınki −8.000e-01 —
+  **12457 kat** hata. Çizim için doğru, bant-çözümlü nicelikler için değil.
+- **Dejenere alt uzayda bant başına orbital ağırlığı tanımlı değildir.**
+  Doğrudan sergilendi: 2B'de iki bant tam dejenere (E farkı 0.0); numpy
+  `[1,0]/[0,1]` döndürüyor ama 45° döndürülmüş çift de aynı ölçüde geçerli ve
+  ağırlıkları `[0.5,0.5]`. Alt uzay toplamı iki tabanda da aynı.
+- **`band_edges` çok boyutta bir SINIRDIR, kanıtlanmış küresel uç değer
+  değil.** Ölçüldü: 50 aramada tek başlangıç 31/50 başarısız (en kötüsü bant
+  genişliğinin **%51.5**'i), 5×5 çoklu başlangıç 8/50.
+- **`converged` ölçütü kandırılabilir.** n vs 2n karşılaştırması "iki ızgara
+  aynı sonucu veriyor" der, "sonuç doğru" demez; n=4 gibi çok kaba bir çift
+  ızgara bile `True` veriyor çünkü sıfır yoğunluktan değil **pariteden** geliyor.
+- **Ortogonal olmayan taban yoktur** (S = I). Bedeli ölçüldü: bant genişliğinin
+  %45–65'i.
+- **`viz` katmanının GUI yasağı YOKTUR** — ölçüldü, `viz/band_frames.py →
+  PySide6` rc=0 ile geçiyor ve `viz/isosurface.py:55` zaten pyqtgraph import
+  ediyor. "Bant yükü çizim yapmaz" bir **disiplindir, sözleşme değildir**.
+  (`engine` tarafındaki `matplotlib` kaçış deliği ise bu modülde kapatıldı:
+  enjeksiyon artık rc=1 veriyor ve taranan dosya 67 → 68'e çıkıyor.)
+- **Büyük k'de argument reduction sessizce bozuluyor:** k + 1e12·G →
+  özdeğer farkı 2.387652e-03 eV mertebesinde, hiçbir uyarı yok.
+- **Bu ULP sayıları taşınabilir değildir** — tek makine, tek yığın
+  (Python 3.14.7, numpy 2.5.1, scipy 1.18.0, Windows 11).
+
+#### Ne yapılmadı
+
+Silisyum ve bakır **sevk edilmedi** (ön ölçümde kuruldular, depoya girmediler);
+spin, spin-yörünge etkileşimi ve manyetik alan yok; Peierls çarpılmasının
+enerjetiği hesaplanmıyor; sıcaklık/Fermi-Dirac doluluğu yok. Ve en önemlisi:
+**parametreler türetilmiyor**, dışarıdan giriyor. Onları qlab'ın kendi
+Hartree-Fock'undan türetmek — daireselliği kırma hamlesinin TB karşılığı —
+Plan G'ye bırakıldı ve ön ölçümü "KISMEN" dedi.
+
 ## Mimari kuralı
 
 `engine` paketi `viz` veya `app` import **edemez** — ve GUI'nin kendisini de,
-yani `PySide6` / `pyqtgraph` / `OpenGL`'i de. Aynısı `observable` için geçerli.
+yani `PySide6` / `pyqtgraph` / `OpenGL` / `matplotlib`'i de. (`matplotlib`
+Modül 3'te ölçülerek eklendi: `engine/tb/bands.py`ye enjekte edilen
+`import matplotlib.pyplot` rc=0 ile **geçiyordu**, aynı dosyaya konan PySide6
+kontrolü ise rc=1 veriyordu — yani araç çalışıyordu, eksik olan kapsamdı.) Aynısı `observable` için geçerli.
 Katman sırası `run/app → viz → observable → engine → scenario →
 provenance → types → units/errors`. Kural yorumla değil import-linter ile
 korunur: `pytest tests/test_architecture.py`.
@@ -674,7 +841,7 @@ Spec §15'teki yedi maddenin gerçek durumu (ölçüm ayrıntıları
 
 | # | Kriter | Durum |
 |---|---|---|
-| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — **717/717 test yeşil** (`pytest tests/`, 229.24 s), PySCF referans testleri dahil. Ayrıca `reference/` geçici olarak kaldırılıp tam süite yeniden koşuldu: testler ATLANMIYOR, KIRMIZI oluyor — ölçüldü, **128 failed + 132 error + 291 passed, 0 skipped** (toplam 551, 154.20 s). Yani 260 test kırmızıya dönüyor ve hiçbiri sessizce atlanmıyor. Dikkat: bu ikinci deney süite 551 testliyken yapıldı ve o günün sayılarını taşır; yeniden koşulmadı, sayıları 717'ye uydurmak ölçüm değil uydurma olurdu |
+| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — **801/801 test yeşil** (`pytest tests/`, 239.62 s), PySCF referans testleri dahil. Ayrıca `reference/` geçici olarak kaldırılıp tam süite yeniden koşuldu: testler ATLANMIYOR, KIRMIZI oluyor — ölçüldü, **128 failed + 132 error + 291 passed, 0 skipped** (toplam 551, 154.20 s). Yani 260 test kırmızıya dönüyor ve hiçbiri sessizce atlanmıyor. Dikkat: bu ikinci deney süite 551 testliyken yapıldı ve o günün sayılarını taşır; yeniden koşulmadı, sayıları 801'e uydurmak ölçüm değil uydurma olurdu |
 | 2 | Headless koşucu çalışır + H₂ eğrisi bağ uzunluğu ±%8 | **Kapandı** — `python -m qlab.run scenarios/h2_bond_scan.yaml -o h2_curve.npz`; taramanın parabol fiti **0.71348 Å**, deneyselden sapma %3.7, kriterin istediği ±%8 sağlanıyor. Bu sayı yöntemin denge uzunluğu DEĞİL: STO-3G'nin gerçek minimumu 0.71223 Å, fark taramanın ızgara eseridir (Modül 1B tablosunun altındaki nota bakın). Bu satır bir zamanlar 0.7156 Å diyordu — o sayı bu komuttan değil, `test_physical`'ın ayrı ızgarasından geliyordu; artık `test_shipped_h2_scan_fit_is_grid_biased_but_less_than_the_uniform_grid` senaryonun kendi sayısını kilitliyor |
 | 3 | GUI'de H₂O HOMO izoyüzeyi döndürülebilir | **Kapandı — bu depoda ilk gerçek-ekran doğrulaması.** `python -m qlab.app.main --molecule "O 0 0 0; H 0 0.757 0.587; H 0 -0.757 0.587"` gerçek Windows platformunda açıldı; su HOMO'su (1b₁) çizildi, ±faz iki renkte, 1764/1764 tepe, çekirdekler ve şeffaflık paneli görüldü. Döndürme ölçüldü: kamera azimutu değişince kare piksel bileşenlerinin **%14.1'i**, elevasyon değişince **%7.2'si** değişiyor — sahne gerçekten 3B ve görünüm tepki veriyor. **Ne ölçülmedi:** fareyle sürükleyerek döndürme; kamera programatik değiştirildi. Kriterin "döndürülebilir" kelimesi bu yüzden yalnızca sahne tarafında kapalıdır, girdi tarafında bir insanın bakması gerekir. Doğrulamanın kendisi bir kusuru da GÖRÜNÜR KILDI: 12 satırlık beyan 140 px'lik panelde katlanın altında kalıyordu (düzeltildi, `TransparencyPanel(max_height=…)`) |
 | 4 | Kaydırıcı ile canlı iletim, analitiğin ±%2'si içinde | **Kapandı** — ölçülen fark %0.07 |

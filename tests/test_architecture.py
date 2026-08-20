@@ -97,6 +97,29 @@ def test_import_contracts_hold():
             "engine görselleştirmeyi bilmez",
             id="engine-OpenGL",
         ),
+        # Modül 3 ön ölçümünde bulundu ve 20.08.2026'da kapatıldı: bu ihlal
+        # ÖLÇÜLEREK rc=0 ile geçiyordu (üç sözleşme de KEPT), aynı dosyaya
+        # konan PySide6 kontrolü ise rc=1 veriyordu. `matplotlib` yasak
+        # listesine eklendikten sonra rc=1 ve taranan dosya sayısı 67 -> 68'e
+        # çıkıyor, yani enjeksiyon gerçekten görülüyor.
+        pytest.param(
+            "src/qlab/engine/tb/bands.py",
+            "import matplotlib.pyplot",
+            "engine görselleştirmeyi bilmez",
+            id="engine-tb-matplotlib",
+        ),
+        pytest.param(
+            "src/qlab/engine/tb/lattice.py",
+            "from qlab.viz import band_frames",
+            "engine görselleştirmeyi bilmez",
+            id="engine-tb-viz",
+        ),
+        pytest.param(
+            "src/qlab/observable/tb_obs.py",
+            "import pyqtgraph",
+            "observable görselleştirmeyi ve GUI'yi bilmez",
+            id="observable-tb-pyqtgraph",
+        ),
         pytest.param(
             "src/qlab/observable/hf_obs.py",
             "from PySide6 import QtWidgets",

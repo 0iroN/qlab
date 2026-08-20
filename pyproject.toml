@@ -53,6 +53,14 @@ forbidden_modules = [
     "PySide6",
     "pyqtgraph",
     "OpenGL",
+    # `matplotlib` ÖLÇÜLEREK eklendi (Modül 3, 20.08.2026):
+    # `engine/tb/bands.py`ye enjekte edilen `import matplotlib.pyplot`
+    # rc=0 ile GEÇİYORDU ve üç sözleşme de KEPT diyordu; aynı dosyaya konan
+    # `from PySide6 import QtWidgets` kontrolü ise rc=1 veriyordu, yani araç
+    # çalışıyordu ve eksik olan KAPSAMDI. Deponun `src/` ağacında matplotlib
+    # hiç kullanılmıyor (0 eşleşme), yani bu satırın bedeli sıfır, kazancı
+    # gerçek bir kaçış deliğinin kapanması.
+    "matplotlib",
 ]
 
 [[tool.importlinter.contracts]]
