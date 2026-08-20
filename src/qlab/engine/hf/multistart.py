@@ -43,6 +43,7 @@ import numpy as np
 
 from qlab.engine.hf.basis import build_basis
 from qlab.engine.hf.scf import HFResult, solve
+from qlab.engine.hf.uhf import UHFResult, solve_uhf
 from qlab.errors import InvalidInputError, QLabError, SCFConvergenceError
 from qlab.types import Molecule
 
@@ -160,3 +161,72 @@ def search_rhf(
         n_distinct=_ayri_sayisi(enerjiler),
         spread=float(max(enerjiler) - min(enerjiler)),
     )
+
+
+@dataclass(frozen=True, eq=False)
+class UHFSearchReport:
+    """`SearchReport`in UHF karsiligi. `energy` TEK BASINA raporlanmaz.
+
+    UHF'te arama RHF'tekinden DAHA gereklidir: olculdu, baslangic sapmasi
+    olmadan UHF her zaman RHF'e coker (H2 R = 2.00 A'da fark < 1e-12), yani
+    "UHF kostum" demek tek basina hicbir sey ifade etmez.
+    """
+
+    energy: float
+    result: UHFResult
+    n_seeds: int
+    n_converged: int
+    n_distinct: int
+    spread: float
+
+    def as_line(self) -> str:
+        return (
+            f"{self.n_seeds} tohum, {self.n_converged} yakinsadi, "
+            f"{self.n_distinct} ayri cozum, yayilim {self.spread:.3e} hartree"
+        )
+
+
+def search_uhf(
+    molecule: Molecule,
+    basis_name: str = "sto-3g",
+    seeds: int = _VARSAYILAN_TOHUM,
+    n_alpha: int | None = None,
+    max_iterations: int = 2000,
+) -> UHFSearchReport:
+    """UHF'i `seeds` farkli baslangic sapmasiyla kosar, EN DUSUGUNU dondurur."""
+    n_basis = len(build_basis(molecule, basis_name))
+    enerjiler: list[float] = []
+    en_iyi: UHFResult | None = None
+
+    for bias in seed_biases(n_basis, seeds):
+        try:
+            sonuc = solve_uhf(
+                molecule,
+                basis_name,
+                n_alpha=n_alpha,
+                initial_bias=bias,
+                max_iterations=max_iterations,
+            )
+        except (SCFConvergenceError, QLabError):
+            continue
+        enerjiler.append(float(sonuc.energy_total))
+        if en_iyi is None or sonuc.energy_total < en_iyi.energy_total:
+            en_iyi = sonuc
+
+    if en_iyi is None:
+        raise SCFConvergenceError(
+            iterations=max_iterations,
+            energy_history=[],
+            final_residual=float("nan"),
+            oscillating=False,
+        )
+
+    return UHFSearchReport(
+        energy=float(en_iyi.energy_total),
+        result=en_iyi,
+        n_seeds=seeds,
+        n_converged=len(enerjiler),
+        n_distinct=_ayri_sayisi(enerjiler),
+        spread=float(max(enerjiler) - min(enerjiler)),
+    )
+

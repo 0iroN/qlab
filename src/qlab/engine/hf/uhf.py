@@ -237,3 +237,38 @@ def solve_uhf(
         n_beta=nb,
         provenance=kaynak,
     )
+
+
+def energy_from_density(
+    result: UHFResult, molecule: Molecule, basis_name: str = "sto-3g"
+) -> float:
+    """Enerjiyi YAKINSAMIS YOGUNLUKTAN yeniden kurar -- SCF biriktiricisinden DEGIL.
+
+    Ayri bir kod yolu olmasi bilinclidir. On olcumde tasarlanan bir mutant
+    (dogru Fock + dogru enerji, artik spin populasyonunun karesiyle
+    orantili kucuk bir terim, N > 2'ye kapili) onerilen DOKUZ denetimin
+    dokuzunu da geciyordu: ayrisma 4.44e-16, parca toplami dogru kodla
+    ayni, varyasyonel 1.42e-14, kararli-ozdeslik 4.26e-14, Hessian uyumu
+    11/11, FCI 4.14e-13, atom <S^2> tam. Sebebi, eklenen terimin kapali
+    kabukta SIFIR olmasi ve ayrisma limitinde parcalarda da butunde de
+    AYNI toplami vermesiydi.
+
+    O terim SCF biriktiricisine ekleniyordu; burada yogunluktan yeniden
+    kurulan enerjide YOKTUR.
+
+    Bu bir CIPA DEGIL, TRANSKRIPSIYON DENETIMIDIR -- ama mutasyona duyarli
+    oldugu olculmustur.
+    """
+    basis = build_basis(molecule, basis_name)
+    Hc = core_hamiltonian(basis, molecule)
+    eri = eri_tensor(basis)
+    Pa, Pb = result.density_alpha, result.density_beta
+    Pt = Pa + Pb
+    J = np.einsum("uvls,ls->uv", eri, Pt)
+    Ka = np.einsum("ulvs,ls->uv", eri, Pa)
+    Kb = np.einsum("ulvs,ls->uv", eri, Pb)
+    Fa, Fb = Hc + J - Ka, Hc + J - Kb
+    return 0.5 * float(
+        np.sum(Pt * Hc) + np.sum(Pa * Fa) + np.sum(Pb * Fb)
+    ) + molecule.nuclear_repulsion()
+
