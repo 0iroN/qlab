@@ -277,3 +277,39 @@ def test_md_senaryosu_CLI_dan_kosuyor_ve_npz_yaziyor(tmp_path):
     assert veri["kinetic"][0] == 0.0
     assert veri["temperature_kelvin"][0] == 0.0
     assert veri["potential"][0] > 0.0
+
+
+def test_MD_SURUKLEME_dali_DUZGUN_ISTISNA_firlatiyor(tmp_path):
+    """`_run_md` yeterli kayit yoksa `InvalidInputError` firlatmali.
+
+    BULUNDU (Modul 3H incelemesi, 21.08.2026): `run.py` bu istisnayi
+    firlatiyordu ama IMPORT ETMEMISTI (`from qlab.errors import QLabError`
+    tek basina duruyordu). Dal tetiklendiginde yakalanmayan bir `NameError`
+    doguyordu, yani "surukleme olcmek icin en az 2 kayit gerekir" mesaji
+    kullaniciya HIC ulasmiyordu -- `main()` yalnizca `QLabError` yakalar ve
+    `NameError` onun altinda degildir.
+
+    Depodaki hicbir test bu dala ugramiyordu; hata ancak kaynak OKUNARAK
+    goruldu. Bu test o dali gercekten tetikler.
+    """
+    from qlab.errors import InvalidInputError
+    from qlab.run import _run_md
+    from qlab.scenario.schema import MDScenario
+
+    scenario = MDScenario(
+        name="tek kayitlik kosu",
+        force_field={"kind": "harmonic", "params": {"k": 0.5}},
+        initial={
+            "positions_bohr": [[0.0, 0.0, 0.0], [0.0, 0.0, 1.4]],
+            "masses_amu": [1.00782503207, 1.00782503207],
+        },
+        thermostat=None,
+        dt=1.0,
+        # n_steps=1 + save_every=5 -> YALNIZ t=0 kaydediliyor, yani TEK kayit.
+        # (n_steps=0 ise daha ERKEN reddediliyor: "n_steps en az 1 olmali" --
+        #  yani o deger bu dala hic ulasmiyor ve dali sinamiyordu.)
+        n_steps=1,
+        save_every=5,
+    )
+    with pytest.raises(InvalidInputError, match="en az 2"):
+        _run_md(scenario, str(tmp_path / "olmayacak.npz"))

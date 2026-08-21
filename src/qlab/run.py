@@ -27,7 +27,11 @@ from qlab.engine.hf.factory import ScanResult, run_scan
 from qlab.engine.tdse import factory
 from qlab.engine.tdse.grid import Grid1D
 from qlab.engine.tdse.propagator import evolve
-from qlab.errors import QLabError
+# `InvalidInputError` de gerekli: `_run_md` surukleme olcumunde onu
+# firlatiyor ama import edilmemisti ve o dal yakalanmayan bir
+# `NameError` veriyordu -- yani "en az 2 kayit gerekir" mesaji
+# kullaniciya HIC ulasmiyordu. Modul 3H incelemesinde bulundu.
+from qlab.errors import InvalidInputError, QLabError
 from qlab.provenance import Provenance
 from qlab.scenario.loader import load_scenario
 from qlab.scenario.schema import (
