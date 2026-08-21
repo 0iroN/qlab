@@ -60,6 +60,17 @@ NE SINANMAZ / NE IDDIA EDILMEZ
   * Yalnizca HALKA. Acik zincirde bulk parametreli bir TB modelin hatasi,
     kesme tamamen kaldirilsa bile 0.096 Ha'da taban yapar; o taban KENAR
     etkisidir ve bu modul onu modellemez.
+  * KABUK ORTALAMASI GERI ALINAMAZ ve modelin TAVANINI o belirler. Model her
+    halka mesafesi m icin TEK bir t_m tasir; H_eff^alfa ise CIFT m'de A-A
+    ile B-B'yi ayirir (alfa kanalinda A alt-orgusu alfa fazlasi, B beta
+    fazlasi tasir ve ikisi esdeger DEGILDIR). Tek m'de kabuk tekbicimdir
+    (o hoplamalar A<->B'yi baglar). OLCULDU, kabuk ici yayilim
+    (N=8, d=2.0): m=1 3.004e-09, m=2 5.106e-02, m=3 1.007e-09,
+    m=4 2.416e-02. Sonucu: menzil TAMAMEN acilsa bile hata sifirlanmaz --
+    N=8 d=2.0'da tam menzilde 0.063140 hartree kaliyor. Menzili buyutmek
+    bu tavani DELMEZ; delmek icin gereken sey alt-orguya bagli iki ayri
+    cift-menzil hoplamasidir ve o, dort parametreli modelin DISINDADIR.
+    (bkz. tests/tb/test_downfold_kesme.py)
   * UHF bir spin ozdurumu DEGILDIR; <S^2> sonuca ilistirilir ama
     DUZELTILMEZ (spin projeksiyonu yoktur). OLCULDU: N=8 d=2.0'da
     <S^2> = 1.220731, yani cozum ne singlet ne triplet.
@@ -76,6 +87,8 @@ import numpy as np
 from qlab.engine.hf.basis import build_basis
 from qlab.engine.hf.integrals import core_hamiltonian, eri_tensor, overlap_matrix
 from qlab.engine.hf.multistart import search_uhf
+from qlab.engine.tb.hamiltonian import Hopping, TBModel
+from qlab.engine.tb.lattice import Lattice
 from qlab.errors import InvalidInputError, UnsupportedSystemError
 from qlab.types import Molecule
 
@@ -154,8 +167,18 @@ def downfold_uhf(
     """Halka molekulunden iki-siteli antiferromanyetik TB parametreleri.
 
     `n_neighbour` kac hoplama okunacagini belirler; varsayilan 2. Menzil 2'de
-    kesilmesinin gerekcesi OLCULMUSTUR (bkz. tests/tb/test_downfold_kesme.py):
-    t2 hatayi ~3 kat dusurur, t3 ve otesi RHF tarafinda hicbir sey katmiyordu.
+    kesilmesinin gerekcesi OLCULMUSTUR (bkz. tests/tb/test_downfold_kesme.py).
+
+    "T2 HATAYI ~3 KAT DUSURUR" CUMLESI DUZELTILDI: bu dokstring once oyle
+    diyordu, ama alti sistemde olculen oran 2.25 / 2.32 / 2.57 / 2.61 /
+    2.91 / 3.26 -- yani 3 kat yalnizca BIR sistemde tutuyor, ortalama 2.65.
+    Dogru cumle "t2 hatayi IKI ILA UC KAT dusurur"dur.
+
+    t3 icin de RHF tarafindan devralinan "hicbir sey katmiyordu" hukmu
+    UHF'te olculdu ve NIYANSLI cikti: N=8 d=2.0'da max metriginde dokuz
+    hanede hicbir sey katmiyor (0.066286861 -> 0.066286861) ama rms'te
+    %5.7 katiyor. Menzil yine de 2'de kesilir, cunku modelin tavanini
+    menzil degil KABUK ORTALAMASI belirliyor (modul dokstringi).
     """
     n_site = len(molecule.atoms)
     if n_site % 2 != 0:
@@ -211,3 +234,72 @@ def downfold_uhf(
         staggering_residual=residual,
         search_line=line,
     )
+
+
+def model_from_downfold(
+    params: DownfoldedParameters, spin: str = "alpha"
+) -> TBModel:
+    """Indirgenmis parametrelerden iki atomlu hucreli `TBModel`.
+
+    Hucre IKI sitedir (A, B) ve kademeli alan `spin` ile YON degistirir:
+    alfa kanalinda A yukselir B duser, beta kanalinda tersi. Hoplama
+    spinden BAGIMSIZDIR (olculdu: t^alfa = t^beta, sekiz bagin sekizinde).
+
+    Orgu vektoru 2.0 secilir ve KEYFIDIR: `finite_ring_matrix` yalnizca
+    hucre indislerini modulo baglar, mesafeyi kullanmaz. Gercek geometri
+    zaten indirgemeye girdi olmustur.
+
+    ANTIPODAL MENZILDE HOPLAMA YARIYA BOLUNUR ve bu bir ayar degil bir
+    DUZELTMEDIR. Halka mesafesi m < n/2 iken her sitenin IKI ortagi vardir
+    (i+m ve i-m) ve asagidaki dort (tek m) / iki (cift m) kayit onlari birer
+    kez baglar. m = n/2 iken iki ortak CAKISIR: ayni kayitlar ayni cifte
+    duser ve `finite_ring_matrix` onlari TOPLAR, yani matrise t yerine 2t
+    girer. OLCULDU (duzeltmeden once, gercek UHF t_{n/2} degerleriyle):
+        N=6,  m=3, (0,3): +0.006946 yazildi, +0.003473 olmaliydi
+        N=8,  m=4, (0,4): +0.006293 yazildi, +0.003147 olmaliydi
+        N=10, m=5, (0,5): -0.005788 yazildi, -0.002894 olmaliydi
+    Ucunde de TAM iki kat, yani hata bir isaret ya da kayma degil saf
+    cift-sayimdir. Bolme, kayit sayisini azaltmaya YEGLENIR cunku sayimi
+    tek yerde ve okunur tutar.
+    """
+    if spin not in ("alpha", "beta"):
+        raise InvalidInputError(f"spin 'alpha' veya 'beta' olmali: {spin!r}")
+    if len(params.hoppings) > params.n_site // 2:
+        raise InvalidInputError(
+            f"menzil yarim halkayi asamaz: {len(params.hoppings)} hoplama "
+            f"verildi ama {params.n_site} sitelik halkada en buyuk mesafe "
+            f"{params.n_site // 2}. Daha uzagi m ile n-m'yi ayni cifte "
+            "yazardi (ortusme)."
+        )
+    yon = 1.0 if spin == "alpha" else -1.0
+
+    lattice = Lattice(
+        vectors=np.array([[2.0, 0.0, 0.0]]),
+        basis=np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
+    )
+    onsite = np.array(
+        [
+            params.epsilon_bar + yon * params.delta,
+            params.epsilon_bar - yon * params.delta,
+        ]
+    )
+
+    hoppings: list[Hopping] = []
+    for menzil, ham_t in enumerate(params.hoppings, start=1):
+        # Antipodal kabukta her cift IKI kez yaziliyor -- dokstringe bakiniz.
+        t = ham_t / 2.0 if 2 * menzil == params.n_site else ham_t
+        if menzil % 2 == 1:
+            # TEK menzil: A ile B'yi baglar. Hucre icinde ve komsu hucreye.
+            kayma = menzil // 2
+            hoppings.append(Hopping(0, 1, (kayma, 0, 0), t))
+            hoppings.append(Hopping(1, 0, (-kayma, 0, 0), t))
+            hoppings.append(Hopping(1, 0, (kayma + 1, 0, 0), t))
+            hoppings.append(Hopping(0, 1, (-kayma - 1, 0, 0), t))
+        else:
+            # CIFT menzil: ayni alt-orguyu baglar (A-A ve B-B).
+            kayma = menzil // 2
+            for orbital in (0, 1):
+                hoppings.append(Hopping(orbital, orbital, (kayma, 0, 0), t))
+                hoppings.append(Hopping(orbital, orbital, (-kayma, 0, 0), t))
+
+    return TBModel(lattice=lattice, onsite=onsite, hoppings=tuple(hoppings))
