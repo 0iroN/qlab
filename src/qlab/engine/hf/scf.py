@@ -52,7 +52,12 @@ import numpy as np
 
 from qlab.engine.hf.basis import build_basis
 from qlab.engine.hf.integrals import core_hamiltonian, eri_tensor, overlap_matrix
-from qlab.engine.hf.stability import StabilityResult, analyse_stability, orbital_hessian
+from qlab.engine.hf.stability import (
+    StabilityResult,
+    analyse_stability,
+    orbital_hessian,
+    triplet_orbital_hessian,
+)
 from qlab.errors import (
     InvalidInputError,
     SCFConvergenceError,
@@ -78,6 +83,10 @@ class HFResult:
     # "analiz edilmedi" ile "kararli" ayni sey degildir ve ayni degerle
     # gosterilmemelidir.
     stability: StabilityResult | None = None
+    # Dis (RHF->UHF, uclu) kanal. AYRI alandir cunku iki hukum birbirinin
+    # yerine gecmez: `stability` "kararli" derken bunun "eyer" demesi tipik
+    # durumdur (H2 @ 2.00 A: +2.5467 ve -1.5995).
+    external_stability: StabilityResult | None = None
 
 
 def _orthogonalisation_matrix(overlap: np.ndarray) -> np.ndarray:
@@ -128,12 +137,15 @@ _HF_NEGLECTED: tuple[str, ...] = (
     "statik korelasyon -- RHF ayrisma kusuru (notr atomlara ayrisamaz)",
     "goreli etkiler",
     "cekirdek hareketi",
-    # Kararlilik analizi eklendiginde bu listeye eklendi: analiz YALNIZCA ic
-    # (RHF -> RHF, tekil, reel) kararliligi sinar. "Kararli" hukmu, cozumun
-    # kuresel minimum oldugunu veya UHF'in daha dusuk enerji vermeyecegini
-    # SOYLEMEZ; bu siniri panelde yazmazsak hukum oldugundan genis okunur.
-    "dis kararsizlik sinavi (RHF->UHF, triplet, kompleks orbital) -- "
-    "yalnizca ic/tekil kararlilik test edilir",
+    # Modul 1C'de DUZELTILDI. Bu satir once "dis kararsizlik sinavi ... "
+    # yalnizca ic/tekil kararlilik test edilir" diyordu; dis (RHF->UHF, uclu)
+    # kanal artik GERCEKTEN sinaniyor ve o metin panelde yalan olurdu.
+    # Geriye kalan tek sinanmamis kanal kompleks orbitallerdir. Iki kanalda da
+    # "kararli" hukmu, cozumun KURESEL minimum oldugunu SOYLEMEZ; bu siniri
+    # panelde yazmazsak hukum oldugundan genis okunur.
+    "kompleks (reel olmayan) orbital kararsizligi -- ic (tekil, RHF->RHF) ve "
+    "dis (uclu, RHF->UHF) kanallar sinanir, kompleks kanal sinanmaz; hicbiri "
+    "kuresel minimum GARANTISI vermez",
 )
 
 # Bu metin, RHF'in EN BUYUK hatasini isimlendirmek zorundadir; bu depoda
@@ -158,6 +170,7 @@ def provenance_for(
     converged: bool,
     diagnostics: dict,
     stability: StabilityVerdict | None = None,
+    external_stability: StabilityVerdict | None = None,
 ) -> Provenance:
     """RHF sonuclarinin ortak seffaflik blogu -- TEK kaynak.
 
@@ -169,7 +182,9 @@ def provenance_for(
 
     Yalnizca method/converged/diagnostics/stability cagriya gore degisir.
     stability=None, "kararlilik analizi kosulmadi" demektir ve panelde
-    ilgili satir hic basilmaz.
+    ilgili satir hic basilmaz. Ayni sey external_stability icin de gecerlidir
+    ve IKISI AYRI tutulur: bir cozum ic kanalda minimum, dis kanalda eyer
+    olabilir ve bu bir celiski degil, tipik durumdur.
     """
     return Provenance(
         method=method,
@@ -179,6 +194,7 @@ def provenance_for(
         converged=converged,
         diagnostics=diagnostics,
         stability=stability,
+        external_stability=external_stability,
     )
 
 
@@ -437,9 +453,16 @@ def solve(
     energy_total = energy_electronic + nuclear_repulsion
 
     stability_result = None
+    external_result = None
     if stability:
         stability_result = analyse_stability(
             orbital_hessian(core, eri, coefficients, n_occupied)
+        )
+        # Dis kanal AYNI bayrakla kosulur: "kararlilik analizi istedim ama
+        # yarisini istedim" diye bir kullanim yok, ve tek bayrak birakmak
+        # ikinci kanalin sessizce atlanmasini imkansiz kilar.
+        external_result = analyse_stability(
+            triplet_orbital_hessian(core, eri, coefficients, n_occupied)
         )
 
     provenance = provenance_for(
@@ -447,6 +470,9 @@ def solve(
         converged=True,
         diagnostics={"iterations": iteration, "final_residual": residual_norm},
         stability=None if stability_result is None else stability_result.verdict(),
+        external_stability=(
+            None if external_result is None else external_result.verdict("dis")
+        ),
     )
 
     return HFResult(
@@ -461,4 +487,5 @@ def solve(
         n_iterations=iteration,
         provenance=provenance,
         stability=stability_result,
+        external_stability=external_result,
     )

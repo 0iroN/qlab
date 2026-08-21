@@ -45,6 +45,12 @@ class ScanResult:
     # (SCF yakinsamadi, veya dondurulecek isgal-bos cift yok) NaN'dir --
     # 0.0 gibi bir sayi "sinirda kararli" diye okunurdu.
     lowest_eigenvalues: np.ndarray
+    # Ayni sey DIS (RHF->UHF, uclu) kanal icin. Ayri dizi olmasinin sebebi
+    # `lowest_eigenvalues`in ayri olmasiyla ayni: tek bir ozet bayragi,
+    # egrinin HANGI noktasinin eyer oldugunu soylemez -- ve dis kanalda bu
+    # daha da onemlidir, cunku bir AYRISMA taramasinda isaret degistiren
+    # kanal tipik olarak budur (Coulson-Fischer noktasi).
+    external_lowest_eigenvalues: np.ndarray
     provenance: Provenance
 
 
@@ -75,9 +81,12 @@ def run_scan(scenario: HFScanScenario) -> ScanResult:
     values = np.array(scenario.values, dtype=float)
     energies = np.full(values.shape, np.nan)
     lowest_eigenvalues = np.full(values.shape, np.nan)
+    external_lowest = np.full(values.shape, np.nan)
     failed_values: list[float] = []
     unstable_values: list[float] = []
+    dis_unstable_values: list[float] = []
     measured: list[StabilityResult] = []
+    dis_measured: list[StabilityResult] = []
 
     for index, value in enumerate(scenario.values):
         molecule = _molecule_for(scenario, value)
@@ -93,6 +102,12 @@ def run_scan(scenario: HFScanScenario) -> ScanResult:
                 unstable_values.append(value)
             if result.stability.lowest_eigenvalue is not None:
                 lowest_eigenvalues[index] = result.stability.lowest_eigenvalue
+        if result.external_stability is not None:
+            dis_measured.append(result.external_stability)
+            if not result.external_stability.stable:
+                dis_unstable_values.append(value)
+            if result.external_stability.lowest_eigenvalue is not None:
+                external_lowest[index] = result.external_stability.lowest_eigenvalue
 
     n_failed = len(failed_values)
     converged = n_failed == 0
@@ -111,6 +126,17 @@ def run_scan(scenario: HFScanScenario) -> ScanResult:
             diagnostics["unstable_values"] = unstable_values
         verdict = _scan_verdict(measured, unstable_values)
 
+    # Dis kanal AYRI ozetlenir. Bir ayrisma taramasinda tipik sonuc, ic
+    # kanalin bastan sona "kararli" demesi ve dis kanalin bir noktadan sonra
+    # "eyer" demesidir; iki sayiyi tek bayrakta birlestirmek o gecisi
+    # gorunmez yapardi.
+    dis_verdict = None
+    if dis_measured:
+        diagnostics["n_dis_unstable"] = len(dis_unstable_values)
+        if dis_unstable_values:
+            diagnostics["dis_unstable_values"] = dis_unstable_values
+        dis_verdict = _scan_verdict(dis_measured, dis_unstable_values, channel="dis")
+
     # Yaklasimlar/ihmaller/beklenen hata metni scf.provenance_for'dan gelir --
     # tek nokta ile tarama ayni RHF'i kosar, dolayisiyla ayni beyani basmak
     # ZORUNDADIR (bkz. scf.py, provenance_for).
@@ -119,6 +145,7 @@ def run_scan(scenario: HFScanScenario) -> ScanResult:
         converged=converged,
         diagnostics=diagnostics,
         stability=verdict,
+        external_stability=dis_verdict,
     )
 
     return ScanResult(
@@ -126,12 +153,15 @@ def run_scan(scenario: HFScanScenario) -> ScanResult:
         values=values,
         energies=energies,
         lowest_eigenvalues=lowest_eigenvalues,
+        external_lowest_eigenvalues=external_lowest,
         provenance=provenance,
     )
 
 
 def _scan_verdict(
-    measured: list[StabilityResult], unstable_values: list[float]
+    measured: list[StabilityResult],
+    unstable_values: list[float],
+    channel: str = "ic",
 ) -> StabilityVerdict:
     """Taramanin tek satirlik kararlilik hukmu: EN KOTU nokta belirler.
 
@@ -150,4 +180,5 @@ def _scan_verdict(
         stable=not unstable_values,
         lowest_eigenvalue=min(eigenvalues) if eigenvalues else None,
         n_rotations=max(stability.n_rotations for stability in measured),
+        channel=channel,
     )

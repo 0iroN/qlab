@@ -120,6 +120,10 @@ def test_save_writes_readable_npz_for_hf_scan(hf_scenario_file, tmp_path):
             "values",
             "energies",
             "lowest_eigenvalues",
+            # Modül 1C'de eklendi: dış (RHF→UHF, üçlü) kanal da nokta bazında
+            # yazılır. Aynı gerekçe, daha güçlü: bir ayrışma taramasında işaret
+            # değiştiren kanal tipik olarak budur.
+            "external_lowest_eigenvalues",
             "provenance_json",
         }
         assert data["values"].shape == (2,)
@@ -127,7 +131,9 @@ def test_save_writes_readable_npz_for_hf_scan(hf_scenario_file, tmp_path):
         # Kararlılık bilgisi nokta bazında da makine-okunur olmalı: tek bir
         # özet bayrağı, eğrinin HANGİ noktasının eyer noktası olduğunu söylemez.
         lowest_eigenvalues = data["lowest_eigenvalues"]
+        dis_eigenvalues = data["external_lowest_eigenvalues"]
         assert lowest_eigenvalues.shape == (2,)
+        assert dis_eigenvalues.shape == (2,)
         provenance = json.loads(str(data["provenance_json"]))
 
     assert provenance["method"].startswith("RHF/")
@@ -138,7 +144,15 @@ def test_save_writes_readable_npz_for_hf_scan(hf_scenario_file, tmp_path):
             float(lowest_eigenvalues.min()), abs=0.0, rel=0.0
         ),
         "n_rotations": 1,
+        "channel": "ic",
     }
+    # İki kanal AYRI kaydedilmeli ve birbirinin kopyası OLMAMALI -- aynı
+    # sayıyı iki alana yazan bir hata, tek kanala bakan testten kaçardı.
+    assert provenance["external_stability"]["channel"] == "dis"
+    assert provenance["external_stability"]["lowest_eigenvalue"] == pytest.approx(
+        float(dis_eigenvalues.min()), abs=0.0, rel=0.0
+    )
+    assert not np.allclose(lowest_eigenvalues, dis_eigenvalues)
 
 
 def test_main_prints_stability_verdict_for_hf_scan(hf_scenario_file, tmp_path, capsys):

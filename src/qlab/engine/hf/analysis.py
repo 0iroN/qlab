@@ -39,6 +39,7 @@ from qlab.engine.hf.stability import (
     StabilityResult,
     analyse_stability,
     orbital_hessian,
+    triplet_orbital_hessian,
 )
 from qlab.errors import UnsupportedSystemError
 from qlab.provenance import Provenance
@@ -196,6 +197,28 @@ def stability(result: HFResult) -> StabilityResult:
     n_occupied = result.molecule.n_electrons // 2
     return analyse_stability(
         orbital_hessian(core, eri, result.coefficients, n_occupied)
+    )
+
+
+def external_stability(result: HFResult) -> StabilityResult:
+    """Dis (RHF -> UHF, uclu) kararlilik analizi, HFResult uzerinden.
+
+    `stability`in kardesi ve ayni deseni izler: solve() bunu varsayilan
+    olarak zaten kosar ve HFResult.external_stability icinde tasir; bu
+    fonksiyon solve(stability=False) ile kosulmus bir sonuc icin SONRADAN
+    hesaplama yoludur.
+
+    Negatif ozdeger, spin simetrisini kiran bir UHF cozumunun daha dusuk
+    enerjili oldugunu soyler. Ic kanalin "kararli" demesi bunu DISLAMAZ --
+    olculmus ornek h2_200'dur (H2 @ 2.00 A): ic +2.546683038854, dis
+    -1.599532559297, ve UHF gercekten 0.153420178832 hartree asagidadir.
+    """
+    basis = build_basis(result.molecule, result.basis_name)
+    core = core_hamiltonian(basis, result.molecule)
+    eri = eri_tensor(basis)
+    n_occupied = result.molecule.n_electrons // 2
+    return analyse_stability(
+        triplet_orbital_hessian(core, eri, result.coefficients, n_occupied)
     )
 
 

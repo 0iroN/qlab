@@ -64,14 +64,24 @@ bazda tam kosegen olmayabilir. Blok kullanmak bu farki bedelsiz kapsar.
 
 NE SINANIR, NE SINANMAZ
 -----------------------
-Sinanan: gercek (reel) isgal-bos dondurmeler, tekil (singlet) uzayda -- yani
-RHF -> RHF ic kararliligi. Negatif ozdeger = yakinda daha dusuk enerjili bir
-RHF cozumu var = raporlanan cozum eyer noktasi.
+Sinanan IKI kanal vardir, ikisi de gercek (reel) isgal-bos dondurmeler:
 
-Sinanmayan: DIS kararsizliklar -- RHF -> UHF (spin kirilmasi), uclu (triplet)
-uyarim, kompleks orbitaller. "stable=True", cozumun kuresel minimum oldugunu
-veya UHF'in daha dusuk enerji vermeyecegini SOYLEMEZ. Bu sinir provenance'in
-ihmal listesinde de yazilidir (scf.py, _HF_NEGLECTED).
+  IC  (`orbital_hessian`)         tekil/singlet, RHF -> RHF. Negatif ozdeger =
+                                  yakinda daha dusuk enerjili baska bir RHF
+                                  cozumu var.
+  DIS (`triplet_orbital_hessian`) uclu/triplet, RHF -> UHF. Negatif ozdeger =
+                                  spin simetrisini kiran bir UHF cozumu daha
+                                  dusuk enerjili.
+
+Dis kanal Modul 1C'de eklendi. Eklenmeden once depo, spin kanalinda EYER olan
+noktalara "ic minimum" diyordu ve bu sessizlikti: olculmus somut ornek, deponun
+kendi PySCF referans kaydi h2_200'dur (H2, 2.00 A) -- ic kararlilik ozdegeri
++2.546683038854 ile "kararli" derken triplet ozdegeri -1.599532559297'dir ve
+gercek HF taban durumu 0.153420178832 hartree ASAGIDADIR.
+
+Sinanmayan: kompleks (reel olmayan) orbital kararsizliklari. Iki kanalda da
+"stable=True", cozumun KURESEL minimum oldugunu soylemez. Bu sinir
+provenance'in ihmal listesinde de yazilidir (scf.py, _HF_NEGLECTED).
 
 INDEKS SIRASI: dondurmeler (i, a) ciftleriyle numaralanir; satir/sutun
 indeksi i * n_virtual + (a - n_occupied), yani isgal indeksi disda, bos
@@ -112,12 +122,19 @@ class StabilityResult:
     eigenvalues: np.ndarray
     n_rotations: int
 
-    def verdict(self) -> StabilityVerdict:
-        """Provenance'a ilistirilse makine-okunur (JSON'a yazilabilir) ozet."""
+    def verdict(self, channel: str = "ic") -> StabilityVerdict:
+        """Provenance'a ilistirilse makine-okunur (JSON'a yazilabilir) ozet.
+
+        `channel` hukmun HANGI kanaldan geldigini tasir ("ic" veya "dis").
+        StabilityResult'in kendisi kanal tasimaz -- ayni ozdeger analizi iki
+        kanal icin de aynen gecerlidir; ayrim yalnizca RAPORLAMADA anlamlidir
+        ve panelin dogru cumleyi kurmasi icin gereklidir.
+        """
         return StabilityVerdict(
             stable=self.stable,
             lowest_eigenvalue=self.lowest_eigenvalue,
             n_rotations=self.n_rotations,
+            channel=channel,
         )
 
 
@@ -175,6 +192,72 @@ def orbital_hessian(
         np.einsum("ij,ab->iajb", np.eye(n_occupied), fock_mo[virtual, virtual])
         - np.einsum("ab,ij->iajb", np.eye(n_virtual), fock_mo[occupied, occupied])
         + 4.0 * np.einsum("aibj->iajb", aibj)
+        - np.einsum("abij->iajb", abij)
+        - np.einsum("ajib->iajb", ajib)
+    )
+    n_rotations = n_occupied * n_virtual
+    return 4.0 * hessian.reshape(n_rotations, n_rotations)
+
+
+def triplet_orbital_hessian(
+    core: np.ndarray,
+    eri: np.ndarray,
+    coefficients: np.ndarray,
+    n_occupied: int,
+) -> np.ndarray:
+    """Uclu (triplet, RHF -> UHF) orbital dondurme Hessian'i, sekil (n_ov, n_ov).
+
+    H_[ia],[jb] = 4 [ delta_ij F_ab - delta_ab F_ij - (ab|ij) - (aj|ib) ]
+
+    `orbital_hessian` ile TEK yapisal fark: Coulomb terimi (+4(ai|bj)) DUSER.
+    Sebep parametrelendirmededir -- bu kanalda alfa ve beta ZIT yonde doner
+    (Ca = C exp(+tK), Cb = C exp(-tK)), toplam yogunluk birinci mertebede
+    degismez, dolayisiyla Coulomb katkilari birbirini goturur; degis-tokus
+    katkilari her spin icin AYRI yogunluktan geldigi icin kalir.
+
+    Imza ve govde bilerek singlet surumun aynisidir ki iki ifade yan yana
+    okunabilsin. Ayni sebeple MO donusumu burada TEKRAR yapilir: iki
+    fonksiyonu tek bir govdede birlestirmek N^5 bir donusum kazandirirdi ama
+    tam da karsilastirilmasi gereken iki satiri ic ice gecirirdi.
+
+    Bu tekrarin bedeli OLCULDU ve ihmal edilebilir; dahasi sistem buyudukce
+    oran DUSUYOR (cagri basina, ve onu ureten SCF'e orani):
+      H2/STO-3G   (2 bf)  0.049 ms  = SCF'in %3.36'si
+      H2O/STO-3G  (7 bf)  0.059 ms  = SCF'in %0.13'u
+      H2O/6-31G  (13 bf)  0.144 ms  = SCF'in %0.04'u
+    Sebep, SCF'in bu donusumu her iterasyonda degil, Hessian'in yalnizca bir
+    kez yapmasidir.
+
+    OLCULDU (bes noktali sonlu fark, h=1e-3, Ca = C exp(+tK) / Cb = C exp(-tK);
+    tests/hf/test_dis_kararlilik.py): bagil max fark H2 R=1.4 1.305e-10,
+    H2 R=3.0 4.200e-10, H4 R=2.0 3.815e-10, LiH 4.173e-10, H2O 6.659e-10.
+
+    AYIRICI KONTROL: ayni sonlu fark makinesi alfa ile beta AYNI yonde
+    dondurulunce `orbital_hessian`i verir (bagil fark < 1e-8) -- iki kanalin
+    farkli seyler olctugu boyle kilitlenir.
+    """
+    n_orbitals = coefficients.shape[1]
+    n_virtual = n_orbitals - n_occupied
+    if n_occupied == 0 or n_virtual == 0:
+        return np.zeros((0, 0))
+
+    occupied = slice(0, n_occupied)
+    virtual = slice(n_occupied, n_orbitals)
+
+    occupied_coefficients = coefficients[:, occupied]
+    density = 2.0 * occupied_coefficients @ occupied_coefficients.T
+    coulomb = np.einsum("uvls,ls->uv", eri, density)
+    exchange = np.einsum("ulvs,ls->uv", eri, density)
+    fock_mo = coefficients.T @ (core + coulomb - 0.5 * exchange) @ coefficients
+
+    mo_eri = _transform_eri(eri, coefficients)
+    abij = mo_eri[virtual, virtual, occupied, occupied]
+    ajib = mo_eri[virtual, occupied, occupied, virtual]
+
+    hessian = (
+        np.einsum("ij,ab->iajb", np.eye(n_occupied), fock_mo[virtual, virtual])
+        - np.einsum("ab,ij->iajb", np.eye(n_virtual), fock_mo[occupied, occupied])
+        # Coulomb terimi (+4 aibj) BURADA YOK -- singlet ile tek fark budur.
         - np.einsum("abij->iajb", abij)
         - np.einsum("ajib->iajb", ajib)
     )

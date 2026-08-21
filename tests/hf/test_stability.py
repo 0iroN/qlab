@@ -438,17 +438,31 @@ def test_provenance_line_names_the_saddle_point():
     assert "eyer" in line.lower()
 
 
-def test_neglected_list_says_only_internal_stability_is_tested():
-    """"Kararli" hukmu oldugundan GENIS okunabilir: bu analiz cozumun kuresel
-    minimum oldugunu veya UHF'in daha dusuk enerji vermeyecegini soylemez.
-    Sinir, panelin "neyi hesaba katmadim" satirinda yazili olmali -- ve bu
-    metin scf.py'deki TEK kaynaktan (_HF_NEGLECTED) gelmeli, ikinci bir
-    kopyadan degil (bkz. test_hf_scenario.py, tek-kaynak testi).
+def test_neglected_list_names_the_channel_that_is_STILL_not_tested():
+    """"Kararli" hukmu oldugundan GENIS okunabilir; sinir panelin "neyi hesaba
+    katmadim" satirinda yazili olmali -- ve bu metin scf.py'deki TEK kaynaktan
+    (_HF_NEGLECTED) gelmeli (bkz. test_hf_scenario.py, tek-kaynak testi).
+
+    MODUL 1C'DE DEGISTI. Bu test once "yalnizca ic kararlilik test edilir"
+    ifadesini kiliyordu. Dis (RHF->UHF, uclu) kanal artik GERCEKTEN sinaniyor
+    (bkz. tests/hf/test_dis_kararlilik.py), dolayisiyla o ifade panelde YALAN
+    olurdu ve testin kilitledigi sey artik yanlisti. Kilit, geriye kalan
+    gercek bosluga tasindi: kompleks (reel olmayan) orbital kanali.
+
+    Iki kanalin da sinanmasi KURESEL minimum garantisi vermez; panel bunu da
+    soylemek zorundadir, cunku "iki kanalda da kararli" ifadesi tek basina
+    "bu taban durumdur" diye okunurdu.
     """
     result = solve(Molecule.from_string("H 0 0 0; H 0 0 0.74"), "sto-3g")
     ihmal = " ".join(result.provenance.neglected).lower()
-    assert "uhf" in ihmal
-    assert "yalnizca ic" in ihmal
+    assert "kompleks" in ihmal
+    assert "kuresel minimum" in ihmal
+    # Sinanan iki kanal da ADIYLA gecmeli -- "kompleks disinda her sey" gibi
+    # bir ifade, okuyucuya neyin kosuldugunu SOYLEMEZDI.
+    assert "rhf->rhf" in ihmal
+    assert "rhf->uhf" in ihmal
+    # ...ve eski, artik yanlis olan ifade GERI GELMEMELI.
+    assert "yalnizca ic" not in ihmal
 
 
 def test_analysis_helper_reproduces_the_result_attached_by_solve(hf_energies):

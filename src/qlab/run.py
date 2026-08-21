@@ -81,6 +81,9 @@ def save(result: RunResult | ScanResult, output_path: str | Path) -> None:
             # noktasının eyer noktası olduğunu söylemez. Ölçülemeyen
             # noktalarda NaN (bkz. factory.ScanResult).
             lowest_eigenvalues=result.lowest_eigenvalues,
+            # Dış (RHF→UHF) kanal aynı gerekçeyle nokta bazında yazılır: bir
+            # ayrışma taramasında işaret değiştiren kanal tipik olarak budur.
+            external_lowest_eigenvalues=result.external_lowest_eigenvalues,
             provenance_json=provenance_json,
         )
         return
