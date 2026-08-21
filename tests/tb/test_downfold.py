@@ -57,11 +57,20 @@ def test_DELTA_ISARETI_SPIN_POPULASYONUNA_BAGLI():
 
     `slow` ISARETI TAHMIN DEGIL, OLCUM: bu test 3.28 s suruyor (iki sistem,
     her birinde `search_uhf` IKI kez -- biri indirgeme icin, biri spin
-    populasyonu icin). Deponun kendi siniri da olculdu: `test_rhf_sikismasi`
-    ve `test_uhf_cipalar` icinde 2.04-5.20 s arasindaki testlerin HEPSI
-    isaretli, 0.86 s ve altindakilerin hicbiri degil; yazili kural da
-    "saniye alti cipalar varsayilan seritte". 3.28 s isaretli tarafa duser.
-    Dosyanin geri kalani (en yavas 1.27 s) varsayilan seritte kalir.
+    populasyonu icin).
+
+    KAPSAM DUZELTMESI: bu dokstring once "deponun kendi siniri" diye bir esik
+    bildiriyordu (2.04-5.20 s arasi isaretli, 0.86 s alti degil). O olcum
+    YALNIZCA `test_rhf_sikismasi` ve `test_uhf_cipalar` dosyalarindandi ve
+    DEPO GENELINE GENELLENEMEZ. Depo genelinde olculdu: `-m "not slow"`
+    seridinin EN YAVAS testi 4.75 s
+    (`test_hf_obs.py::test_degerlik_orbitalini_bozan_sey_cozunurluk_degil_kutu_kesmesi`),
+    yani sure basina bir esik YOKTUR. Isaret, testin kendi suresinden cok
+    ait oldugu fixture/parametre ailesinin maliyetini izliyor.
+
+    Bu testin isaretlenme gerekcesi bu yuzden suredir ama MUTLAK degil
+    goreli: 3.28 s, bu dosyanin geri kalanindan (en yavas 1.27 s) 2.6 kat
+    pahali ve tek basina dosyanin yarisindan fazlasini yiyor.
 
     `delta`nin isareti yukaridaki testte `abs()` icinde kayboluyor. Olculdu:
     `[0::2] - [1::2]` yerine `[1::2] - [0::2]` yazan mutant SEKIZ testin
