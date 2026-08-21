@@ -39,6 +39,19 @@ Tasarım belgesi: `../docs/superpowers/specs/2026-08-05-qlab-kuantum-cekirdegi-d
   **PyVista değil `pyqtgraph.opengl` + PyOpenGL**: ~150 MB yerine ~2 MB ve
   depoda zaten kullanılan tek render yığını — spec'ten bilinçli sapma.
   Kabul kriteri 3 kapandı ve bu, depodaki **ilk gerçek-ekran doğrulamasıdır**.
+- **Modül 1C — kısıtlanmamış Hartree-Fock (UHF): tamam.** `engine/hf/uhf.py`
+  (α/β Fock, birleşik DIIS, ⟨S²⟩), `engine/hf/multistart.py` (çok başlangıçlı
+  RHF/UHF arama protokolü), `solve()`'a `initial_bias`, ve
+  `stability.py::triplet_orbital_hessian` ile **dış (RHF→UHF, üçlü)
+  kararlılık** analizi — panel ve kayıt artık iki kanalı ayrı ayrı basıyor.
+  Modül bir özellik olarak değil **ön koşul** olarak yazıldı: Plan G'nin ön
+  ölçümü referans sisteminin RHF çözümünün taban durum olmadığını gösterdi
+  (çekirdek spec §13'ün "kapsam dışı" maddesi bu yüzden düzeltildi). Sevk
+  edilmiş kodda **iki kusur** bulundu (N₂'de DIIS 19.78 eV, gerilmiş
+  geometrilerde başlangıç tahmini 0.28–0.50 Ha) ve deponun kendi PySCF
+  referans kaydı `h2_200`'ün gerçek HF taban durumundan **0.153420178832
+  hartree** yukarıda olduğu ölçüldü. Modül 2D'nin etkilenmediği ölçülerek
+  gösterildi. Ölçülen sayılar aşağıdaki Doğrulama bölümündedir.
 - **Modül 2 (Plan C) — klasik moleküler dinamik: tamam.** Kuvvetten bağımsız
   bir MD çekirdeği: `MDState` + `ForceField` protokolü, velocity-Verlet,
   üç analitik kuvvet alanı (harmonik, Morse, Lennard-Jones — periyodik kutu
@@ -118,9 +131,25 @@ Hessian'ının özdeğerleri hesaplanır ve sonuç şeffaflık panelinde
 "Kararlılık" satırı olarak basılır (H₂ 0.74 Å: +4.52, 10 Å: +2.89, **12 Å:
 −2.92 → eyer noktası**). Analiz sonucu DÜZELTMEZ, yalnızca sessizliği
 kaldırır — kırılma hâlâ oradadır ve kararsız bir nokta hata yükseltmez, çünkü
-kullanıcı o çözümü meşru olarak isteyebilir. Sınanmayan: dış kararsızlıklar
-(RHF→UHF, triplet, kompleks orbital) — "kararlı" hükmü çözümün küresel minimum
-olduğunu söylemez.
+kullanıcı o çözümü meşru olarak isteyebilir.
+
+**Modül 1C'de bu cümle DEĞİŞTİ.** Eskiden burada *"Sınanmayan: dış
+kararsızlıklar (RHF→UHF, triplet, kompleks orbital)"* yazıyordu. **Dış
+(RHF→UHF, üçlü) kanal artık sınanıyor:** `solve(stability=True)` iki Hessian'ı
+da kurar, panel iki ayrı satır basar ve tarama nokta bazında ikisini de
+kaydeder. Bunun neden gerektiği ölçülmüştür — deponun kendi PySCF referans
+kaydı `h2_200` iç kanalda **+2.5467 ile "kararlı"** derken dış kanalda
+**−1.5995** ile eyerdir ve gerçek HF taban durumu **0.153420178832 hartree
+aşağıdadır** (Modül 1C bölümü). **Hâlâ sınanmayan: kompleks (reel olmayan)
+orbital kararsızlığı** — ve iki kanalda da "kararlı" hükmü çözümün küresel
+minimum olduğunu söylemez.
+
+RHF'nin yukarıda anlatılan ayrışma kusuru da artık yalnız anlatılmıyor,
+**ölçülüyor**: UHF aynı limitte H₂'yi iki nötr hidrojene ayırıyor (20 bohr'da
+2·E_H'den sapma **4.441e-16**) ve RHF'in aynı noktada **9.85877 eV** yukarıda
+kaldığı ölçülüyor. UHF de bir yaklaşımdır ve kendi kusurunu taşır: spin
+özdurumu değildir (`h2_200` çözümünde ⟨S²⟩ = 0.945862, singlet için 0
+olmalıydı) ve bu depoda spin projeksiyonu (PUHF) yoktur.
 
 Görselleştirme ızgarası çekirdek orbitallerini ÇÖZMEZ, ve bu ölçülmüştür:
 su/STO-3G'de HOMO'nun ızgara üzerindeki normu 1.00000000 çıkarken çekirdek
@@ -224,25 +253,36 @@ Bu makinede ölçüldü (tek oturum, dört ayrı koşu):
 
 | Koşu | Test | Süre |
 |---|---|---|
-| tam süite | 801 | 239.62 s |
-| `-m "not slow"` | 776 | 57.64 s |
-| yalnız `-m slow` | 25 | 183.15 s |
+| tam süite | **864** | **264.98 s** |
+| `-m "not slow"` | **828** | **67.97 s** |
+| yalnız `-m slow` | **36** | **210.65 s** |
+| yalnız Modül 1C'nin beş dosyası (`test_uhf`, `test_uhf_cipalar`, `test_rhf_sikismasi`, `test_coulson_fischer`, `test_dis_kararlilik`) | 60 | 31.46 s |
+| yalnız `tests/hf/` (1B + 1B2 + 1C) | 420 | 59.65 s |
+| aynısı, `-m "not slow"` | 399 | 34.68 s |
 | yalnız Modül 3F (`tests/tb/`) | 80 | 4.19 s |
 | yalnız B2'nin üç dosyası (`test_orbital_window`, `test_isosurface`, `test_hf_obs`) | 165 | 29.84 s |
 | yalnız Modül 2 + 2D + 2E (`tests/md/`) | 100 | 69.23 s |
 | aynısı, `-m "not slow"` | 93 | 7.07 s |
 
-Yavaş alt küme (25 test, 183.15 s) toplam sürenin **~%76'sını** yiyor. Mutlak
-saniyeler bu makinede eşzamanlı yüke duyarlıdır — aynı tam süite ayrı
-koşularda 215.53 s ile 258.73 s arasında ölçüldü; aşağıdaki yapısal gözlemler
-ise duyarlı değildir.
+Yavaş alt küme (36 test, 210.65 s) toplam sürenin **~%79'unu** yiyor. Mutlak
+saniyeler bu makinede eşzamanlı yüke duyarlıdır ve bu ölçüldü — aynı tam süite
+yalıtılmış üç koşuda **255.42 / 264.98 / 270.09 s**, makinede başka bir ölçüm
+koşarken ise **296.58 s** verdi (%16 fark). Tablodaki 264.98 s yalıtılmış bir
+koşudur. Aşağıdaki yapısal gözlemler bu duyarlılıktan etkilenmez.
 
-**Modül 3F de hiç yavaş test eklemedi** — eklenen **84 testin 84'ü de**
-hızlı şeritte (692 → 776) ve yavaş şerit 25'te sabit kaldı. En yavaş yeni test
+**Modül 3F hiç yavaş test eklememişti** — eklenen **84 testin 84'ü de** hızlı
+şeritte (692 → 776) ve yavaş şerit 25'te sabit kalmıştı. En yavaş yeni test
 0.80 s; dört ayrı yerde plan `@pytest.mark.slow` öneriyordu, dördü de ölçümle
 kaldırıldı. Bir kez de tersi oldu: 2.90 s süren bir test referansı ızgaradan
 **algebraya** çevrilerek 0.32 s'ye indi — yavaş bir testin çaresi her zaman
 markerlemek değildir.
+
+**Modül 1C ise ekledi, ve gerekçesi ölçüldü:** yavaş şerit 25 → **36**
+(+11), hepsi Task 1 ve Task 3'ten — N₂/F₂ üzerinde çok başlangıçlı arama
+tanımı gereği pahalıdır (bir geometri × 8–12 tohum × tam SCF) ve ucuzlatmanın
+tek yolu aramayı küçültmekti, ki o zaman test **ölçtüğü şeyi ölçmezdi**.
+Task 4+5'in eklediği **20 testin 20'si** hızlı şeritte: iki dosya birlikte
+2.76 s. Modül 1C'nin beş dosyası toplam 31.46 s'nin 60 testini taşıyor.
 
 **Modül 2E hiç yavaş test eklemedi.** Plan E'nin planı üç testi
 `@pytest.mark.slow` işaretliyordu; ölçüldü ve kaldırıldı — en yavaşı 0.35 s,
@@ -405,6 +445,219 @@ Tablodaki satır bu yüzden deponun kendi testinin
 (`test_izgara_ortusmesi_analitik_ortusmeye_oturuyor`) gerçekten koştuğu
 ızgarayı ve kod yolunu bildirir; o ızgarada iki yol 5 haneye kadar örtüşür
 (2.699635e-09 / 2.699516e-09).
+
+### Modül 1C — kısıtlanmamış Hartree-Fock (UHF)
+
+**Bu modülün kazancı enerji değil, DÜRÜSTLÜK.** UHF buraya bir "özellik"
+olarak değil, bir **ön koşul** olarak girdi: Plan G (tight-binding
+parametrelerini deponun kendi HF'inden türetme) yazılacaktı, ön ölçüm
+referans sisteminin RHF çözümünün HF'in taban durumu **olmadığını** gösterdi
+ve downfolding'in çıpası yanlış bir yüzeye oturacaktı. Plan ertelendi, yerine
+bu modül yazıldı. (Çekirdek spec §13'te "kapsam dışı" yazan madde bu yüzden
+üstü çizilerek düzeltildi.)
+
+#### Deponun kendi referans kaydı taban durum değildi
+
+`reference/hf_energies.json`'daki **11 PySCF kaydının 10'u** çok başlangıçlı
+UHF aramasıyla **≤ 9.001e-12 hartree** uyuşuyor. Ayrılan tek kayıt `h2_200`
+(H₂ @ 2.00 Å):
+
+| büyüklük | değer |
+|---|---|
+| E_RHF (referans kaydı) | **−0.783792654277** |
+| E_UHF (12 tohumlu arama) | **−0.937212833096** |
+| fark | **0.153420178832 hartree** |
+| iç (RHF→RHF) kararlılık | **+2.546683038854** → *"kararlı"* |
+| dış (RHF→UHF) kararlılık | **−1.599532559297** → **spin eyeri** |
+
+Yani depo, gerçek HF taban durumundan 0.153 hartree yukarıdaki bir noktaya
+"iç minimum" diyordu ve bu çıktının **hiçbir yerinde** görünmüyordu. Modül 1C
+o sessizliği kaldırıyor: `solve(stability=True)` artık iki kanalı da koşuyor
+ve panel iki ayrı satır basıyor.
+
+#### Coulson-Fischer noktası — modülün en güçlü çıpası
+
+RHF çözümünün spin kanalında kararlı olmaktan çıktığı R. Fiziksel bir
+**çatallanma** noktasıdır; deneysel hiçbir sayı içermez, hiçbir yerden
+verilmez, **okunur**.
+
+| yol | ne KULLANMIYOR | Rc (bohr) |
+|---|---|---|
+| (a) triplet Hessian'ın kökü | — | **2.179694793840** |
+| (b) simetriden kurulmuş orbitaller + sonlu fark | **SCF yok, analitik Hessian yok** | **2.179694793998** |
+| (c) SCF'in kendi davranışı (UHF/RHF ayrımı) | Hessian yok | aynı sınır |
+
+Fark **1.578e-10**, ve bu fark **kesme değil YUVARLAMA** — ölçüldü: h
+küçüldükçe fark *büyüyor* (3e-3 → 3.736e-10, 1e-3 → 1.275e-09, 3e-4 →
+3.734e-09), yani h=1e-3 zaten yuvarlamanın hâkim olduğu bölgede.
+Rc = 1.153444811624 Å.
+
+Çatallanma üsleri hiçbir yerden verilmedi, uyumdan çıktı:
+
+| pencere | \|ΔE\| | \|spin\| | ⟨S²⟩ |
+|---|---|---|---|
+| d ≤ 2e-1 | 1.9767 | 0.4825 | 0.9727 |
+| **d ≤ 1.6e-2** | **1.9960** | **0.4970** | **0.9953** |
+| çatallanma beklentisi | 2 | 1/2 | 1 |
+
+Zincirlerde Rc kayıyor: n=2 **2.179694794**, n=4 1.951986163, n=6 1.804435695
+bohr (ölçüldü ama iddia edilmiyor: n=8 1.695323976, n=10 1.609356683, n=12
+1.538971647 — 1/n uyumu artığı 0.089'a çıkıyor, altı nokta n→∞ limitini
+seçmeye **yetmez**).
+
+#### Çıpa tablosu — SINIFIYLA birlikte
+
+Tautolojiler gizlenmiyor; sınıflarıyla yazılıyor. Sınıflar:
+*dairesel değil* (bağımsız ikinci yolu var) · *transkripsiyon denetimi*
+(özdeşlik, ama mutasyona duyarlı) · *tautoloji* (fizik-dışı girdide de
+tutuyor).
+
+| iddia | ölçülen | sınıf |
+|---|---|---|
+| **Coulson-Fischer noktası** | üç bağımsız yol, fark 1.578e-10 | **dairesel değil — en güçlü** |
+| **Çatallanma üsleri** | 1.9960 / 0.4970 / 0.9953 (beklenti 2 / ½ / 1) | **dairesel değil** |
+| Parça toplamı (boyut tutarlılığı) | H₂ +5.551e-16, LiH −9.592e-14, N₂ +1.421e-14 | dairesel değil, **güçlü** |
+| Ayrışma limiti | UHF(H₂, 20 bohr) − 2E_H = **4.441e-16**; RHF aynı yerde **9.85877 eV** sapıyor | dairesel değil, **zayıf** (iki mutant geçiyor) |
+| Triplet Hessian = enerjinin 2. türevi | bağıl fark 1.305e-10 … 6.659e-10, beş sistemde | transkripsiyon denetimi (**taşıyıcı**) |
+| λ_triplet < 0 ⟺ UHF kazancı var | gerçek sistemlerde **18/18**; fizik-dışı girdide de **51/53** | **muhafız** — sahte-çıpa sınavını geçiyor, çıpa DEĞİL |
+| E_UHF ≤ E_RHF | 0 karşı örnek | transkripsiyon denetimi, **zayıf** (10 mutantın 7'sini kaçırıyor) |
+| RHF kararlıyken UHF özdeş | fark < 1e-12 | **TAUTOLOJİ** — muhafız, "çıpa" değil |
+
+Son satırdaki sahte-çıpa sınavı **iki ayrı soruyu** ayırıyor ve ikisinin
+cevabı farklı:
+
+| ölçüt | gerçek H₂ (18 ayrım) | fizik-dışı rastgele integraller (53 yakınsayan) |
+|---|---|---|
+| **triplet** kanal | **18/18** | 51/53 |
+| **singlet** kanal | **8/18** | 50/53 |
+
+Fizik-dışı girdide tuttuğu için hüküm **fizik değil** (cebirsel bir sonuç:
+Hessian, SCF'in indiği aynı fonksiyonelin ikinci türevidir). Ama sahte girdi
+iki kanalı **ayıramıyor**; ayrım gerçek moleküllerde çıkıyor. Yani hüküm
+fizik değil ama **doğru cebir** — yanlış kanalla verildiğinde gerçek
+moleküllerde 10/18 düşüyor.
+
+#### Sevk edilmiş kodda bulunan kusur — ve Modül 2D'ye etkisi
+
+Task 1 deponun **zaten sevk edilmiş** `solve()`'unda iki ayrı kusur ölçtü;
+ikisi de `converged=True` diyordu:
+
+| kusur | nerede | ölçülen |
+|---|---|---|
+| **DIIS** | N₂ R=1.10 Å | DIIS'li −106.769673858 vs DIIS'siz **−107.496500512** → **0.726827 Ha = 19.78 eV** |
+| **başlangıç tahmini** | N₂ R=1.30–2.00 Å | 2–5 ayrı çözüm; en düşüğü **0.278–0.498 Ha** aşağıda (DIIS masum) |
+| aynı kusur, ikinci molekül | F₂ R=1.80 / 2.00 / 2.40 Å | **0.4094 / 0.2513 / 0.0812 Ha**; 3–4 ayrı çözüm |
+
+F₂'nin **kendi dengesi** etkilenmiyor, ve o denge deneysel bir sayı değil
+**ölçüldü**: yöntemin STO-3G minimumu **R = 1.314612 Å**,
+E = −195.981624421. Orada 12 tohum tek çözüme iniyor (fark 1.705e-13) ve iki
+kanalda da kararlı (iç **+1.304533**, dış **+0.228957**). Kusur gerilmiş
+geometrilerin kusurudur.
+
+**Modül 2D bu `solve()` üzerine kuruludur, dolayısıyla etki ÖLÇÜLDÜ:**
+
+| R (bohr) | çok başlangıçlı RHF farkı | ayrı çözüm | iç λ | dış λ | UHF kazancı |
+|---|---|---|---|---|---|
+| 1.2960 (MD dönüş noktası) | 4.441e-16 | **1** | +4.77335 | **+1.92166** | **0.000e+00** |
+| 1.3459 (denge) | 4.441e-16 | **1** | +4.64526 | **+1.77054** | **0.000e+00** |
+| 1.3960 (MD dönüş noktası) | 0.000e+00 | **1** | +4.52409 | **+1.62586** | **0.000e+00** |
+| 2.1797 (= Rc) | 2.220e-16 | 1 | +3.30753 | −0.00001 | 4.733e-12 |
+| 2.5000 | 6.661e-16 | 1 | +3.03687 | −0.45013 | 1.415e-02 |
+| 4.0000 | 0.000e+00 | 1 | +2.51654 | −1.72551 | **1.748e-01** |
+
+**Hüküm: Modül 2D'nin sonuçları etkilenmiyor, ve bu bir varsayım değil
+ölçüm.** Ab initio MD H₂'yi 1.3959 bohr'dan başlatıp ~0.05 bohr genlikle
+titreştiriyor; gezdiği [1.296, 1.396] aralığının her noktasında (i) çok
+başlangıçlı RHF, **12 tohumun 12'sinde de aynı** çözüme iniyor (`n_distinct`
+= 1, enerji farkı ≤ 6.7e-16) ve (ii) dış kararlılık özdeğeri **pozitif**,
+UHF kazancı **tam sıfır**. Yani ω_A / ω_B uyuşması (milyonda 4.4) gerçek HF
+taban durumu üzerindedir.
+
+*(Bu, "H₂/STO-3G'de tek bir RHF durağan noktası vardır" demek DEĞİLDİR —
+σu² işgali de bir durağan noktadır. Ölçülen şey, 12 tohumluk bu arama
+protokolünün bu geometrilerde daha düşük bir çözüm bulamadığıdır.)*
+
+**Ama modülün geometri kapısı 21.1 bohr'a kadar açık** ve R > 2.1797 bohr'da
+aynı yüzey bir spin eyeridir — 4.0 bohr'da gerçek HF taban durumu
+**0.1748 hartree aşağıdadır**. Modül 2D'nin BO yüzeyi bu yüzden yalnızca
+Rc'nin altında HF taban durumudur; üstünde "RHF yüzeyi"dir ve öyle
+okunmalıdır.
+
+#### M9 deliği — tasarlanmış bir mutant dokuz denetimi de geçti
+
+Task 3'ün kabul ölçütü şu mutanttı: doğru Fock, doğru enerji, ama artık
+`E += 1e-3 · Σ(Mulliken spin popülasyonu)²`, ve yalnız N > 2'ye kapılı. Ön
+ölçümde önerilen **dokuz denetimin dokuzunu da geçiyordu** — çünkü önerilen
+muhafızın dört vakasının dördünde de spin popülasyonu sıfırdı.
+
+Delik gerilmiş H₄ eklenerek kapatıldı, ve muhafızın **taşıyıcı** olduğu δ
+küçültülerek kanıtlandı:
+
+| δ (ceza katsayısı) | kırılan test |
+|---|---|
+| 1e-3 | yedi (atom enerjileri, parça toplamı, HF sınırı ve muhafız) |
+| 1e-10 | iki: LiH parça toplamı ve muhafız |
+| **1e-12** | **yalnız muhafız** |
+| 1e-13 | hiçbiri (eşiğin altında) |
+
+**Ders:** bir mutantın ölmesi, onu öldürmek için yazdığın testin çalıştığı
+anlamına gelmez. *Hangi* testin öldürdüğünü sor.
+
+#### Kök okuyan çıpa ÖLÇEĞE KÖRDÜR
+
+Bu depoda ilk kez ölçüldü ve çıpa tasarımı hakkında geneldir. Triplet
+Hessian'ın `4.0` çarpanı `2.0` yapıldığında **Rc hiç kıpırdamıyor** — küresel
+bir çarpan bir sıfır geçişini yerinden oynatmaz:
+
+| test | çarpan mutantı |
+|---|---|
+| `test_COULSON_FISCHER_noktasi` | **yeşil** |
+| `test_ZINCIRLERDE_Rc_n_ile_KAYIYOR` | **yeşil** |
+| `test_TRIPLET_OLCUTU_...SINGLETTEN_iyi` | **yeşil** |
+| `test_Rc_IKINCI_BAGIMSIZ_YOLDAN_SCF_SUZ` (aralık boyu) | kırmızı |
+| `test_TRIPLET_Hessian_SONLU_FARKLA_uyusuyor` | kırmızı |
+| `test_TRIPLET_SINGLETTEN_AYRI_HUKUM_veriyor` | kırmızı |
+
+**Kök = FİZİK, ölçek = TRANSKRİPSİYON.** İki ayrı test sınıfı gerekir ve biri
+diğerinin yerine geçmez; yalnız çıpalarla yetinilseydi çarpanı yanlış yazılmış
+bir Hessian sevk edilirdi.
+
+Diğer mutantlarda Rc nereye gidiyor: Coulomb terimi **bırakılırsa** (yani
+singlet yazılırsa) kök **hiç yok** — H₂'nin singlet Hessian'ı 0.6–12 bohr
+arasında negatife inmiyor; yarım bırakılırsa yine kök yok; Fock bloklarının
+işareti takas edilirse yine kök yok; `(ab|ij)` terimi düşerse kök
+**4.570719109 bohr**'a kayıyor (2.39 bohr hata — ama VAR, yani "kök var mı"
+diye soran bir test bunu kaçırırdı).
+
+#### Dürüst olumsuzlar
+
+- **⟨S²⟩ enerjiden ~6 mertebe yavaş yakınsıyor.** Ölçüldü: SCF toleransı
+  1e-6'da enerji zaten 2.585e-12'ye oturmuşken ⟨S²⟩ hâlâ **1.457e-06**
+  oynuyor. Sebebi yapısaldır — enerji durağan noktada ikinci mertebeden
+  duyarlıdır, ⟨S²⟩ değildir. ⟨S²⟩'den yedi anlamlı haneden fazlası
+  okunmamalıdır.
+- **UHF bir spin özdurumu değildir.** `h2_200`'ün UHF çözümünde ⟨S²⟩ =
+  **0.945862370628**, oysa bir singlet için 0 olmalıdır. Bu spin kirlenmesi
+  ölçülüp raporlanıyor ama **düzeltilmiyor**: spin projeksiyonu (PUHF) yok.
+- **Her UHF enerjisi bir ARAMA protokolüyle gelir** ve çıpanın gücü kodun
+  değil aramanın özelliğidir. HF molekülünde (H + F, 20 bohr) parça toplamı
+  −98.453086808293 ama bu tohum ailesi taban durumu **hiç bulmuyor**:
+  8/12 tohum → +0.8824 Ha, 24/40/64 tohum → **+0.7749 Ha** ıskalıyor. Sekiz
+  kat tohum farkın yalnız 0.11 Ha'ını kapatıyor. Ayrıca N atomunun UHF
+  enerjisi tohuma bağlıdır: tekbiçim bias −53.719010163, alternan bias
+  −53.259271159 (**0.46 Ha** fark). Aynı kırılganlık çatallanma üslerinde de
+  görüldü — tek sabit bias ile UHF bazı R'lerde RHF'e geri çöküyor ve üs
+  `nan` çıkıyor; yukarıdaki tablo `search_uhf` (12 tohum) ile ölçülmüştür.
+- **PySCF bu makinede kurulu değil** (yalnız kaynak tarball); `reference/`
+  kayıtları PySCF **2.14.0** ile başka bir yerde üretilmiştir. Dahası 11
+  referans kaydının **hepsi kapalı kabuktur**, yani UHF'in **spin kırılan
+  dalını hiç sınamıyor** — o dalın doğrulaması bu depoda yalnız iç tutarlılık
+  (ayrışma limiti, boyut tutarlılığı, çatallanma) üzerinden yapılır.
+- **Deneysel bağ uzunluğu hiçbir yerde girdi değildir.** F₂ için yapılan
+  taramada yöntemin kendi dengesi (1.30 Å) kullanılmıştır.
+- **Kompleks (reel olmayan) orbital kanalı hâlâ sınanmıyor.** İç ve dış
+  kanalın ikisinde de "kararlı" hükmü, çözümün **küresel minimum** olduğunu
+  söylemez.
 
 ### Modül 2 — klasik moleküler dinamik
 
@@ -686,7 +939,7 @@ okunmasıdır.
 | Bant genişliği, tek n | kapalı form 2\|t\|(1+cos(π/n)) | fark **2.78e-17**; oranlar 0.750000 / 0.950484 / 0.991487 / 0.999758 |
 | Ağırlıklar gauge-bağımsız | özvektörler değil | özvektör farkı **0.814887**, ağırlık farkı **3.331e-16** |
 | Şeffaflık paneli daireselliği beyan ediyor | tam cümle | CLI çıktısında doğrulandı |
-| Süite | — | **801 test yeşil**, `tests/tb/` 80 test / 4.19 s |
+| Süite | — | Plan F kapanışında **801 test yeşil**, `tests/tb/` 80 test / 4.19 s (o günün sayısı; bugünkü toplam için yukarıdaki süite tablosuna bakın) |
 
 #### Bu modül bant aralığı TAHMİN ETMEZ
 
@@ -841,7 +1094,7 @@ Spec §15'teki yedi maddenin gerçek durumu (ölçüm ayrıntıları
 
 | # | Kriter | Durum |
 |---|---|---|
-| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — **801/801 test yeşil** (`pytest tests/`, 239.62 s), PySCF referans testleri dahil. Ayrıca `reference/` geçici olarak kaldırılıp tam süite yeniden koşuldu: testler ATLANMIYOR, KIRMIZI oluyor — ölçüldü, **128 failed + 132 error + 291 passed, 0 skipped** (toplam 551, 154.20 s). Yani 260 test kırmızıya dönüyor ve hiçbiri sessizce atlanmıyor. Dikkat: bu ikinci deney süite 551 testliyken yapıldı ve o günün sayılarını taşır; yeniden koşulmadı, sayıları 801'e uydurmak ölçüm değil uydurma olurdu |
+| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — **864/864 test yeşil** (`pytest tests/`, 264.98 s), PySCF referans testleri dahil. Ayrıca `reference/` geçici olarak kaldırılıp tam süite yeniden koşuldu: testler ATLANMIYOR, KIRMIZI oluyor — ölçüldü, **128 failed + 132 error + 291 passed, 0 skipped** (toplam 551, 154.20 s). Yani 260 test kırmızıya dönüyor ve hiçbiri sessizce atlanmıyor. Dikkat: bu ikinci deney süite 551 testliyken yapıldı ve o günün sayılarını taşır; yeniden koşulmadı, sayıları 864'e uydurmak ölçüm değil uydurma olurdu. Not: PySCF bu makinede **kurulu değildir** — `reference/*.json` kayıtları PySCF 2.14.0 ile başka bir yerde üretilmiştir ve testler koşarken PySCF'e bağımlı değildir; "PySCF referans testleri dahil" ifadesi kayıtlarla karşılaştırmayı anlatır, canlı bir PySCF çağrısını değil |
 | 2 | Headless koşucu çalışır + H₂ eğrisi bağ uzunluğu ±%8 | **Kapandı** — `python -m qlab.run scenarios/h2_bond_scan.yaml -o h2_curve.npz`; taramanın parabol fiti **0.71348 Å**, deneyselden sapma %3.7, kriterin istediği ±%8 sağlanıyor. Bu sayı yöntemin denge uzunluğu DEĞİL: STO-3G'nin gerçek minimumu 0.71223 Å, fark taramanın ızgara eseridir (Modül 1B tablosunun altındaki nota bakın). Bu satır bir zamanlar 0.7156 Å diyordu — o sayı bu komuttan değil, `test_physical`'ın ayrı ızgarasından geliyordu; artık `test_shipped_h2_scan_fit_is_grid_biased_but_less_than_the_uniform_grid` senaryonun kendi sayısını kilitliyor |
 | 3 | GUI'de H₂O HOMO izoyüzeyi döndürülebilir | **Kapandı — bu depoda ilk gerçek-ekran doğrulaması.** `python -m qlab.app.main --molecule "O 0 0 0; H 0 0.757 0.587; H 0 -0.757 0.587"` gerçek Windows platformunda açıldı; su HOMO'su (1b₁) çizildi, ±faz iki renkte, 1764/1764 tepe, çekirdekler ve şeffaflık paneli görüldü. Döndürme ölçüldü: kamera azimutu değişince kare piksel bileşenlerinin **%14.1'i**, elevasyon değişince **%7.2'si** değişiyor — sahne gerçekten 3B ve görünüm tepki veriyor. **Ne ölçülmedi:** fareyle sürükleyerek döndürme; kamera programatik değiştirildi. Kriterin "döndürülebilir" kelimesi bu yüzden yalnızca sahne tarafında kapalıdır, girdi tarafında bir insanın bakması gerekir. Doğrulamanın kendisi bir kusuru da GÖRÜNÜR KILDI: 12 satırlık beyan 140 px'lik panelde katlanın altında kalıyordu (düzeltildi, `TransparencyPanel(max_height=…)`) |
 | 4 | Kaydırıcı ile canlı iletim, analitiğin ±%2'si içinde | **Kapandı** — ölçülen fark %0.07 |
