@@ -95,6 +95,26 @@ Tasarım belgesi: `../docs/superpowers/specs/2026-08-05-qlab-kuantum-cekirdegi-d
   hatayı monoton küçültmüyor. Parametreleri qlab'ın kendi Hartree-Fock'undan
   türetmek Plan G'ye bırakıldı. Ölçülen sayılar aşağıdaki Doğrulama
   tablosundadır.
+- **Modül 3H — UHF indirgemesi (downfolding): tamam.** Modül 3F'nin açıkça
+  yazılmış en büyük açığı kapandı: **parametreler artık dışarıdan girmiyor**,
+  qlab'ın kendi UHF'inden türetiliyor. `engine/tb/downfold.py` spin-kırık UHF
+  çözümünün α/β Fock matrislerini Löwdin ile ortogonalleştirip site bazında
+  okuyor ve dört sayı üretiyor (`ε̄`, `Δ`, `t₁`, `t₂`); `model_from_downfold`
+  onları TB motoruna besliyor, `fit_distance_laws` mesafe yasalarını
+  uyduruyor, `kind: downfold` senaryosu uçtan uca koşuyor. **RHF üzerinde
+  yapılamazdı ve gerekçesi Hückel'dir:** hidrojen halkalarında RHF çoğu
+  geometride HF'in taban durumu değil (4n halkalarında HOMO/LUMO tam
+  dejenere; 7/7 ölçüldü, N=8 ve N=12 test edilen hiçbir geometride kararlı
+  değil). Modülün asıl kazancı bir sayı değil bir **çıpa**: kademeli alanın
+  çatallanma üssü üç halkada bağımsız olarak **0.496190 / 0.497600 /
+  0.497811** çıkıyor (beklenti ½) ve Modül 1C'nin H₂'de bambaşka bir
+  yordamla ölçtüğü 0.4970 ile aynı yere düşüyor — `d_c` triplet Hessian'ın
+  kökünden, `Δ` indirgemeden gelir, iki hesap birbirini hiç kullanmaz.
+  Sahte-çıpa sınavı **geçti ama DAR**: 40 fizik-dışı bazın 0'ı gerçeği
+  geçemedi, buna karşılık kuyruk marjı RHF tarafının üçte biri (1.49× vs
+  4.29×) ve sınav hedef kümesine koşullu. **Hızlanma İDDİA EDİLMİYOR** —
+  HF/TB maliyet oranı ölçülmedi. Ölçülen sayılar ve dört dürüst olumsuz
+  aşağıdaki Doğrulama bölümündedir.
 
 ## Ne iddia etmiyor
 
@@ -224,6 +244,18 @@ her adımda SCF ile yeniden çözülüyor (adım başına 7 SCF, ~8.5 ms):
 python -m qlab.run scenarios/h2_aimd.yaml -o h2aimd.npz
 ```
 
+UHF indirgemesi (Modül 3H) — H₈ halkasının tight-binding parametreleri beş
+mesafede qlab'ın kendi UHF'inden türetiliyor (ölçüldü, 5.5 s):
+
+```bash
+python -m qlab.run scenarios/halka_indirgeme.yaml -o indirgeme.npz
+```
+
+Çıktı `.npz`'si `distances_bohr`, `epsilon_bar`, `delta`, `hoppings`,
+`s_squared`, `energy_uhf`, `staggering_residual` ve `provenance_json` taşır.
+Panelin `Yakınsama` satırı burada "SCF durdu" demez — modelin varsaydığı
+iki-siteli antiferromanyetik yapının her mesafede gerçekten bulunduğunu söyler.
+
 Etkileşimli TDSE penceresi:
 
 ```bash
@@ -249,13 +281,28 @@ pytest tests/ -v -m slow
 `pyproject.toml` bir `addopts` taşımaz, yani `pytest tests/` yavaş işaretli
 testleri de KOŞAR — ikinci komut ayrı bir küme değil, birincinin alt kümesidir.
 
-Bu makinede ölçüldü (tek oturum, dört ayrı koşu):
+**Bu makinede, Modül 3H kapanışında ölçüldü** (tek oturum, beş ayrı koşu):
 
 | Koşu | Test | Süre |
 |---|---|---|
-| tam süite | **864** | **264.98 s** |
-| `-m "not slow"` | **828** | **67.97 s** |
-| yalnız `-m slow` | **36** | **210.65 s** |
+| tam süite | **971** | **432.22 s** |
+| `-m "not slow"` | **920** | **85.90 s** |
+| yalnız `-m slow` | **51** | **352.41 s** |
+| yalnız Modül 3F + 3H (`tests/tb/`) | **185** | **138.55 s** |
+| aynısı, `-m "not slow"` | **170** | **16.73 s** |
+
+Sevk edilen son hâl ayrıca bir kez daha doğrulandı: **971 passed / 424.45 s**.
+Tablodaki 432.22 s ile arasındaki %1.8, aşağıda beyan edilen makine
+gürültüsünün içindedir; tablo tek bir oturumun beş koşusu olduğu için o
+oturumun sayısıyla bırakıldı.
+
+Aşağıdaki satırlar **864 testlik önceki oturumun** ölçümleridir ve Modül 3H'yi
+içermez; yeniden koşulmadılar ve sayılarını bugüne uydurmak ölçüm değil
+uydurma olurdu. (O oturumun kendi toplamları: tam süite 864 / 264.98 s,
+`-m "not slow"` 828 / 67.97 s, `-m slow` 36 / 210.65 s.)
+
+| Koşu (önceki oturum) | Test | Süre |
+|---|---|---|
 | yalnız Modül 1C'nin beş dosyası (`test_uhf`, `test_uhf_cipalar`, `test_rhf_sikismasi`, `test_coulson_fischer`, `test_dis_kararlilik`) | 60 | 31.46 s |
 | yalnız `tests/hf/` (1B + 1B2 + 1C) | 420 | 59.65 s |
 | aynısı, `-m "not slow"` | 399 | 34.68 s |
@@ -264,11 +311,12 @@ Bu makinede ölçüldü (tek oturum, dört ayrı koşu):
 | yalnız Modül 2 + 2D + 2E (`tests/md/`) | 100 | 69.23 s |
 | aynısı, `-m "not slow"` | 93 | 7.07 s |
 
-Yavaş alt küme (36 test, 210.65 s) toplam sürenin **~%79'unu** yiyor. Mutlak
-saniyeler bu makinede eşzamanlı yüke duyarlıdır ve bu ölçüldü — aynı tam süite
-yalıtılmış üç koşuda **255.42 / 264.98 / 270.09 s**, makinede başka bir ölçüm
-koşarken ise **296.58 s** verdi (%16 fark). Tablodaki 264.98 s yalıtılmış bir
-koşudur. Aşağıdaki yapısal gözlemler bu duyarlılıktan etkilenmez.
+Yavaş alt küme (51 test, 352.41 s) toplam sürenin **~%82'sini** yiyor — oran
+Modül 3H'den önce %79'du. Mutlak saniyeler bu makinede eşzamanlı yüke
+duyarlıdır ve bu ölçüldü: 864 testlik oturumda aynı tam süite yalıtılmış üç
+koşuda **255.42 / 264.98 / 270.09 s**, makinede başka bir ölçüm koşarken ise
+**296.58 s** verdi (%16 fark). Aşağıdaki yapısal gözlemler bu duyarlılıktan
+etkilenmez.
 
 **Modül 3F hiç yavaş test eklememişti** — eklenen **84 testin 84'ü de** hızlı
 şeritte (692 → 776) ve yavaş şerit 25'te sabit kalmıştı. En yavaş yeni test
@@ -289,7 +337,24 @@ Task 4+5'in eklediği **20 testin 20'si** hızlı şeritte: iki dosya birlikte
 yani hepsi "saniye altı çıpa" kuralının içine düşüyor. Sonuç: yavaş şerit
 25 testte sabit kaldı, eklenen 17 testin **17'si de** hızlı şeritte.
 
-**Yavaş testlerin dağılımı (ölçüldü):** `hf/test_physical.py` ×5,
+**Modül 3H, deponun en pahalı modülü oldu — ve gerekçesi ölçüldü.** Süite
+864 → **971** (+107): hızlı şerit 828 → **920** (+92), yavaş şerit 36 → **51**
+(+15). Yavaş şeridin süresi 210.65 → **352.41 s**; aradaki ~142 s'nin tamamını
+Modül 3H'ye yazmak **iki ayrı oturumun** karşılaştırması olur ve bu makine
+eşzamanlı yüke %16'ya kadar duyarlıdır — test SAYILARI kesin, saniye farkı
+yaklaşıktır. Sebep ucuzlatılamaz: bu modülün her fiziksel testi bir
+**arama protokolü** koşar (bir geometri × 12–20 tohum × tam UHF), çıpa testi
+üstüne `brentq` ile bir kök araması ekler ve sahte-çıpa sınavı altı ayrı baz
+seti üzerinde tam bir yasa uydurması yapar (36 `search_uhf` çağrısı). Aramayı
+küçültmek testin **ölçtüğü şeyi ölçmemesi** demek olurdu.
+
+Task 5'in (senaryo + panel + README) kendi payı küçük: eklenen **25 testin
+24'ü** hızlı şeritte, tek yavaş test uçtan uca CLI koşumu (5.02 s). `tests/tb`
+artık 185 test / 138.55 s; hızlı şeridi ise 170 test / **16.73 s** — yani
+günlük çalışma döngüsü hâlâ ucuz, pahalı olan yalnızca işaretli şerit.
+
+**Yavaş testlerin dağılımı (ölçüldü, 864 testlik oturum — Modül 3H'nin
+eklediği 15 yavaş test bu listede YOKTUR):** `hf/test_physical.py` ×5,
 `hf/test_stability.py` ×5, `tdse/test_double_slit.py` ×4, `md/test_aimd.py`
 ×3, `md/test_maxwell_boltzmann.py` ×2, `md/test_thermostats.py` ×2,
 `tdse/test_analytic.py` ×2, `tdse/test_tunneling.py` ×1,
@@ -1060,6 +1125,328 @@ enerjetiği hesaplanmıyor; sıcaklık/Fermi-Dirac doluluğu yok. Ve en önemlis
 Hartree-Fock'undan türetmek — daireselliği kırma hamlesinin TB karşılığı —
 Plan G'ye bırakıldı ve ön ölçümü "KISMEN" dedi.
 
+### Modül 3H — UHF indirgemesi / downfolding (Plan H)
+
+Modül 3F'nin açıkça yazılmış en büyük açığı kapandı: **parametreler artık
+dışarıdan girmiyor, qlab'ın kendi UHF'inden türetiliyor.**
+`engine/tb/downfold.py`, `search_uhf`'in bulduğu spin-kırık çözümün α/β Fock
+matrislerini Löwdin ile ortogonalleştirip site bazında okur
+
+    H_eff^σ = S^(-1/2) F^σ S^(-1/2)
+
+ve dört sayı üretir: `ε̄`, `Δ`, `t₁`, `t₂`. Sevk edilenler: `downfold_uhf`,
+`model_from_downfold`, `fit_distance_laws` / `DistanceLaws`, `hydrogen_ring`;
+`kind: downfold` senaryosu (`scenarios/halka_indirgeme.yaml`); testler
+`test_downfold.py`, `test_downfold_cipa.py`, `test_downfold_kesme.py`,
+`test_downfold_yasa.py`, `test_downfold_senaryo.py`.
+
+**Modülün asıl kazancı bir sayı değil bir çıpa:** kademeli alanın çatallanma
+üssü, üç halkada bağımsız olarak ½ çıkıyor. **Modülün asıl sınırı da yazılı:
+hızlanma İDDİA EDİLMİYOR** — HF/TB maliyet oranı bu modülde hiç ölçülmedi.
+
+#### Neden UHF, neden RHF değil — hüküm Hückel'den geliyor
+
+Plan G'nin indirgemeyi RHF üzerine kurma denemesi düştü, çünkü hidrojen
+halkalarında RHF çözümü çoğu geometride HF'in **taban durumu değildir**.
+Desen 4n / 4n+2'dir ve **7/7 ölçüldü** (d = 1.6 bohr, dış — RHF→UHF, üçlü —
+kararlılık özdeğeri ve UHF'in kazandırdığı enerji):
+
+| N | tür | dış λ | UHF kazancı (hartree) |
+|---|---|---|---|
+| 6 | 4n+2 | **+1.26984** | 1.78e-15 |
+| 8 | 4n | **−0.38237** | **0.099079** |
+| 10 | 4n+2 | **+0.59956** | 7.11e-15 |
+| 12 | 4n | **−0.30153** | **0.082805** |
+| 14 | 4n+2 | **+0.22768** | 1.07e-14 |
+| 16 | 4n | **−0.26614** | **0.077927** |
+| 18 | 4n+2 | **+0.00983** | 2.84e-14 |
+
+4n halkalarında TB spektrumunun HOMO/LUMO'su tam dejeneredir; RHF dejenere
+seviyeyi çift işgale zorlayınca spin kararsızlığı doğar ve UHF gerçekten
+aşağı iniyor (yaklaşık 0.08–0.10 hartree). 4n+2'de kazanç sayısal sıfır.
+
+**N=8 ve N=12 test edilen hiçbir geometride kararlı değil** — altı mesafede
+(1.6 / 1.8 / 2.0 / 2.2 / 2.6 / 3.0 bohr) **12/12** nokta negatif λ verdi.
+N=8'in altı değeri: −0.382368, −0.390441, −0.399690, −0.409562, −0.428241,
+−1.203061.
+
+> **Plan H'nin "45 noktanın 35'i spin kararsız" sayısı tekrarlanamadı ve
+> sebebi bu deponun kendi tekrar eden dersi:** ızgara yazılmamıştı. Adı konmuş
+> bir ızgarayla yeniden ölçüldü — N ∈ {6, 8, 10, 12, 14} × d ∈ {1.6, 1.8, 2.0,
+> 2.2, 2.6, 3.0, 3.4, 3.8, 4.2} bohr, yine 45 nokta — ve çıkan sayı
+> **38/45**. Nitel hüküm (noktaların büyük çoğunluğu spin kararsız) aynı;
+> kesin sayı **ızgaraya bağlı** ve ızgara adlandırılmadan tekrarlanamaz.
+> Yukarıdaki 38/45 bu ızgaranın sayısıdır.
+>
+> Tamamlık için: özgün 35/45 **yanlış değildi**, ızgarası yazılmamıştı. O
+> ölçüm N ∈ {6, 8, 10, 12, 14} × d ∈ {1.5, 1.6, 1.8, 2.0, 2.2, 2.4, 2.6,
+> 3.2, 3.8} bohr üzerinde yapılmıştı ve o ızgarada tekrarlanıyor. İki sayının
+> farkı, iki ızgaranın uzak mesafelerde farklı sıklıkta olmasıdır — 4.2
+> bohr'a kadar giden ızgara daha çok kararsız nokta içerir. **Kusur sayıda
+> değil, sayının yanında ızgaranın olmamasındaydı.**
+
+#### Modelin şekli varsayım değil ÖLÇÜM
+
+Spin-kırık halka çözümü antiferromanyetiktir ve bu her çağrıda **yeniden
+doğrulanır**, varsayılmaz:
+
+- Mulliken spin popülasyonu alternan (N=8, d=2.0: ∓0.517253)
+- `diag(H_eff^α)` iki değer arasında alternan: **+0.250498 / −0.135858**
+- `diag(H_eff^β)`, α'nın **bir site kaydırılmışı**. Kaydırma artığı beş
+  sistemde ölçüldü ve sistemler **adlıdır** — aralık, hangi sistemlerden
+  geldiği yazılmadan tekrarlanamaz:
+
+  | sistem | kaydırma artığı |
+  |---|---|
+  | N=6, d=2.6 | 2.220446e-15 |
+  | N=6, d=3.0 | 1.942890e-15 |
+  | N=8, d=2.0 | 5.558044e-09 |
+  | N=8, d=2.6 | 3.951947e-09 |
+  | N=10, d=2.6 | 9.087647e-09 |
+
+- Hoplama **spinden bağımsız ve tekbiçim**: N=8 d=2.0'da t = −0.407145,
+  sekiz bağın sekizinde de aynı. "Aynı"nın ölçüsü:
+  max|tᵅ − tᵅ[0]| = **3.003514e-09**, max|tᵅ − tᵝ| = **8.213723e-10**. Bu
+  sayılar sıfır değildir ve olmaları da beklenmez — `solve_uhf`'in artık
+  toleransı 1e-8'dir, Fock elemanlarının gürültü tabanı oradadır.
+
+Dolayısıyla bağımsız parametre **dörttür**. `Δ`'nın **işareti bir ayar
+seçimidir** — hangi alt-örgünün α fazlası taşıdığına UHF araması karar verir
+ve karar d'den d'ye döner. Ölçüldü (N=8, d = 1.6 … 3.6, on nokta):
+`+ − + − + − + + + +`.
+
+#### ÇIPA — kademeli alanın çatallanma üssü · **SINIF: dairesel değil**
+
+İki büyüklük **iki ayrı hesaptan** gelir ve birbirini hiç kullanmaz. `d_c`,
+RHF çözümünün üçlü orbital Hessian'ının sıfır kökünden (Modül 1C,
+`analysis.external_stability`); `Δ` indirgemeden. Üs hiçbir yerden verilmez,
+log-log eğiminden okunur.
+
+| N | d_c (bohr) | ölçülen üs | Δ(d_c + 0.032) | log-artık (max) |
+|---|---|---|---|---|
+| 6 | **2.233818500** | **0.496190** | 8.115373e-02 | 1.892e-03 |
+| 10 | **1.957853161** | **0.497600** | 6.145320e-02 | 1.169e-03 |
+| 14 | **1.757512489** | **0.497811** | 4.948334e-02 | 1.034e-03 |
+
+Üçü de çatallanma beklentisi **½**'nin hemen altında: sapmalar 0.003810
+(N=6), 0.002400 (N=10), 0.002189 (N=14) — ve N büyüdükçe küçülüyor. Ve
+**üçüncü bir bağımsız okuma**: Modül 1C, H₂ molekülünde — başka bir sistem,
+başka bir yordam, Coulson-Fischer noktasında |spin| ölçüsü — üssü **0.4970**
+ölçmüştü (`tests/hf/test_coulson_fischer.py`). Aynı yere düşüyor.
+
+> Task 2'nin dokstringi bu satırda *"üs ½'ye 0.0022'den yakın"* diyordu ve o
+> sayı **yanlıştı** — N=6'nın sapması 0.003810, yani iddia edilenin 1.7 katı.
+> Doğrulama turunda yakalandı ve dokstring düzeltildi; testin toleransı
+> (abs=0.02) zaten gerçek sapmanın çok üstündeydi, yani hata testi kırmıyordu
+> ve ancak **yeniden ölçülünce** görülebilirdi.
+
+Çıpa **iki taraflıdır**: geçişin altında `Δ` sönüyor — N=6 d_c−0.20'de
+2.886867e-09, d_c−0.02'de 1.539807e-08; N=10'da 9.908740e-16 ve
+1.998401e-16. Bu artıklar fizik değil `solve_uhf`'in artık tabanıdır ve eşik
+(1e-7) tam da bu yüzden planın önerdiği 1e-8 **değildir**: N=6 d_c−0.02
+noktası 1.539807e-08 ile 1e-8'i aşıyor.
+
+> **Üs testi tek başına ÖLÇEĞE KÖRDÜR** ve bu delik ayrıca kapatıldı: log-log
+> eğimi `Δ → c·Δ` dönüşümü altında değişmez, yani üs testi `Δ`'yı sabit bir
+> sayıyla çarpan bir kusuru göremez. Aynı testte mutlak bir değer de
+> kilitlenir (yukarıdaki `Δ(d_c+0.032)` sütunu) ve o satır **transkripsiyon
+> denetimidir**, çıpa değil.
+
+#### Kesme hatasının dürüst tablosu
+
+Hata = max|iki-siteli TB özdeğerleri − UHF α özdeğerleri|, hartree, STO-3G,
+seeds=16. **Kesme hatası küçük DEĞİLDİR ve büyük olduğu yazılıdır.**
+
+| N | d | UHF yayılımı | NN-only | +t₂ | oran | %NN | %t₂ |
+|---|---|---|---|---|---|---|---|
+| 6 | 2.60 | 1.113021 | 0.039420 | **0.012078** | 3.26 | 3.5% | 1.1% |
+| 6 | 3.00 | 0.947273 | 0.023748 | **0.009107** | 2.61 | 2.5% | 1.0% |
+| 6 | 3.60 | 0.834770 | 0.010104 | **0.003925** | 2.57 | 1.2% | 0.5% |
+| 8 | 2.00 | 1.693171 | 0.153603 | **0.066287** | 2.32 | 9.1% | 3.9% |
+| 8 | 2.60 | 1.134138 | 0.073229 | **0.032485** | 2.25 | 6.5% | 2.9% |
+| 10 | 2.60 | 1.140294 | 0.059631 | **0.020470** | 2.91 | 5.2% | 1.8% |
+
+Planın (ve ilk dokstringin) "t₂ hatayı ~3 kat düşürür" cümlesi **düzeltildi**:
+ölçülen oran 2.25 … 3.26, ortalaması 2.65 — "üç kat" altı sistemin yalnızca
+**birinde** tutuyor. Doğru cümle *"iki ila üç kat"*tır.
+
+#### Modelin tavanı MENZİL değil KABUK ORTALAMASI
+
+"Menzili büyütünce hata sıfıra gider" beklentisi **yanlış** ve ölçüldü:
+N=8 d=2.0'da menzil tamamen açıkken (m=4, hiçbir şey kesilmemişken) hata hâlâ
+**0.063140** — menzil 2'nin 0.066287'sinden yalnızca %5 aşağıda.
+
+Sebep iki parçalı ve ikisi de ölçüldü. **(a) İndirgemenin kendisi kayıpsız:**
+`H_eff^α`'nın özdeğerleri UHF α orbital enerjileriyle **7.194e-10**'da aynı.
+**(b) Kayıp kabuk ortalamasında:** model her halka mesafesi m için tek bir
+`t_m` taşır, ama `H_eff^α` **çift** m'de A-A ile B-B'yi ayırır (α kanalında A
+alt-örgüsü α fazlası, B β fazlası taşır ve ikisi eşdeğer değildir). Kabuk içi
+yayılım, N=8 d=2.0:
+
+| kabuk | yayılım |
+|---|---|
+| m=1 | 3.003515e-09 (tekbiçim — SCF artık tabanı) |
+| m=2 | **5.106121e-02** |
+| m=3 | 1.007388e-09 (tekbiçim) |
+| m=4 | **2.415794e-02** |
+
+Tek m'de kabuk tekbiçim, çünkü o hoplamalar A↔B'yi bağlar ve AFM işlemi
+altında simetriktir. **Hükmü:** hatayı gerçekten düşürmek için gereken şey t₃
+değil, çift menzilde alt-örgüye bağlı **iki ayrı** hoplamadır (t₂^AA, t₂^BB) —
+ve o, dört parametreli modelin **kapsamı dışındadır**.
+
+#### Sahte-çıpa sınavı · **SINIF: dairesel değil, ama DAR**
+
+Sınav: fiziği çıkar, **boru hattını yerinde bırak**; sonra aynı yasa uydurma
+makinesini fizik-dışı girdiyle koştur. Ölçülen metrik **ekstrapolasyon
+oranı** = (pencere dışı log artık RMS) / (pencere içi log artık RMS) — yani
+"yasa, uydurduğu yerden ne kadar uzağa taşıyor".
+
+N=8 halkası, pencere 1.8/2.0/2.2 bohr, hedef 2.4/2.6/3.0 bohr, seeds=12:
+
+| kurulum | oran |
+|---|---|
+| **GERÇEK (STO-3G)** | **4.160383** |
+| 40 rastgele düğümsüz baz — medyan | 29.902685 |
+| aynı 40 — **en iyisi** | 6.216006 |
+| aynı 40 — en kötüsü | 413.126243 |
+| **gerçeği geçen** | **0/40** |
+| F3 saf geometri çekirdeği (`S=exp(−a r)`, `H=S⁻¹`), beş a | 9.9647 … 29.3917, **0/5** |
+
+45 fizik-dışı kurulumun 45'i de gerçekten kötü. **F2 (`eri*0`) koşulamadı ve
+bu bir eksiklik değil bir ölçüm:** elektron-elektron kapanınca değiştokuş da
+yok olur, UHF RHF'e çöker ve |Δ| = 1.110223e-16 çıkar; `fit_distance_laws`
+bunu görüp `UnsupportedSystemError` fırlatıyor. İkame **beyanla değil kodun
+kendi kapsam kontrolüyle** elendi. Aynı kontrol F1'de de gerçekten ateşledi:
+41 çizimin 1'i "t₂ pencere içinde işaret değiştiriyor" diye reddedildi.
+
+#### Dürüst olumsuzlar — dördü de ölçüldü
+
+1. **Kuyruk marjı RHF tarafının üçte biri.** Burada gerçek 4.160383, en iyi
+   sahte 6.216006 — yalnızca **1.49 kat**. Karşılaştırma noktası Plan H'nin
+   RHF yolu üzerindeki ön ölçümüdür (2.80'e karşı en iyi sahte 12.01, yani
+   **4.29 kat**); o rakam bu depoda **yeniden ölçülemez** çünkü RHF
+   indirgemesi sevk edilmedi — kaynağı belirtilerek aktarılıyor. Sınav
+   geçiyor ama ayırma gücü düşmüş durumda ve bu yazılmadan geçilemez.
+2. **İkinci metrik aynı hükmü vermiyor.** "Yasa pencere dışını iyi öngörüyor"
+   cümlesi tek başına fizik kanıtı **değildir**: ham bağıl öngörü hatasında
+   40 sahtenin **2'si** (0.005409 ve 0.005571; gerçek 0.010811) ve saf
+   geometri çekirdeklerinin **5'inden 2'si** (0.000997 ve 0.000297) gerçekten
+   **daha iyi** öngörüyor. `exp(−a r)` tanımı gereği üsteldir; "üstel bir
+   yasaya uyuyor" olmak bir çekirdeği fiziksel yapmaz.
+3. **Mutlak hata tek başına da ayırmıyor, ters yönden.** 40 sahtenin **7'si**
+   gerçekten küçük mutlak hata veriyor — ikisinin sebebi t₁'lerinin neredeyse
+   **sıfır** olması. Bu yüzden her iki sınır da (bağıl VE mutlak) kilitlenir.
+4. **Sınav HEDEF KÜMESİNE KOŞULLU.** Aynı yasa, pencere hiç değişmeden,
+   yalnızca hedef kümesi uzatılarak:
+
+   | hedef kümesi (bohr) | oran |
+   |---|---|
+   | (2.4, 2.6, 3.0) | **4.160383** |
+   | + 3.2 | 5.997079 |
+   | + 3.6 | **15.479892** |
+
+   d = 3.6 hedefe konsaydı **gerçek sistem en iyi fizik-dışı bazdan
+   (6.216006) daha kötü görünürdü ve sınav düşerdi.** Çıpanın geçtiği hüküm
+   bu yüzden "yasa ekstrapole eder" değil, şu dar hükümdür: *1.8–2.2 bohr
+   penceresinden uydurulan t₁ yasası, 3.0 bohr'a kadar fizik-dışı bazların
+   üretemediği bir doğrulukla öngörüyor.* 3.0 bohr'un ötesi için bu modül bir
+   şey iddia etmez.
+
+#### `p = 2` ölçülmedi, SEÇİLDİ — ve bedeli ölçüldü
+
+`ε̄ = ε_∞ + C·t₁²` yasasındaki üs Löwdin'in ikinci mertebe açılımından gelir
+(yerinde düzeltme örtüşmede ikinci mertebedir), yani **teoriden**. Serbest
+bırakıldığında N=8 halkasının on noktalı gridinde ölçülen üs **1.8887** —
+yani serbest uyum 2'ye yakın ama onu **vermiyor**. (Plan H'nin RHF yolundaki
+ön ölçümü 1.9869 diyordu; o sayı bu depoda yeniden ölçülemez, kaynağı
+belirtilerek aktarılıyor. UHF tarafında serbest üs 2'den **daha uzak**.) p=2
+zorlamasının pencere içi artığı 5.737638e-04 RMS.
+
+#### `Δ` için temiz bir mesafe yasası YOK — ve sebebi ölçüldü
+
+`ln|t_m|` doğrusal oturuyor (artık RMS 1.855587e-03 ve 4.104227e-04), ama
+`|Δ| = A·exp(b·d)` **yalnızca pencere içinde** geçerli; dışarıda hızla
+bozuluyor: bağıl hata 0.028079 (d=2.4) → 0.055498 (2.6) → 0.069184 (3.0),
+yani t₁'in maksimumunun (0.010811) **altı katı** ve d ile monoton artıyor.
+Sebep: **`Δ` doyuyor.** N=8'de |Δ| d=1.6'da 0.170033 iken d=3.6'da
+0.363453'te doyuyor; pencere yasası orada %5.0 yüksek tahmin veriyor
+(0.381747).
+
+Doymanın sebebi **bağımsız bir hesapla** doğrulandı. Hubbard ortalama alan
+boşluk denklemi, ölçülen (t₁, Δ) çiftinden U'yu çözdürür; çıkan U neredeyse
+sabittir ve Löwdin bazında **bağımsız olarak** hesaplanan yerinde Coulomb
+integrali (00|00) ile aynı yere düşer:
+
+| d (bohr) | t₁ | \|Δ\| | U (boşluk denklemi) | (00\|00) | fark |
+|---|---|---|---|---|---|
+| 1.6 | −0.573180 | 0.170033 | 0.873471 | 0.946171 | 7.7% |
+| 2.0 | −0.407145 | 0.193178 | 0.827766 | 0.883907 | 6.4% |
+| 2.6 | −0.255455 | 0.265159 | 0.802284 | 0.828145 | 3.1% |
+| 3.0 | −0.183164 | 0.318473 | 0.794279 | 0.806566 | 1.5% |
+| 3.6 | −0.106972 | 0.363453 | 0.784102 | 0.788356 | **0.5%** |
+| 6.0 | (ayrışmış atom sınırı) | — | — | 0.774783 | — |
+
+U uçtan uca 0.873471 → 0.784102 (oran 1.114) oynuyor; uyum d büyüdükçe
+iyileşiyor — ortalama alanın ve atomik sınırın en iyi çalıştığı yerde. Yani
+`Δ` doyar çünkü U mesafeye kabaca duyarsızdır ve yerel moment 1'e doyar;
+Δ = U·m/2.
+
+#### Sınırlar — modülün beyan ettiği kapsam
+
+- **Yalnız STO-3G.** 6-31G atom başına iki fonksiyon taşır ve site-bazlı okuma
+  orada **tanımsızdır** (`H_eff[0,1]` atom-*içi* elemanı döndürürdü). Kod bunu
+  sessizce geçmez, `UnsupportedSystemError` fırlatır.
+- **Yalnız halka.** Açık zincir kapsam dışıdır ve gerekçesi ölçüldü: N=8 açık
+  zincirde, halkadan gelen **bütün** menzillerle (m = 1…4; halka mesafesi
+  orada doyar, bulk parametrizasyonu daha uzağını zaten tanımlamaz) kurulan
+  modelin hatası d=1.8 bohr'da **0.095563 Ha**. Plan H'nin ön ölçümü aynı
+  büyüklüğü "0.096 Ha'lık bir taban" diye kaydetmişti ve sayı tutuyor; ama
+  **taban olduğu bu protokolde görünmüyor** — hata d ile düzgün küçülüyor
+  (0.086963 / 0.058007 / 0.024325 @ 2.0 / 2.6 / 3.2 bohr). Yani o taban, eğer
+  varsa, **menzil ekseninde** bir tabandır, mesafe ekseninde değil. Kenar
+  etkisi bu modülde modellenmez ve bu satır onu modellemeye çalışmaz.
+- **UHF bir spin özdurumu DEĞİLDİR.** ⟨S²⟩ sonuca iliştirilir ama
+  **düzeltilmez** (spin projeksiyonu / PUHF yoktur). Ölçüldü: N=8 d=2.0'da
+  ⟨S²⟩ = **1.220731** — ne singlet ne triplet. Sevk edilen senaryonun en uzak
+  noktasında (d=3.2) **2.948899**'a çıkıyor.
+- **Parametreler bir ARAMA protokolünden gelir**, tek bir SCF'ten değil.
+  Arama özeti panelde yazılıdır ve ayrışma gerçektir: sevk edilen senaryoda
+  d=1.8/2.0/2.2'de 12 tohumun 12'si yakınsıyor, d=2.6'da 11'i, **d=3.2'de
+  yalnızca 9'u**.
+- **`t`'nin işareti bir AYAR SEÇİMİDİR** ve bu modül onu sabitlemez
+  (`tests/tb/test_ayar_ve_isaret.py`). Aynı şey `Δ`'nın işareti için de
+  geçerlidir; `DistanceLaws.at()` bu yüzden her zaman pozitif `Δ` döndürür.
+- **HIZLANMA İDDİA EDİLMİYOR.** Bu modül HF/TB maliyet oranını **ölçmedi**.
+  İddia edilen tek şey parametrelerin türetilebilir ve çapalanabilir
+  olduğudur — ve bu cümle şeffaflık panelinde de yazılıdır.
+
+#### Panel ve senaryo
+
+```bash
+python -m qlab.run scenarios/halka_indirgeme.yaml -o indirgeme.npz
+```
+
+Çıkış 0; panel Yöntem / Yaklaşımlar / İhmal edilen / Beklenen hata / Yakınsama
+satırlarını basar. `Yakınsama` burada "SCF durdu" **demek değildir**: ölçüt,
+modelin varsaydığı iki-siteli antiferromanyetik yapının her mesafede
+gerçekten bulunmasıdır (`staggering_residual_max` < 1e-7; sevk edilen
+senaryoda ölçülen **7.526e-09**).
+
+Beyan metninin **tek kaynağı** `engine/tb/factory.py`dir ve bu bir disiplin
+değil bir **test**tir: her beyan cümlesi `src/` ağacında tam bir kez geçer;
+`tests/` tarafında da — kilidi kuran tek dosya ve dört standart terim dışında
+— hiç geçmez. `run.py::_run_downfold` metnin bir harfini bile yeniden yazmaz,
+yalnızca `provenance.as_lines()` basar. Gerekçesi bu depoda ölçülmüştü: aynı
+blok bir kez `scf.py` ile `factory.py`de kopyalanmış, biri düzeltilip öteki
+unutulunca panel iki farklı şey iddia etmişti.
+
+Sayım denetiminin kendisi de bir tuzağı kapatıyor ve o tuzak ölçüldü: bitişik
+dize sabitleri (`"birinci parca "` + `"ikinci parca"`) kaynakta **iki**
+parçadır ama çalışma zamanında **tek** dizedir; ham metinde aramak 0 eşleşme
+verir ve "kopya yok" diye okunurdu — yani test kendi iddiasının tersini
+kanıtlardı. Denetim bu yüzden metni önce birleştiriyor.
+
 ## Mimari kuralı
 
 `engine` paketi `viz` veya `app` import **edemez** — ve GUI'nin kendisini de,
@@ -1094,7 +1481,7 @@ Spec §15'teki yedi maddenin gerçek durumu (ölçüm ayrıntıları
 
 | # | Kriter | Durum |
 |---|---|---|
-| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — **864/864 test yeşil** (`pytest tests/`, 264.98 s), PySCF referans testleri dahil. Ayrıca `reference/` geçici olarak kaldırılıp tam süite yeniden koşuldu: testler ATLANMIYOR, KIRMIZI oluyor — ölçüldü, **128 failed + 132 error + 291 passed, 0 skipped** (toplam 551, 154.20 s). Yani 260 test kırmızıya dönüyor ve hiçbiri sessizce atlanmıyor. Dikkat: bu ikinci deney süite 551 testliyken yapıldı ve o günün sayılarını taşır; yeniden koşulmadı, sayıları 864'e uydurmak ölçüm değil uydurma olurdu. Not: PySCF bu makinede **kurulu değildir** — `reference/*.json` kayıtları PySCF 2.14.0 ile başka bir yerde üretilmiştir ve testler koşarken PySCF'e bağımlı değildir; "PySCF referans testleri dahil" ifadesi kayıtlarla karşılaştırmayı anlatır, canlı bir PySCF çağrısını değil |
+| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — **971/971 test yeşil** (`pytest tests/`, 432.22 s; Modül 3H kapanışında ölçüldü), PySCF referans testleri dahil. Ayrıca `reference/` geçici olarak kaldırılıp tam süite yeniden koşuldu: testler ATLANMIYOR, KIRMIZI oluyor — ölçüldü, **128 failed + 132 error + 291 passed, 0 skipped** (toplam 551, 154.20 s). Yani 260 test kırmızıya dönüyor ve hiçbiri sessizce atlanmıyor. Dikkat: bu ikinci deney süite 551 testliyken yapıldı ve o günün sayılarını taşır; yeniden koşulmadı, sayıları 971'e uydurmak ölçüm değil uydurma olurdu. Not: PySCF bu makinede **kurulu değildir** — `reference/*.json` kayıtları PySCF 2.14.0 ile başka bir yerde üretilmiştir ve testler koşarken PySCF'e bağımlı değildir; "PySCF referans testleri dahil" ifadesi kayıtlarla karşılaştırmayı anlatır, canlı bir PySCF çağrısını değil |
 | 2 | Headless koşucu çalışır + H₂ eğrisi bağ uzunluğu ±%8 | **Kapandı** — `python -m qlab.run scenarios/h2_bond_scan.yaml -o h2_curve.npz`; taramanın parabol fiti **0.71348 Å**, deneyselden sapma %3.7, kriterin istediği ±%8 sağlanıyor. Bu sayı yöntemin denge uzunluğu DEĞİL: STO-3G'nin gerçek minimumu 0.71223 Å, fark taramanın ızgara eseridir (Modül 1B tablosunun altındaki nota bakın). Bu satır bir zamanlar 0.7156 Å diyordu — o sayı bu komuttan değil, `test_physical`'ın ayrı ızgarasından geliyordu; artık `test_shipped_h2_scan_fit_is_grid_biased_but_less_than_the_uniform_grid` senaryonun kendi sayısını kilitliyor |
 | 3 | GUI'de H₂O HOMO izoyüzeyi döndürülebilir | **Kapandı — bu depoda ilk gerçek-ekran doğrulaması.** `python -m qlab.app.main --molecule "O 0 0 0; H 0 0.757 0.587; H 0 -0.757 0.587"` gerçek Windows platformunda açıldı; su HOMO'su (1b₁) çizildi, ±faz iki renkte, 1764/1764 tepe, çekirdekler ve şeffaflık paneli görüldü. Döndürme ölçüldü: kamera azimutu değişince kare piksel bileşenlerinin **%14.1'i**, elevasyon değişince **%7.2'si** değişiyor — sahne gerçekten 3B ve görünüm tepki veriyor. **Ne ölçülmedi:** fareyle sürükleyerek döndürme; kamera programatik değiştirildi. Kriterin "döndürülebilir" kelimesi bu yüzden yalnızca sahne tarafında kapalıdır, girdi tarafında bir insanın bakması gerekir. Doğrulamanın kendisi bir kusuru da GÖRÜNÜR KILDI: 12 satırlık beyan 140 px'lik panelde katlanın altında kalıyordu (düzeltildi, `TransparencyPanel(max_height=…)`) |
 | 4 | Kaydırıcı ile canlı iletim, analitiğin ±%2'si içinde | **Kapandı** — ölçülen fark %0.07 |

@@ -31,6 +31,7 @@ from qlab.errors import QLabError
 from qlab.provenance import Provenance
 from qlab.scenario.loader import load_scenario
 from qlab.scenario.schema import (
+    DownfoldScenario,
     HFScanScenario,
     MDScenario,
     TBScenario,
@@ -156,6 +157,10 @@ def main(argv: list[str] | None = None) -> int:
         # yakalanmayan AttributeError'i verirdi.
         if isinstance(scenario, TBScenario):
             return _run_tb(scenario, args.output)
+        # INDIRGEME DALI: `TBScenario` ile ayni gerekce -- `DownfoldScenario`
+        # da `grid` tasimaz.
+        if isinstance(scenario, DownfoldScenario):
+            return _run_downfold(scenario, args.output)
         result = _run_loaded(scenario)
     except QLabError as exc:
         print(str(exc), file=sys.stderr)
@@ -214,6 +219,58 @@ def _run_tb(scenario: TBScenario, output: str | None) -> int:
             tick_labels=np.array(yuk.tick_labels),
             fermi_ev=np.array(yuk.fermi_ev),
             is_metal=np.array(metal),
+        )
+    return 0
+
+
+def _run_downfold(scenario: DownfoldScenario, output: str | None) -> int:
+    """UHF indirgemesini koşturur ve şeffaflık panelini basar.
+
+    `_run_tb`/`_run_md` ile aynı kalıp: kendi panelini basar ve kendi
+    `.npz`'sini yazar, `save()` yolundan geçmez.
+
+    BU FONKSİYON HİÇBİR BEYAN METNİ YAZMAZ. Yöntem/Yaklaşımlar/İhmal
+    edilen/Beklenen hata satırlarının tek kaynağı
+    `engine/tb/factory.py::build_downfold`'dur ve buradan yalnızca
+    `provenance.as_lines()` basılır. İki kopya metin bu depoda bir kez
+    panelin iki farklı şey iddia etmesine yol açtı (bkz.
+    `tests/hf/test_hf_scenario.py`); kopya sayısı testle kilitlidir.
+    """
+    from qlab.engine.tb.factory import build_downfold
+
+    parametreler, provenance = build_downfold(scenario)
+
+    print(
+        f"{scenario.name}: N={scenario.ring_size} halka, "
+        f"{len(parametreler)} mesafe"
+    )
+    for d, p in zip(scenario.distances_bohr, parametreler):
+        hoplamalar = "  ".join(
+            f"t{m + 1}={t:+.6f}" for m, t in enumerate(p.hoppings)
+        )
+        print(
+            f"  d={d:.3f} bohr  eps={p.epsilon_bar:+.6f}  "
+            f"Delta={p.delta:+.6f}  {hoplamalar}  "
+            f"<S^2>={p.s_squared:.6f}  E_UHF={p.energy_uhf:+.6f}"
+        )
+    for etiket, deger in provenance.as_lines():
+        print(f"{etiket:<14}: {deger}")
+
+    if output is not None:
+        np.savez(
+            output,
+            distances_bohr=np.array(scenario.distances_bohr),
+            epsilon_bar=np.array([p.epsilon_bar for p in parametreler]),
+            delta=np.array([p.delta for p in parametreler]),
+            hoppings=np.array([p.hoppings for p in parametreler]),
+            s_squared=np.array([p.s_squared for p in parametreler]),
+            energy_uhf=np.array([p.energy_uhf for p in parametreler]),
+            staggering_residual=np.array(
+                [p.staggering_residual for p in parametreler]
+            ),
+            provenance_json=json.dumps(
+                dataclasses.asdict(provenance), ensure_ascii=False
+            ),
         )
     return 0
 

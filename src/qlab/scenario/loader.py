@@ -6,8 +6,9 @@ koşar ve kimse fark etmezdi.
 
 Senaryo türü isteğe bağlı bir "kind" anahtarıyla seçilir: yoksa veya "tdse"
 ise mevcut TDSEScenario yolu izlenir (geriye uyumluluk — Task 1A'dan kalan
-mevcut YAML dosyaları "kind" taşımıyor), "hf_scan" ise HFScanScenario yolu.
-Bilinmeyen bir "kind" değeri ScenarioError üretir.
+mevcut YAML dosyaları "kind" taşımıyor). Diğerleri: "hf_scan" → HFScanScenario,
+"md" → MDScenario, "tb" → TBScenario, "downfold" → DownfoldScenario.
+Bilinmeyen bir "kind" değeri ScenarioError üretir ve geçerli türleri sayar.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ import yaml
 from qlab.errors import ScenarioError
 from qlab.scenario.schema import (
     POTENTIAL_KINDS,
+    DownfoldScenario,
     GridSpec,
     HFScanScenario,
     PacketSpec,
@@ -55,7 +57,13 @@ _TB_REQUIRED = {
     "n_electron_per_cell", "k_points",
 }
 
-_KNOWN_KINDS = ("tdse", "hf_scan", "md", "tb")
+_DOWNFOLD_TOP_LEVEL = {
+    "kind", "name", "ring_size", "distances_bohr", "basis", "n_neighbour",
+    "seeds",
+}
+_DOWNFOLD_REQUIRED = {"name", "ring_size", "distances_bohr"}
+
+_KNOWN_KINDS = ("tdse", "hf_scan", "md", "tb", "downfold")
 
 
 def load_scenario(path: str | Path) -> TDSEScenario | HFScanScenario | MDScenario:
@@ -84,6 +92,8 @@ def load_scenario(path: str | Path) -> TDSEScenario | HFScanScenario | MDScenari
         return _load_md_scenario(raw, file_path)
     if kind == "tb":
         return _load_tb_scenario(raw, file_path)
+    if kind == "downfold":
+        return _load_downfold_scenario(raw, file_path)
     raise ScenarioError(
         f"Bilinmeyen senaryo türü (kind): {kind!r}. Geçerli türler: {list(_KNOWN_KINDS)}"
     )
@@ -282,3 +292,80 @@ def _load_tb_scenario(raw: dict, file_path: Path) -> TBScenario:
         k_points=int(raw["k_points"]),
     )
 
+
+
+def _load_downfold_scenario(raw: dict, file_path: Path) -> DownfoldScenario:
+    """UHF indirgemesi senaryosu.
+
+    Yükleyici, motorun iki kontrolünü (çift `ring_size`, menzil aralığı)
+    BİLEREK tekrarlar ve bu bir kopya değil bir KATMAN AYRIMIDIR: burada
+    yakalanan şey YAML'ın hatasıdır ve hata SCF koşmadan ÖNCE verilir;
+    motorda (`downfold_uhf`) yakalanan şey ÇAĞRININ hatasıdır. İkisi ayrı
+    tür fırlatır — `ScenarioError` ve `UnsupportedSystemError` — ve testler
+    bu farkı kilitler, yani biri kaldırılırsa öteki sessizce yerini almaz.
+
+    Yükleyiciye ÖZGÜ olanlar: boş / tekrarlı / pozitif olmayan mesafe
+    listesi ve `seeds < 1`. Bunların motorda karşılığı yoktur çünkü motor
+    tek bir molekülle çağrılır, mesafe listesiyle değil.
+    """
+    unknown = set(raw) - _DOWNFOLD_TOP_LEVEL
+    if unknown:
+        raise ScenarioError(
+            f"Bilinmeyen anahtar(lar): {sorted(unknown)}. "
+            f"Geçerli anahtarlar: {sorted(_DOWNFOLD_TOP_LEVEL)}"
+        )
+    missing = _DOWNFOLD_REQUIRED - set(raw)
+    if missing:
+        raise ScenarioError(f"Eksik anahtar(lar): {sorted(missing)}")
+
+    try:
+        ring_size = int(raw["ring_size"])
+    except (TypeError, ValueError) as exc:
+        raise ScenarioError(
+            f"'ring_size' tam sayıya dönüştürülemedi: {raw['ring_size']!r}"
+        ) from exc
+    if ring_size < 4 or ring_size % 2 != 0:
+        raise ScenarioError(
+            f"'ring_size' EN AZ 4 ve ÇİFT olmalı, verilen: {ring_size}. "
+            "İki-siteli antiferromanyetik hücre tek sayıda sitede kurulamaz."
+        )
+
+    try:
+        distances = tuple(float(x) for x in raw["distances_bohr"])
+    except TypeError as exc:
+        raise ScenarioError(f"'distances_bohr' bir sayı listesi olmalı: {exc}") from exc
+    except ValueError as exc:
+        raise ScenarioError(
+            f"'distances_bohr' listesindeki bir eleman sayıya dönüştürülemedi: {exc}"
+        ) from exc
+    if not distances:
+        raise ScenarioError("'distances_bohr' listesi boş olamaz")
+    if any(d <= 0.0 for d in distances):
+        raise ScenarioError(f"'distances_bohr' değerleri pozitif olmalı: {distances}")
+    if len(set(distances)) != len(distances):
+        raise ScenarioError(
+            f"'distances_bohr' içinde tekrarlanan mesafe var: {distances}. "
+            "Aynı geometriyi iki kez çözmek yalnızca süre harcar."
+        )
+
+    try:
+        n_neighbour = int(raw.get("n_neighbour", 2))
+        seeds = int(raw.get("seeds", 12))
+    except (TypeError, ValueError) as exc:
+        raise ScenarioError(f"'n_neighbour'/'seeds' tam sayı olmalı: {exc}") from exc
+    if not 1 <= n_neighbour <= ring_size // 2:
+        raise ScenarioError(
+            f"'n_neighbour' 1 ile {ring_size // 2} arasında olmalı, verilen: "
+            f"{n_neighbour}. Halka mesafesi {ring_size // 2}'de doyar."
+        )
+    if seeds < 1:
+        raise ScenarioError(f"'seeds' en az 1 olmalı, verilen: {seeds}")
+
+    return DownfoldScenario(
+        name=str(raw["name"]),
+        ring_size=ring_size,
+        distances_bohr=distances,
+        basis=str(raw.get("basis", "sto-3g")),
+        n_neighbour=n_neighbour,
+        seeds=seeds,
+    )

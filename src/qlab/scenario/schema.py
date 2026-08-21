@@ -105,3 +105,26 @@ class TBScenario:
     n_electron_per_cell: int
     k_points: int
 
+
+@dataclass(frozen=True)
+class DownfoldScenario:
+    """UHF indirgemesi senaryosu. `ring_size` ÇİFT olmalı.
+
+    `distances_bohr` BOHR'dur ve dönüşüm yoktur: indirgeme motorunun kendi
+    birimi de bohr'dur (`downfold.hydrogen_ring` komşu aralığını bohr alır).
+    Bu, `TBScenario`'nun eV sınırından bilinçli olarak FARKLIDIR — orada
+    dönüşüm vardı çünkü TB literatürü eV'de yayınlanır; burada girdi bir
+    geometridir ve geometrinin atomik birimi bohr'dur.
+
+    `ring_size` çift olmak ZORUNDADIR: iki-siteli antiferromanyetik hücre tek
+    sayıda sitede kurulamaz (frustrasyon). Kontrol hem yükleyicide hem
+    motorda vardır ve bu bir tekrar değil bir katman ayrımıdır — yükleyici
+    YAML'ın hatasını, motor çağrının hatasını yakalar.
+    """
+
+    name: str
+    ring_size: int
+    distances_bohr: tuple[float, ...]
+    basis: str = "sto-3g"
+    n_neighbour: int = 2
+    seeds: int = 12

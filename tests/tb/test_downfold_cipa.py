@@ -174,8 +174,14 @@ def test_KADEMELI_ALAN_KAREKOK_yasasiyla_sonuyor(n, d_c, us, delta_son):
     OLCULDU (21.08.2026, bu depoda yeniden): N=6 0.496190, N=10 0.497600,
     N=14 0.497811. Ucu de planin referans degeriyle dort hanede AYNI cikti
     (0.4962 / 0.4976 / 0.4978). Catallanma beklentisi 1/2'dir ve olculen
-    us ona 0.0022'den yakin. Modul 1C'nin H2 uzerinde BAGIMSIZ olarak
-    olctugu us 0.4970 idi.
+    uslerin sapmasi 0.003810 / 0.002400 / 0.002189 -- N buyudukce KUCULUYOR.
+    Modul 1C'nin H2 uzerinde BAGIMSIZ olarak olctugu us 0.4970 idi.
+
+    BU SATIR BIR KEZ YANLIS YAZILDI, DUZELTILDI: once "olculen us ona
+    0.0022'den yakin" diyordu, oysa N=6'nin sapmasi 0.003810 -- iddia
+    edilenin 1.7 kati. Asagidaki tolerans (abs=0.02) gercek sapmanin cok
+    ustunde oldugu icin hata testi KIRMIYORDU; ancak yeniden olculunce
+    goruldu (Task 5 dogrulama turu). Sayilar dogruydu, ozet cumle degil.
 
     Olculen Delta'lar (|Delta|, hartree):
         adim     N=6           N=10          N=14

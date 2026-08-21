@@ -11,6 +11,7 @@ from qlab.engine.tdse import factory
 from qlab.errors import ScenarioError
 from qlab.scenario.loader import load_scenario
 from qlab.scenario.schema import (
+    DownfoldScenario,
     HFScanScenario,
     MDScenario,
     TBScenario,
@@ -253,6 +254,13 @@ _HF_SCAN_SAMPLE_POINTS = 2
 #: ile ayni gerekce.
 _MD_SAMPLE_STEPS = 5
 _TB_SAMPLE_K_POINTS = 10
+#: İndirgeme senaryosunda TAM koşu YAPILMAZ: `halka_indirgeme.yaml` beş
+#: mesafe × 12 tohum UHF araması taşır (ölçüldü, 5.5 s). Burada aranan şey
+#: fizik değil dosyanın çalışır olmasıdır; `_HF_SCAN_SAMPLE_POINTS` ile aynı
+#: gerekçe. Tam koşum `tests/tb/test_downfold_senaryo.py`de yapılır ve orada
+#: `@pytest.mark.slow` ile işaretlidir.
+_DOWNFOLD_SAMPLE_DISTANCES = 1
+_DOWNFOLD_SAMPLE_SEEDS = 4
 
 
 def test_scenario_directory_is_not_empty():
@@ -322,6 +330,29 @@ def test_shipped_scenario_loads_and_runs(scenario_path):
             is_metal(enerjiler, scenario.n_electron_per_cell), bool
         )
         assert provenance.method.startswith("tight-binding")
+        return
+
+    if isinstance(scenario, DownfoldScenario):
+        # Indirgeme tarafinda "kosturulabilir" demek: UHF aramasi kosuyor,
+        # parametreler sonlu cikiyor ve panel dolu. Mesafe sayisi ve tohum
+        # sayisi KUCULTULUR (senaryonun kendi degerleri degil).
+        from qlab.engine.tb.factory import build_downfold
+
+        kisa = dataclasses.replace(
+            scenario,
+            distances_bohr=scenario.distances_bohr[:_DOWNFOLD_SAMPLE_DISTANCES],
+            seeds=_DOWNFOLD_SAMPLE_SEEDS,
+        )
+        parametreler, provenance = build_downfold(kisa)
+        assert len(parametreler) == len(kisa.distances_bohr)
+        for p in parametreler:
+            assert np.isfinite(p.epsilon_bar) and np.isfinite(p.delta)
+            assert np.all(np.isfinite(p.hoppings)), (
+                f"{scenario_path.name}: hoplamalar sonlu degil"
+            )
+            assert len(p.hoppings) == kisa.n_neighbour
+            assert p.n_site == kisa.ring_size
+        assert provenance.method.startswith("UHF indirgemesi")
         return
 
     assert isinstance(scenario, TDSEScenario)
