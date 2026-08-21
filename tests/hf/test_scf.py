@@ -10,7 +10,11 @@ import pytest
 
 from qlab.engine.hf.basis import build_basis
 from qlab.engine.hf.integrals import overlap_matrix
-from qlab.engine.hf.scf import _diis_extrapolate, solve
+from qlab.engine.hf.scf import (
+    _diis_extrapolate,
+    _orthogonalisation_matrix,
+    solve,
+)
 from qlab.errors import SCFConvergenceError, UnsupportedSystemError
 from qlab.types import Molecule
 
@@ -364,3 +368,57 @@ def test_sifir_elektronlu_sistem_hala_cozuluyor_ve_cekirdek_itmesini_veriyor():
         molecule.nuclear_repulsion(), abs=1e-12, rel=0.0
     )
     assert result.energy_electronic == pytest.approx(0.0, abs=1e-12, rel=0.0)
+
+
+def test_TRANSKRIPSIYON_lowdin_X_SIMETRIKTIR_ve_karesi_S_TERSIDIR():
+    """SINIF: TRANSKRIPSIYON DENETIMI -- Lowdin'in TANIMINI kilitler, fizik olcmez.
+
+    NEDEN VAR (olculdu): `X = V s^(-1/2) V^T` yerine transpoze DUSURULURSE
+    (`V s^(-1/2) V`) ortaya cikan matris HALA GECERLI bir ortogonallestiricidir
+    -- X^T S X - I = 6.661e-16 -- ama artik simetrik DEGILDIR (|X - X^T| =
+    1.301) ve X^2 = S^(-1) ozdesligini bozar (2.906). HF gozlenebilirlerinin
+    HICBIRI degismez: ayni molekulde E = -1.215376262595368 (dogru) ve
+    -1.215376262595370 (mutant), yani 1e-15.
+
+    Bunun sonucu OLCULDU: bu mutant `tests/hf`'in **420 testinin 420'sini de
+    GECIYOR**. Bu test eklenmeden ONCE tam suitede (864 test) kirmizi olan
+    yalnizca UC test vardi ve UCU DE GORSELLESTIRME tarafindaydi:
+
+        tests/test_orbital_window.py::test_orbital_degistirilince_ag_yeniden_uretiliyor
+        tests/test_orbital_window.py::test_secici_ve_kaydirici_kullanicida_olu_degil
+        tests/test_orbital_window.py::test_orbital_degistikce_ag_itemleri_sizmiyor
+
+    Ucu de KAZA ESERI yakaliyor: MO katsayilarinin fazi/sirasi degistigi icin
+    izoyuzey aglari yeniden uretiliyor ve ag-item sayimlari tutmuyor. Hicbiri
+    Lowdin'in simetrisini KORUMAK icin yazilmamistir; o dosya yeniden
+    yazilsaydi koruma sessizce kaybolurdu. Ayni sey kanonik ortogonallestirme
+    (`X = V s^(-1/2)`, tamamen mesru bir secim, |X - X^T| = 1.502) icin de
+    birebir gecerlidir: `tests/hf` 420/420 yesil, ayni uc gorsel test kirmizi.
+
+    Yani depo, "Lowdin SIMETRIK ortogonallestirme kullaniyorum" beyanini
+    ENERJIYE bakan hicbir testle koruyamaz; korumasi tesadufi bir goruntu
+    testine baglidir ve o test yeniden yazilsa sessizce kaybolurdu. Bu test o
+    beyani DOGRUDAN kilitler ve SCF hic kosturmadan ~1 ms surer.
+
+    Simetrinin kendisi bir keyfilik degildir: Lowdin ortogonallestirmesi,
+    orijinal AO'lara EN YAKIN ortonormal kumeyi veren tek secimdir
+    (sum_i |chi_i - phi_i|^2 minimum). `analysis.py`'nin Lowdin yukleri ve
+    `stability.py`'nin MO donusumu bu ozelligi varsayar.
+    """
+    molecule = Molecule.from_string("H 0 0 0; H 0 0 0.74; H 0.6 0.5 0.2", charge=1)
+    overlap = overlap_matrix(build_basis(molecule, "sto-3g"))
+    x = _orthogonalisation_matrix(overlap)
+    identity = np.eye(len(overlap))
+
+    # 1. SIMETRI -- transpozun dusurulmesini yakalayan TEK iddia budur.
+    #    Olculdu: dogru X icin 1.110e-16, eksik transpozede 1.301.
+    assert np.abs(x - x.T).max() < 1e-12
+
+    # 2. Gercekten ortogonallestiriyor. (Mutantlar da geciyor; bu satir
+    #    yalniz "simetri" iddiasinin bos bir simetriyi kilitlemedigini
+    #    gosterir.) Olculdu: 4.441e-16.
+    assert np.abs(x.T @ overlap @ x - identity).max() < 1e-10
+
+    # 3. X^2 = S^(-1) -- S^(-1/2) olmanin tanimi. Olculdu: dogru X icin
+    #    6.656e-16; eksik transpozede 2.906, kanonikte 2.272.
+    assert np.abs(x @ x @ overlap - identity).max() < 1e-10
