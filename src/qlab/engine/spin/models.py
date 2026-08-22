@@ -76,10 +76,28 @@ class HeisenbergModel:
     kontrol tutuyor: step=0.05 icin 1 - step^2 = 0.997500, L=1024'te olculen
     0.997502.
 
-    OLCULMEDI -- BEYAN: varsayilan 0.6'nin "T ~ 1'de kabul orani makul" olup
-    olmadigi bu gorevde SINANMADI, cunku kabul/red karari henuz yok
-    (`metropolis.py`, Task 2). Buradaki tek hukum, `step` buyudukce onerinin
-    baslangictan uzaklasmasidir.
+    KABUL ORANI OLCULDU (Task 2; Task 1'de olculemezdi cunku kabul/red karari
+    yoktu) ve hukum NITELIKLI cikti. L=16, T=1.0, J=1, h=0, tohum 20260822,
+    n_burn=500, n_sweep=1500:
+
+        step=0.05 -> kabul 0.965898
+        step=0.60 -> kabul 0.676958   (varsayilan)
+        step=2.00 -> kabul 0.499771
+        step=100  -> kabul 0.417086   (DOYUM)
+
+    Kabul orani `step` ile tekduze duser AMA BIR TABANA DOYAR: `step`
+    buyudukce oneri, kurede duzgun dagilmis rastgele bir yone yakinsar ve
+    T=1.0'da 0.42'nin altina INEMEZ. Yani bu oneri ailesiyle erisilebilir
+    aralik [0.42, 1.00)'dir ve Metropolis folklorundaki "%30-50 hedefle"
+    kurali burada ancak ucundan (step ~ 2, yani oneri "kucuk donme" olmaktan
+    ciktigi yerde) tutturulabilir.
+
+    DURUST HUKUM: 0.6 icin olculen 0.677 klasik %30-50 bandinin USTUNDEDIR;
+    "makul" yalnizca "ne ~0 ne ~1, erisilebilir araligin icinde" anlaminda
+    dogrudur. Sicakliga bagliligi da olculdu (4 tohum, step=0.6):
+    T=0.8 -> 0.6008, T=1.0 -> 0.6770, T=1.4 -> 0.7700. Olcum
+    `tests/spin/test_metropolis.py::test_KABUL_ORANI_ADIMLA_DUSUYOR_ve_BIR_TABANA_DOYUYOR`
+    dosyasinda kilitlidir.
     """
 
     step: float = 0.6
