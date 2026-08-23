@@ -128,3 +128,45 @@ class DownfoldScenario:
     basis: str = "sto-3g"
     n_neighbour: int = 2
     seeds: int = 12
+
+
+SPIN_MODEL_KINDS = ("ising", "heisenberg")
+SPIN_ALGORITHM_KINDS = ("metropolis", "wolff")
+
+
+@dataclass(frozen=True)
+class SpinScenario:
+    """Spin Monte Carlo sıcaklık taraması.
+
+    BİRİM DÖNÜŞÜMÜ YOKTUR VE BU BİR EKSİKLİK DEĞİL BİR BEYANDIR: bu modülde
+    `J = k_B = 1` bir BİRİM SEÇİMİDİR. `temperatures` bu yüzden `kT/J`
+    cinsindendir ve KELVİN DEĞİLDİR; `coupling` ile `field` de boyutsuzdur.
+    `TBScenario` eV'den hartree'ye çevirir çünkü TB literatürü eV'de
+    yayınlanır; burada çevrilecek bir şey yoktur, çünkü ölçülen büyüklükler
+    (`kT_c/J`, kritik üsler) zaten boyutsuzdur. Bu, `DownfoldScenario`nun
+    "girdi bir geometridir, atomik birimi zaten bohr'dur" gerekçesiyle aynı
+    aile: dönüşümün yokluğu bir unutma değil, bir ölçüm sonucudur.
+
+    `seed` ZORUNLUDUR ve varsayılanı YOKTUR. Bir Monte Carlo senaryosunun
+    tekrarlanabilir olmaması kabul edilemez; varsayılan bir tohum, tohumu
+    yazmayı unutan bir senaryonun sessizce "tekrarlanabilir" görünmesine yol
+    açardı.
+
+    `heisenberg_step` YALNIZCA `model = "heisenberg"` ile birlikte
+    verilebilir (yükleyici bunu reddeder). Ising'de öneri işaret çevirmedir
+    ve adım parametresi hiçbir şeyi değiştirmez; anahtarın sessizce
+    yutulması, kullanıcının ayarladığını sandığı bir düğmenin bağlı olmaması
+    demekti.
+    """
+
+    name: str
+    model: str
+    algorithm: str
+    lattice_size: int
+    temperatures: tuple[float, ...]
+    n_sweep: int
+    n_burn: int
+    seed: int
+    coupling: float = 1.0
+    field: float = 0.0
+    heisenberg_step: float = 0.6

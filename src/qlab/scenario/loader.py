@@ -7,12 +7,14 @@ koşar ve kimse fark etmezdi.
 Senaryo türü isteğe bağlı bir "kind" anahtarıyla seçilir: yoksa veya "tdse"
 ise mevcut TDSEScenario yolu izlenir (geriye uyumluluk — Task 1A'dan kalan
 mevcut YAML dosyaları "kind" taşımıyor). Diğerleri: "hf_scan" → HFScanScenario,
-"md" → MDScenario, "tb" → TBScenario, "downfold" → DownfoldScenario.
+"md" → MDScenario, "tb" → TBScenario, "downfold" → DownfoldScenario,
+"spin" → SpinScenario.
 Bilinmeyen bir "kind" değeri ScenarioError üretir ve geçerli türleri sayar.
 """
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import yaml
@@ -20,12 +22,15 @@ import yaml
 from qlab.errors import ScenarioError
 from qlab.scenario.schema import (
     POTENTIAL_KINDS,
+    SPIN_ALGORITHM_KINDS,
+    SPIN_MODEL_KINDS,
     DownfoldScenario,
     GridSpec,
     HFScanScenario,
     PacketSpec,
     MDScenario,
     PotentialSpec,
+    SpinScenario,
     TBHopping,
     TBScenario,
     TDSEScenario,
@@ -63,7 +68,16 @@ _DOWNFOLD_TOP_LEVEL = {
 }
 _DOWNFOLD_REQUIRED = {"name", "ring_size", "distances_bohr"}
 
-_KNOWN_KINDS = ("tdse", "hf_scan", "md", "tb", "downfold")
+_SPIN_TOP_LEVEL = {
+    "kind", "name", "model", "algorithm", "lattice_size", "temperatures",
+    "n_sweep", "n_burn", "seed", "coupling", "field", "heisenberg_step",
+}
+_SPIN_REQUIRED = {
+    "name", "model", "algorithm", "lattice_size", "temperatures", "n_sweep",
+    "n_burn", "seed",
+}
+
+_KNOWN_KINDS = ("tdse", "hf_scan", "md", "tb", "downfold", "spin")
 
 
 def load_scenario(path: str | Path) -> TDSEScenario | HFScanScenario | MDScenario:
@@ -94,6 +108,8 @@ def load_scenario(path: str | Path) -> TDSEScenario | HFScanScenario | MDScenari
         return _load_tb_scenario(raw, file_path)
     if kind == "downfold":
         return _load_downfold_scenario(raw, file_path)
+    if kind == "spin":
+        return _load_spin_scenario(raw, file_path)
     raise ScenarioError(
         f"Bilinmeyen senaryo türü (kind): {kind!r}. Geçerli türler: {list(_KNOWN_KINDS)}"
     )
@@ -368,4 +384,156 @@ def _load_downfold_scenario(raw: dict, file_path: Path) -> DownfoldScenario:
         basis=str(raw.get("basis", "sto-3g")),
         n_neighbour=n_neighbour,
         seeds=seeds,
+    )
+
+
+def _load_spin_scenario(raw: dict, file_path: Path) -> SpinScenario:
+    """Spin Monte Carlo senaryosu.
+
+    Yükleyici, motorun ÜÇ kontrolünü (çift `L`, Wolff'un `h = 0` ve
+    `n_component = 1` sınırları) BİLEREK tekrarlar ve bu bir kopya değil bir
+    KATMAN AYRIMIDIR — `_load_downfold_scenario`daki gerekçenin aynısı:
+    burada yakalanan şey YAML'ın hatasıdır ve hata hiçbir sweep koşmadan
+    ÖNCE verilir; motorda yakalanan şey ÇAĞRININ hatasıdır. İkisi ayrı tür
+    fırlatır (`ScenarioError` ile `InvalidInputError`/`UnsupportedSystemError`)
+    ve testler bu farkı kilitler.
+
+    Yükleyiciye ÖZGÜ olanlar: boş / tekrarlı / pozitif olmayan sıcaklık
+    listesi, `seed`in zorunluluğu, ve `heisenberg_step`in Ising ile birlikte
+    verilemeyeceği. Bunların motorda karşılığı yoktur çünkü motor tek bir
+    sıcaklıkla ve zaten kurulmuş bir modelle çağrılır.
+
+    `J <= 0` REDDEDİLİYOR VE BU BİR KAPSAM KARARIDIR, bir sınır değil.
+    Modülün dört çıpasının dördü de (Onsager, kritik üs, Mermin-Wagner,
+    modüller arası bağ) FERROMANYETİKTİR. Metropolis çekirdeği `J < 0`
+    koşabilir — antiferromanyet meşru bir fiziktir — ama bu modül onun için
+    hiçbir doğrulama taşımaz, dolayısıyla YAML'dan ulaşılabilir olması
+    doğrulanmamış bir yolu sevk etmek olurdu. Wolff'ta ise sınır fiziksel:
+    `p = 1 - exp(-2J/T)` negatife düşer ve algoritma sessizce SONSUZ
+    SICAKLIĞI örnekler.
+    """
+    unknown = set(raw) - _SPIN_TOP_LEVEL
+    if unknown:
+        raise ScenarioError(
+            f"Bilinmeyen anahtar(lar): {sorted(unknown)}. "
+            f"Geçerli anahtarlar: {sorted(_SPIN_TOP_LEVEL)}"
+        )
+    missing = _SPIN_REQUIRED - set(raw)
+    if missing:
+        raise ScenarioError(f"Eksik anahtar(lar): {sorted(missing)}")
+
+    model = str(raw["model"])
+    if model not in SPIN_MODEL_KINDS:
+        raise ScenarioError(
+            f"Bilinmeyen spin modeli: {model!r}. "
+            f"Geçerli modeller: {list(SPIN_MODEL_KINDS)}"
+        )
+    algorithm = str(raw["algorithm"])
+    if algorithm not in SPIN_ALGORITHM_KINDS:
+        raise ScenarioError(
+            f"Bilinmeyen örnekleme algoritması: {algorithm!r}. "
+            f"Geçerli algoritmalar: {list(SPIN_ALGORITHM_KINDS)}"
+        )
+
+    try:
+        lattice_size = int(raw["lattice_size"])
+        n_sweep = int(raw["n_sweep"])
+        n_burn = int(raw["n_burn"])
+        seed = int(raw["seed"])
+    except (TypeError, ValueError) as exc:
+        raise ScenarioError(
+            f"'lattice_size'/'n_sweep'/'n_burn'/'seed' tam sayı olmalı: {exc}"
+        ) from exc
+
+    try:
+        temperatures = tuple(float(x) for x in raw["temperatures"])
+    except TypeError as exc:
+        raise ScenarioError(f"'temperatures' bir sayı listesi olmalı: {exc}") from exc
+    except ValueError as exc:
+        raise ScenarioError(
+            f"'temperatures' listesindeki bir eleman sayıya dönüştürülemedi: {exc}"
+        ) from exc
+
+    try:
+        coupling = float(raw.get("coupling", 1.0))
+        field = float(raw.get("field", 0.0))
+        heisenberg_step = float(raw.get("heisenberg_step", 0.6))
+    except (TypeError, ValueError) as exc:
+        raise ScenarioError(
+            f"'coupling'/'field'/'heisenberg_step' sayı olmalı: {exc}"
+        ) from exc
+
+    if lattice_size < 2:
+        raise ScenarioError(
+            f"'lattice_size' en az 2 olmalı, verilen: {lattice_size}. "
+            "L = 1'de bir site kendi komşusudur."
+        )
+    if not temperatures:
+        raise ScenarioError("'temperatures' listesi boş olamaz")
+    if any(not math.isfinite(t) or t <= 0.0 for t in temperatures):
+        raise ScenarioError(
+            f"'temperatures' değerleri pozitif ve sonlu olmalı: {temperatures}. "
+            "Sıcaklık kT/J cinsindendir ve sıfır bölen olarak Metropolis "
+            "üstelinin içine girer."
+        )
+    if len(set(temperatures)) != len(temperatures):
+        raise ScenarioError(
+            f"'temperatures' içinde tekrarlanan sıcaklık var: {temperatures}. "
+            "Aynı noktayı iki kez örneklemek yalnızca süre harcar."
+        )
+    if n_sweep < 1:
+        raise ScenarioError(f"'n_sweep' en az 1 olmalı, verilen: {n_sweep}")
+    if n_burn < 0:
+        raise ScenarioError(f"'n_burn' negatif olamaz, verilen: {n_burn}")
+    if not coupling > 0.0:
+        raise ScenarioError(
+            f"'coupling' (J) pozitif olmalı, verilen: {coupling}. Bu modülün "
+            "dört çıpası da ferromanyetiktir ve J <= 0 için hiçbir doğrulama "
+            "taşımaz; Wolff'ta ayrıca p = 1 - exp(-2J/T) negatife düşer ve "
+            "algoritma sessizce sonsuz sıcaklığı örnekler."
+        )
+    if "heisenberg_step" in raw and model != "heisenberg":
+        raise ScenarioError(
+            "'heisenberg_step' yalnızca model 'heisenberg' iken verilebilir; "
+            f"verilen model: {model!r}. Ising'de öneri işaret çevirmedir ve "
+            "adım parametresi hiçbir şeyi değiştirmez."
+        )
+    if heisenberg_step <= 0.0:
+        raise ScenarioError(
+            f"'heisenberg_step' pozitif olmalı, verilen: {heisenberg_step}"
+        )
+
+    if algorithm == "metropolis" and lattice_size % 2 != 0:
+        raise ScenarioError(
+            f"'metropolis' ÇİFT 'lattice_size' gerektirir, verilen: "
+            f"{lattice_size}. Tek L'de periyodik kare kafes iki parçalı "
+            "değildir ve checkerboard maskesi ayrıntılı dengeyi bozar."
+        )
+    if algorithm == "wolff":
+        if model != "ising":
+            raise ScenarioError(
+                f"'wolff' yalnızca 'ising' modelini koşturur, verilen model: "
+                f"{model!r}. Küme kurulumu 'aynı işaret' kavramına dayanır ve "
+                "sürekli spin uzayında karşılığı (yansıtma düzlemi) bu depoda "
+                "yazılmadı."
+            )
+        if field != 0.0:
+            raise ScenarioError(
+                f"'wolff' yalnızca 'field' = 0 ile koşar, verilen: {field}. "
+                "Küme çevirme alan terimini ihlal eder: çevrilen kümenin alan "
+                "enerjisi değişir ama kabul olasılığı 1 kalır."
+            )
+
+    return SpinScenario(
+        name=str(raw["name"]),
+        model=model,
+        algorithm=algorithm,
+        lattice_size=lattice_size,
+        temperatures=temperatures,
+        n_sweep=n_sweep,
+        n_burn=n_burn,
+        seed=seed,
+        coupling=coupling,
+        field=field,
+        heisenberg_step=heisenberg_step,
     )

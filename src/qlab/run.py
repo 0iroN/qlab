@@ -38,6 +38,7 @@ from qlab.scenario.schema import (
     DownfoldScenario,
     HFScanScenario,
     MDScenario,
+    SpinScenario,
     TBScenario,
     TDSEScenario,
 )
@@ -165,6 +166,10 @@ def main(argv: list[str] | None = None) -> int:
         # da `grid` tasimaz.
         if isinstance(scenario, DownfoldScenario):
             return _run_downfold(scenario, args.output)
+        # SPIN DALI: `TBScenario`/`DownfoldScenario` ile ayni gerekce --
+        # `SpinScenario` da `grid` tasimaz.
+        if isinstance(scenario, SpinScenario):
+            return _run_spin(scenario, args.output)
         result = _run_loaded(scenario)
     except QLabError as exc:
         print(str(exc), file=sys.stderr)
@@ -276,6 +281,79 @@ def _run_downfold(scenario: DownfoldScenario, output: str | None) -> int:
                 dataclasses.asdict(provenance), ensure_ascii=False
             ),
         )
+    return 0
+
+
+def _run_spin(scenario: SpinScenario, output: str | None) -> int:
+    """Spin Monte Carlo taramasını koşturur ve şeffaflık panelini basar.
+
+    `_run_downfold`/`_run_tb`/`_run_md` ile aynı kalıp: kendi panelini basar
+    ve kendi `.npz`'sini yazar, `save()` yolundan geçmez.
+
+    BU FONKSİYON HİÇBİR BEYAN METNİ YAZMAZ. Yöntem / Yaklaşımlar / İhmal
+    edilen / Beklenen hata / Dairesellik / Örnekleme satırlarının tek kaynağı
+    `engine/spin/factory.py`dir ve buradan yalnızca `provenance.as_lines()`
+    basılır. İki kopya metin bu depoda bir kez panelin iki farklı şey iddia
+    etmesine yol açtı (bkz. `tests/hf/test_hf_scenario.py`); kopya sayısı
+    `tests/spin/test_spin_senaryo.py` ile kilitlidir.
+
+    Aşağıdaki tablo BEYAN DEĞİL SAYIDIR (`_run_downfold`ın mesafe tablosuyla
+    aynı sınıf) — tek kelimelik istisna `ALT_SINIR_ISARETI`dir ve o da
+    yazılmaz, fabrikadan İTHAL EDİLİR: iki yerde elle yazılsaydı biri
+    değiştiğinde tablo ile beyan satırı farklı şey söylerdi.
+    """
+    from qlab.engine.spin.factory import (
+        ALT_SINIR_ISARETI,
+        build_spin,
+        provenance_for,
+    )
+    from qlab.viz.spin_frames import build_spin_payload
+
+    sonuc = build_spin(scenario)
+    yuk = build_spin_payload(sonuc)
+    provenance = provenance_for(
+        scenario, plateau_reached=yuk.plateau_reached, tau_int=yuk.tau_int
+    )
+
+    print(
+        f"{scenario.name}: {scenario.model}/{scenario.algorithm}, "
+        f"L={scenario.lattice_size}, {len(yuk.temperatures)} sıcaklık"
+    )
+    for i, T in enumerate(yuk.temperatures):
+        isaret = "" if yuk.plateau_reached[i] else f"  <- {ALT_SINIR_ISARETI}"
+        isi = (
+            "C=ÖLÇÜLMEDİ"
+            if yuk.heat_capacity is None
+            else f"C={yuk.heat_capacity[i]:.6f}"
+        )
+        print(
+            f"  T={T:.4f}  <|m|>={yuk.magnetisation[i]:.6f} "
+            f"+-{yuk.magnetisation_error[i]:.3e}  U={yuk.binder[i]:+.6f}  "
+            f"chi={yuk.susceptibility[i]:.6f}  {isi}  "
+            f"tau={yuk.tau_int[i]:.2f}{isaret}"
+        )
+    for etiket, deger in provenance.as_lines():
+        print(f"{etiket:<14}: {deger}")
+
+    if output is not None:
+        alanlar = {
+            "temperatures": yuk.temperatures,
+            "magnetisation": yuk.magnetisation,
+            "magnetisation_error": yuk.magnetisation_error,
+            "plateau_reached": yuk.plateau_reached,
+            "tau_int": yuk.tau_int,
+            "binder": yuk.binder,
+            "susceptibility": yuk.susceptibility,
+            "provenance_json": json.dumps(
+                dataclasses.asdict(provenance), ensure_ascii=False
+            ),
+        }
+        # ISI SIGASI OLCULMEDIYSE ANAHTAR HIC YAZILMAZ. Sifir dizisi yazmak
+        # "C = 0 cikti" diye okunurdu; `None` "olculmedi" demektir ve ikisi
+        # ayni degerle gosterilemez (Modul 1B'nin kararlilik alani dersi).
+        if yuk.heat_capacity is not None:
+            alanlar["heat_capacity"] = yuk.heat_capacity
+        np.savez(output, **alanlar)
     return 0
 
 

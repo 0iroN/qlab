@@ -1,0 +1,41 @@
+# 2B Ising kafesinde sicaklik taramasi -- Modul 4.
+#
+# SICAKLIKLAR kT/J CINSINDENDIR, KELVIN DEGIL. Bu modulde J = k_B = 1 bir
+# BIRIM SECIMIDIR; donusum yoktur cunku cevrilecek bir sey yoktur.
+#
+# IZGARA YUVARLAK SAYILARDAN KURULU VE BU BILINCLIDIR: Onsager'in tam
+# cozumunden gelen kT_c/J degeri bu dosyada HICBIR BASAMAGIYLA GECMEZ --
+# ve bunu `test_ONSAGER_SEVK_EDILEN_YAML_DA_HIC_GECMIYOR` kilitler. Gecis
+# 2.2 ile 2.4 arasinda kendiliginden goruluyor (<|m|> 0.77 -> 0.53, Binder
+# 0.63 -> 0.52, khi tepe yapiyor) -- yani T_c simulasyona SOYLENMEDEN
+# doguyor. Onsager'in sayisiyla karsilastirma tests/spin/test_cipalar.py'de
+# yapilir ve orada da yalnizca KARSILASTIRMA degeri olarak gecer.
+#
+# L = 16 VE 1000 OLCUM OLCULEREK SECILDI: tarama bu makinede 0.56 s suruyor
+# ve tam suite'in yavas seridine girmiyor. Daha buyuk L daha keskin bir gecis
+# verirdi ama sevk edilen senaryonun isi bir cipa kurmak degil, PANELIN
+# BEYANINI gostermektir; cipalar tests/spin/ altindadir.
+#
+# PLATO KARISIK CIKAR VE BU BIR KUSUR DEGIL, MODULUN VITRINIDIR. Olculdu
+# (24 tohum, ayni pencere): T = 1.6 -> 24/24 plato, T = 2.2 -> 0/24,
+# T = 2.4 -> 0/24, T = 3.4 -> 24/24; T = 2.0 (15/24) ve T = 2.8 (11/24)
+# gecis bolgesindedir ve tohuma gore degisir. Yani T_c yakininda kritik
+# yavaslama hata cubugunu bir ALT SINIRA cevirir ve panel bunu SOYLER.
+# Panelin "Yakinsama" satiri bu yuzden OLUMSUZ basar: hesap bitmedi demek degil,
+# "raporladigim belirsizliklerin hepsi belirsizligin kendisi degil" demek.
+#
+# TOHUM ZORUNLUDUR ve varsayilani yoktur: tekrarlanamayan bir Monte Carlo
+# senaryosu kabul edilemez. Her sicaklik bu tek tohumdan turetilen AYRI bir
+# akis alir (SeedSequence.spawn), yani tarama noktalari ayni rastgele diziyi
+# paylasmaz.
+kind: spin
+name: 2B Ising sicaklik taramasi
+model: ising
+algorithm: metropolis
+lattice_size: 16
+temperatures: [1.6, 2.0, 2.2, 2.4, 2.8, 3.4]
+n_sweep: 1000
+n_burn: 200
+seed: 20260823
+coupling: 1.0
+field: 0.0

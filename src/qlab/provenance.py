@@ -89,6 +89,30 @@ class Provenance:
     # derken bunun "eyer" demesi TİPİK durumdur, çelişki değil. Tek alanda
     # birleştirilse hangi kanalın konuştuğu kaybolurdu.
     external_stability: StabilityVerdict | None = None
+    # DAİRESELLİK BEYANI — Modül 4'te eklendi, ve `approximations`ın İÇİNE
+    # KONMADI. Gerekçe bir kavram ayrımıdır: bir yaklaşım YAPILAN bir şeydir
+    # ("kare kafes kullandık"), dairesellik beyanı ise çıktının NE OLMADIĞINI
+    # söyler ("bu sayı bir tahmin değil, girdinin geri okunması"). `expected_error`
+    # da olamaz, çünkü orada bir hata sınırı verilir; burada sınırlanacak bir
+    # hata YOKTUR — SI değeri hiç tahmin edilmemiştir ve ona yüzde yazmak
+    # kategori hatası olurdu. Ayrı alan olmasının pratik bedeli de ölçüldü:
+    # `as_lines()` yaklaşımları " · " ile birleştirir, yani listeye konsaydı
+    # modülün varlık sebebi beş maddeden biri olarak akıp giderdi. Panelde
+    # kendi satırını alır. (`external_stability`ın ayrı alan olma gerekçesiyle
+    # aynı aile: iki hüküm birbirinin yerine geçemez.)
+    circularity: str | None = None
+    # ÖRNEKLEME TANISI — Modül 4'te eklendi. `diagnostics` sözlüğüne KONMADI
+    # ve gerekçesi ölçülmüş bir yanlış-okuma riskidir: `_diagnostics_summary`
+    # çıktısı "Yakınsama" satırının İÇİNE, ✓/✗ işaretinin HEMEN ARDINA
+    # basılır. Hata çubuğunun bir alt sınır olduğu uyarısı oraya konsaydı
+    # panelde "✓ ... ALT SINIR" diye görünürdü — yani uyarının yanında bir
+    # onay işareti. `stability` alanının ayrı tutulma gerekçesi buydu:
+    # analiz edilmemiş ya da güvenilmez bir şeyi nötr/olumlu bir bağlamda
+    # göstermek okuyucuya "sorun yok" diye okunur. İki satır iki AYRI soruyu
+    # cevaplar: "Yakınsama" hesabın bitip bitmediğini, "Örnekleme" raporlanan
+    # belirsizliğin belirsizliğin KENDİSİ mi yoksa yalnızca ALT SINIRI mı
+    # olduğunu.
+    sampling: str | None = None
 
     def as_lines(self) -> list[tuple[str, str]]:
         """Şeffaflık panelinin doğrudan bastığı etiket/değer çiftleri."""
@@ -98,8 +122,12 @@ class Provenance:
             ("Yaklaşımlar", SEPARATOR.join(self.approximations)),
             ("İhmal edilen", SEPARATOR.join(self.neglected)),
             ("Beklenen hata", self.expected_error),
-            ("Yakınsama", f"{mark} {self._diagnostics_summary()}".strip()),
         ]
+        if self.circularity is not None:
+            lines.append(("Dairesellik", self.circularity))
+        lines.append(("Yakınsama", f"{mark} {self._diagnostics_summary()}".strip()))
+        if self.sampling is not None:
+            lines.append(("Örnekleme", self.sampling))
         if self.stability is not None:
             lines.append(("Kararlılık", self.stability.as_line()))
         if self.external_stability is not None:

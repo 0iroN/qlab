@@ -115,6 +115,22 @@ Tasarım belgesi: `../docs/superpowers/specs/2026-08-05-qlab-kuantum-cekirdegi-d
   4.29×) ve sınav hedef kümesine koşullu. **Hızlanma İDDİA EDİLMİYOR** —
   HF/TB maliyet oranı ölçülmedi. Ölçülen sayılar ve dört dürüst olumsuz
   aşağıdaki Doğrulama bölümündedir.
+- **Modül 4 — spin Monte Carlo: tamam.** `engine/spin/` (kare kafes, iki
+  model, checkerboard Metropolis, Wolff kümesi), `observable/spin_obs.py`
+  (Binder, χ, C, ξ ve **hata çubuğunun kendisi** — plato denetimli binning),
+  `viz/spin_frames.py` ve `kind: spin` senaryosu. Modülün asıl çıktısı yine
+  bir sayı değil bir **hüküm**: yol haritasının "demir Curie sıcaklığı
+  1043 K" hedefi ölçümle **dairesel çıktı** — Ising tek bir enerji ölçeği
+  taşır ve `T_c ∝ J`, yani 1043 K için gereken `J = 39.608394 meV` geri
+  konulduğunda `T_c` **birebir 1043.0000 K** okunur. Hedef düzeltildi ve
+  yerine **dört dairesel olmayan çıpa** kondu: Onsager'in `kT_c/J`'si,
+  kritik üs `β/ν = 0.122941 ± 0.003225` (ortalama alanı **272 kat** marjla
+  dışlar), **Mermin-Wagner** (aynı kafes, aynı örnekleyici, zıt hüküm — ve
+  sebebi bir teorem), ve Modül 3H'nin mean-field üssüyle (0.4962) karşılaştırma.
+  Bu modülde depoya ilk kez bir **hata çubuğu** girdi ve ilk kuralı naif
+  SEM'in hiçbir yerde raporlanmamasıdır (ölçüldü: 8.81 kat küçük gösteriyor).
+  **Modül hiçbir malzemenin T_c'sini iddia etmez.** Ölçülen sayılar ve
+  düzeltilen dört plan iddiası aşağıdaki Doğrulama bölümündedir.
 
 ## Ne iddia etmiyor
 
@@ -195,6 +211,26 @@ işaretle verse kırmızı ile mavi yer değiştirirdi ve hiçbir fizik değişm
 aynı su HOMO'su 0.02'de 2850, 0.50'de 114 tepe verir. Pencere üçünü de
 şeffaflık panelinde beyan eder.
 
+**Modül 4 hiçbir malzemenin Curie sıcaklığını iddia etmez, ve bu bir alçak
+gönüllülük değil bir cebir sonucudur.** 2B Ising modeli tek bir enerji ölçeği
+taşır (`J`) ve `T_c ∝ J`; Onsager'in tam çözümü oranı sabitler
+(`kT_c/J = 2/ln(1+√2) = 2.269185314`). Dolayısıyla SI birimindeki her `T_c`,
+girilen `J`'nin geri okunmasıdır — ölçüldü: demirin 1043 K'i için gereken
+`J = 39.608394 meV` konulduğunda `T_c` **birebir 1043.0000 K** çıkar (fark
+0.000e+00). Aynı kadran her malzemeyi verir (Ni 627 K → 23.810607 meV,
+Co 1388 K → 52.709924 meV, Gd 292 K → 11.088831 meV). Bu modülün ölçtüğü
+şeyler `kT_c/J` oranı ve kritik üslerdir; ikisi de `J`'den, kafes sabitinden
+ve birim seçiminden bağımsızdır. Beyan şeffaflık panelinde kendi satırında
+(`Dairesellik`) basılır.
+
+Aynı modeldeki başka iddialar da kurulmuyor: **spin kuantum değil klasiktir**
+(sıfır noktası dalgalanması ve komütasyon bağıntıları yoktur), **kafes
+gerçek bir kristal değildir** (koordinasyon sayısı 4'te sabit, örgü
+geometrisi girdide yok), **3B kapsam dışıdır** (3B Ising'in tam çözümü yoktur
+ve çıpa Onsager yerine literatürün sayısal değerlerine dayanırdı), ve
+denge-dışı süreçler (histerezis, tavlama) yazılmadı. Korelasyon uzunluğu
+sevk edilen senaryoda **raporlanmaz** — gerekçesi ölçüldü ve panelde yazılı.
+
 Qt penceresi bu depoda **bir kez** gerçek ekranda açılıp gözle doğrulandı:
 orbital penceresi (su/STO-3G HOMO), Windows platformunda, kabul kriteri 3
 kapsamında — ayrıntı "Kabul kriterleri durumu" tablosunda. Onun DIŞINDA
@@ -256,6 +292,23 @@ python -m qlab.run scenarios/halka_indirgeme.yaml -o indirgeme.npz
 Panelin `Yakınsama` satırı burada "SCF durdu" demez — modelin varsaydığı
 iki-siteli antiferromanyetik yapının her mesafede gerçekten bulunduğunu söyler.
 
+Spin Monte Carlo (Modül 4) — 2B Ising kafesinde altı sıcaklıklık bir tarama
+(ölçüldü, 0.56 s):
+
+```bash
+python -m qlab.run scenarios/spin_tarama.yaml -o spin.npz
+```
+
+Çıktı `.npz`'si `temperatures`, `magnetisation`, `magnetisation_error`,
+`plateau_reached`, `tau_int`, `binder`, `susceptibility`, `heat_capacity` ve
+`provenance_json` taşır. **Sıcaklıklar `kT/J` cinsindendir, kelvin değil** —
+`J = k_B = 1` bir birim seçimidir. Panel iki ek satır basar: `Dairesellik`
+(SI'daki `T_c` bir tahmin değildir) ve `Örnekleme` (kaç sweep, kaç ölçüm,
+hangi algoritma, `τ_int`, ve binning platosunun oluşup oluşmadığı). Plato
+oluşmamış sıcaklıklarda hata çubuğu **"ALT SINIR" diye işaretlenir** ve
+`Yakınsama` satırı ✗ basar — bu "hesap bitmedi" demek değil, "raporladığım
+belirsizliklerin hepsi belirsizliğin kendisi değil" demektir.
+
 Etkileşimli TDSE penceresi:
 
 ```bash
@@ -281,9 +334,30 @@ pytest tests/ -v -m slow
 `pyproject.toml` bir `addopts` taşımaz, yani `pytest tests/` yavaş işaretli
 testleri de KOŞAR — ikinci komut ayrı bir küme değil, birincinin alt kümesidir.
 
-**Bu makinede, Modül 3H kapanışında ölçüldü** (tek oturum, beş ayrı koşu):
+**Bu makinede, Modül 4 kapanışında ölçüldü** (tek oturum, beş ayrı koşu):
 
 | Koşu | Test | Süre |
+|---|---|---|
+| tam süite | **1159** | **585.36 s** |
+| `-m "not slow"` | **1088** | **107.30 s** |
+| yalnız `-m slow` | **71** | **475.33 s** |
+| yalnız Modül 4 (`tests/spin/`) | **186** | **187.23 s** |
+| aynısı, `-m "not slow"` | **166** | **29.82 s** |
+
+Sevk edilen son hâl ayrıca bir kez daha doğrulandı: **1159 passed /
+583.70 s**. Tablodaki 585.36 s ile arasındaki %0.3, aşağıda beyan edilen
+makine gürültüsünün (%16'ya kadar) çok içindedir.
+
+Modül 4'ün senaryo/panel görevi süiteye **44 test** ve **4.54 s** ekledi;
+dosyanın en yavaş çağrısı 0.95 s, yani deponun 2 s eşiğinin altında ve
+dosyada **hiç `slow` işareti yok**. Modül 4'ün toplam maliyeti 1114 → 1159
+(+45; biri `tests/test_scenario.py`nin keşfe dayalı parametrizasyonundan
+kendiliğinden geldi).
+
+Aşağıdaki blok **Modül 3H kapanışının** ölçümüdür ve Modül 4'ü içermez;
+yeniden koşulmadı, sayılarını bugüne uydurmak ölçüm değil uydurma olurdu:
+
+| Koşu (Modül 3H oturumu) | Test | Süre |
 |---|---|---|
 | tam süite | **971** | **432.22 s** |
 | `-m "not slow"` | **920** | **85.90 s** |
@@ -311,8 +385,11 @@ uydurma olurdu. (O oturumun kendi toplamları: tam süite 864 / 264.98 s,
 | yalnız Modül 2 + 2D + 2E (`tests/md/`) | 100 | 69.23 s |
 | aynısı, `-m "not slow"` | 93 | 7.07 s |
 
-Yavaş alt küme (51 test, 352.41 s) toplam sürenin **~%82'sini** yiyor — oran
-Modül 3H'den önce %79'du. Mutlak saniyeler bu makinede eşzamanlı yüke
+Yavaş alt küme toplam sürenin **~%81'ini** yiyor (Modül 4 kapanışında
+475.33 / 585.36 s); Modül 3H kapanışında oran %82, ondan önce %79'du — yani
+Modül 4 yavaş şeridi **oransal olarak büyütmedi** (yavaş şerit 51 → 71,
+ve eklenen 20 işaretin hepsi Task 2–5'ten gelir; Task 6 hiç eklemedi).
+Mutlak saniyeler bu makinede eşzamanlı yüke
 duyarlıdır ve bu ölçüldü: 864 testlik oturumda aynı tam süite yalıtılmış üç
 koşuda **255.42 / 264.98 / 270.09 s**, makinede başka bir ölçüm koşarken ise
 **296.58 s** verdi (%16 fark). Aşağıdaki yapısal gözlemler bu duyarlılıktan
@@ -1447,6 +1524,280 @@ parçadır ama çalışma zamanında **tek** dizedir; ham metinde aramak 0 eşle
 verir ve "kopya yok" diye okunurdu — yani test kendi iddiasının tersini
 kanıtlardı. Denetim bu yüzden metni önce birleştiriyor.
 
+### Modül 4 — spin Monte Carlo / manyetizma (Plan I)
+
+#### Yol haritasının hedefi ölçümle geçersiz kılındı: **demir tautolojisi**
+
+Yol haritası "demirin Curie sıcaklığı 1043 K" diyordu. Bu bir doğrulama
+değil, bir **tautoloji**: 2B Ising modeli **tek** bir enerji ölçeği taşır ve
+`T_c ∝ J`. Onsager'in 1944 tam çözümü oranı sabitler:
+
+    kT_c / J = 2 / ln(1 + √2) = 2.269185314
+
+Dolayısıyla SI birimindeki her `T_c` girilen `J`'nin geri okunmasıdır. Modül 4
+kapanışında **yeniden ölçüldü** (`k_B = 8.617333262e-2 meV/K`, CODATA 2018):
+
+| hedef | gereken `J` | o `J` ile geri okunan `T_c` | fark |
+|---|---|---|---|
+| **demir, 1043 K** | **39.608394 meV** | **1043.0000 K** | **0.000e+00** |
+| nikel, 627 K | 23.810607 meV | 627.0000 K | 0.000e+00 |
+| kobalt, 1388 K | 52.709924 meV | 1388.0000 K | 0.000e+00 |
+| gadolinyum, 292 K | 11.088831 meV | 292.0000 K | 5.684e-14 |
+
+Aynı kadran her malzemeyi verir; hedef seçilir, parametre ondan türetilir,
+sonra parametre "sonuç" diye geri okunur. (Gadolinyum satırındaki 5.684e-14
+kayan nokta yuvarlamasıdır, fizik değil. Tabloda gösterilen **altı haneye
+yuvarlanmış** `J`'ler kullanılırsa fark 7.2e-07 … 7.8e-06 K olur — yani
+"1043.0000 K" hanesini bozan tek şey, sayının kaç basamağının yazıldığıdır.) **Modül 3F'nin silisyum bant
+aralığı hedefiyle aynı aile** ve çekirdek spec'in aynı tablosundaki
+ölçümle-düzeltilmiş **ikinci** hedef. Hedef düzeltildi; yerine aşağıdaki
+dört çıpa kondu ve **dördü de girdilerden geri okunamaz**.
+
+#### Dört doğrulama hedefi ve ÖLÇÜLEN sayıları
+
+| # | Çıpa | Ölçülen | Referans | Sınıf |
+|---|---|---|---|---|
+| 1 | Binder kesişimi → `kT_c/J` | **2.265050 / 2.265253 / 2.265570** (üç ikili) | Onsager **2.269185314**, simülasyona **söylenmedi** | dairesel değil |
+| 2 | Kritik üs `β/ν` | **0.122941 ± 0.003225** | tam **0.125** (−0.64σ); ortalama alan **1.0** → **272.0 kat** marjla dışlandı | dairesel değil (evrensel) |
+| 3 | Mermin-Wagner | Ising eğimi **+0.000002**, Heisenberg **−1.0545** (T = 1.0) | teorem: 2B'de sürekli simetri düzenlenmez, ayrık düzenlenir | dairesel değil (teorem) |
+| 4 | Modüller arası bağ | 2B Ising **0.122941** ↔ Modül 3H UHF **0.4962** | mean-field ½ ile tam çözümün ⅛'i **dört kat** farklı | dairesel değil |
+
+#### Onsager — çözünürlük tuzağı ve gerçek sistematik kayma
+
+Planın "kesişim 2.260, sapma %0.4" iddiası **yeniden ölçüldü ve çürüdü**:
+%0.4 mutlak olarak 0.0092'dir, yani planın kendi ızgara adımının (0.04)
+**dörtte biri**. O sayı bir kesişim değil, bir **ızgara noktasıydı**.
+
+Bu modülde kesişim **doğrusal ara değerlemeyle** bulunur ve ara değerlemenin
+ızgara sistematiği **gürültüsüz** (tam sayımla) ölçülür: adım 0.04 →
+−5.950e-04, **0.02 → −2.156e-04**, 0.001 → −4.2e-07. Sistematik, istatistiksel
+σ'nın (3.0–5.2e-03) **on dörtte biri** — yani sınırlayıcı olan ızgara değil,
+istatistik.
+
+| çift (L × L') | kesişim | σ | Onsager'den sapma | 3σ |
+|---|---|---|---|---|
+| 8 × 16 | 2.265050 | 0.004118 | −0.004135 (−1.00σ) | 0.01235 |
+| 8 × 24 | 2.265253 | 0.003020 | −0.003932 (−1.30σ) | 0.00906 |
+| 16 × 24 | 2.265570 | 0.005206 | −0.003616 (−0.69σ) | 0.01562 |
+
+Üçünün yayılımı **0.000519**, en dar 3σ'nın on yedide biri: **bu istatistikle
+üçü ayırt edilemiyor**. Ama üçü de **aynı yönde** sapıyor ve tek bir tohum
+bloğu bunu ayıramaz. Üç bağımsız tohum bloğu (20260824 / 20260825 / 19990101)
+havuzlanınca:
+
+    blok ortalamalari  2.265291 / 2.266747 / 2.267474
+    havuz              2.266504 ± 0.000642
+    Onsager sapmasi    -0.002681 = **-4.18σ**
+
+Yani kayma **gerçek ve sistematiktir** (sonlu boyut), tek blokta gürültünün
+içinde kalır. Kaymanın gerçekliği ayrıca gürültüsüz de gösteriliyor: `L = 3` ×
+`L = 4` kafeslerin **tam sayımında** (512 ve 65536 durum, hata çubuğu yok)
+kesişim **2.1692678**, Onsager'den **−0.0999 (−%4.40)**. Küçük `L`'de kayma
+devleşiyor, `L ≥ 8`'de bu istatistiğin çözünürlüğünün altına iniyor.
+
+#### Kritik üs — ve "β = 1/8 çıktı" yazmanın neden yasak olduğu
+
+Pencere: `L` = 8, 12, 16, 24, 32 · `T = T_c` · Wolff · `n_burn = 300`,
+`n_sweep = 1500` · K = 24 bağımsız tohumlu zincir · 3000 çekilişlik bootstrap.
+
+    <|m|>: 0.775523 / 0.740615 / 0.715627 / 0.678801 / 0.654571
+    β/ν  = 0.122941 ± 0.003225      (3σ = 0.009674)
+
+Doğru cümle: **β/ν = 0.122941 ± 0.003225 ölçüldü; tam değer 0.125 (sapma
+−0.64σ, yani belirsizliğin içinde); ortalama alan (β/ν = 1.0) 272.0 kat marjla
+dışlandı.** Kalan sapma bir sonlu-boyut düzeltmesidir ve **sıfırlanmaz** — bu,
+`L` alt kümeleri ayrı ayrı uydurulunca görünür: (8,12,16) → 0.121346,
+(16,24,32) → 0.129350, (24,32,48) → 0.123540. Yani log-log doğrusu **tam doğru
+değildir**; altı noktanın 0.125'e bu kadar yakın düşmesi düzeltmelerin bu `L`
+penceresinde birbirini götürmesindendir.
+
+`β/ν` ile `β` sayısal olarak aynıdır çünkü 2B Ising'de `ν = 1`. **Bu depo
+`ν`yü ÖLÇMEZ**; `ν = 1` bağı literatürdendir ve beyan edilir.
+
+#### Mermin-Wagner — aynı kod, zıt hüküm, **ve penceresi**
+
+Pencere: `⟨|m|⟩`, `L` = 8, 12, 16, 24, 32 · `J = 1`, `h = 0` · **aynı**
+Metropolis çekirdeği · `n_burn = 500`, `n_sweep = 1500` · tohum 20260822 ·
+soğuk (tekbiçim) başlangıç.
+
+| T | Ising eğimi | Heisenberg eğimi | m_I(32)/m_H(32) |
+|---|---|---|---|
+| **0.8** | +0.000033 | **−0.9196** | 6.99 |
+| 1.0 | +0.000002 | **−1.0545** | 11.35 |
+| 1.4 | +0.000174 | **−0.9580** | 16.04 |
+
+Ising'in mıknatıslanması **dört hanede `L`'den bağımsız** (T = 1.0'da L = 8
+için 0.999208, L = 32 için 0.999250); Heisenberg'inki güç yasasıyla sönüyor.
+Farkı yaratan şey **kod değil simetridir** ve bunu `metropolis.py`nin
+koşturduğu modeli **bilmemesi** garanti eder (üç ayrı testle kilitli).
+
+**GEÇERLİLİK PENCERESİ — beyan ediliyor, gevşetme değil: çıpa `T ≳ 1.0`'da
+kurulur.** `T = 0.8` ayrı bir parametre olarak ve gevşek sınırla girer, oran
+iddiası orada **hiç kurulmaz**. Sebebi ölçüldü: 2B Heisenberg'de `ξ ~
+exp(2πJ/T)` ile patlar ve `L ≫ ξ` koşulu `L = 32`'de sağlanmaz. İmzası da bu —
+8 tohumda eğim `T = 0.8`'de **−0.8690 ± 0.0754** ile −1'e ulaşamıyor ve
+yayılım `T = 1.4`'ünkinin (±0.0422) neredeyse iki katı; oran orada **5.52**'ye
+kadar iniyor, yani "> 8.0" iddiası **yanlış olurdu ve kurulmadı**.
+
+#### Hata çubuğu — deponun ilk hata çubuğu, ve ilk kuralı
+
+**Naif SEM bu depoda hiçbir yerde raporlanmaz.** MC örnekleri ilişkilidir ve
+`std/√N` gerçek hatayı sistematik olarak küçük gösterir. Ölçüldü (L = 32,
+T = T_c, 8000 ölçüm; bağımsız referans = 200 zincirin (Metropolis) ve 100
+zincirin (Wolff) ortalamalarının std'si):
+
+| algoritma | naif SEM | bağımsız referans | naif kaç kat küçük | referansın kendi belirsizliği |
+|---|---|---|---|---|
+| Metropolis | 1.946079e-03 | 1.713639e-02 | **8.81×** | %5.0 |
+| Wolff | 1.955908e-03 | 4.642595e-03 | 2.37× | %7.1 |
+
+Planın **"10.4 kat"**ı bayattı; 200 zincirlik referansla **8.81 kat** çıkıyor.
+Ve aynı ölçüm 24 zincirle yapılınca gerçeğin **0.80 katı** oluyor
+(1.3666e-02): **referansın kendisi de bir tahmindir** — bu ders bu modülde
+üç kez ayrı ayrı ödendi.
+
+**Plato bayrağı ALGORİTMANIN DEĞİL KOŞUMUN özelliğidir.** Planın "Metropolis
+plato yapmaz, Wolff yapar" anlatısı bir algoritma cümlesi olarak **yanlış**;
+ölçüldü (T = T_c, 24 zincir):
+
+| algoritma | pencere | plato |
+|---|---|---|
+| Metropolis | L = 8, N = 4000 | **24/24** |
+| Metropolis | L = 16, N = 8000 | 23/24 |
+| Metropolis | L = 32, N = 8000 | **0/24** |
+
+Bayrak "bu algoritma iyi mi" değil, "**bu koşum** kendi otokorelasyonunu
+çözecek kadar uzun mu" sorusunu cevaplar. Plato oluşmamışsa dönen sayı hatanın
+kendisi değil bir **ALT SINIRIDIR** ve panel onu öyle işaretler.
+
+Ölçütün kendisi de düzeltildi: planın "son üç blok boyutunun hataları %5
+içinde mi" ölçütü, kendi gürültüsü %6.35–12.91 olan sayıları %5'lik bir
+eşikle karşılaştırıyordu ve Wolff'un plato **yaptığı** pencerede 24 tohumun
+yalnız **3'ünde** `True` diyordu — yani planın kendi zorunlu testi kendi
+koduyla **21/24 kırmızı** olurdu. Yerine konan ölçüt bir **seçimdir**
+(iki düğme taranarak bulundu) ve daireyi kıran şey AR(1) sınavıdır:
+`τ_int` orada kapalı formdan bilinir ve ölçüt hiç ayarlanmadan doğru hükmü
+veriyor —
+
+    φ       tam τ     binning τ   oran    plato
+    0.0       0.500       0.541   1.082   24/24
+    0.5       1.500       1.552   1.035   24/24
+    0.8       4.500       4.446   0.988   24/24
+    0.95     19.500      16.333   0.838   10/24   (geçiş bölgesi)
+    0.995   199.500      52.833   0.265    0/24
+
+#### ξ'nin kırılması — ve düzeltilmiş hüküm
+
+Plan `ξ`nin `T ≥ 1.0`'da kırıldığını üç negatif oranla (−0.0511 / −0.0125 /
+−0.0383) yazmıştı. **Yeniden ölçüldü: işaret tohumdan tohuma değişiyor** (her
+sıcaklıkta 2/5). Doğru hüküm *"orada oran negatiftir"* değil,
+***"orada tahminci KARARSIZDIR"***.
+
+Ve `None` hikâyenin yalnızca yarısıdır: tamamen **ilişkisiz** bir ±1 kafeste
+(gerçek `ξ = 0`) 200 tohumun `L = 16`'da 123'ü, `L = 32`'de 124'ü `None`
+veriyor — kalan **~%38'i sahte bir `ξ` üretiyor** (4.418 ve 7.791). Yani
+pozitif dönüş de orada güvenilir değil. `max(oran, 0)` ile kırpmak **yasak**:
+sıfır "korelasyon yok" diye okunur, oysa gerçek hüküm "bu tahminci burada bir
+şey söylemez".
+
+İki ayrı geçerlilik sınırı daha ölçüldü ve beyan ediliyor:
+
+- **Tek konfigürasyon yetmez.** T_c, L = 32, 5 tohum: `ξ` = 3.644 / 17.735 /
+  30.337 / 36.768 / 150.562 — **41 kat** yayılım. Aynı 5 tohumun 200'er
+  konfigürasyonluk topluluğunda 26.668 … 33.078 (%11).
+- **Düzenli fazda ham tahminci mıknatıslanmayı okuyor** ve topluluk bunu
+  **çözmüyor**: T = 1.5, L = 32'de `ξ` = 613.966 … 1431.310, yani `ξ/L` 16–45.
+  L = 32'lik bir kafeste `ξ = 800` bir korelasyon uzunluğu değildir.
+- **"Bağlı" (connected) sürüm cebirsel olarak ölüdür**: tek konfigürasyondan
+  site ortalamasını çıkarmak `Σ(s−s̄) = 0` yapar, `S(0)` tam sıfır olur ve oran
+  **her zaman tam −1** çıkar (15/15 ölçüldü).
+
+Bu yüzden sevk edilen senaryo `ξ`yi **raporlamaz** ve gerekçesini panelde
+yazar.
+
+#### İki algoritma, tek hüküm — ve çapraz kontrolün kendi kör noktası
+
+Metropolis ile Wolff'un ortak hiçbir karar noktası yoktur (biri kabul/red
+verir, öteki hiç vermez), ve altı pencerede birbirini doğruluyorlar (fark /
+3σ oranları 0.109 … 0.481). Ama çapraz kontrol *"ikisi de aynı şekilde
+bozuk"* ihtimalini dışlayamaz; onu **tam sayım** dışlıyor: `L = 3` (512
+durum) ve `L = 4` (65536), enerji bağımsız yazılmış, sapmalar
+**0.08 / 0.66 / 0.78 / 1.05 × SE**. `L = 3` ayrıca bir kapsam iddiasıdır —
+Metropolis tek `L`'yi reddeder, Wolff koşar; o çıpa çapraz kontrolle
+**kurulamazdı**.
+
+#### Modüller arası bağ
+
+Modül 3H, UHF indirgemesinde kademeli alanın çatallanma üssünü üç halkada
+bağımsız olarak **0.496190 / 0.497600 / 0.497811** ölçtü ve **UHF bir
+ortalama-alan yöntemidir**, yani o üs ½'dir. Modül 4 aynı depoda, aynı tür
+geçişte, gerçek 2B Ising'i koşuyor ve **0.122941** ölçüyor. İki sayı birbirini
+bağlamlandırıyor: **mean-field ile tam çözümün farkı artık bu depoda
+ölçülmüştür** ve ikisi de dairesel olmaktan çıkıyor.
+
+#### Panel ve senaryo
+
+```bash
+python -m qlab.run scenarios/spin_tarama.yaml -o spin.npz
+```
+
+Çıkış 0; panel **yedi** satır basar — Yöntem / Yaklaşımlar / İhmal edilen /
+Beklenen hata / **Dairesellik** / Yakınsama / **Örnekleme**. Son ikisi bu
+modülde `Provenance`a eklendi ve ayrı alan olmalarının gerekçesi
+`provenance.py`de yazılı: dairesellik beyanı `Yaklaşımlar` listesine konsaydı
+modülün varlık sebebi beş maddeden biri olarak akıp giderdi, örnekleme tanısı
+`diagnostics`e konsaydı panelde **"✓ … ALT SINIR"** diye görünürdü — yani
+uyarının yanında bir onay işareti.
+
+`Yakınsama` burada "hesap bitti" **demek değildir**: ölçüt, raporlanan **her**
+hata çubuğunun gerçekten bir hata çubuğu olup olmadığıdır. Sevk edilen
+senaryoda ✗ basar ve bu doğrudur — T = 2.2 ve T = 2.4'te binning platosu
+oluşmuyor. Ölçüldü (24 tohum, aynı pencere): T = 1.6 → 23/24, T = 2.0 →
+16/24, **T = 2.2 → 0/24**, **T = 2.4 → 0/24**, T = 2.8 → 13/24,
+T = 3.4 → 24/24. Yani işaretin **iki yönü de** aynı sevk edilmiş senaryodan
+kilitlenebiliyor.
+
+Beyan metninin **tek kaynağı** `engine/spin/factory.py`dir ve bu bir disiplin
+değil bir **test**tir: on bir beyan cümlesinin her biri `src/` ağacında tam bir
+kez geçer, `tests/` tarafında da kilidi kuran tek dosya dışında hiç geçmez.
+`run.py::_run_spin` metnin bir harfini bile yeniden yazmaz. Tek kelimelik
+istisna `ALT SINIR` işaretidir ve o da yazılmaz, fabrikadan **ithal edilir**.
+
+#### Dürüst olumsuzlar
+
+- **`ν` ölçülmedi.** `β/ν = β` yalnızca literatürden gelen `ν = 1` bağı
+  yüzündendir.
+- **Plato bayrağının gerçek bir geçiş bölgesi var** (AR(1)'de φ = 0.95 →
+  10/24; farklı tohumlarla bağımsız yeniden koşumda 8/24 — tohum gürültüsü,
+  aynı hüküm). Kusur değil, çözünürlük. Ve bayrak **muhafazakârdır**: `False`
+  derken binning değeri gerçeğin 0.854 katı — yani "plato yok", *serideki
+  kanıtın eksikliğini* söylüyor, sayının yanlış olduğunun ispatını değil.
+- **Hiçbir tahminci `τ = 199.5`'i temiz okumuyor.** ACF de kırılıyor
+  (φ = 0.995'te 0.85× ve ±%48 saçılım); N = 8000 o otokorelasyona yetmiyor.
+- **Planın "naif Metropolis + doğrudan fit → 0.0973" iddiası SINANMADI** —
+  kritik üs her yerde Wolff ile ölçüldü.
+- **Spec ön ölçümünün `τ_int` = 53.78 (Metropolis) / 3.07 (Wolff)
+  karşılaştırması bu modülde YENİDEN ÖLÇÜLMEDİ.** Sevk edilen senaryonun
+  kendi aralığı ölçüldü (L = 16, 24 tohum: 0.68 … 6.44); "17.5 kat kritik
+  yavaşlama" cümlesi spec'in penceresine aittir, buraya taşınmadı.
+- **Bir test tam sayı (123/200) sabitliyor**; deterministiktir ama numpy'nin
+  RNG akışı değişirse kırılır.
+- **Sevk edilen senaryonun T = 2.0 ve T = 2.8 satırları testlerde
+  kilitlenmez** (16/24 ve 13/24 — geçiş bölgesi). Tek akıştan okunan bir
+  oranı fiziğe yazmak bu depoda üç kez düzeltilmiş bir hatadır.
+
+#### Planın bayat çıkan iddiaları
+
+| planın dediği | ölçülen |
+|---|---|
+| `β/ν = 0.1152` | **yeniden üretilemedi**; 0.122941 ± 0.003225 |
+| Binder kesişimi **2.260**, sapma **%0.4** | o bir **ızgara noktası**; ara değerlemeyle 2.265050 / 2.265253 / 2.265570, havuzlanınca −4.18σ |
+| "Metropolis plato yapmaz, Wolff yapar" | algoritma cümlesi olarak **yanlış**; Metropolis L = 8 / N = 4000'de 24/24 plato yapıyor |
+| naif SEM **10.4 kat** | **8.81 kat** (200 zincirlik referans; referansın kendi belirsizliği %5.0) |
+| `ξ` `T ≥ 1.0`'da kırılıyor (−0.0511 / −0.0125 / −0.0383) | işaret **tohumdan tohuma değişiyor**; doğru hüküm "tahminci **kararsızdır**", artı ~%38 sahte pozitif |
+| plato ölçütü: son üç hata %5 içinde, `min_blocks = 16` | kendi zorunlu testini **21/24 kırmızı** yapardı |
+| demir 1043 K için `J = 39.608394 meV` → birebir 1043.0000 K | **doğrulandı** (fark 0.000e+00) — planın yeniden üretilebilen tek sayısı |
+
 ## Mimari kuralı
 
 `engine` paketi `viz` veya `app` import **edemez** — ve GUI'nin kendisini de,
@@ -1481,7 +1832,7 @@ Spec §15'teki yedi maddenin gerçek durumu (ölçüm ayrıntıları
 
 | # | Kriter | Durum |
 |---|---|---|
-| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — **971/971 test yeşil** (`pytest tests/`, 432.22 s; Modül 3H kapanışında ölçüldü), PySCF referans testleri dahil. Ayrıca `reference/` geçici olarak kaldırılıp tam süite yeniden koşuldu: testler ATLANMIYOR, KIRMIZI oluyor — ölçüldü, **128 failed + 132 error + 291 passed, 0 skipped** (toplam 551, 154.20 s). Yani 260 test kırmızıya dönüyor ve hiçbiri sessizce atlanmıyor. Dikkat: bu ikinci deney süite 551 testliyken yapıldı ve o günün sayılarını taşır; yeniden koşulmadı, sayıları 971'e uydurmak ölçüm değil uydurma olurdu. Not: PySCF bu makinede **kurulu değildir** — `reference/*.json` kayıtları PySCF 2.14.0 ile başka bir yerde üretilmiştir ve testler koşarken PySCF'e bağımlı değildir; "PySCF referans testleri dahil" ifadesi kayıtlarla karşılaştırmayı anlatır, canlı bir PySCF çağrısını değil |
+| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — **1159/1159 test yeşil** (`pytest tests/`, 585.36 s; Modül 4 kapanışında ölçüldü). Önceki ölçüm 971/971 idi (432.22 s, Modül 3H kapanışı) ve aşağıdaki `reference/` deneyi o günden de eskidir. Ayrıca `reference/` geçici olarak kaldırılıp tam süite yeniden koşuldu: testler ATLANMIYOR, KIRMIZI oluyor — ölçüldü, **128 failed + 132 error + 291 passed, 0 skipped** (toplam 551, 154.20 s). Yani 260 test kırmızıya dönüyor ve hiçbiri sessizce atlanmıyor. Dikkat: bu ikinci deney süite 551 testliyken yapıldı ve o günün sayılarını taşır; yeniden koşulmadı, sayıları bugünkü toplama uydurmak ölçüm değil uydurma olurdu. Not: PySCF bu makinede **kurulu değildir** — `reference/*.json` kayıtları PySCF 2.14.0 ile başka bir yerde üretilmiştir ve testler koşarken PySCF'e bağımlı değildir; "PySCF referans testleri dahil" ifadesi kayıtlarla karşılaştırmayı anlatır, canlı bir PySCF çağrısını değil |
 | 2 | Headless koşucu çalışır + H₂ eğrisi bağ uzunluğu ±%8 | **Kapandı** — `python -m qlab.run scenarios/h2_bond_scan.yaml -o h2_curve.npz`; taramanın parabol fiti **0.71348 Å**, deneyselden sapma %3.7, kriterin istediği ±%8 sağlanıyor. Bu sayı yöntemin denge uzunluğu DEĞİL: STO-3G'nin gerçek minimumu 0.71223 Å, fark taramanın ızgara eseridir (Modül 1B tablosunun altındaki nota bakın). Bu satır bir zamanlar 0.7156 Å diyordu — o sayı bu komuttan değil, `test_physical`'ın ayrı ızgarasından geliyordu; artık `test_shipped_h2_scan_fit_is_grid_biased_but_less_than_the_uniform_grid` senaryonun kendi sayısını kilitliyor |
 | 3 | GUI'de H₂O HOMO izoyüzeyi döndürülebilir | **Kapandı — bu depoda ilk gerçek-ekran doğrulaması.** `python -m qlab.app.main --molecule "O 0 0 0; H 0 0.757 0.587; H 0 -0.757 0.587"` gerçek Windows platformunda açıldı; su HOMO'su (1b₁) çizildi, ±faz iki renkte, 1764/1764 tepe, çekirdekler ve şeffaflık paneli görüldü. Döndürme ölçüldü: kamera azimutu değişince kare piksel bileşenlerinin **%14.1'i**, elevasyon değişince **%7.2'si** değişiyor — sahne gerçekten 3B ve görünüm tepki veriyor. **Ne ölçülmedi:** fareyle sürükleyerek döndürme; kamera programatik değiştirildi. Kriterin "döndürülebilir" kelimesi bu yüzden yalnızca sahne tarafında kapalıdır, girdi tarafında bir insanın bakması gerekir. Doğrulamanın kendisi bir kusuru da GÖRÜNÜR KILDI: 12 satırlık beyan 140 px'lik panelde katlanın altında kalıyordu (düzeltildi, `TransparencyPanel(max_height=…)`) |
 | 4 | Kaydırıcı ile canlı iletim, analitiğin ±%2'si içinde | **Kapandı** — ölçülen fark %0.07 |

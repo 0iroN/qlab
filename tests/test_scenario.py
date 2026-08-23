@@ -14,6 +14,7 @@ from qlab.scenario.schema import (
     DownfoldScenario,
     HFScanScenario,
     MDScenario,
+    SpinScenario,
     TBScenario,
     TDSEScenario,
 )
@@ -261,6 +262,16 @@ _TB_SAMPLE_K_POINTS = 10
 #: `@pytest.mark.slow` ile işaretlidir.
 _DOWNFOLD_SAMPLE_DISTANCES = 1
 _DOWNFOLD_SAMPLE_SEEDS = 4
+#: Spin senaryosunda TAM koşu YAPILMAZ. `_HF_SCAN_SAMPLE_POINTS` ile aynı
+#: gerekçe: burada aranan şey fizik değil dosyanın çalışır olmasıdır. Tam
+#: koşum `tests/spin/test_spin_senaryo.py::test_CLI_UCTAN_UCA`dadır.
+#: `n_sweep` 32'nin ALTINA İNDİRİLEMEZ ve bu bir ölçüm sonucudur:
+#: `binning_error` plato ölçütü için en az `min_blocks = 32` örnek ister ve
+#: daha azında `InvalidInputError` fırlatır — yani "hızlandıralım" diye 16
+#: yazmak bu testi kırardı, sessizce zayıflatmazdı.
+_SPIN_SAMPLE_TEMPERATURES = 1
+_SPIN_SAMPLE_SWEEPS = 64
+_SPIN_SAMPLE_BURN = 10
 
 
 def test_scenario_directory_is_not_empty():
@@ -353,6 +364,37 @@ def test_shipped_scenario_loads_and_runs(scenario_path):
             assert len(p.hoppings) == kisa.n_neighbour
             assert p.n_site == kisa.ring_size
         assert provenance.method.startswith("UHF indirgemesi")
+        return
+
+    if isinstance(scenario, SpinScenario):
+        # Spin tarafinda "kosturulabilir" demek: ornekleyici koşuyor,
+        # gozlemlenebilirler sonlu cikiyor ve panel dolu. Sicaklik sayisi ve
+        # zincir uzunlugu KUCULTULUR (senaryonun kendi degerleri degil).
+        from qlab.engine.spin.factory import build_spin, provenance_for
+        from qlab.viz.spin_frames import build_spin_payload
+
+        kisa = dataclasses.replace(
+            scenario,
+            temperatures=scenario.temperatures[:_SPIN_SAMPLE_TEMPERATURES],
+            n_sweep=_SPIN_SAMPLE_SWEEPS,
+            n_burn=_SPIN_SAMPLE_BURN,
+        )
+        yuk = build_spin_payload(build_spin(kisa))
+        assert yuk.temperatures.shape == (len(kisa.temperatures),)
+        assert np.all(np.isfinite(yuk.magnetisation)), (
+            f"{scenario_path.name}: miknatislanma sonlu degil"
+        )
+        assert np.all(np.isfinite(yuk.magnetisation_error))
+        assert np.all(np.isfinite(yuk.binder))
+        provenance = provenance_for(
+            kisa, plateau_reached=yuk.plateau_reached, tau_int=yuk.tau_int
+        )
+        assert provenance.method.startswith("spin Monte Carlo")
+        # Bu senaryo turunun panelinde IKI EK SATIR ZORUNLUDUR ve baska
+        # hicbir turde yoktur; kesif-tabanli bu testte kilitlenmesi, yeni
+        # bir spin senaryosu eklendiginde de aranacagi anlamina gelir.
+        assert provenance.circularity is not None
+        assert provenance.sampling is not None
         return
 
     assert isinstance(scenario, TDSEScenario)
