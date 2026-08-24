@@ -30,9 +30,12 @@ class FieldState:
     da uzunluk cinsindendir (c = 1); `dt = S * dx`.
 
     1B'de `e` = Ez, sekli (N,); `h` = Hy, sekli (N-1,) ve `h[i]` = Hy(i+1/2).
-    YARIM HUCRE KAYDIRMA SEMANIN KENDISIDIR, bir uygulama ayrintisi degil:
-    kaydirma dusurulunce yakinsama mertebesi 2'den 1'e iniyor (olculdu,
-    bkz. tests/em/test_sema_cipalari.py).
+    YARIM HUCRE KAYDIRMA SEMANIN KENDISIDIR, bir uygulama ayrintisi degil --
+    ama sonucu MERTEBE DUSMESI DEGIL, KARARSIZLIKTIR. Olculdu: `e`nin curl'u
+    GERI fark yerine ILERI fark alinirsa (yani H, E ile ayni izgaraya
+    tasinirsa) seri tepesi N = 201, 600 adimda S = 0.5 / 0.25 / 0.1 icin
+    3.9e+242 / 3.0e+125 / 4.8e+48 -- yani sema HER Courant sayisinda
+    patliyor. Kaydirma bir DOGRULUK ayrintisi degil, KARARLILIGIN kosulu.
 
     dtype KISITLANMIYOR (float ya da complex). Egik gelis indirgemesi
     (Task 3) d/dy -> i*ky ile KARMASIK alanlar kullanir ve ayni cekirdekten

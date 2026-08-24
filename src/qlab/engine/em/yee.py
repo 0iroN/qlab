@@ -94,8 +94,10 @@ def _adim(state: FieldState, coeffs: YeeCoefficients) -> FieldState:
     Sira: once H (yarim adim ileri), sonra E (tam adim). YARIM HUCRE
     KAYDIRMA `h[i] = H(i+1/2)` uzerinden gelir: E'nin curl'u `h[i] - h[i-1]`,
     H'ninki `e[i+1] - e[i]`. Ikisi de MERKEZI farktir ve semanin 2. mertebesi
-    tam olarak buradan gelir -- kaydirma dusurulunce mertebe 1'e iner
-    (olculdu).
+    tam olarak buradan gelir. Kaydirma dusurulunce olan sey MERTEBE DUSMESI
+    DEGIL, KARARSIZLIKTIR: iki curl de ayni yonlu farki alirsa sema her
+    Courant sayisinda patliyor (N = 201, 600 adim: S = 0.5 -> 3.9e+242,
+    S = 0.25 -> 3.0e+125, S = 0.1 -> 4.8e+48).
     """
     e, h = state.e, state.h
     h = coeffs.da * h + coeffs.db * (e[1:] - e[:-1])
