@@ -26,12 +26,16 @@ KEZ ölçüldü):
 2.0 s" eşiği burada TEK BAŞINA yanlış sınıflandırırdı; ayrıca oradaki
 `setup`/`call` tuzağı bu dosyada YOKTUR ve bu da ölçüldü: `tests/em`de
 HİÇBİR `setup` 0.005 s'yi geçmiyor (fixture kullanılmıyor), yani
-setup + call = call. Ölçülen call süreleri:
-    1.65s  test_S_EN_HIZLI_DALGA_HIZIYLA_TANIMLI...      <- slow
-    0.68s  test_PML_KALINLIGI_ONBES_ONIKI_DEGIL...       <- slow
-    0.38s  test_COURANT_ESIGI_UC_BOYUTTA_DA_OLCULUYOR[3]
-    0.36s  test_COURANT_SINIRI_1B_DE_OLCULUYOR...
-    (kalan 41 test toplam 0.6 s)
+setup + call = call. BU DOSYANIN ölçülen call süreleri:
+    1.63s  test_S_EN_HIZLI_DALGA_HIZIYLA_TANIMLI...      <- slow
+    0.64s  test_PML_KALINLIGI_ONBES_ONIKI_DEGIL...       <- slow
+    0.42s  test_COURANT_ESIGI_UC_BOYUTTA_DA_OLCULUYOR[3]
+    0.35s  test_COURANT_SINIRI_1B_DE_OLCULUYOR...
+    (dosyanın kalan 16 testi toplam 0.36 s)
+Liste DOSYA kapsamlıdır, klasör kapsamlı DEĞİL: `tests/em` artık 114 test
+topluyor ve toplam call süresinin neredeyse tamamı `test_arayuz.py`nin
+(25 test, 64.6 s). O dosya kendi `slow` eşiğini kendisi ölçer (setup+call
+> 1.0 s, `test_SLOW_ESIGI_OLCULDU`) ve buradaki sınır oradan DEVRALINMAZ.
 Sınır deponun kendi kalibrasyonundan: `hf/test_density_observable.py` 0.35 s
 ve `hf/test_rhf_sikismasi.py` 0.46 s AÇIKÇA "slow DEĞİL" diye yazılı; mevcut
 slow işaretli en ucuz gövde 0.69 s. Bu dosya o boşluğu kullanıyor.
