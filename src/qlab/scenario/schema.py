@@ -170,3 +170,81 @@ class SpinScenario:
     coupling: float = 1.0
     field: float = 0.0
     heisenberg_step: float = 0.6
+
+
+#: FFT pencereleri. Bu tuple bir KOPYA DEĞİL bir KATMAN AYRIMIDIR: asıl
+#: otorite `observable/em_obs.py::WINDOW_SIDELOBE`tir ve pencerenin ÖLÇÜLEN
+#: yan lobunu da o taşır, ama `scenario` katmanı `observable`ı import EDEMEZ
+#: (katman sözleşmesi: run → viz → observable → engine → scenario). Yükleyici
+#: burada yalnızca "böyle bir pencere var mı" diye bakar; "seçilen tepe tabanı
+#: o pencerenin yan lobunun üstünde mi" İMKÂN KAPISI `mode_spectrum`ta durur
+#: ve orada kalmalıdır — çünkü o kapı bir ÖLÇÜME dayanır, bir isim listesine
+#: değil. İki denetim ayrı tür fırlatır (`ScenarioError` ile
+#: `InvalidInputError`) ve testler bu farkı kilitler.
+EM_WINDOW_FNS = ("dikdortgen", "hann", "blackman")
+
+#: Merdivenin en küçük derinliği — `observable/em_obs.py::MIN_DEPTH` ile aynı
+#: sayı, aynı gerekçeyle ve aynı katman ayrımıyla tekrar edilir: n değer →
+#: n−1 fark → n−2 mertebe → n−3 Richardson noktası, yani `u`nun ölçülebildiği
+#: en küçük derinlik DÖRTTÜR. Yükleyici bunu YAML tarafında reddeder ki
+#: panelin yakınsama satırı hiçbir zaman "yapısal olarak yargılanamaz" bir
+#: koşumu göstermesin.
+EM_MIN_DEPTH = 4
+
+
+@dataclass(frozen=True)
+class EMScenario:
+    """Maxwell FDTD — 2B dairesel PEC boşlukta yarıçap merdiveni.
+
+    TOHUM YOKTUR VE BU BİR EKSİKLİK DEĞİL BİR BEYANDIR: FDTD deterministtir,
+    RNG hiç kullanılmaz. Tekrarlanabilirliğin karşılığı burada **pencerenin
+    tam beyanıdır** ve bu yüzden aşağıdaki alanların hepsi ZORUNLUDUR —
+    ızgara (`radii` + `margin`), `courant`, adım (`step_factor`),
+    dalga boyu (`wavelength_per_radius`), `sgf`, FFT penceresi (`window_fn`),
+    `pad`, `peak_floor` ve `detectors`. `SpinScenario`nun `seed`i neden
+    varsayılansızsa bunlar da o yüzden varsayılansızdır: pencereyi yazmayı
+    unutan bir senaryo sessizce "tekrarlanabilir" görünürdü ve bu depoda bir
+    hükmün penceresinin dışına taşınması ON KEZ ölçüldü.
+
+    BİRİM DÖNÜŞÜMÜ YOKTUR, çünkü çevrilecek bir şey yoktur: bu modülde
+    `c = ε₀ = μ₀ = 1` bir BİRİM SEÇİMİDİR (Modül 4'ün `J = k_B = 1`'iyle aynı
+    statüde). `radii` ve `wavelength_per_radius` HÜCRE cinsindendir, metre
+    değil; frekanslar `1/(hücre)` cinsindendir, hertz değil.
+
+    `npml` VE `dx` BİRER ALAN DEĞİLDİR, ve ikisi de bilinçli — ama SEBEPLERİ
+    FARKLI:
+
+    * `npml`: dairesel PEC boşluk TAM YANSITICIDIR, soğurucu katman yoktur ve
+      `CircularPEC.thickness` sabit sıfırdır. Yani düğme **bağlı değildir**.
+    * `dx`: düğme bağlıdır ama **sessizce yanlış** çalışır ve bu ÖLÇÜLDÜ.
+      `run_2d` kaynağı `t = n·S·Δx` zamanında besler, oysa `wavelength`
+      **hücre** cinsinden verilir; ikisi yalnız `Δx = 1`'de örtüşür. Ölçüm
+      (R = 5/10, `step_factor` = 120): `Δx` = 1 → tepe sayısı **20 / 13**,
+      `Δx` = 0.5 → **4 / 4**, `Δx` = 2 → **31 / 43**, `λ` üçünde de aynı
+      (7.257613) kalarak. Yani kaynağın bandı kipin frekansına göre kayıyor
+      ve panelin okuduğu kip kümesi değişiyor.
+
+    İki durumda da kural aynı: bağlanmamış ya da sessizce yanlış çalışan bir
+    düğmeyi kabul etmek bu depoda düzeltilmiş bir hatadır (`heisenberg_step` +
+    Ising). Panel `npml`i ve `Δx`'i yine de basar — değerleri koşumdan,
+    `Window`dan gelir.
+
+    `ratio` TÜRETİLMEZ, BEYAN EDİLİR ve yükleyici onu `radii` ile karşılaştırır.
+    Türetilseydi (ör. `radii[1]/radii[0]`) yamuk bir merdiven sessizce kabul
+    edilir ve `p = log(d_i/d_{i+1})/log r` bir MERTEBE OLMAYAN bir sayı
+    döndürürdü.
+    """
+
+    name: str
+    radii: tuple[float, ...]
+    ratio: float
+    courant: float
+    step_factor: float
+    wavelength_per_radius: float
+    sgf: float
+    detectors: int
+    pad: int
+    window_fn: str
+    peak_floor: float
+    eps_r: float = 1.0
+    margin: int = 3

@@ -671,8 +671,19 @@ def test_ORAN_MERDIVENI_OTURDU_IKI_ve_MERDIVENLENME_ORANDA_GOTURUSUYOR(kayitlar)
 
     `r = 2` GARANTİ DEĞİLDİ ve ÖLÇÜLEREK seçildi: Task 3'te TİY penceresinde
     dört `r = 2` basamağı bulunamamış ve `r = 1.5` sevk edilmişti. Burada
-    dördü de kuruluyor; kaba uçta sınır FİZİKSELDİR (R = 5'te tepe kapısı
-    kipi bulamıyor).
+    dördü de kuruluyor.
+
+    **KABA UÇTAKİ SINIR TASK 6'DA YENİDEN ÖLÇÜLDÜ VE BU CÜMLE DÜZELTİLDİ.**
+    Burada eskiden *"kaba uçta sınır FİZİKSELDİR (R = 5'te tepe kapısı kipi
+    bulamıyor)"* yazıyordu; ölçüm onu çürüttü. Aynı boruyla R = 5'te **28
+    tepe** bulunuyor (R = 40'takinden fazla, çünkü merdivenlenme dejenere
+    ikilileri yarıyor) ve merdivenin okuduğu tek sayı — `j11/j01` —
+    **bulunuyor**: 1.578632448506. Düşen şey tepe kapısı değil **%2'lik
+    eşleme penceresidir**: `j02` −2.82%, `j31` −3.23%, `j12` +2.80% ile
+    dışarıda kalıyor, üçünün genlikleri 0.57 / 0.82 / 0.30 ile tabandan çok
+    yukarıda. Yani R = 5 **beş oranlık paneli** kuramaz ama **merdiveni**
+    kurar; `scenarios/em_tarama.yaml` tam olarak onu kurar (R = 5/10/20/40,
+    OTURDU(2)) ve kilit `tests/em/test_em_senaryo.py`dedir.
 
     HÜKÜM ÇÖZÜNÜRLÜKTEN GELMİYOR: adım çarpanı 1667 → 833 yapıldığında
     (yani her basamağın kaydı YARIYA indiğinde) merdiven yine OTURDU(2)

@@ -8,7 +8,7 @@ Senaryo türü isteğe bağlı bir "kind" anahtarıyla seçilir: yoksa veya "tds
 ise mevcut TDSEScenario yolu izlenir (geriye uyumluluk — Task 1A'dan kalan
 mevcut YAML dosyaları "kind" taşımıyor). Diğerleri: "hf_scan" → HFScanScenario,
 "md" → MDScenario, "tb" → TBScenario, "downfold" → DownfoldScenario,
-"spin" → SpinScenario.
+"spin" → SpinScenario, "em" → EMScenario.
 Bilinmeyen bir "kind" değeri ScenarioError üretir ve geçerli türleri sayar.
 """
 
@@ -21,10 +21,13 @@ import yaml
 
 from qlab.errors import ScenarioError
 from qlab.scenario.schema import (
+    EM_MIN_DEPTH,
+    EM_WINDOW_FNS,
     POTENTIAL_KINDS,
     SPIN_ALGORITHM_KINDS,
     SPIN_MODEL_KINDS,
     DownfoldScenario,
+    EMScenario,
     GridSpec,
     HFScanScenario,
     PacketSpec,
@@ -77,7 +80,28 @@ _SPIN_REQUIRED = {
     "n_burn", "seed",
 }
 
-_KNOWN_KINDS = ("tdse", "hf_scan", "md", "tb", "downfold", "spin")
+_EM_TOP_LEVEL = {
+    "kind", "name", "radii", "ratio", "courant", "step_factor",
+    "wavelength_per_radius", "sgf", "detectors", "pad", "window_fn",
+    "peak_floor", "eps_r", "margin",
+}
+# HEPSI ZORUNLU (kind/name dahil, eps_r/margin haric). Bu, TDSE ve MD
+# semalarindan bilincli bir SAPMADIR: orada varsayilanlar var, burada
+# pencerenin her dugmesi yazilmak zorunda -- cunku bu modulde tekrarlanabilirlik
+# tohumla degil PENCERE BEYANIYLA saglanir.
+_EM_REQUIRED = {
+    "name", "radii", "ratio", "courant", "step_factor",
+    "wavelength_per_radius", "sgf", "detectors", "pad", "window_fn",
+    "peak_floor",
+}
+
+#: 2B Courant siniri. `engine/em/grid.py::courant_limit(2)` ile AYNI sayi,
+#: ayni katman ayrimiyla tekrar edilir: yukleyici YAML'in hatasini FDTD
+#: kosmadan once yakalar, motor (`yee_coefficients_2d`) cagrinin hatasini
+#: yakalar ve ikisi ayri tur firlatir.
+_EM_COURANT_LIMIT_2D = 2.0 ** -0.5
+
+_KNOWN_KINDS = ("tdse", "hf_scan", "md", "tb", "downfold", "spin", "em")
 
 
 def load_scenario(path: str | Path) -> TDSEScenario | HFScanScenario | MDScenario:
@@ -110,6 +134,8 @@ def load_scenario(path: str | Path) -> TDSEScenario | HFScanScenario | MDScenari
         return _load_downfold_scenario(raw, file_path)
     if kind == "spin":
         return _load_spin_scenario(raw, file_path)
+    if kind == "em":
+        return _load_em_scenario(raw, file_path)
     raise ScenarioError(
         f"Bilinmeyen senaryo türü (kind): {kind!r}. Geçerli türler: {list(_KNOWN_KINDS)}"
     )
@@ -536,4 +562,162 @@ def _load_spin_scenario(raw: dict, file_path: Path) -> SpinScenario:
         coupling=coupling,
         field=field,
         heisenberg_step=heisenberg_step,
+    )
+
+
+def _load_em_scenario(raw: dict, file_path: Path) -> EMScenario:
+    """Maxwell FDTD senaryosu — ve PENCERENİN TAM BEYANI.
+
+    Bu yükleyici, motorun iki kontrolünü (2B Courant sınırı, FFT penceresi
+    adı) BİLEREK tekrarlar ve bu bir kopya değil bir KATMAN AYRIMIDIR —
+    `_load_downfold_scenario` ve `_load_spin_scenario`daki gerekçenin aynısı:
+    burada yakalanan şey YAML'ın hatasıdır ve hata hiçbir FDTD adımı
+    koşmadan ÖNCE verilir; motorda yakalanan şey ÇAĞRININ hatasıdır. İkisi
+    ayrı tür fırlatır (`ScenarioError` ile `InvalidInputError`).
+
+    Yükleyiciye ÖZGÜ olanlar — motorda karşılıkları YOKTUR, çünkü motor tek
+    bir yarıçapla ve zaten kurulmuş bir ortamla çağrılır:
+
+    * **`radii` en az dört basamak.** Sayım kimliği: n değer → n−3 Richardson
+      noktası. Üç basamaklı bir merdiven `p_inf = None` döndürür, yani panelin
+      yakınsama satırı YAPISAL OLARAK "YARGILANAMAZ" olurdu. Böyle bir
+      senaryoyu sevk etmek, hiçbir zaman hüküm veremeyecek bir kadranı
+      göstermek olurdu.
+    * **`ratio` `radii` ile tutarlı olmalı.** `p` tam olarak
+      `log(d_i/d_{i+1})/log(ratio)` ile okunur; oran uymuyorsa çıkan sayı bir
+      mertebe DEĞİLDİR. Aynı kapı `observable/em_obs.py::_merdiven`de de var
+      ama orası `spacings` (= 1/R) görür, burası `radii` görür.
+    * **`radii` KESİN ARTAN.** Merdiven kabadan inceye sıralanmak zorundadır
+      (`spacings = 1/R` kesin azalan); ters sıralı bir merdiven `p`nin
+      işaretini çevirir ve imkân kapılarından SESSİZCE geçerdi.
+
+    `dx` VE `npml` BURADA GEÇERLİ ANAHTAR DEĞİLDİR ve ikisi de "bilinmeyen
+    anahtar" hatası verir. Gerekçeleri `EMScenario` dokstringinde ölçülmüş
+    hâlde yazılı: `npml` bağlı değildir, `dx` ise bağlıdır ama SESSİZCE YANLIŞ
+    çalışır (tepe sayısı `Δx` = 1/0.5/2 için 20/13 → 4/4 → 31/43).
+    """
+    unknown = set(raw) - _EM_TOP_LEVEL
+    if unknown:
+        raise ScenarioError(
+            f"Bilinmeyen anahtar(lar): {sorted(unknown)}. "
+            f"Geçerli anahtarlar: {sorted(_EM_TOP_LEVEL)}"
+        )
+    missing = _EM_REQUIRED - set(raw)
+    if missing:
+        raise ScenarioError(f"Eksik anahtar(lar): {sorted(missing)}")
+
+    try:
+        radii = tuple(float(x) for x in raw["radii"])
+    except TypeError as exc:
+        raise ScenarioError(f"'radii' bir sayı listesi olmalı: {exc}") from exc
+    except ValueError as exc:
+        raise ScenarioError(
+            f"'radii' listesindeki bir eleman sayıya dönüştürülemedi: {exc}"
+        ) from exc
+
+    try:
+        ratio = float(raw["ratio"])
+        courant = float(raw["courant"])
+        step_factor = float(raw["step_factor"])
+        wavelength_per_radius = float(raw["wavelength_per_radius"])
+        sgf = float(raw["sgf"])
+        peak_floor = float(raw["peak_floor"])
+        eps_r = float(raw.get("eps_r", 1.0))
+    except (TypeError, ValueError) as exc:
+        raise ScenarioError(f"EM senaryosunun sayısal alanları hatalı: {exc}") from exc
+
+    try:
+        detectors = int(raw["detectors"])
+        pad = int(raw["pad"])
+        margin = int(raw.get("margin", 3))
+    except (TypeError, ValueError) as exc:
+        raise ScenarioError(
+            f"'detectors'/'pad'/'margin' tam sayı olmalı: {exc}"
+        ) from exc
+
+    window_fn = str(raw["window_fn"])
+    if window_fn not in EM_WINDOW_FNS:
+        raise ScenarioError(
+            f"Bilinmeyen FFT penceresi: {window_fn!r}. "
+            f"Geçerli pencereler: {list(EM_WINDOW_FNS)}"
+        )
+
+    if len(radii) < EM_MIN_DEPTH:
+        raise ScenarioError(
+            f"'radii' en az {EM_MIN_DEPTH} basamak olmalı, verilen: {len(radii)}. "
+            "n değer n−1 fark, n−2 mertebe ve n−3 Richardson noktası verir; "
+            "dört, belirsizliğin ölçülebildiği EN KÜÇÜK derinliktir ve daha "
+            "sığ bir merdiven panelde yapısal olarak YARGILANAMAZ basardı."
+        )
+    if any(not math.isfinite(r) or r <= 0.0 for r in radii):
+        raise ScenarioError(f"'radii' değerleri pozitif ve sonlu olmalı: {radii}")
+    if any(b <= a for a, b in zip(radii, radii[1:])):
+        raise ScenarioError(
+            f"'radii' KESİN ARTAN olmalı (kabadan inceye), verilen: {radii}. "
+            "Ters sıralı bir merdiven `p`nin işaretini çevirir ve imkân "
+            "kapılarından sessizce geçerdi."
+        )
+    if not ratio > 1.0 or not math.isfinite(ratio):
+        raise ScenarioError(f"'ratio' 1'den büyük ve sonlu olmalı, verilen: {ratio}")
+    olculen = [b / a for a, b in zip(radii, radii[1:])]
+    if any(abs(o - ratio) > 1e-9 * ratio for o in olculen):
+        raise ScenarioError(
+            f"'radii' oranı 'ratio' ile tutarlı değil: ölçülen {olculen}, "
+            f"beyan edilen {ratio}. `p` tam olarak log(d_i/d_(i+1))/log(ratio) "
+            "ile okunur; oran uymuyorsa çıkan sayı bir MERTEBE DEĞİLDİR."
+        )
+    if not courant > 0.0:
+        raise ScenarioError(f"'courant' (S) pozitif olmalı, verilen: {courant}")
+    if courant > _EM_COURANT_LIMIT_2D:
+        raise ScenarioError(
+            f"'courant' 2B kararlılık sınırını aşıyor: {courant} > "
+            f"{_EM_COURANT_LIMIT_2D} (= 1/√2). Bu sınır 1B'ninkinden FARKLIDIR "
+            "ve 1B kapısı DEVRALINAMAZ — ölçüldü: S = 0.9 1B'de geçiyor, "
+            "2B'de şema patlıyor."
+        )
+    if not step_factor > 0.0 or not math.isfinite(step_factor):
+        raise ScenarioError(
+            f"'step_factor' pozitif ve sonlu olmalı, verilen: {step_factor}"
+        )
+    if not wavelength_per_radius > 0.0 or not math.isfinite(wavelength_per_radius):
+        raise ScenarioError(
+            "'wavelength_per_radius' pozitif ve sonlu olmalı, verilen: "
+            f"{wavelength_per_radius}"
+        )
+    if not sgf > 0.0 or not math.isfinite(sgf):
+        raise ScenarioError(f"'sgf' pozitif ve sonlu olmalı, verilen: {sgf}")
+    if detectors < 2:
+        raise ScenarioError(
+            f"'detectors' en az 2 olmalı, verilen: {detectors}. Tek dedektör "
+            "ölçüldü ve merdiveni DEĞİL paneli düşürüyor: tepe sayısı 16'dan "
+            "11'e iniyor ve bir oran işaret değiştiriyor."
+        )
+    if pad < 1:
+        raise ScenarioError(f"'pad' en az 1 olmalı, verilen: {pad}")
+    if not 0.0 < peak_floor < 1.0:
+        raise ScenarioError(
+            f"'peak_floor' (0, 1) aralığında olmalı, verilen: {peak_floor}"
+        )
+    if not eps_r > 0.0 or not math.isfinite(eps_r):
+        raise ScenarioError(f"'eps_r' pozitif ve sonlu olmalı, verilen: {eps_r}")
+    if margin < 1:
+        raise ScenarioError(
+            f"'margin' en az 1 olmalı, verilen: {margin}. Merkez düğümü ile "
+            "dış ızgara kenarı arasında en az bir hücre kalmalı."
+        )
+
+    return EMScenario(
+        name=str(raw["name"]),
+        radii=radii,
+        ratio=ratio,
+        courant=courant,
+        step_factor=step_factor,
+        wavelength_per_radius=wavelength_per_radius,
+        sgf=sgf,
+        detectors=detectors,
+        pad=pad,
+        window_fn=window_fn,
+        peak_floor=peak_floor,
+        eps_r=eps_r,
+        margin=margin,
     )

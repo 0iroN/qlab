@@ -1,0 +1,70 @@
+# 2B dairesel PEC boslukta yaricap merdiveni -- Modul 5 (Maxwell FDTD).
+#
+# TOHUM YOKTUR VE BU BIR EKSIKLIK DEGIL BIR BEYANDIR. FDTD deterministtir;
+# RNG hic kullanilmaz. Tekrarlanabilirligin karsiligi burada PENCERENIN TAM
+# BEYANIDIR ve asagidaki anahtarlarin hepsi zorunludur: izgara (radii +
+# margin), S (courant), adim (step_factor), lambda
+# (wavelength_per_radius), sgf, FFT penceresi (window_fn), pad, tepe tabani
+# (peak_floor) ve dedektor sayisi. Bu depoda bir hukmun kendi penceresinin
+# disina tasinmasi ON KEZ olculdu.
+#
+# npml VE dx BIRER ANAHTAR DEGILDIR, ikisi de bilincli -- ama SEBEPLERI
+# FARKLI, ve ikisi de OLCULDU:
+#   npml : dugme BAGLI DEGIL. Dairesel PEC bosluk TAM YANSITICIDIR, sogurucu
+#          katman yoktur, `CircularPEC.thickness` sabit sifirdir.
+#   dx   : dugme BAGLI ama SESSIZCE YANLIS. `run_2d` kaynagi t = n*S*dx
+#          zamaninda besler, oysa wavelength HUCRE cinsinden verilir; ikisi
+#          yalniz dx = 1'de ortusur. Olculdu (R = 5/10, step_factor 120):
+#          dx = 1 -> tepe sayisi 20 / 13, dx = 0.5 -> 4 / 4, dx = 2 -> 31 / 43,
+#          lambda ucunde de 7.257613 kalarak. Yani kaynagin bandi kipin
+#          frekansina gore kayiyor ve panelin okudugu kip kumesi degisiyor.
+# Baglanmamis ya da sessizce yanlis calisan bir dugmeyi kabul etmek bu depoda
+# duzeltilmis bir hatadir (`heisenberg_step` + Ising). Panel ikisini de yine
+# basar (`npml = 0`, `dx = 1`) -- degerleri kosumdan, `Window`dan gelir.
+#
+# BIRIMLER: yaricap ve dalga boyu HUCRE cinsindendir, metre DEGIL; frekanslar
+# 1/(hucre) cinsindendir, hertz DEGIL. `c = eps_0 = mu_0 = 1` bir BIRIM
+# SECIMIDIR (Modul 4'un `J = k_B = 1`'iyle ayni statude) ve bu senaryonun
+# hicbir ciktisi SI birimi tasimaz.
+#
+# BESSEL KOKLERI BU DOSYADA HICBIR BASAMAGIYLA GECMEZ ve bunu
+# `test_BESSEL_KOKU_SEVK_EDILEN_YAML_DA_HIC_GECMIYOR` kilitler.
+# `wavelength_per_radius` bir teori sabiti DEGIL bir pencere dugmesidir:
+# kaynagin Ricker tepe frekansini kipin frekansina gore SABIT tutar, boylece
+# kaba ve ince basamaklarda ayni kipler uyarilir. Sevk edilen deger
+# 1.4515225409252954 ve `tests/em/test_bessel.py`nin sevk edilen kaynagiyla
+# ayni bandi verir; karsilastirma orada yapilir, burada degil.
+#
+# YARICAPLAR VE ADIM CARPANI OLCULEREK SECILDI (26.08.2026, bu makine):
+# R = 5/10/20/40, r = 2, adim = 420*R -> FDTD 0.95 s, analiz 0.54 s,
+# TOPLAM 1.49 s. Merdiven OTURDU(2), p_inf = 2.195532 +- 0.061188.
+# Hukum adim carpanina DUYARSIZ: 420 / 840 / 1260 / 1680 ile p_inf
+# 2.195532 / 2.184666 / 2.191308 / 2.191648 -- dordunde de OTURDU(2).
+# Cipa `tests/em/test_bessel.py`de R = 10/20/40/80 ve adim = 1680*R ile
+# kurulur; sevk edilen senaryonun isi bir cipa kurmak degil PANELIN BEYANINI
+# gostermektir.
+#
+# KABA BASAMAK PANELIN KENDI VITRINI: R = 5'te bes Bessel oranindan yalniz
+# IKISI %2'lik esleme penceresine giriyor (j11 ve j21; j02/j31/j12 sirasiyla
+# -2.82% / -3.23% / +2.80% ile disarida kaliyor), R = 40'ta besi de giriyor.
+# Yani "hane sayisi kipe baglidir" cumlesi bu senaryonun kendi iki ucundan
+# okunabiliyor. Merdiven yine de OTURUYOR, cunku merdivenin okudugu sey
+# IKINCI EN DUSUK TEPENIN orani ve o oran dort basamakta da bulunuyor.
+#
+# TEPE SAYISI BASAMAKLA DUSER (28 / 21 / 17 / 15) ve bu bir kusur DEGIL:
+# merdivenlenmis daire C4v'dir, dejenere kip ikililerini yarar ve yarilma
+# kaba izgarada COZUNUR. Cok tepe daha iyi bir kosum DEMEK DEGILDIR.
+kind: em
+name: 2B dairesel bosluk yaricap merdiveni
+radii: [5.0, 10.0, 20.0, 40.0]
+ratio: 2.0
+courant: 0.5
+step_factor: 420.0
+wavelength_per_radius: 1.4515225409252954
+sgf: 1.5
+detectors: 8
+pad: 8
+window_fn: blackman
+peak_floor: 0.01
+eps_r: 1.0
+margin: 3

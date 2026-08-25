@@ -131,6 +131,26 @@ Tasarım belgesi: `../docs/superpowers/specs/2026-08-05-qlab-kuantum-cekirdegi-d
   SEM'in hiçbir yerde raporlanmamasıdır (ölçüldü: 8.81 kat küçük gösteriyor).
   **Modül hiçbir malzemenin T_c'sini iddia etmez.** Ölçülen sayılar ve
   düzeltilen dört plan iddiası aşağıdaki Doğrulama bölümündedir.
+- **Modül 5 — elektromanyetik alan (Maxwell FDTD): tamam.** `engine/em/`
+  (Yee ızgarası 1B **ve** 2B, `ε`/`μ` haritaları, PML/PEC/dairesel PEC/kayıplı
+  katman, Ricker ve Gauss×cos kaynakları, eğik gelişin 1B indirgemesi),
+  `observable/em_obs.py` (**yakınsama merdiveni**, Fresnel katsayıları, TİY faz
+  farkı, kip spektrumu, iki ayrı uzak alan, saçılma genişliği),
+  `viz/em_frames.py` ve `kind: em` senaryosu. Yol haritasının hedefi burada
+  **iki ayrı sebeple** düştü: *"bilinen yansıma/kırılma katsayıları"* bir
+  **tautolojidir** (`n` girdidir, `R` onun cebirsel sonucudur ve `n`'e bire bir
+  geri çevrilir), *"Zeeman yarılması"* ise bir **yöntem/hedef uyuşmazlığıdır**
+  (Maxwell FDTD klasiktir; ürettiği şey yörüngesel `g = 1`, spin Zeeman'ı
+  `g = 2` ister). Yerine **dört fizik çıpası** kondu — Bessel oranları
+  (`j₁,₁/j₀,₁` **1.593293002**, merdiven OTURDU(2)), Rayleigh üssü (2B'de
+  **p ∈ [2.924895, 3.243596]**, 3B'nin 4'ünü aralıkla dışlar), tek yarık
+  (`a·sin θ₁/λ` = **0.998610 ± 0.019357**) ve TİY faz farkı (`δ_ps` merdiveni
+  OTURDU(2)) — ve dördü de `n`'den, `R`'den, `c`'den ve birim seçiminden
+  bağımsızdır. Bu modülde depoya ilk kez bir **yakınsama ölçütü** girdi ve ilk
+  kuralı üç değerli olmasıdır: `OTURDU` / `OTURMADI` / **`YARGILANAMAZ`**, ve
+  sonuncusu panelde sessizce "oturdu" diye basılamaz. **Modül hiçbir malzemenin
+  optik sabitini iddia etmez.** Ölçülen sayılar ve düzeltilen otuz altı plan
+  iddiası aşağıdaki Doğrulama bölümündedir.
 
 ## Ne iddia etmiyor
 
@@ -309,6 +329,30 @@ oluşmamış sıcaklıklarda hata çubuğu **"ALT SINIR" diye işaretlenir** ve
 `Yakınsama` satırı ✗ basar — bu "hesap bitmedi" demek değil, "raporladığım
 belirsizliklerin hepsi belirsizliğin kendisi değil" demektir.
 
+Maxwell FDTD (Modül 5) — 2B dairesel PEC boşlukta dört basamaklı bir yarıçap
+merdiveni (ölçüldü, 1.49 s):
+
+```bash
+python -m qlab.run scenarios/em_tarama.yaml -o em.npz
+```
+
+Çıktı `.npz`'si `radii`, `spacings`, `ratios`, `noise`, `peaks`, `orders`,
+`verdict`, `field`, `field_conductor` ve `provenance_json` taşır; `p_inf` ile
+`uncertainty` **yalnızca okunabildiklerinde** yazılır — okunamamış bir mertebeyi
+`0.0` ile göstermek "mertebe sıfır çıktı" diye okunurdu. **Yarıçaplar ve dalga
+boyu hücre cinsindendir, metre değil** — `c = ε₀ = μ₀ = 1` bir birim seçimidir
+ve senaryo bir **tohum taşımaz**: FDTD deterministtir, tekrarlanabilirliğin
+karşılığı pencerenin tam beyanıdır. `npml` ve `Δx` bilinçli olarak **anahtar
+değildir** — biri bağlı değil (dairesel PEC boşluk tam yansıtıcıdır), öteki
+bağlı ama **sessizce yanlış** çalışıyor (ölçüldü: tepe sayısı `Δx` = 1/0.5/2
+için 20/13 → 4/4 → 31/43, `λ` üçünde de aynı kalarak). Panel ikisini de yine
+basar, değerleri koşumdan gelir. Panel dört ek satır basar: `Dairesellik`
+(bir malzemenin `R`'si bir tahmin değildir), `Çıpa sınıfı` (hangi sayı şema,
+hangisi fizik, hangisi çeviri denetimi), `Pencere` (ızgara/`Δx`/`S`/adım/`λ`/
+`npml`/`sgf`/FFT penceresi + hükmün nerede geçerli olduğu) ve `Yakınsama tanısı` (merdiven,
+`p_inf ± u`, ve **üç değerli hüküm**). `YARGILANAMAZ` sessizce "oturdu" diye
+basılmaz.
+
 Etkileşimli TDSE penceresi:
 
 ```bash
@@ -334,19 +378,28 @@ pytest tests/ -v -m slow
 `pyproject.toml` bir `addopts` taşımaz, yani `pytest tests/` yavaş işaretli
 testleri de KOŞAR — ikinci komut ayrı bir küme değil, birincinin alt kümesidir.
 
-**Bu makinede, Modül 4 kapanışında ölçüldü** (tek oturum, beş ayrı koşu):
+**Bu makinede ölçüldü** (ilk iki satır Modül 5 kapanışı, kalanı Modül 4):
 
 | Koşu | Test | Süre |
 |---|---|---|
-| tam süite | **1159** | **585.36 s** |
-| `-m "not slow"` | **1088** | **107.30 s** |
-| yalnız `-m slow` | **71** | **475.33 s** |
-| yalnız Modül 4 (`tests/spin/`) | **186** | **187.23 s** |
-| aynısı, `-m "not slow"` | **166** | **29.82 s** |
+| tam süite (Modül 5 kapanışı) | **1389** | **939.68 s** |
+| yalnız Modül 5 (`tests/em/`) | **229** | **237.32 s** |
+| *tam süite (Modül 4 kapanışı)* | *1159* | *585.36 s* |
+| *`-m "not slow"` (Modül 4 kapanışı)* | *1088* | *107.30 s* |
+| *yalnız `-m slow` (Modül 4 kapanışı)* | *71* | *475.33 s* |
+| *yalnız Modül 4 (`tests/spin/`)* | *186* | *187.23 s* |
+| *aynısı, `-m "not slow"`* | *166* | *29.82 s* |
 
-Sevk edilen son hâl ayrıca bir kez daha doğrulandı: **1159 passed /
-583.70 s**. Tablodaki 585.36 s ile arasındaki %0.3, aşağıda beyan edilen
-makine gürültüsünün (%16'ya kadar) çok içindedir.
+**Eğik yazılan beş satır Modül 4 kapanışının ölçümüdür ve YENİDEN
+ÖLÇÜLMEDİ**; bugünkü toplama uydurmak ölçüm değil uydurma olurdu. Modül 5
+senaryo/panel görevi süiteye **50 test** ve `tests/em` tarafında
+**200.9 s → 237.32 s** (yani **+36.4 s**) ekledi; bunun **1.49 s**'i sevk
+edilen senaryonun kendi koşumu, geri kalanı `slow` işaretli iki
+karşılaştırma koşumu ve uçtan uca CLI alt sürecidir.
+
+Modül 4 kapanışında sevk edilen hâl ayrıca bir kez daha doğrulanmıştı:
+**1159 passed / 583.70 s**; tablodaki 585.36 s ile arasındaki %0.3, aşağıda
+beyan edilen makine gürültüsünün (%16'ya kadar) çok içindedir.
 
 Modül 4'ün senaryo/panel görevi süiteye **44 test** ve **4.54 s** ekledi;
 dosyanın en yavaş çağrısı 0.95 s, yani deponun 2 s eşiğinin altında ve
@@ -1798,6 +1851,397 @@ istisna `ALT SINIR` işaretidir ve o da yazılmaz, fabrikadan **ithal edilir**.
 | plato ölçütü: son üç hata %5 içinde, `min_blocks = 16` | kendi zorunlu testini **21/24 kırmızı** yapardı |
 | demir 1043 K için `J = 39.608394 meV` → birebir 1043.0000 K | **doğrulandı** (fark 0.000e+00) — planın yeniden üretilebilen tek sayısı |
 
+### Modül 5 — elektromanyetik alan / Maxwell FDTD (Plan J)
+
+#### Yol haritasının hedefi İKİ AYRI sebeple düştü
+
+Çekirdek spec bir zamanlar *"bilinen yansıma/kırılma katsayıları, Zeeman
+yarılması"* diyordu. **Hedefin iki yarısı da çürüdü, ama farklı sebeplerle** —
+ve ikincisi bu depoda ilk kez görülen bir arıza türü.
+
+**Birinci yarı — TAUTOLOJİ (tanıdık aile, üçüncü üye).** Dik gelişte
+`R = ((n₁−n₂)/(n₁+n₂))²` ve `n` **girdidir**. Yeniden ölçüldü (float64,
+`eps = 2.22e-16`):
+
+| girilen `n₂` | çıkan `R` | `R`'den geri okunan `n₂` | fark |
+|---|---|---|---|
+| 1.33 | 0.020059312200 | 1.330000000000 | 2.220e-16 |
+| **1.5** | **0.040000000000** | **1.500000000000** | **2.220e-16** |
+| 3.4 | 0.297520661157 | 3.400000000000 | 4.441e-16 |
+
+Modül 3F'nin silisyum bant aralığı ve Modül 4'ün demir `T_c`'siyle **aynı
+ailenin üçüncü üyesi**. Fresnel atılmadı; **sınıfı değişti** — fizik çıpası
+değil **çeviri denetimi** olarak sevk edildi (aşağıya bakın).
+
+**İkinci yarı — YÖNTEM/HEDEF UYUŞMAZLIĞI.** Maxwell FDTD **klasiktir**: durum
+vektörü `(E, H)`, güncelleme sabitleri `ε`, `μ`, `Δx`, `Δt`. İçinde ne enerji
+seviyesi, ne spin, ne `ħ` vardır — bir meV yarılması bu yöntemin **çıktı
+uzayında değildir**. Yöntemin gerçekten ürettiği şey manyetize Lorentz
+osilatörüdür ve normal kipleri `ω± = √(ω₀² + ω_c²/4) ∓ ω_c/2`, yani yarılma
+**tam `ω_c`** (üç `(ω₀, ω_c)` ikilisinde `yarılma/ω_c` = 1.000000000000).
+Bu **yörüngesel `g = 1`**'dir; spin Zeeman'ı `g = 2` ister. Yani hedef,
+yöntemin ürettiği şeyin **tam iki kat yanlış** bir sürümüdür. **Zeeman kapsam
+dışıdır** — "yapılmadı" değil, **yapılamaz**.
+
+#### İKİ SINIF, ve karıştırılamazlar
+
+Bu modül iki farklı şeyi doğrular ve panel ikisini **ayrı satırda** beyan eder.
+Bir şema çıpasını fizik çıpası diye sunmak bu depoda **üç kez** düzeltilmiş bir
+hatadır; `Provenance.anchor_class` alanı onun panel tarafındaki karşılığıdır.
+
+**ŞEMA ÇIPALARI — çözücüyü doğrular, fiziği DEĞİL.** Sayıları şemanın kendi
+özelliğidir, girilmez, ölçülür.
+
+| Şema çıpası | Ölçülen | Not |
+|---|---|---|
+| Courant `S·√d` | 1B PEC duvarda `S_max` **3.115408e-05** payla platoya oturuyor; pay **iki parçalı** — ızgara payı tam `1/cos(π/(2(L−1)))` (`L⁻²`), koşum payı `L`'den bağımsız | **Sınır tipi adlandırılmadan yazılamaz**; periyodikte 1.000005 |
+| 2B Courant | `S·√2` = 1.000786 … 1.002102 (L = 32/64/128), aynı iki parçalı yapı | **1B kapısı devralınamaz:** `S = 0.9` 1B'de geçiyor, 2B'de şema patlıyor |
+| Yee mertebesi | bu pencerede 4'e en yakın değer **3.999995**, sonrası 4'ten uzaklaşıyor (3.999809) | tahmincinin `arccos` tabanı |
+| Dispersiyon katsayısı | `(1−S²)/C` = **24.000002 / 24.000000 / 23.999999 / 24.000001** (S = 0.3/0.5/0.7/0.9) | bant **`m` çiftine bağlı** (2,4 → 24.00033) |
+| 2B köşegen | tek sayı değil **bir yasa**: `24·C(θ) = cos⁴θ + sin⁴θ − S²`, Richardson `k→0` ile **4.6e-07** içinde | 1B'nin 24'ü yasanın θ = 0 noktası |
+| Sihirli adım `S = 1` | **1.332e-15** (m = 128) | sıfır **değil**, makine hassasiyeti |
+
+**FİZİK ÇIPALARI — sürekli-ortam elektrodinamiğinin ızgaradan ORTAYA
+ÇIKTIĞINI gösterir.** Dördü de `n`'den, `R`'den, `c`'den ve birim seçiminden
+bağımsızdır.
+
+| # | Çıpa | Ölçülen | Referans | Yakınsama hükmü |
+|---|---|---|---|---|
+| 1 | Bessel oranı `j₁,₁/j₀,₁` | **1.593293002** (−4.7504e-05) | tam **1.593340506**, simülasyona **söylenmedi** | **OTURDU(2)**, `p_inf` = 1.9625 ± 0.0853 |
+| 2 | Rayleigh üssü (2B) | **p ∈ [2.924895, 3.243596]** (beş pencere) | 2B'de 3, 3B'de 4 → **4 dışlandı** | **mertebe sertifikası YOK** |
+| 3 | Tek yarık `a·sin θ₁/λ` | **0.998610 ± 0.019357** (n = 14, [0.964916, 1.029080]) | tam **1** | **YARGILANAMAZ** (bilerek sevk edildi) |
+| 4 | TİY faz farkı `δ_ps` | `n₂` 1.00→1.35'te yayılım **37.606652°** | kapalı form **37.350204°** (oran 1.006866) | **OTURDU(2)**, `p_inf` = 2.1028 ± 0.3364 |
+
+**ÇEVİRİ DENETİMİ — Fresnel `|R|`.** Çözücünün arayüzü gerçekten çözdüğünü
+gösterir, ama bir fizik çıpası **değildir** ve ayırma gücünün zayıflığı
+ölçüldü: arayüzü **bir hücre kaydırmak** dik gelişte `|R|`'yi yalnız bağıl
+**2.4e-06** oynatıyor — Fresnel bu bozmayı pratikte **görmez**. (Spec §2.3
+"7 hanede birebir aynı" diyordu; ölçülen **6 hane**.)
+
+**ÖLÇÜM ALETİ — çıpa değil.** `mode_spectrum` adsız tepe döndürür ve Bessel
+köklerini **hiç görmez**; `convergence_ladder` ise çıpaların hükmünü veren
+ölçüttür ve kendi karnesini taşır (426 gerçek merdiven: doğru pozitif %84.1,
+yanlış pozitif %0.0 — `noise` olmadan %16.4).
+
+#### Bessel oranları — modülün en güçlü çıpası, ve İKİ penceresi
+
+Dairesel PEC boşluğun kip frekansları `j_{m,n}/(2πR√ε)`'dir. Modül **oranları**
+okur, tekil frekansları değil — ve bu bir tercih değil bir **ölçüm sonucudur**.
+
+Pencere: `dx = 1`, `S = 0.5`, adım `1680·R`, Ricker (`f_p = 1.8 f₀₁`), 8
+dedektör, **blackman**, `pad = 8`, tepe tabanı 0.01, `ε_r = 1`, R = 80.
+
+| oran | ölçülen | tam | sapma | genlik/max |
+|---|---|---|---|---|
+| j11/j01 | 1.593293002 | 1.593340506 | **−4.7504e-05** | 1.000 |
+| j21/j01 | 2.135392329 | 2.135548787 | −1.5646e-04 | 0.952 |
+| j02/j01 | 2.295226545 | 2.295417267 | −1.9072e-04 | 0.298 |
+| j31/j01 | 2.652755373 | 2.653066405 | −3.1103e-04 | 0.519 |
+| j12/j01 | 2.916874952 | 2.917295455 | −4.2050e-04 | **0.0214** |
+
+**BİRİNCİ PENCERE — hane sayısı KİPE BAĞLIDIR: 8.85 kat.** Tek bir "beş hane"
+cümlesi yazılamaz; beş sapmanın beşi de **aynı işaretlidir** ve bu
+merdivenlenmenin imzasıdır.
+
+**İKİNCİ PENCERE — merdivenlenme oranda götürüşüyor, mutlak `j`'de KALIYOR.**
+Mutlak `j₀,₁` merdiveni **OTURMADI** (`p_inf` = 0.4863 ± 0.3574) — plan ve spec
+`OTURDU(1)` yazıyordu ve çürüdü. Sebep bir kuvvet yasası değil **kafes
+aritmetiğidir**:
+
+    δ(R) = 0.9763·(√(N(R)/π) − R) + 0.3651     Pearson r = 0.999041, R² = 0.9981
+
+Boşluğun gördüğü etkin yarıçap **merdivenlenmiş bölgenin alanından** okunuyor;
+Gauss'un daire problemi bir kuvvet yasası olmadığı için mutlak `j` **hiçbir
+tamsayı mertebeyi sertifika edemez**. Oranda `δ` tam sadeleşir. Kontrast
+plandakinden keskin: **OTURMADI vs OTURDU(2)**.
+
+Ve bu, çıpanın **körlüğünü kapatan tek testtir**: on altı mutandan ikisi
+(`frekans_ekseni_dt_yok`, `maske_sinir_esit`) **yalnız** mutlak `j` testinden
+düşüyor, çünkü ikisi de etkin ölçeği oynatıyor ve oranda sadeleşiyor. Oran ve
+mutlak, aynı ölçümün iki yüzü olarak **birlikte** sevk edilmek zorundadır.
+
+#### Airy sabiti — 2B'de çapalanan bir 3B sayısı, ve bir İTHALİN beyanı
+
+`j₁,₁/π` = **1.2196335** (tam 1.2196699, bağıl sapma **2.981e-05**). Bu, dairesel
+bir açıklığın Airy deseninin birinci karanlık halkasının açısal yarıçapını veren
+sayıdır ve **2B boşluğun kip oranından** okunuyor.
+
+**OKUMA BİR İTHAL TAŞIYOR VE SAKLANMIYOR:** ölçülen şey **orandır**;
+`j₀,₁ = 2.4048256` teoriden gelir, bu modül onu **ölçmez** (mutlak merdiven
+"OTURMADI" diyor). İthal ek hata getirmiyor — Airy'nin bağıl sapması oranın
+bağıl sapmasının birebir kendisidir.
+
+#### Rayleigh üssü — σ CİNSİNDEN MARJ YAZILAMAZ, ve sebebi ölçüldü
+
+İnce bir silindirden saçılan genişlik `σ ∝ (a/λ)^p`, 2B'de `p = 3`, 3B'de
+`p = 4`. Modül `p`'yi **fit'ten** okur ve 4'ü dışlar. Ama *"3'ten 15.1σ"*
+**yazılamaz**:
+
+    FDTD'nin σ_fit'i          0.016080
+    ANALİTİK tam çözümün      0.015423      (aynı ızgara, aynı pencere)
+    oran                      1.0426        artıkların işaret dizisi BİREBİR AYNI
+
+Yani `σ_fit` bir belirsizlik değil **pencerenin eğriliğidir**; artığın %96'sı
+gürültüsüz bir eğriden geliyor ve tam çözüm de 3'ten 15.5σ uzakta. Hüküm bu
+yüzden **aralık** olarak yazıldı: beş pencerede `p ∈ [2.924895, 3.243596]`,
+**aralık genişliği 0.319 < 4'e uzaklık 0.756**.
+
+**λ ETİKETLEME — merdivenin göremediği bir arıza.** Nominal `λ` istendiğinde
+FFT binleri kayıyor (en büyük %4.17) ve üs 3.290854 yerine 3.248311 çıkıyor.
+Merdiven bunu **görmüyor**: dört basamakta hata +0.0294/+0.0324/+0.0318/+0.0316
+ve mertebeler −0.4295/+0.0854/+0.0225 — sıfıra yakınsamıyor, **ilk adımda
+büyüyor**. Bu yüzden **ayrı bir test** kilitliyor.
+
+#### İki uzak alan — "iki yöntem" değil, İKİ AYRI GÖZLEMLENEBİLİR
+
+Ayrım ortalamada değil **kontur bağımlılığındadır** ve iki yönde de ölçüldü:
+
+- **Yarıkta** kutu yarı yüksekliği 40 → 160 iken kapalı kutu yayılımı
+  **1.743e-02**, `aperture_far_field` **4.460e-04** → **39 kat**.
+- **Saçılmada tersi:** NTFF'in tam çözümden RMS farkı 4.0e-04 … 2.5e-03, tek
+  satırın FT'sininki **2.121e-01 … 4.678e-01** → **100–500 kat**.
+
+**Fraunhofer kapısı düzeldi:** `R ≥ a²/λ` **değil**, `R ≫ λ`. `R = 10λ`'da eski
+kapı 4000–25000 kat rahat geçiyor ama desen **%14.5–37.4 yanlış**. Sevk edilen
+eşik `R ≥ 100λ` ve eşikteki artık hata bir tolerans değil **eşiğin bedelidir**.
+Kapı ihlalinde sessizce yanlış açı basılmaz, **`None`** döner.
+
+#### Yakınsama merdiveni — deponun ilk yakınsama ölçütü, ve ilk kuralı
+
+Her fizik sayısı değeriyle birlikte bir **yakınsama kaydı** döndürmek
+zorundadır (pazarlık edilmez). Ölçüt üç değerlidir — `OTURDU(p)` / `OTURMADI` /
+**`YARGILANAMAZ`** — ve sonuncusu Modül 4'ün `correlation_length → None`'ıyla
+aynı statüdedir: **yargılayamadığını yargılamış gibi gösterme.**
+
+**DERİNLİK EN AZ DÖRT, ve bu bir SAYIM KİMLİĞİDİR:** n değer → n−1 fark → n−2
+mertebe → **n−3 Richardson noktası**. Dört, `u`'nun ölçülebildiği en küçük
+derinliktir (426 merdivende doğrulandı: derinlik 3'te 426/426 `p_inf = None`).
+
+**KARNE — 426 GERÇEK merdiven, sentetik yok:**
+
+| | doğru pozitif | yanlış pozitif |
+|---|---|---|
+| `noise` ile (sevk edilen) | **%84.1** (201/239) | **%0.0** (0/426) |
+| `noise = 0` | %84.1 | **%16.4** (70/426) |
+
+Yer gerçeği bilinen sürekli limitten okunuyor ve **tahminci limiti hiç
+görmüyor** — karne dairesel değil. `κ = 0.5` bir tolerans değil **iki tamsayı
+mertebe arasındaki karar sınırıdır** ve 0.40–0.60 arasında düz bir plato var.
+
+**σ TEK BAŞINA ÖLÇÜT DEĞİLDİR** — ve bu iki bağımsız olayda görüldü: doğru
+çözücünün kendi sistematiği `δ_ps`'te **71σ**, ve λ = 16'da bir mutant doğru
+çözücüden **daha küçük** sapma veriyor. Aynısı Bessel'de: `pad = 1` mutantı tek
+ızgarada beş oranın **dördünde** doğru borudan daha yakın çıkıyor (j31'de
+**6.6 kat**), ama merdiven onu **YARGILANAMAZ** ile yakalıyor. Tersi de ölçüldü:
+`dedektör = 1`'de **merdiven hiç değişmiyor** (1e-09) ama **panel düşüyor**
+(tepe 16 → 11). **Merdiven ve panel farklı şeyler yakalıyor; ikisi de gerekli.**
+
+#### Modüller arası bağ — VAR, ama iki bağın ikisi aynı güçte DEĞİL
+
+**BİRİNCİL — modülün KENDİ BOYUT MERDİVENİ, ve tamamen kendi içinde
+ölçülebilir.** İki sayı da `d`'ye bağlıdır ve `d` **ayrıktır** — sürekli bir
+düğmeye çevrilemez, yani bu bağ bir parametre taraması değil bir **sınıf
+ayrımıdır** (Modül 4'ün evrensellik-sınıfı kontrastının akrabası):
+
+- `Courant = 1/√d`: 1B'de 1, 2B'de 1/√2 — **ölçüldü ve 1B kapısının 2B'de
+  patladığı gösterildi**.
+- Rayleigh üssü: 2B'de **3** (ölçülen aralık [2.924895, 3.243596]), 3B'de 4 —
+  ve **4 dışlandı**.
+
+**İKİNCİL — Maxwell ↔ Schrödinger `v_g/v_p`, ve BAĞIN YARISI ÇEVİRİ
+DENETİMİDİR.** Aynı gerçek-uzay tahmincisiyle Maxwell (kütlesiz) 1, deponun
+split-operator'ü (kütleli) 2 verir. **Ama bağ simetrik değildir ve bu bir
+inceleme sonucudur:** Yee'nin `ω(k)`'sı **ortaya çıkıyor** — `engine/em/`
+ağacının hiçbir yerinde bir dispersiyon bağıntısı yazılı değil, çekirdek yalnız
+curl güncellemesi yapıyor; split-operator'ünki ise `exp(−i k²Δt/2m)` olarak
+**koda yazılıdır**. Yani Schrödinger tarafında `v_g` bir ölçüm değil bir geri
+okumadır; **yalnız `v_p` (tepe izleme) gerçek bir ölçümdür.**
+
+**DÜRÜST OLUMSUZ:** bu bağın sayıları Plan J'nin ön ölçümünden gelir ve **bu
+modülde YENİDEN ÖLÇÜLMEDİ**; test olarak da sevk edilmedi (Modül 1'in
+çekirdeğine bağımlılık kurmak katman sözleşmesini zorlar ve kazancı yarım).
+Bu yüzden yukarıda **sayı yazılmadı** — yazılsaydı ölçülmemiş bir sayı
+ölçülmüş gibi görünürdü.
+
+#### Panel ve senaryo
+
+```bash
+python -m qlab.run scenarios/em_tarama.yaml -o em.npz
+```
+
+Çıkış 0; panel **dokuz** satır basar — Yöntem / Yaklaşımlar / İhmal edilen /
+Beklenen hata / **Dairesellik** / **Çıpa sınıfı** / **Pencere** / Yakınsama /
+**Yakınsama tanısı**. Ortadaki üçü bu modülde `Provenance`a eklendi ve ayrı
+alan olmalarının gerekçesi `provenance.py`de yazılı:
+
+- **Çıpa sınıfı** `Yaklaşımlar` listesine konsaydı, `as_lines()` o listeyi
+  `" · "` ile birleştirdiği için dört sınıf etiketi yaklaşımların arasında akıp
+  giderdi.
+- **Pencere** bir yaklaşım da bir hata sınırı da değildir: hata sınırının
+  **nerede geçerli olduğunu** söyler, ve bu depoda bir hükmün penceresinin
+  dışına taşınması **on kez** ölçüldü.
+- **Yakınsama tanısı** `diagnostics`e konsaydı panelde **"✓ …
+  verdict=YARGILANAMAZ"** diye görünürdü — yani yargılanamadığı söylenen bir
+  sayının yanında bir onay işareti. Modül 4'ün `sampling` alanıyla aynı
+  gerekçe, ondan daha sert.
+
+`Yakınsama` burada "hesap bitti" **demek değildir** — FDTD'de böyle bir ölçüt
+yoktur. Bağlandığı şey şudur: **bu koşumun merdiveni bir tamsayı mertebeye
+oturdu mu?** Sevk edilen senaryoda ✓ basar ve bu doğrudur.
+
+**TOHUM YERİNE PENCERE.** FDTD deterministtir; RNG hiç kullanılmaz. Bu yüzden
+`em_tarama.yaml` bir tohum taşımaz ama pencerenin **her düğmesini** taşır:
+ızgara (`radii` + `margin`), `S`, adım (`step_factor`), `λ`
+(`wavelength_per_radius`), `sgf`, FFT penceresi, `pad`, tepe tabanı, dedektör
+sayısı, `eps_r`.
+
+**İKİ DÜĞME BİLİNÇLİ OLARAK ANAHTAR DEĞİLDİR — VE SEBEPLERİ FARKLI.** `npml`
+**bağlı değildir**: dairesel PEC boşluk tam yansıtıcıdır ve
+`CircularPEC.thickness` sabit sıfırdır. `Δx` ise **bağlıdır ama sessizce
+yanlış çalışır ve bu ölçüldü**: `run_2d` kaynağı `t = n·S·Δx` zamanında besler,
+oysa `wavelength` **hücre** cinsinden verilir ve ikisi yalnız `Δx = 1`'de
+örtüşür. R = 5/10 penceresinde tepe sayısı `Δx` = 1'de **20/13**, `Δx` = 0.5'te
+**4/4**, `Δx` = 2'de **31/43** çıkıyor — `λ` üçünde de 7.257613 kalarak. Yani
+kaynağın bandı kipin frekansına göre kayıyor. Bağlanmamış ya da sessizce yanlış
+çalışan bir düğmeyi kabul etmek bu depoda düzeltilmiş bir hatadır
+(`heisenberg_step` + Ising). Panel ikisini de yine basar (`npml = 0`,
+`dx = 1`), değerleri `Window`dan gelerek.
+
+Sevk edilen koşum (ölçüldü, 26.08.2026: FDTD 0.95 s + analiz 0.54 s = **1.49 s**):
+
+    R      ızgara    adım    oran            tepe   gürültü
+    5      17 x 17   2100    1.578632448506  28     5.04e-06
+    10     27 x 27   4200    1.589868261123  21     7.08e-06
+    20     47 x 47   8400    1.592538328891  17     1.95e-06
+    40     87 x 87   16800   1.593146492961  15     2.71e-06
+    p_inf = 2.195532 ± 0.061188  ->  OTURDU(2)
+
+Hüküm **adım çarpanına duyarsız** (420/840/1260/1680 → 2.195532 / 2.184666 /
+2.191308 / 2.191648, dördünde de OTURDU(2)), yani ölçülen şey kaydın uzunluğu
+değil **merdivenlenmenin mertebesidir**.
+
+**KABA BASAMAK PANELİN KENDİ VİTRİNİ:** R = 5'te beş Bessel oranından yalnız
+**ikisi** %2'lik eşleme penceresine giriyor (j02/j31/j12 sırasıyla −2.82% /
+−3.23% / +2.80% ile dışarıda), R = 40'ta **beşi de** giriyor. Yani "hane sayısı
+kipe bağlıdır" cümlesi aynı senaryonun iki ucundan okunuyor.
+
+**SEVK EDİLEN BORU HATTI TEORİSİZDİR.** `viz/em_frames.py` `j₁,₁/j₀,₁` diye bir
+şey bilmez; okuduğu şey **ikinci en düşük tepenin en düşüğe oranıdır** ve `src/`
+ağacında hiçbir Bessel kökü geçmez. İki tanımın sevk edilen pencerede **birebir
+aynı** sayıyı verdiği testle ölçülüyor.
+
+Beyan metninin **tek kaynağı** `engine/em/factory.py`dir ve bu bir disiplin
+değil bir **test**tir: yirmi beyan girdisinin her biri `src/` ağacında tam bir
+kez geçer, `tests/` tarafında da kilidi kuran tek dosya dışında hiç geçmez.
+`run.py::_run_em` metnin bir harfini bile yeniden yazmaz; tek kelimelik istisna
+`HUKUM_VERILMEDI` işaretidir ve o da yazılmaz, fabrikadan **ithal edilir**.
+
+#### Dokstring denetimi — ALTINCI kez ürün verdi
+
+Bu depoda "sevk edilmiş dokstringde çürütülmüş iddia ara" adımı beş modülde beş
+kez ürün vermişti; Task 6'da altıncı kez verdi ve **ikisi de senaryo/panel sevk
+edilince sınanabilir hâle gelen iddialardı**:
+
+1. **`test_bessel.py`: "kaba uçta sınır FİZİKSELDİR (R = 5'te tepe kapısı kipi
+   bulamıyor)".** Senaryonun merdiveni R = 5'e uzatılınca ilk kez ölçülebildi ve
+   **çürüdü**: R = 5'te aynı boruyla **28 tepe** bulunuyor (R = 40'takinden
+   fazla — merdivenlenme dejenere ikilileri yarıyor) ve merdivenin okuduğu sayı
+   `j11/j01` **bulunuyor** (1.578632448506). Düşen şey tepe kapısı değil
+   **%2'lik eşleme penceresidir**; üç oranın genlikleri 0.57/0.82/0.30 ile
+   tabandan çok yukarıda. Düzeltildi ve `test_em_senaryo.py`de kilitlendi.
+2. **`mode_spectrum`: "ara değerleme kalkınca … merdiven mertebesi düşer".**
+   Bu cümle Task 4'te **kendi testi tarafından** çürütülmüştü
+   (`test_ARA_DEGERLEME_KALKINCA_HEM_MERDIVEN_HEM_PANEL_DUSUYOR`: mertebeler
+   düşmüyor, **oynuyor** — p = 3.3411 ve 1.4245, biri 2'nin **üstünde** — ve
+   belirsizlik patlıyor, u = 10.0255 → **YARGILANAMAZ**) ama dokstring
+   düzeltilmemişti ve **çürüten testin kendisine atıf yapıyordu**. Düzeltildi.
+3. **`DEFAULT_KAPPA`'nın "panelde öyle yazılır" sözü ÖDENDİ.** `κ = 0.5`'in bir
+   tolerans değil bir modelleme seçimi olduğu artık panelin `Pencere` satırında
+   yazılı ve testle kilitli.
+4. **`Δx` SESSİZCE YANLIŞ ÇALIŞAN BİR DÜĞMEDİR** — ve bu, senaryo şeması
+   yazılırken bulundu. `run_2d` kaynağı `t = n·S·Δx` zamanında besler ama
+   `wavelength` **hücre** cinsinden verilir; ikisi yalnız `Δx = 1`'de örtüşür.
+   Ölçüldü (R = 5/10): tepe sayısı **20/13 → 4/4 → 31/43** (`Δx` = 1/0.5/2),
+   `λ` üçünde de 7.257613 kalarak. Düğme senaryodan **çıkarıldı** (`npml` ile
+   aynı muamele, farklı gerekçe) ve reddedildiği testle kilitlendi. **Motorun
+   kendisi düzeltilmedi** — `engine/em/*` bu turda dokunulmadı ve `run_2d`'nin
+   `dx` parametresi hâlâ aynı şekilde davranıyor; kapatılan şey YAML'dan
+   ulaşılabilirliktir. Dürüst olumsuz olarak burada duruyor.
+
+#### Dürüst olumsuzlar
+
+- **Tek yarık çıpası iki hanelik** (±%1.9) **ve eğiklik çarpanına KÖR:**
+  `cos θ` kaldırılınca tek tek fark yalnız 5.2551e-05 … 2.9382e-03, yani
+  çıpanın kendi yayılımının (0.019357) altında. Çarpanın doğruluğu **beyan
+  ediliyor, ölçülmüyor** — RS-II'nin 1'i ya da Kirchhoff'un `(1+cos θ)/2`'si
+  konsaydı bu test görmezdi.
+- **Rayleigh üssünün MERTEBE SERTİFİKASI YOK** (merdiven YARGILANAMAZ) ve σ
+  cinsinden marj yazılamıyor; hüküm yalnızca aralık olarak duruyor. Üs `a` ve
+  `ε_r`'den bu pencerede tam bağımsız da değil (3.2429/3.0933/2.9249 — üçünde de
+  tam çözümle 0.0185 içinde, yani oynayan çözücü değil pencere).
+- **`courant_limit` EĞİK YOLU SINAMIYOR.** Eğik şemanın kararlılık sınırı `k_y`
+  ile düşüyor (kapalı form `S_max = 1/√(1+(k_y Δx/2)²)`, ölçülenin bu forma
+  oranı **1.00008**) ama `courant_limit(1)` bunu görmez: `k_y = 1.2`'de
+  `S = 0.9` kapıyı **geçiyor** ve şema patlıyor. Testle kilitli bir dürüst
+  olumsuz.
+- **`oblique.py` TAM 2B İLE KARŞILAŞTIRILMADI.** 1B-açılı indirgeme devralınmış
+  bir modelleme seçimidir (`k_y` analitik dayatılıyor) ve bedeli ölçülmedi.
+  Task 3'ten kalan bu açık **hâlâ açıktır**.
+- **`-m "not slow"` koşumunda fizik çıpalarının TAMAMI atlanıyor.** İşaret
+  fixture yüzünden geniş (Bessel tarafında `kayitlar`ı tüketen 11 test), ve
+  Rayleigh/yarık tarafı da `slow`. Karşılığında aletin kendi kapıları ucuz
+  fixture'lara ayrıldı ve `kind: em` senaryosunun uçtan uca dalı **bilinçli
+  olarak `slow` bırakılmadı** — yoksa "not slow" koşumu senaryo sınırını hiç
+  sınamazdı.
+- **`m = 2` ikilisinin merdivenlenmeden gelen YARILMASI kovalanmadı.**
+  Merdivenlenmiş daire C4v'dir ve `m = 2` ikilisi ayrılıyor (R = 20'de
+  2.126400 / 2.139935, tam değer **ikisinin arasında**); sevk edilen ölçüm
+  ikisinden birini seçiyor.
+- **Beş oranın bantları (1e-4 … 7e-4) birer TOLERANSTIR** (ölçülenin ~2 katı);
+  hüküm onlarda değil merdivendedir.
+- **Eşleme (%2) TEORİYİ KULLANIR.** `mode_spectrum` kökleri görmüyor ama hangi
+  tepenin hangi kip olduğu Bessel köklerine en yakınlıkla seçiliyor. Eşleme
+  penceresi hükmün 200 katı olduğu için değer üretemez — ama bu bir
+  **argümandır**, ölçüm değil.
+- **`δ_ps`'in ÜÇ KÖRLÜĞÜ ölçüldü ve kilitlendi:** `kaydir` (1.332e-06°),
+  `sinir_pec` (λ = 40'ta 0.033σ) ve `kaynak_cift` (birebir no-op, çünkü `ρ` bir
+  orandır). Ve "θ ≥ 75°'de R > 1" cümlesi **yeniden üretilemedi**: bozulma θ'da
+  monoton değil, `sgf`'nin fonksiyonu.
+- **Tam çözümün ÜÇÜNCÜ bir bağımsız sertifikası yok**; optik teorem kapısı
+  bilinçli kullanılmadı (tautoloji olduğu testle gösterildi).
+- **2B soğurucuda `d = 40`'ta 45°/0° oranı tersine dönüyor** (0.11) ve sebebi
+  kovalanmadı. Ayrıca "d = 15 yeter" bir **1B hükmüdür**: 2B'de aynı kalan
+  genliğe inmek için `d = 40` gerekiyor (**10 kat kötü**).
+- **Yalnız `r = 2` ve `r = 1.5` sınandı**; başka bir ızgara oranı denenmedi.
+
+#### Planın bayat çıkan iddiaları
+
+Plan J'nin **otuz altı** sayısı ölçümle düzeltildi (Task 1'de dokuz, 2'de on,
+3'te altı, 4'te altı, 5'te beş). En öğreticileri:
+
+| planın/spec'in dediği | ölçülen |
+|---|---|
+| Courant aşımı **+2.1e-7**, "sonlu koşum artefaktı" | aşım **iki parçalı**; o sayı yalnız periyodik ölçümdü ve **sınır tipini adlandırmıyordu** |
+| Yee mertebesi **4.000009** | bu pencerede en yakın **3.999995**, sonrası 4'ten uzaklaşıyor |
+| Sihirli adımda **0.000e+00** | **1.332e-15** — sıfır değil, makine hassasiyeti |
+| `ricker(..., sgf)` bir bant genişliği düğmesi | Ricker'ın bağıl bandı `f_p`'den **bağımsız** (dört λ'da 0.822754, değişim 0.0e+00); 1560 katlık ölçüm **Gauss×cos**'a ait |
+| PML `d = 12` geçmiyor | hüküm **`m` ile birlikte** verilmiş; `m = 1,2`'de d = 12 **geçiyor**, sevk edilen sayı `d = 15` |
+| `std(p_inf'ler)` terimi belirsizliğe katkı verir | derinlik 4'te **cebirsel olarak ölü** (tek Richardson noktası) |
+| yarım-tamsayı kör noktası ölçütün sınırının üstünde | `noise = 0`da bir **bıçak sırtı**; `noise`'un zorunlu olmasının **üçüncü** gerekçesi |
+| θ ≥ 75°'de R > 1 (1.006/1.306/1.933) | **yeniden üretilemedi**; bölge `sgf`'nin fonksiyonu ve θ'da **monoton değil** |
+| PEC'te `dt_carpan` 116σ, "iki kat daha kör" | sevk edilen aynada **0.0σ** — iki kat değil **sonsuz kat** kör |
+| `abs(r) = 1` çıpası `sinir_pec`i 4.2σ ile yakalar | ölçülen **0.11σ** |
+| `kaydir` `abs(R)`'de 7 hanede birebir aynı | **6 hane** (bağıl 2.4e-06) |
+| mutlak `j` için **OTURDU(1)** | **OTURMADI** (p_inf = 0.4863 ± 0.3574); sebep kafes aritmetiği |
+| `24·C_köşegen` = 0.0000000 **tam**, eksende 0.5005 | tek sayı değil **bir yasa**; "tam sıfır" bir **ızgara noktası**, eksen değeri sevk edilen çekirdekle **ölçülemez** |
+| Hann + `pad = 8` penceresi | **sevk edilemez** — Hann'ın yan lobu 0.026707 > en zayıf kipin genliği 0.0214; blackman sevk edildi |
+| ara değerleme kalkarsa **mertebe düşer** | mertebe düşmüyor, **oynuyor**; belirsizlik patlıyor → **YARGILANAMAZ** |
+| 3B maliyeti **0.60 GiB** | üretilemedi; D = 80'de altı alanın ayak izi **23.4 MiB** (aynı pencerede D = 167 → 213.2 MiB, ~1920 kat süre) |
+| kapalı kutu "dört kat kötü" (std 0.065/0.077) | sevk edilen köşe döşemesiyle **0.016353**; planın sayısına yakın olan şey **köşesi düşürülmüş** kutu (0.302356) — sayı çürütülmekle kalmadı, **nereden geldiği teşhis edildi** |
+| Fraunhofer kapısı `R ≥ a²/λ` | **yetersiz**; `R = 10λ`'da kapı 4000–25000 kat rahat geçerken desen %14.5–37.4 yanlış → `R ≥ 100λ` |
+| `ε_r` 1.0 → 2.25'te oranlar 8e-6'da aynı | kayma R ile **dört kat** iniyor → bu bir fizik çıpası değil **şema ölçümü** |
+| **R = 5'te tepe kapısı kipi bulamıyor** (sevk edilmiş test dokstringi) | **28 tepe** bulunuyor ve `j11/j01` eşleşiyor; düşen şey **%2'lik eşleme penceresi** |
+
 ## Mimari kuralı
 
 `engine` paketi `viz` veya `app` import **edemez** — ve GUI'nin kendisini de,
@@ -1832,7 +2276,7 @@ Spec §15'teki yedi maddenin gerçek durumu (ölçüm ayrıntıları
 
 | # | Kriter | Durum |
 |---|---|---|
-| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — **1159/1159 test yeşil** (`pytest tests/`, 585.36 s; Modül 4 kapanışında ölçüldü). Önceki ölçüm 971/971 idi (432.22 s, Modül 3H kapanışı) ve aşağıdaki `reference/` deneyi o günden de eskidir. Ayrıca `reference/` geçici olarak kaldırılıp tam süite yeniden koşuldu: testler ATLANMIYOR, KIRMIZI oluyor — ölçüldü, **128 failed + 132 error + 291 passed, 0 skipped** (toplam 551, 154.20 s). Yani 260 test kırmızıya dönüyor ve hiçbiri sessizce atlanmıyor. Dikkat: bu ikinci deney süite 551 testliyken yapıldı ve o günün sayılarını taşır; yeniden koşulmadı, sayıları bugünkü toplama uydurmak ölçüm değil uydurma olurdu. Not: PySCF bu makinede **kurulu değildir** — `reference/*.json` kayıtları PySCF 2.14.0 ile başka bir yerde üretilmiştir ve testler koşarken PySCF'e bağımlı değildir; "PySCF referans testleri dahil" ifadesi kayıtlarla karşılaştırmayı anlatır, canlı bir PySCF çağrısını değil |
+| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — **1389/1389 test yeşil** (`pytest tests/`, 939.68 s; Modül 5 kapanışında ölçüldü). Önceki ölçümler 1159/1159 (585.36 s, Modül 4 kapanışı) ve 971/971 (432.22 s, Modül 3H kapanışı) idi; aşağıdaki `reference/` deneyi o günden de eskidir. Ayrıca `reference/` geçici olarak kaldırılıp tam süite yeniden koşuldu: testler ATLANMIYOR, KIRMIZI oluyor — ölçüldü, **128 failed + 132 error + 291 passed, 0 skipped** (toplam 551, 154.20 s). Yani 260 test kırmızıya dönüyor ve hiçbiri sessizce atlanmıyor. Dikkat: bu ikinci deney süite 551 testliyken yapıldı ve o günün sayılarını taşır; yeniden koşulmadı, sayıları bugünkü toplama uydurmak ölçüm değil uydurma olurdu. Not: PySCF bu makinede **kurulu değildir** — `reference/*.json` kayıtları PySCF 2.14.0 ile başka bir yerde üretilmiştir ve testler koşarken PySCF'e bağımlı değildir; "PySCF referans testleri dahil" ifadesi kayıtlarla karşılaştırmayı anlatır, canlı bir PySCF çağrısını değil |
 | 2 | Headless koşucu çalışır + H₂ eğrisi bağ uzunluğu ±%8 | **Kapandı** — `python -m qlab.run scenarios/h2_bond_scan.yaml -o h2_curve.npz`; taramanın parabol fiti **0.71348 Å**, deneyselden sapma %3.7, kriterin istediği ±%8 sağlanıyor. Bu sayı yöntemin denge uzunluğu DEĞİL: STO-3G'nin gerçek minimumu 0.71223 Å, fark taramanın ızgara eseridir (Modül 1B tablosunun altındaki nota bakın). Bu satır bir zamanlar 0.7156 Å diyordu — o sayı bu komuttan değil, `test_physical`'ın ayrı ızgarasından geliyordu; artık `test_shipped_h2_scan_fit_is_grid_biased_but_less_than_the_uniform_grid` senaryonun kendi sayısını kilitliyor |
 | 3 | GUI'de H₂O HOMO izoyüzeyi döndürülebilir | **Kapandı — bu depoda ilk gerçek-ekran doğrulaması.** `python -m qlab.app.main --molecule "O 0 0 0; H 0 0.757 0.587; H 0 -0.757 0.587"` gerçek Windows platformunda açıldı; su HOMO'su (1b₁) çizildi, ±faz iki renkte, 1764/1764 tepe, çekirdekler ve şeffaflık paneli görüldü. Döndürme ölçüldü: kamera azimutu değişince kare piksel bileşenlerinin **%14.1'i**, elevasyon değişince **%7.2'si** değişiyor — sahne gerçekten 3B ve görünüm tepki veriyor. **Ne ölçülmedi:** fareyle sürükleyerek döndürme; kamera programatik değiştirildi. Kriterin "döndürülebilir" kelimesi bu yüzden yalnızca sahne tarafında kapalıdır, girdi tarafında bir insanın bakması gerekir. Doğrulamanın kendisi bir kusuru da GÖRÜNÜR KILDI: 12 satırlık beyan 140 px'lik panelde katlanın altında kalıyordu (düzeltildi, `TransparencyPanel(max_height=…)`) |
 | 4 | Kaydırıcı ile canlı iletim, analitiğin ±%2'si içinde | **Kapandı** — ölçülen fark %0.07 |

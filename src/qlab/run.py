@@ -36,6 +36,7 @@ from qlab.provenance import Provenance
 from qlab.scenario.loader import load_scenario
 from qlab.scenario.schema import (
     DownfoldScenario,
+    EMScenario,
     HFScanScenario,
     MDScenario,
     SpinScenario,
@@ -170,6 +171,11 @@ def main(argv: list[str] | None = None) -> int:
         # `SpinScenario` da `grid` tasimaz.
         if isinstance(scenario, SpinScenario):
             return _run_spin(scenario, args.output)
+        # EM DALI: `SpinScenario` ile ayni gerekce -- `EMScenario` da `grid`
+        # tasimaz ve `_run_loaded` yolundan gecerse yakalanmayan bir
+        # `AttributeError` verirdi.
+        if isinstance(scenario, EMScenario):
+            return _run_em(scenario, args.output)
         result = _run_loaded(scenario)
     except QLabError as exc:
         print(str(exc), file=sys.stderr)
@@ -353,6 +359,95 @@ def _run_spin(scenario: SpinScenario, output: str | None) -> int:
         # ayni degerle gosterilemez (Modul 1B'nin kararlilik alani dersi).
         if yuk.heat_capacity is not None:
             alanlar["heat_capacity"] = yuk.heat_capacity
+        np.savez(output, **alanlar)
+    return 0
+
+
+def _run_em(scenario: EMScenario, output: str | None) -> int:
+    """Maxwell FDTD yarıçap taramasını koşturur ve şeffaflık panelini basar.
+
+    `_run_spin`/`_run_downfold`/`_run_tb`/`_run_md` ile aynı kalıp: kendi
+    panelini basar ve kendi `.npz`'sini yazar, `save()` yolundan geçmez.
+
+    BU FONKSİYON HİÇBİR BEYAN METNİ YAZMAZ. Yöntem / Yaklaşımlar / İhmal
+    edilen / Beklenen hata / Dairesellik / Çıpa sınıfı / Pencere / Yakınsama
+    tanısı satırlarının tek kaynağı `engine/em/factory.py`dir ve buradan
+    yalnızca `provenance.as_lines()` basılır. İki kopya metin bu depoda bir
+    kez panelin iki farklı şey iddia etmesine yol açtı (bkz.
+    `tests/hf/test_hf_scenario.py`); kopya sayısı
+    `tests/em/test_em_senaryo.py` ile kilitlidir.
+
+    Aşağıdaki tablo BEYAN DEĞİL SAYIDIR (`_run_downfold`ın mesafe tablosu ve
+    `_run_spin`in sıcaklık tablosuyla aynı sınıf). Tek kelimelik istisna
+    `HUKUM_VERILMEDI`dir ve o da yazılmaz, fabrikadan İTHAL EDİLİR: iki yerde
+    elle yazılsaydı biri değiştiğinde tablo ile beyan satırı farklı şey
+    söylerdi.
+
+    ÜÇ DEĞERLİ HÜKÜM TABLODA DA KISALTILMAZ: merdiven oturmadıysa satır
+    `settled_order` yerine hükmün kendisini basar. `YARGILANAMAZ`ı sessizce
+    "oturdu" diye basmak bu modülün açıkça yasakladığı şeydir.
+    """
+    from qlab.engine.em.factory import HUKUM_VERILMEDI, build_em, provenance_for
+    from qlab.viz.em_frames import build_em_payload
+
+    sonuc = build_em(scenario)
+    yuk = build_em_payload(sonuc)
+    merdiven = yuk.ladder
+    provenance = provenance_for(
+        scenario,
+        windows=yuk.windows,
+        ratios=tuple(float(x) for x in yuk.ratios),
+        noise=tuple(float(x) for x in yuk.noise),
+        peaks=tuple(int(x) for x in yuk.peaks),
+        orders=merdiven.orders,
+        p_inf=merdiven.p_inf,
+        uncertainty=merdiven.uncertainty,
+        verdict=merdiven.verdict,
+    )
+
+    print(
+        f"{scenario.name}: {len(scenario.radii)} yarıçap, "
+        f"r = {scenario.ratio:g}, S = {scenario.courant:g}"
+    )
+    for i, R in enumerate(scenario.radii):
+        pencere = yuk.windows[i]
+        print(
+            f"  R={R:<6g} ızgara={pencere.izgara:<9} adım={pencere.steps:<6} "
+            f"oran={yuk.ratios[i]:.9f}  tepe={int(yuk.peaks[i]):<3} "
+            f"gürültü={yuk.noise[i]:.3e}"
+        )
+    hukum = (
+        f"OTURDU({merdiven.settled_order})"
+        if merdiven.settled_order is not None
+        else f"{merdiven.verdict} — {HUKUM_VERILMEDI}"
+    )
+    print(f"  merdiven hükmü: {hukum}")
+    for etiket, deger in provenance.as_lines():
+        print(f"{etiket:<16}: {deger}")
+
+    if output is not None:
+        alanlar = {
+            "radii": yuk.radii,
+            "spacings": yuk.spacings,
+            "ratios": yuk.ratios,
+            "noise": yuk.noise,
+            "peaks": yuk.peaks,
+            "orders": np.array(merdiven.orders, dtype=float),
+            "verdict": np.array(merdiven.verdict),
+            "field": yuk.field,
+            "field_conductor": yuk.field_conductor,
+            "provenance_json": json.dumps(
+                dataclasses.asdict(provenance), ensure_ascii=False
+            ),
+        }
+        # MERTEBE OKUNAMADIYSA ANAHTAR HIC YAZILMAZ -- `_run_spin`in isi
+        # sigasi kuralinin aynisi. `p_inf = 0.0` yazmak "mertebe sifir cikti"
+        # diye okunurdu; `None` "okunamadi" demektir ve ikisi ayni degerle
+        # gosterilemez.
+        if merdiven.p_inf is not None:
+            alanlar["p_inf"] = np.array(merdiven.p_inf)
+        if merdiven.uncertainty is not None:
+            alanlar["uncertainty"] = np.array(merdiven.uncertainty)
         np.savez(output, **alanlar)
     return 0
 

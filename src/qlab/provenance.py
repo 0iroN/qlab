@@ -113,6 +113,32 @@ class Provenance:
     # belirsizliğin belirsizliğin KENDİSİ mi yoksa yalnızca ALT SINIRI mı
     # olduğunu.
     sampling: str | None = None
+    # ÇIPA SINIFI — Modül 5'te eklendi. Bir çıpanın SINIFI (şema / fizik /
+    # çeviri denetimi) ne bir yaklaşımdır ne de bir ihmal: "Courant sınırı
+    # şemanın kendi özelliğidir" cümlesi yapılan bir şeyi de, yapılmayan bir
+    # şeyi de anlatmaz — okunan sayının NEYİ doğruladığını söyler. Bu depoda
+    # bir şema çıpasını fizik çıpası diye sunmak ÜÇ kez düzeltilmiş bir
+    # hatadır ve düzeltmenin panel tarafındaki karşılığı budur. `approximations`
+    # listesine konamaz çünkü `as_lines()` o listeyi " · " ile birleştirir ve
+    # dört sınıf etiketi yaklaşımların arasında akıp giderdi (dairesellik
+    # alanının ayrı tutulma gerekçesinin aynısı).
+    anchor_class: str | None = None
+    # PENCERE — Modül 5'te eklendi. Bu modülde RNG yoktur; tekrarlanabilirliğin
+    # karşılığı PENCERENİN TAM BEYANIDIR (ızgara, Δx, S, adım, λ, npml, sgf,
+    # FFT penceresi). Ayrı alan olmasının gerekçesi ölçülmüş: bu depoda bir
+    # hükmün kendi penceresinin dışına taşınması ON KEZ oldu, ve pencere bir
+    # `Yaklaşımlar` maddesi olsaydı tam da o cümlelerin arasında görünmez
+    # olurdu. `expected_error`a da konamaz: orada bir hata SINIRI verilir,
+    # pencere ise sınırın hangi bölgede geçerli olduğunu söyler.
+    window: str | None = None
+    # YAKINSAMA TANISI — Modül 5'te eklendi, ve `diagnostics` sözlüğüne
+    # KONMADI. Gerekçe Modül 4'ün `sampling` alanınınkiyle AYNI ve ondan daha
+    # sert: `_diagnostics_summary()` çıktısı "Yakınsama" satırının İÇİNE,
+    # ✓/✗ işaretinin HEMEN ARDINA basılır. Üç değerli hüküm oraya konsaydı
+    # panelde "✓ ... verdict=YARGILANAMAZ" diye görünürdü — yani yargılanamadığı
+    # söylenen bir sayının yanında bir onay işareti. Modül 5'in kendi kuralı
+    # tam olarak bunu yasaklar: YARGILANAMAZ sessizce "oturdu" diye basılmaz.
+    convergence_diagnosis: str | None = None
 
     def as_lines(self) -> list[tuple[str, str]]:
         """Şeffaflık panelinin doğrudan bastığı etiket/değer çiftleri."""
@@ -125,7 +151,13 @@ class Provenance:
         ]
         if self.circularity is not None:
             lines.append(("Dairesellik", self.circularity))
+        if self.anchor_class is not None:
+            lines.append(("Çıpa sınıfı", self.anchor_class))
+        if self.window is not None:
+            lines.append(("Pencere", self.window))
         lines.append(("Yakınsama", f"{mark} {self._diagnostics_summary()}".strip()))
+        if self.convergence_diagnosis is not None:
+            lines.append(("Yakınsama tanısı", self.convergence_diagnosis))
         if self.sampling is not None:
             lines.append(("Örnekleme", self.sampling))
         if self.stability is not None:

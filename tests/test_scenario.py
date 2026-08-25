@@ -12,6 +12,7 @@ from qlab.errors import ScenarioError
 from qlab.scenario.loader import load_scenario
 from qlab.scenario.schema import (
     DownfoldScenario,
+    EMScenario,
     HFScanScenario,
     MDScenario,
     SpinScenario,
@@ -272,6 +273,15 @@ _DOWNFOLD_SAMPLE_SEEDS = 4
 _SPIN_SAMPLE_TEMPERATURES = 1
 _SPIN_SAMPLE_SWEEPS = 64
 _SPIN_SAMPLE_BURN = 10
+#: EM senaryosunda TAM koşu YAPILMAZ. `_HF_SCAN_SAMPLE_POINTS` ile aynı
+#: gerekçe; tam koşum `tests/em/test_em_senaryo.py::test_CLI_UCTAN_UCA`dadır
+#: (ölçüldü, 1.49 s). Burada merdiven DERİNLİĞİ de kısaltılır ve bunun bir
+#: yan etkisi vardır: iki basamaklı bir merdiven `p_inf = None` döndürür,
+#: yani panelin hükmü YARGILANAMAZ olur. **Bu bir kusur değil, testin ikinci
+#: işi:** sevk edilen senaryo ✓ dalını gösteriyor, burası ✗ dalını gösteriyor
+#: ve iki dal ancak birlikte kilitlenir.
+_EM_SAMPLE_RADII = 2
+_EM_SAMPLE_STEP_FACTOR = 120.0
 
 
 def test_scenario_directory_is_not_empty():
@@ -395,6 +405,51 @@ def test_shipped_scenario_loads_and_runs(scenario_path):
         # bir spin senaryosu eklendiginde de aranacagi anlamina gelir.
         assert provenance.circularity is not None
         assert provenance.sampling is not None
+        return
+
+    if isinstance(scenario, EMScenario):
+        # EM tarafinda "kosturulabilir" demek: FDTD kosuyor, spektrum tepe
+        # buluyor, merdiven kuruluyor ve panel dolu. Basamak sayisi ve adim
+        # carpani KUCULTULUR (senaryonun kendi degerleri degil).
+        from qlab.engine.em.factory import build_em, provenance_for
+        from qlab.viz.em_frames import build_em_payload
+
+        kisa = dataclasses.replace(
+            scenario,
+            radii=scenario.radii[:_EM_SAMPLE_RADII],
+            step_factor=_EM_SAMPLE_STEP_FACTOR,
+        )
+        yuk = build_em_payload(build_em(kisa))
+        assert yuk.ratios.shape == (len(kisa.radii),)
+        assert np.all(np.isfinite(yuk.ratios)), (
+            f"{scenario_path.name}: kip orani sonlu degil"
+        )
+        assert np.all(yuk.noise >= 0.0)
+        assert np.all(yuk.peaks >= 2)
+        provenance = provenance_for(
+            kisa,
+            windows=yuk.windows,
+            ratios=tuple(float(x) for x in yuk.ratios),
+            noise=tuple(float(x) for x in yuk.noise),
+            peaks=tuple(int(x) for x in yuk.peaks),
+            orders=yuk.ladder.orders,
+            p_inf=yuk.ladder.p_inf,
+            uncertainty=yuk.ladder.uncertainty,
+            verdict=yuk.ladder.verdict,
+        )
+        assert provenance.method.startswith("Maxwell FDTD")
+        # Bu senaryo turunun panelinde DORT EK SATIR ZORUNLUDUR; ucu baska
+        # hicbir turde yoktur. Kesif-tabanli bu testte kilitlenmesi, yeni bir
+        # EM senaryosu eklendiginde de aranacagi anlamina gelir.
+        assert provenance.circularity is not None
+        assert provenance.anchor_class is not None
+        assert provenance.window is not None
+        assert provenance.convergence_diagnosis is not None
+        # SIG BIR MERDIVEN "OTURDU" DIYEMEZ -- ve panel bunu SOYLER.
+        assert yuk.ladder.verdict == "YARGILANAMAZ"
+        assert yuk.ladder.settled_order is None
+        assert provenance.converged is False
+        assert "OTURDU(" not in provenance.convergence_diagnosis.split("[BEYAN")[0]
         return
 
     assert isinstance(scenario, TDSEScenario)

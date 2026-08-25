@@ -1104,7 +1104,15 @@ def mode_spectrum(
 
     `interpolate = False` bir hata ayiklama dugmesi DEGIL, olculen bir
     karsilastirmadir: ara degerleme kalkinca tepe konumu bin izgarasina
-    yapisir ve merdiven mertebesi duser (bkz. tests/em/test_bessel.py).
+    yapisir. BU SATIR BIR ZAMANLAR *"ve merdiven MERTEBESI duser"* diyordu ve
+    o cumle OLCUMLE CURUDU -- kilit `tests/em/test_bessel.py::
+    test_ARA_DEGERLEME_KALKINCA_HEM_MERDIVEN_HEM_PANEL_DUSUYOR` zaten dogruyu
+    yaziyordu, bayat olan bu dokstringdi (Task 6'nin dokstring denetiminde
+    bulundu). Ham mertebeler DUSMUYOR, yerinden OYNUYOR (p = 3.3411 ve
+    1.4245 -- birincisi 2'nin USTUNDE) ve belirsizlik PATLIYOR (u = 10.0255),
+    cunku pencere gurultusu 1.5e-04 ... 1.9e-04'e cikip en kucuk basamak
+    farkini (1.1e-04) geciyor. Hukum bu yuzden dusuk bir mertebe degil
+    YARGILANAMAZ olur.
 
     `pad` ZORUNLU ANAHTAR KELIME: sifir dolgu YENI BILGI EKLEMEZ, yalniz
     ayni spektrumu daha sik ORNEKLER; ama ara degerlemenin parabol varsayimi
