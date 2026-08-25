@@ -48,9 +48,25 @@ def gauss_cos(
     MEKANIZMA: egik indirgemede `ky` kosum boyunca SABITTIR, ama `f`
     bininin gordugu ETKIN aci asin(ky / (2 pi f n1))'dir. Genis bant, KOMSU
     BINLERIN farkli acilarinin r'sini hedef bine karistirir. Bu, olcum
-    aletinin theta >= 75 derecede `R > 1` (fiziksel olarak imkansiz)
-    dondurmesinin SEBEBIDIR -- bir sinir kusuru degil, bant genisligi
-    arizasi.
+    aletinin buyuk acilarda `R > 1` (fiziksel olarak imkansiz) dondurmesinin
+    SEBEBIDIR -- bir sinir kusuru degil, bant genisligi arizasi.
+
+    BU DOKSTRING BIR ZAMANLAR *"theta >= 75 derecede R > 1"* DIYORDU ve o
+    CUMLE, egik cozucu SEVK EDILINCE (Task 3) OLCULEREK CURUDU. Sevk edilen
+    boruda (eps1 = 4, eps2 = 1, lam = 40, S = 0.4, N = 3600, npml = 60,
+    iface = 1500, isrc = 600, probe = 1494, t0 = 5 sg, DIKDORTGEN, kapi
+    KAPALI) olculen |rho_s|:
+
+        theta   45      55      65      70      72.5    75      80      85
+        sgf=9   1.0000  1.0000  0.9986  1.0206  1.0291  0.9947  0.9420  0.9406
+        sgf=3   0.9964  1.0425  0.9475  0.9159  0.9087  0.9126  0.9213  0.9344
+
+    Yani `R > 1` bolgesi `sgf` = 9'da theta = 70-72.5, `sgf` = 3'te ise
+    theta = 50-55'tir; theta = 75'te IKISINDE DE R < 1'dir. ARIZANIN ACISI
+    BIR THETA ESIGI DEGIL, `sgf`NIN FONKSIYONUDUR -- ve bu, mekanizma
+    iddiasini CURUTMEZ, tam tersine dogrular. Kapi bir ACI kapisi olarak
+    degil, nokta nokta bir IMKAN kapisi olarak kurulmustur (bkz.
+    `observable/em_obs.reflection_coefficient`).
     """
     if wavelength <= 0.0:
         raise InvalidInputError(f"wavelength > 0 olmali, verilen: {wavelength}")

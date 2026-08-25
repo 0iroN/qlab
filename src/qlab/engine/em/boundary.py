@@ -105,9 +105,15 @@ class PML:
     45 dereceden sonra monoton dusuyor. Kazanc GERCEKTIR, SAYISI YOKTUR.
 
     OLCUM ALETININ TAVANI VAR (bkz. source.gauss_cos): 1B-acili fark yontemi
-    theta >= 75 derecede R > 1 donduruyor, yani fiziksel olarak imkansiz bir
-    sayi. Bu bir sinir kusuru DEGIL, olcum aletinin bant genisligi
-    arizasidir.
+    buyuk acilarda R > 1 donduruyor, yani fiziksel olarak imkansiz bir sayi.
+    Bu bir sinir kusuru DEGIL, olcum aletinin bant genisligi arizasidir --
+    olculdu: `npml` 60 -> 120 -> 200 arizayi HIC oynatmiyor (theta = 55'te
+    ||rho_s|-1| ucunde de 4.2533e-02), `sgf` ise oynatiyor.
+
+    BU DOKSTRINGIN *"theta >= 75 derecede"* IBARESI Task 3'te OLCULEREK
+    CURUDU: sevk edilen boruda `R > 1` bolgesi `sgf` = 9'da theta = 70-72.5,
+    `sgf` = 3'te theta = 50-55'tir ve theta = 75'te ikisinde de R < 1'dir.
+    Tam tablo `source.gauss_cos` dokstringindedir.
 
     `sigma_max` GIRILMEZ, hedef yansimadan TURETILIR:
         sigma_max = -(m + 1) * ln(r0) / (2 * d)      (eta = 1, c = 1)
