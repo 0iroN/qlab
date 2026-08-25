@@ -94,10 +94,36 @@ def _adim(state: FieldState, coeffs: YeeCoefficients) -> FieldState:
     Sira: once H (yarim adim ileri), sonra E (tam adim). YARIM HUCRE
     KAYDIRMA `h[i] = H(i+1/2)` uzerinden gelir: E'nin curl'u `h[i] - h[i-1]`,
     H'ninki `e[i+1] - e[i]`. Ikisi de MERKEZI farktir ve semanin 2. mertebesi
-    tam olarak buradan gelir. Kaydirma dusurulunce olan sey MERTEBE DUSMESI
-    DEGIL, KARARSIZLIKTIR: iki curl de ayni yonlu farki alirsa sema her
-    Courant sayisinda patliyor (N = 201, 600 adim: S = 0.5 -> 3.9e+242,
-    S = 0.25 -> 3.0e+125, S = 0.1 -> 4.8e+48).
+    tam olarak buradan gelir.
+
+    Kaydirma dusurulunce olan sey MERTEBE DUSMESI DEGIL, IRAKSAMADIR: iki
+    curl de AYNI yonlu farki alirsa sema patliyor. PENCERE: bu dosyanin
+    katsayilari (vakum + PEC), PEC duvarli izgarada m = 8 duran kip, 400
+    adim; buyukluk izdusum serisi `s[n] = <e_n, sin(k i)>`in TEPESI bolu
+    `s[0]`:
+
+                  N = 201     N = 401     N = 801     N = 1601
+        S = 0.5   3.17e+159   7.99e+144   3.20e+145   7.99e+144
+        S = 0.25  1.35e+65    4.38e+65    2.53e+64    1.69e+64
+        S = 0.1   5.62e+14    2.70e+14    4.50e+13    1.13e+13
+
+    Bu cekirdek ayni pencerede en fazla 1.000282 veriyor. Yani ortada
+    olculebilecek bir mertebe YOK; CIPA 2'nin merdiveni ancak yakinsayan bir
+    seride kurulur.
+
+    KARARSIZLIK KOSULSUZDUR ama GORUNMESI ADIM SAYISINA BAGLIDIR, ve ikisi de
+    olculdu. Kosulsuz: kaydirmasiz semanin buyutme matrisi
+    `[[1 + S^2 a^2, S a], [S a, 1]]`, `a = exp(i theta) - 1`; `det = 1` ama
+    `iz` karmasik, ve olculen `|lam|max` S = 0.5 / 0.25 / 0.1 / 0.05 / 0.02 /
+    0.001 icin 2.617904 / 1.640341 / 1.220983 / 1.105118 / 1.040805 /
+    1.002002 -- hepsi 1'in USTUNDE. Pencere: buyume adim basina gittigi ve
+    buyuyen kipi YUVARLAMA ARTIGI tohumladigi icin (ayni kosum float32'de
+    daha erken patliyor) S = 0.01'de tepe orani 2000 adimda hala 1.00, 4000
+    adimda 1.18e+15. Yani "her S'te patliyor" cumlesi ADIM SAYISI
+    soylenmeden yazilamaz -- bu dosyada bir kez oyle yazildi ve CURUDU.
+
+    KILIT: tests/em/test_sema_cipalari.py'de iki test,
+    `test_KAYDIRMA_DUSURULUNCE_...` ve `test_KAYDIRMASIZ_SEMA_KOSULSUZ_...`.
     """
     e, h = state.e, state.h
     h = coeffs.da * h + coeffs.db * (e[1:] - e[:-1])

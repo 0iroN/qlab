@@ -31,11 +31,25 @@ class FieldState:
 
     1B'de `e` = Ez, sekli (N,); `h` = Hy, sekli (N-1,) ve `h[i]` = Hy(i+1/2).
     YARIM HUCRE KAYDIRMA SEMANIN KENDISIDIR, bir uygulama ayrintisi degil --
-    ama sonucu MERTEBE DUSMESI DEGIL, KARARSIZLIKTIR. Olculdu: `e`nin curl'u
-    GERI fark yerine ILERI fark alinirsa (yani H, E ile ayni izgaraya
-    tasinirsa) seri tepesi N = 201, 600 adimda S = 0.5 / 0.25 / 0.1 icin
-    3.9e+242 / 3.0e+125 / 4.8e+48 -- yani sema HER Courant sayisinda
-    patliyor. Kaydirma bir DOGRULUK ayrintisi degil, KARARLILIGIN kosulu.
+    ve sonucu MERTEBE DUSMESI DEGIL, IRAKSAMADIR. `e`nin curl'u GERI fark
+    yerine ILERI fark alinirsa (yani H, E ile ayni izgaraya tasinirsa) sema
+    yakinsamiyor, PATLIYOR. PENCERE: sevk edilen katsayilar (vakum + PEC),
+    PEC duvarli izgarada m = 8 duran kip, 400 adim; olculen buyukluk izdusum
+    serisi `s[n] = <e_n, sin(k i)>`in TEPESI bolu `s[0]`:
+
+                  N = 201     N = 401     N = 801     N = 1601
+        S = 0.5   3.17e+159   7.99e+144   3.20e+145   7.99e+144
+        S = 0.25  1.35e+65    4.38e+65    2.53e+64    1.69e+64
+        S = 0.1   5.62e+14    2.70e+14    4.50e+13    1.13e+13
+
+    Dort N de ayni sinif, yani cozunurluk artigi degil; SEVK EDILEN cekirdek
+    ayni pencerede en fazla 1.000282 veriyor. Mertebe 2'den 1'e INMIYOR --
+    olculecek mertebe yok, cunku yakinsayan seri yok. Kaydirma bir DOGRULUK
+    ayrintisi degil, KARARLILIGIN kosulu; ayrinti ve kosulsuzluk olcumu
+    `yee._adim`de.
+
+    KILIT: tests/em/test_sema_cipalari.py, `test_KAYDIRMA_DUSURULUNCE_...`
+    (kaydirmasiz cekirdegin kendisi ORADA duruyor, `src/`de degil).
 
     dtype KISITLANMIYOR (float ya da complex). Egik gelis indirgemesi
     (Task 3) d/dy -> i*ky ile KARMASIK alanlar kullanir ve ayni cekirdekten

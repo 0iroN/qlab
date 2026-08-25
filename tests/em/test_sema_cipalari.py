@@ -358,6 +358,168 @@ def test_YEE_YAKINSAMA_MERTEBESI_IKI_yani_HATA_ORANI_DORT():
 
 
 # ---------------------------------------------------------------------------
+# KAYDIRMA — ÇÜRÜTÜLMÜŞ BİR İDDİANIN KİLİDİ
+# ---------------------------------------------------------------------------
+def _adim_kaydirmasiz(state: FieldState, co: YeeCoefficients) -> FieldState:
+    """`yee._adim`in TEK farkla değiştirilmiş kopyası: YARIM HÜCRE KAYDIRMA YOK.
+
+    Sevk edilen şemada iki curl TERS yönlü farktır — H için `e[i+1] - e[i]`,
+    E için `h[i] - h[i-1]` — ve her biri kendi alanının oturduğu noktada
+    MERKEZİdir. Burada E'nin curl'ü de İLERİ farka çevrilir (`h[i+1] - h[i]`),
+    yani H fiilen E ile aynı ızgaraya taşınır. Değişen TEK ŞEY budur;
+    katsayılar yine sevk edilen `yee_coefficients`ten gelir.
+
+    `h[N-1]` ızgarada yoktur; PEC duvarının ötesi sıfır alınır. Bu KENAR
+    SEÇİMİ hükmü taşımıyor ve bu ölçüldü — S = 0.5, N = 201, 400 adımda:
+        bu varyant (h[N-1] := 0)          3.17e+159
+        son iç düğümü hiç güncellemeyen   1.25e+157
+        ÇIPLAK PERİYODİK (PEC duvarı YOK) 3.05e+134
+    Üçü de aynı sınıf; patlayan şey ŞEMA, sınır işlemi değil.
+
+    Bu fonksiyon `src/`e GİRMEZ ve girmemeli: sevk edilen tek güncelleme yolu
+    `yee._adim`dir (o dosyanın başındaki gerekçe). Burası çürütmenin negatif
+    kontrol kolu.
+    """
+    e, h = state.e, state.h
+    h = co.da * h + co.db * (e[1:] - e[:-1])
+    e_yeni = co.ca * e
+    h_pad = np.concatenate((h, np.zeros(1, dtype=h.dtype)))
+    e_yeni[1:-1] += co.cb[1:-1] * (h_pad[2:] - h_pad[1:-1])
+    e_yeni[0] = 0.0
+    e_yeni[-1] = 0.0
+    return FieldState(e_yeni, h, 1)
+
+
+def _tepe_orani(N: int, m: int, S: float, M: int, adim) -> float:
+    """İzdüşüm serisinin TEPESİ / başlangıç değeri.
+
+    `_duran_kip` burada KULLANILAMAZ ve sebebi yapısaldır: o `omega`yı üç
+    terimli yinelemeden okur, ıraksayan bir seride o okuma anlamsızdır
+    (üstelik `inf`/`nan` üretir). Iraksamada ölçülebilen şey FREKANS değil,
+    GENLİKTİR.
+    """
+    k = np.pi * m / (N - 1)
+    proj = np.sin(k * np.arange(N))
+    st = FieldState(proj.copy(), np.zeros(N - 1), 1)
+    co = yee_coefficients(Medium.vacuum(N), courant=S, boundary=PEC())
+    s = np.empty(M)
+    with np.errstate(over="ignore", invalid="ignore"):
+        for n in range(M):
+            s[n] = float(np.dot(st.e, proj))
+            st = adim(st, co)
+    return float(np.max(np.abs(s)) / abs(s[0]))
+
+
+def test_KAYDIRMA_DUSURULUNCE_MERTEBE_DUSMUYOR_SEMA_IRAKSIYOR():
+    """SINIF: ŞEMA ÇIPASI — ve bir ÇÜRÜTMENİN kilidi.
+
+    `slow` İŞARETİ YOK ve bu DEVRALINMADI, ÖLÇÜLDÜ: bu gövde 0.06 s, alttaki
+    ise 0.05 s. Dosyanın başındaki kalibrasyona göre slow işaretli en ucuz
+    gövde 0.69 s ve 0.35 s AÇIKÇA "slow DEĞİL" diye yazılı — yani ikisi de
+    sınırın bir mertebe altında. İlk yazımda işaret KONMUŞTU (N = 1601'e
+    kadar 24 koşum pahalı GÖRÜNÜYORDU); ölçüm onu kaldırttı.
+
+    ÇÜRÜTÜLEN İDDİA: "yarım hücre kaydırma düşürülünce yakınsama mertebesi
+    2'den 1'e iner." Bu cümle iki SEVK EDİLMİŞ dokstringde yazılıydı ve
+    OLMAYAN bir teste atıf yapıyordu. Mertebe DÜŞMÜYOR — ölçülecek bir
+    mertebe yok, çünkü şema IRAKSIYOR. ÇIPA 2 mertebeyi ancak yakınsayan
+    bir seride ölçebilir; kaydırma düşünce o serinin kendisi kayboluyor.
+
+    PENCERE: sevk edilen `yee_coefficients` (vakum + PEC), PEC duvarlı
+    ızgarada m = 8 duran kip, N = 201 -> 401 -> 801 -> 1601, 400 adım.
+    Ölçülen büyüklük: izdüşüm serisi `s[n] = <e_n, sin(k i)>`in TEPESİ,
+    `s[0]`a bölünmüş.
+
+    ÖLÇÜLDÜ (kaydırma DÜŞÜRÜLMÜŞ):
+                  N=201       N=401       N=801      N=1601
+        S=0.5     3.17e+159   7.99e+144   3.20e+145  7.99e+144
+        S=0.25    1.35e+65    4.38e+65    2.53e+64   1.69e+64
+        S=0.1     5.62e+14    2.70e+14    4.50e+13   1.13e+13
+    Dört N de aynı sınıf, yani ÇÖZÜNÜRLÜK ARTIĞI DEĞİL. SEVK EDİLEN çekirdek
+    aynı pencerede en fazla 1.000282 (S = 0.5, N = 201) veriyor.
+
+    TAM DİJİTLER MAKİNEYE BAĞLIDIR ve bu VARSAYILMADI, ÖLÇÜLDÜ: patlamayı
+    tohumlayan şey YUVARLAMA ARTIĞIDIR, başlangıç kipi değil. Başlangıç
+    kipinin kendi büyüme oranı S = 0.5'te adım başına 1.003952, yani 400
+    adımda yalnız 4.84 eder; 1e+159'u getiren, artığın uyandırdığı yüksek
+    `theta` kipleridir. Ayırt edici ölçüm — aynı koşum float32'de DAHA ERKEN
+    patlıyor: S = 0.5 / 100 adımda float64 1.59e+20 vs float32 3.13e+29,
+    S = 0.1 / 200 adımda float64 1.00 vs float32 3.28e+05. Bu yüzden assert
+    BANT tutar, dijit değil.
+    """
+    N_ler = (201, 401, 801, 1601)
+    tepeler = {}
+    for S in (0.5, 0.25, 0.1):
+        for N in N_ler:
+            iraksak = _tepe_orani(N, 8, S, 400, _adim_kaydirmasiz)
+            kararli = _tepe_orani(N, 8, S, 400, _adim)
+            tepeler[(S, N)] = iraksak
+            # Kaydırmasız kol: en zayıf gözlenen basamak 1.13e+13.
+            assert iraksak > 1e10, f"S={S}, N={N}: {iraksak:g} — patlama YOK"
+            # Sevk edilen kol AYNI pencerede 1'de duruyor.
+            assert kararli < 1.001, f"S={S}, N={N}: sevk edilen kol {kararli:g}"
+    # Patlama S ile şiddetleniyor — ıraksama Courant'a MONOTON bağlı.
+    for N in N_ler:
+        assert tepeler[(0.5, N)] > tepeler[(0.25, N)] > tepeler[(0.1, N)]
+
+
+def test_KAYDIRMASIZ_SEMA_KOSULSUZ_KARARSIZ_ama_GORUNMESI_ADIM_SAYISINA_BAGLI():
+    """Çürütmenin İKİNCİ yarısı: "her Courant sayısında patlıyor" NE KADAR doğru.
+
+    Kaydırmasız şema KOŞULSUZ kararsızdır — `S`i küçültmek onu kurtarmaz.
+    Bu, genlik ölçümünden BAĞIMSIZ ikinci bir yoldan görülüyor: tek Fourier
+    kipi için büyütme matrisi `M = [[1 + S^2 a^2, S a], [S a, 1]]`,
+    `a = exp(i theta) - 1`. `det M = 1`, ama `iz M = 2 + S^2 a^2`
+    `sin theta != 0` iken KARMAŞIKTIR; determinantı 1 olan ve izi karmaşık
+    olan bir 2x2'nin öz değerleri birim çember üzerinde DURAMAZ. Ölçülen
+    `|lam|max` (ayrık `theta_j = pi j / 200`):
+        S=0.5   2.617904      S=0.05    1.105118
+        S=0.25  1.640341      S=0.02    1.040805
+        S=0.1   1.220983      S=0.001   1.002002
+    Hepsi 1'in ÜSTÜNDE. (Sevk edilen şemada `iz` GERÇEKTİR ve `S <= 1` iken
+    `|iz| <= 2` — ÇIPA 1'in eşiği tam olarak bu.)
+
+    AMA "patlıyor" ile "PATLADIĞI GÖRÜLÜYOR" aynı şey değil ve bu ayrım
+    ölçüldü. Büyüme adım başına `|lam|max` ile gittiği için küçük `S`te
+    görünür hâle gelmek DAHA ÇOK ADIM ister; üstelik büyüyen kipi uyandıran
+    şey yuvarlama artığıdır, yani sıfırdan değil ~1e-16'dan başlar. S = 0.01,
+    N = 201'de ölçülen tepe/`s[0]`:
+        400 adım 1.00   1000 adım 1.00   2000 adım 1.00
+        3000 adım 1.2e+06   4000 adım 1.18e+15   5000 adım 1.11e+23
+    Yani ÖNCEKİ dokstringlerin penceresinde (birkaç yüz adım) S = 0.05 ve
+    S = 0.01 HİÇBİR ŞEY göstermez. Bir dokstring "her Courant sayısında
+    patlıyor" diye pencere ADI VERMEDEN yazamaz; bu test o sınırı kilitliyor.
+    """
+    theta = np.pi * np.arange(1, 200) / 200.0
+    for S in (0.5, 0.25, 0.1, 0.05, 0.02, 0.001):
+        a = np.exp(1j * theta) - 1.0
+        lam = max(
+            float(
+                np.max(
+                    np.abs(
+                        np.linalg.eigvals(
+                            np.array(
+                                [
+                                    [1.0 + S**2 * ai**2, S * ai],
+                                    [S * ai, 1.0 + 0j],
+                                ]
+                            )
+                        )
+                    )
+                )
+            )
+            for ai in a
+        )
+        assert lam > 1.0 + 1e-9, f"S={S}: |lam|max = {lam!r} — koşulsuz değil"
+
+    # Küçük S: KOŞULSUZ kararsız AMA 400 adımda görünmüyor. İkisi de assert
+    # ediliyor, çünkü tek başına her biri yanlış bir dokstringi haklı çıkarır.
+    assert _tepe_orani(201, 8, 0.01, 400, _adim_kaydirmasiz) < 1.001
+    assert _tepe_orani(201, 8, 0.01, 2000, _adim_kaydirmasiz) < 1.001
+    assert _tepe_orani(201, 8, 0.01, 4000, _adim_kaydirmasiz) > 1e10
+
+
+# ---------------------------------------------------------------------------
 # ÇIPA 3 — DİSPERSİYON KATSAYISI
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("S", [0.3, 0.5, 0.7, 0.9])
