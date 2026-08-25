@@ -201,8 +201,19 @@ def run_1d(
     koymak onu unutulamaz kilar.
 
     `source` yumusak NOKTA kaynagidir: `e[source_index] += cb * source(t)`,
-    `t = n * S * dx`. TF/SF tek yonlu kaynak Task 3'te gelir; yumusak kaynak
-    iki yonlu isir ve yansiyan alan IKI KOSUMUN FARKINDAN okunur.
+    `t = n * S * dx`. Yumusak kaynak IKI YONLU isir ve yansiyan/sacilan alan
+    IKI KOSUMUN FARKINDAN okunur.
+
+    BU SATIR BIR ZAMANLAR *"TF/SF tek yonlu kaynak Task 3'te gelir"*
+    DIYORDU ve o soz BAYATLADI: Task 3 geldi gecti, TF/SF sevk EDILMEDI ve
+    depoda hicbir karsiligi yok. Task 5 ayni ihtiyaci (tek yonlu, duzlem
+    dalga aydinlatma) BASKA bir yoldan cozdu ve o yol daha ucuz cikti:
+    kaynak terimi HIC kullanilmiyor, izgara `state=` ile eslesmis bir
+    duzlem dalga darbesiyle BASLATILIYOR (`E(x, 0) = f(x)`,
+    `Hy(i+1/2, -dt/2) = f(i + 0.75)`). Olculdu: tek yarik cipasi nokta
+    kaynakla duzlem dalga sinirina ancak d ~ 500 hucrede yaklasiyor
+    (16.5 s/yapilandirma), baslangic kosuluyla ayni pencere 0.3-2 s.
+    Kilit: tests/em/test_uzak_alan.py.
     """
     if steps < 0:
         raise InvalidInputError(f"steps negatif olamaz, verilen: {steps}")

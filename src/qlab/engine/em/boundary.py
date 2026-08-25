@@ -236,6 +236,27 @@ class PML:
         ikisi AYNI semadir -- bu sinifin 1B dokstringi bunu yaziyor ve
         dogru. 2B'de DEGILDIR: skaler iletken egik gelen dalgayi
         eslestirmez, cunku eslestirme kosulu yalniz dik bilesende saglanir.
+
+        BU SON CUMLE TASK 4'TE BIR ARGUMANDI; TASK 5'TE OLCULDU. Task 4
+        "2B sogurucuda aci taramasi yapilmadi" diye birakmisti, cunku o
+        taramayi yapacak alet (uzak alan donusumu) yoktu. Sevk edilen
+        `observable.em_obs.ntff_far_field` ile olculdu: vakumda merkezi
+        nokta kaynak, kontur rc = 30, lambda = 16, 768 adim; REFERANS
+        sogurucusu erisilemeyecek kadar uzakta -- ve bu bir varsayim degil,
+        iki bagimsiz izgara (N = 541 ve 641) deseni 3.07e-15 icinde ayni
+        veriyor. Kalinliga gore BAGIL desen hatasi:
+
+            d      RMS        0 der (yuze DIK)  45 der (KOSEYE)   45/0
+            8    5.787e-03    1.228e-04         1.326e-02        108.0
+            15   3.013e-03    2.337e-03         6.068e-03          2.60
+            25   2.194e-04    1.831e-04         5.001e-04          2.73
+            40   1.802e-06    4.016e-06         4.217e-07          0.11
+
+        `d <= 25`te EN BUYUK hata HER ZAMAN 45 derecededir, yani skaler
+        dereceli iletkenin en az eslestigi yonde. DURUST OLUMSUZ: `d = 40`ta
+        oran TERSINE donuyor (0.11); bu bir referans tabani artefakti DEGIL
+        (referans 1e-15'te temiz) ve sebebi bu modulde kovalanmadi. Kilit:
+        tests/em/test_sacilma.py.
         """
         s = _sekil(shape)
         d = self.thickness

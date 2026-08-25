@@ -1076,6 +1076,21 @@ def mode_spectrum(
     HIC gormez (dosyada gecmezler) ve hangi tepenin hangi kip oldugunu
     soylemez. Cipa `tests/em/test_bessel.py`de kurulur.
 
+    TEPE, KIP DEMEK DEGILDIR -- ve bu iddia Task 5'te ILK KEZ sinanabildi.
+    Bu fonksiyonun basligi "kip frekanslari" diyor, ama alet KIPI OLMAYAN
+    bir kayitta da tepe dondurur. Olculdu (acik uzayda kucuk bir silindirden
+    SACILAN alan; bosluk yok, duran kip yok, ayni kayit uc pencereyle):
+
+        blackman   taban 0.01 : 6 tepe, oranlar 1.000 2.195 2.842 3.456
+        hann       taban 0.05 : 6 tepe, oranlar 1.000 1.836 2.350 2.880
+        dikdortgen taban 0.30 : 4 tepe, oranlar 1.000 1.234 1.682 1.925
+
+    Uc pencere UC FARKLI oran kumesi veriyor, yani bu sayilar fizik
+    TASIMIYOR -- pencerenin kendi tepelerini sayiyorlar. Aletin "adsiz
+    tepeler, teori yok" beyani DOGRUYDU; eksik olan, dondurulen tepelerin
+    bir KIP oldugunun BURADAN cikarilamayacagi cumlesiydi. Kilit:
+    tests/em/test_sacilma.py, `test_MODE_SPECTRUM_BIR_KIP_DEDEKTORU_DEGILDIR`.
+
     HESAP
         1. Dedektor basina kayit, `window` ile pencerelenir.
         2. `pad` katina SIFIR DOLGU yapilir ve rfft alinir.
@@ -1177,3 +1192,443 @@ def mode_spectrum(
         detectors=int(seri.shape[0]),
         steps=n,
     )
+
+
+# ===========================================================================
+# UZAK ALAN -- "IKI YONTEM" DEGIL, IKI AYRI GOZLEMLENEBILIR
+# ===========================================================================
+#
+# Bu bolumun cekirdek iddiasi ve OLCUM: `aperture_far_field` ile
+# `ntff_far_field` ayni problemi COZMEZLER, dolayisiyla biri otekinin
+# "daha iyi" surumu degildir. Ikisi de spec 7.5'te ve bu dosyanin
+# dokstringlerinde PENCERESIYLE olculu.
+#
+#   ACIKLIK (yarik) : ekran her SONLU konturu deler -- kapali kontur
+#                     yapisal olarak kurulamaz. Zorlanirsa cevap KONTURUN
+#                     YERINE BAGLI olur.
+#   SACILMA/ISIMA   : kapali kontur dogru cevabi verir; tek bir SATIRIN
+#                     FT'si ise var olmayan bir acisal yapi UYDURUR.
+#
+# YAY-ALICI (sonlu R'de dedektor yayi) SEVK EDILMEZ (spec 7.5): ucunun en
+# pahalisi, en kararsizi, ve Fraunhofer kapisina ihtiyac duyan TEK yontem.
+# Sevk edilen iki gozlemlenebilir de R -> sonsuz ASIMPTOTIK deseni dondurur;
+# cagiran sonlu bir dedektor yaricapi BEYAN ederse `_uzaklik_kapisi`
+# calisir ve gecmezse `None` doner.
+
+#: Bin kapisi: olculen fazorun bini, beyan edilen `wavelength`in USTUNE
+#: oturmali. TOLERANS DEGIL, ETIKETLEME KAPISI -- ve neden zorunlu oldugu
+#: `scattering_width` dokstringinde SAYIYLA duruyor. Ayni kapi Task 3'te
+#: `reflection_coefficient`te de kuruldu (orada `|f_bin*lam - 1| > 1e-9`).
+BIN_GATE: float = 1e-9
+
+#: Fraunhofer kapisi: BEYAN EDILEN sonlu dedektor yaricapi en az bu kadar
+#: `lambda` olmali. SAYI BIR MODELLEME SECIMIDIR (kappa ile ayni statude) ve
+#: bedeli OLCULMUSTUR -- bkz. `_uzaklik_kapisi`. Spec 4.4'un ilk hali
+#: `R >= a^2/lambda` yaziyordu; o kosul OLCULEREK YETERSIZ bulundu.
+FRAUNHOFER_LAMBDA: float = 100.0
+
+
+def _acilar(angles) -> np.ndarray:
+    a = np.asarray(angles, dtype=float)
+    if a.ndim != 1 or a.size < 1:
+        raise InvalidInputError(
+            f"angles tek boyutlu ve bos olmayan olmali, verilen: {a.shape}"
+        )
+    if not np.all(np.isfinite(a)):
+        raise InvalidInputError("angles sonlu olmali")
+    return a
+
+
+def _bin_kapisi(wavelength: float, bin_frequency: float) -> bool:
+    """Fazorun bini beyan edilen `lambda`nin USTUNDE mi?
+
+    IMKAN KAPISI, tolerans DEGIL: `sigma`, `W` ve desen `k = 2 pi / lambda`
+    tasir; bin baska bir frekanstaysa dondurulen sayi BASKA BIR DALGABOYUNUN
+    sayisidir ve o dalgaboyuyla etiketlenmemistir.
+    """
+    if not np.isfinite(wavelength) or wavelength <= 0.0:
+        raise InvalidInputError(f"wavelength > 0 olmali, verilen: {wavelength}")
+    if not np.isfinite(bin_frequency) or bin_frequency <= 0.0:
+        raise InvalidInputError(
+            f"bin_frequency > 0 olmali, verilen: {bin_frequency}"
+        )
+    return abs(bin_frequency * wavelength - 1.0) <= BIN_GATE
+
+
+def _uzaklik_kapisi(detector_radius, wavelength: float) -> bool:
+    """Beyan edilen SONLU dedektor yaricapinda asimptotik desen gecerli mi?
+
+    SPEC 4.4 BU FONKSIYONDA DUZELTILDI. Eski kosul `R >= a^2/lambda` idi ve
+    OLCULEREK YETERSIZ cikti: a = 2 hucrelik bir saciciyla `a^2/lambda`
+    0.02 - 0.10 arasindadir, yani kapi binlerce kat rahat gecer -- ama ayni
+    R'lerde desen HALA yanlistir. BAGLAYICI KOSUL `R >> lambda`dir.
+
+    OLCULDU. Sevk edilen asimptotik desen, AYNI kayittan TAM Green
+    fonksiyonuyla sonlu R'de hesaplanmis desenle karsilastirildi; olcu,
+    tepesine normalize edilmis |F(theta)| farkinin RMS'idir:
+
+        R/lambda           10        30       100       300      1000
+        sacilma lam=40  3.743e-01 1.163e-01 3.305e-02 1.018e-02 2.978e-03
+        sacilma lam=60  2.358e-01 7.431e-02 2.096e-02 6.703e-03 1.972e-03
+        sacilma lam=100 1.453e-01 4.809e-02 1.412e-02 4.506e-03 1.273e-03
+        yarik   lam=16  1.539e-02 1.178e-02 4.286e-03 1.478e-03 4.464e-04
+
+    (sacilma: a = 2, kontur rc = 40; yarik: a = 40.) Uc sacilma satiri da
+    1/R gidiyor: ardisik oranlar 3.02 ... 3.55, adim carpanlari ise 3 ve
+    3.33. YARIK SATIRINDA ILK ADIM (R/lambda 10 -> 30) BU YASANIN
+    DISINDADIR (1.31); sonraki uc adim 2.75 / 2.90 / 3.31 ile yasaya
+    giriyor. Sevk edilen esik `R >= 100 lambda`dir ve ORADA olculen artik
+    hata sacilmada 1.4e-02 ... 3.3e-02, aciklikta 4.3e-03'tur. Bu bir
+    TOLERANS DEGIL, ESIGIN BEDELIDIR ve boyle beyan edilir.
+
+    ESKI KAPI NEDEN YETMIYOR -- SAYIYLA: a = 2 hucrelik saciciyla
+    `a^2/lambda` lambda = 40/60/100'de 0.100/0.067/0.040'tir. `R = 10 lambda`
+    noktasinda eski kapi sirasiyla 4000 / 9000 / 25000 KAT rahat gecer, ama
+    ayni noktada desen %37.4 / %23.6 / %14.5 YANLISTIR. Aciklikta eski
+    kapinin TAM SINIRI (`R = a^2/lambda` = 100, yani R/lambda = 6.25) desen
+    hatasi 2.141e-02'dir.
+
+    KAPI SEVK EDILEN KULLANIMDA KOSMAZ: `detector_radius = None` verildiginde
+    dondurulen sey zaten R -> sonsuz asimptotik desendir ve o desende sonlu-R
+    hatasi TANIM GEREGI yoktur. Kapi, sonlu bir dedektor BEYAN eden cagiran
+    icindir.
+    """
+    if detector_radius is None:
+        return True
+    R = float(detector_radius)
+    if not np.isfinite(R) or R <= 0.0:
+        raise InvalidInputError(
+            f"detector_radius pozitif ve sonlu olmali, verilen: {detector_radius}"
+        )
+    return R >= FRAUNHOFER_LAMBDA * wavelength
+
+
+def aperture_far_field(
+    field,
+    *,
+    wavelength: float,
+    bin_frequency: float,
+    angles,
+    coordinates=None,
+    spacing: float = 1.0,
+    detector_radius=None,
+) -> np.ndarray | None:
+    """TEK YUZ Rayleigh-Sommerfeld: bir ACIKLIK yuzunden uzak alan.
+
+    SINIF: OLCUM ALETI. Kendisi ne sema ne fizik cipasidir; fizik cipasi
+    (tek yarik `a sin(theta_1)/lambda = 1`) `tests/em/test_uzak_alan.py`de
+    kurulur. Bu fonksiyon KIRINIM DESENI hakkinda hicbir sey bilmez --
+    verilen alanin acisal donusumunu dondurur.
+
+    HESAP (bu boru hattinin ISARET UZLASIMINDA, asagiya bakiniz):
+
+        F(theta) = cos(theta) * SUM_j E_j exp(+i k sin(theta) y_j) dy
+
+    `cos(theta)` RS-I'in (Dirichlet Green fonksiyonu) EGIKLIK CARPANIDIR.
+    SIFIRIN YERINI OYNATMAZ ve bu OLCULDU: tek yarik cipasinin 14
+    yapilandirmasinda (a/lambda >= 2) `cos` kaldirilinca `a sin(theta_1)/
+    lambda` ortalamasi 0.998610 -> 0.997942, std 0.019357 -> 0.019400; tek
+    tek fark 5.26e-05 ... 2.94e-03 (ortalama 6.69e-04), yani cipanin kendi
+    yayiliminin ALTINDA. Cipa egiklik carpanina KORDUR; carpan desenin
+    GENLIGI icin dogrudur, cipanin okudugu ilk sifirin yeri icin degil --
+    ve bu, cipanin bir DURUST OLUMSUZUDUR (carpan yanlis konsa bu olcum
+    gormezdi).
+
+    ISARET UZLASIMI BIR OLCUMDUR, TERCIH DEGIL. Bu depoda +x'e giden dalganin
+    fazoru `e^{-i k x}`dir (Task 3, `fresnel_phase_difference` dokstringinde
+    arayuzsuz bir kosumla olculdu), yani zaman uzlasimi `e^{+i w t}` ve
+    disari giden dalga `e^{-i k r}`dir. Cekirdek bu yuzden `exp(+i k rhat.r')`
+    tasir. Ters uzlasim sevk edilen boruda `ntff_far_field`i taninmaz hale
+    getiriyor (bkz. orada).
+
+    `bin_frequency` ZORUNLU: bkz. `_bin_kapisi` ve `scattering_width`.
+    Kapiya takilirsa `None` doner.
+
+    `detector_radius` verilirse Fraunhofer kapisi kosar (bkz.
+    `_uzaklik_kapisi`); gecmezse `None` doner -- sessizce yanlis bir aci
+    basmaz. Bu, Modul 4'un `correlation_length -> None` disiplininin bu
+    modulde UCUNCU uygulamasidir (birincisi `_record_steps`, ikincisi
+    `reflection_coefficient`).
+
+    NEDEN ACIKLIKTA BU, KAPALI KONTUR DEGIL -- OLCULDU: ekran her SONLU
+    konturu deler, yani ekranin akimlarinin bir kismi HER ZAMAN konturun
+    disinda kalir. Sonucu tek cumleyle: kapali kutunun cevabi KONTURUN
+    YERINE BAGLIDIR. Ayni kosum, degisen tek sey kutunun yari yuksekligi
+    (40/60/80/120/160), a = 40, lambda = 16:
+
+        kapali kutu : 0.984953 0.967527 0.971425 0.982944 0.983442
+                      -> yayilim 1.743e-02
+        bu fonksiyon: 0.964916 0.964916 0.964916 0.965335 0.965362
+                      -> yayilim 4.460e-04
+
+    yani 39 KAT. Ikinci pencerede (a = 64) kutunun yayilimi 1.611e-02, bu
+    fonksiyonunki 0.000e+00 -- kutu degisirken aciklik satiri BIREBIR ayni
+    kaldigi icin.
+    """
+    E = np.asarray(field, dtype=complex)
+    if E.ndim != 1 or E.size < 2:
+        raise InvalidInputError(
+            f"field en az iki degerli tek boyutlu olmali, verilen: {E.shape}"
+        )
+    if not np.all(np.isfinite(E)):
+        raise InvalidInputError(
+            "field sonlu olmali (patlamis bir FDTD kosumu sessizce desen "
+            "URETEMEZ)"
+        )
+    if coordinates is None:
+        if not np.isfinite(spacing) or spacing <= 0.0:
+            raise InvalidInputError(f"spacing > 0 olmali, verilen: {spacing}")
+        y = (np.arange(E.size, dtype=float) - 0.5 * (E.size - 1)) * spacing
+        dl = float(spacing)
+    else:
+        y = np.asarray(coordinates, dtype=float)
+        if y.shape != E.shape:
+            raise InvalidInputError(
+                f"coordinates ile field ayni sekilde olmali, verilen: "
+                f"{y.shape} ve {E.shape}"
+            )
+        d = np.diff(y)
+        if not np.all(d > 0.0):
+            raise InvalidInputError(
+                "coordinates kesin ARTAN olmali; olculen en kucuk fark: "
+                f"{float(np.min(d)):.6g}"
+            )
+        dl = float(np.mean(d))
+    th = _acilar(angles)
+    if not _bin_kapisi(wavelength, bin_frequency):
+        return None
+    if not _uzaklik_kapisi(detector_radius, float(wavelength)):
+        return None
+    k = 2.0 * np.pi / float(wavelength)
+    cekirdek = np.exp(1j * k * np.sin(th)[:, None] * y[None, :])
+    return np.cos(th) * (E[None, :] * cekirdek).sum(axis=1) * dl
+
+
+def _kontur(points, normals, lengths, values, normal_derivatives):
+    p = np.asarray(points, dtype=float)
+    n = np.asarray(normals, dtype=float)
+    dl = np.asarray(lengths, dtype=float)
+    E = np.asarray(values, dtype=complex)
+    dn = np.asarray(normal_derivatives, dtype=complex)
+    if p.ndim != 2 or p.shape[1] != 2:
+        raise InvalidInputError(f"points (M, 2) sekilli olmali, verilen: {p.shape}")
+    m = p.shape[0]
+    if m < 4:
+        raise InvalidInputError(
+            f"kapali bir kontur en az dort ornek ister, verilen: {m}"
+        )
+    if n.shape != (m, 2):
+        raise InvalidInputError(f"normals (M, 2) olmali, verilen: {n.shape}")
+    for ad, dizi in (("lengths", dl), ("values", E), ("normal_derivatives", dn)):
+        if dizi.shape != (m,):
+            raise InvalidInputError(
+                f"{ad} (M,) = ({m},) olmali, verilen: {dizi.shape}"
+            )
+    if not (np.all(np.isfinite(E)) and np.all(np.isfinite(dn))):
+        raise InvalidInputError("values ve normal_derivatives sonlu olmali")
+    if not (np.all(np.isfinite(dl)) and np.all(dl > 0.0)):
+        raise InvalidInputError(
+            f"lengths pozitif ve sonlu olmali, en kucuk: {float(np.min(dl)):.6g}"
+        )
+    boy = np.hypot(n[:, 0], n[:, 1])
+    if not np.allclose(boy, 1.0, rtol=0.0, atol=1e-9):
+        raise InvalidInputError(
+            "normals BIRIM vektor olmali; olculen en buyuk sapma: "
+            f"{float(np.max(np.abs(boy - 1.0))):.3g}"
+        )
+    return p, n, dl, E, dn
+
+
+def _kapali_mi(p: np.ndarray, n: np.ndarray, dl: np.ndarray) -> bool:
+    """Kontur KAPALI mi -- her segment ucu TAM IKI segmentte paylasiliyor mu?
+
+    SPEC 7.5'IN "KOSE DOSEMESI" UYARISININ KAPISI. Dort yuzu `[y1, y2)`
+    seklinde yarim acik dosemek her yuzden bir hucre dusurur ve konturda
+    DORT KOSE bosluk birakir; alan orada akip gider ve integral artik
+    esdegerlik teoreminin integrali DEGILDIR.
+
+    UCUZ VE "BARIZ" KAPI YETMEZ, ve bu OLCULDU. 20 x 20 bir kutuda:
+
+        ornek sayisi            80  ->  76
+        max |SUM n_i dl_i|      0.000000e+00  ->  0.000000e+00   (KOR)
+        eslesmeyen uc sayisi    0             ->  6              (GORUYOR)
+
+    Yani "kapali konturda `SUM n_i dl_i = 0`" uzaklasma OZDESLIGI bu kusuru
+    HIC gormuyor: karsilikli yuzler ayni miktarda kisaliyor ve katkilar
+    birebir sadelesiyor. Sevk edilen kapi UC ESLESTIRMESIDIR.
+
+    BEDELI OLCULDU: kusurlu kontur tek yarik olcumunde (n = 14, a/lambda
+    >= 2) `a sin(theta_1)/lambda` yayilimini 1.635e-02'den 3.024e-01'e
+    cikariyor (18.5 KAT) ve ortalamayi 0.996575'ten 0.825877'ye dusuruyor.
+    """
+    t = np.stack([-n[:, 1], n[:, 0]], axis=1)
+    yari = 0.5 * dl[:, None] * t
+    uclar = np.vstack([p - yari, p + yari])
+    olcek = float(np.max(np.abs(uclar))) if uclar.size else 1.0
+    tol = max(1e-9 * max(olcek, 1.0), 1e-12)
+    anahtar = np.round(uclar / tol).astype(np.int64)
+    _, sayim = np.unique(anahtar, axis=0, return_counts=True)
+    return bool(np.all(sayim == 2))
+
+
+def ntff_far_field(
+    *,
+    points,
+    normals,
+    lengths,
+    values,
+    normal_derivatives,
+    wavelength: float,
+    bin_frequency: float,
+    angles,
+    detector_radius=None,
+) -> np.ndarray | None:
+    """KAPALI KONTUR yakin-alan/uzak-alan donusumu (2B, TM_z).
+
+    SINIF: OLCUM ALETI -- `aperture_far_field` ile ayni statude, ve ONUN
+    RAKIBI DEGIL. Ikisi ayri problemleri cozer (bkz. bolum basligi).
+
+    HESAP (isaret uzlasimi `aperture_far_field`teki gibi OLCULDU):
+
+        I(theta) = KONTUR INTEGRALI
+                   [ i k (rhat . nhat) E  -  dE/dn ] exp(+i k rhat . r') dl
+
+    `nhat` DISA bakan normaldir, `dE/dn` da o yonde turevdir. IKI TERIM
+    ARASINDAKI BAGIL ISARET FIZIGIN KENDISIDIR ve olculdu. Vakumda merkezi
+    bir Ez kaynagi monopoldur, yani dogru uzak alan IZOTROPIKTIR; ayni
+    kayittan, yalniz `dE/dn`in isareti cevrilerek olculen |F(theta)|
+    yayilimi (std/ort, 121 aci):
+
+        kontur rc = 30 : dogru 0.003004   ters 0.264058   (87.9 kat)
+        kontur rc = 45 : dogru 0.005507   ters 0.312722   (56.8 kat)
+
+    Dogru isaretin biraktigi %0.3-0.6 bir HATA DEGIL, izgaranin kendi
+    acisal dispersiyonudur (asagida TAM COZUMLE tartiliyor).
+
+    KONTUR KAPALI OLMAK ZORUNDA ve kapi `_kapali_mi`dedir; gecmezse
+    `InvalidInputError`. Kapi bir `None` DEGIL cunku acik bir kontur kirik
+    bir TAHMINCI degil, GECERSIZ BIR GIRDIDIR -- `mode_spectrum`un yan lob
+    kapisiyla ayni statude.
+
+    NEDEN SACILMADA BU, TEK SATIRIN FT'SI DEGIL -- OLCULDU. Kucuk bir TM_z
+    dielektrik silindirin (a = 2 hucre, eps_r = 4) uzak alani neredeyse
+    izotropiktir. Ayni kayittan okunan normalize |F(theta)| yayilimlari
+    (std/ort) ve TAM COZUMUNKI:
+
+        ka             0.094  0.126  0.157  0.199  0.251  0.314  0.398
+        bu fonksiyon   0.0011 0.0020 0.0048 0.0066 0.0095 0.0157 0.0231
+        TAM COZUM      0.0015 0.0027 0.0041 0.0064 0.0098 0.0146 0.0222
+        tek satir FT   0.2130 0.3762 0.4697 0.4164 0.3742 0.4602 0.4042
+
+    Bu fonksiyonun TAM COZUMDEN RMS farki 4.0e-04 ... 2.5e-03; tek satirin
+    FT'sininki 2.121e-01 ... 4.678e-01, yani 100 ile 500 kat arasi. Ustelik
+    bu fonksiyonun kalan anizotropisi bir HATA DEGIL: tam cozumun kendi
+    anizotropisiyle AYNI HANEDE ve ayni yonde gidiyor.
+
+    `detector_radius` ve `bin_frequency` kapilari `aperture_far_field`
+    ile AYNIDIR ve ayni yerden kosar.
+    """
+    p, n, dl, E, dn = _kontur(points, normals, lengths, values, normal_derivatives)
+    if not _kapali_mi(p, n, dl):
+        raise InvalidInputError(
+            "kontur KAPALI DEGIL: segment uclari ikiser ikiser eslesmiyor. "
+            "Dort yuzu `[y1, y2)` gibi yarim acik dosemek her kosede bir "
+            "hucre dusurur ve esdegerlik teoreminin integrali kurulmaz. "
+            "UYARI: `SUM n_i dl_i = 0` uzaklasma ozdesligi bu kusuru "
+            "GORMEZ (olculdu: kusurlu konturda o toplam da tam sifir)."
+        )
+    th = _acilar(angles)
+    if not _bin_kapisi(wavelength, bin_frequency):
+        return None
+    if not _uzaklik_kapisi(detector_radius, float(wavelength)):
+        return None
+    k = 2.0 * np.pi / float(wavelength)
+    rhat = np.stack([np.cos(th), np.sin(th)], axis=1)
+    izdusum = rhat @ n.T
+    faz = np.exp(1j * k * (rhat @ p.T))
+    return (
+        (1j * k * izdusum * E[None, :] - dn[None, :]) * faz * dl[None, :]
+    ).sum(axis=1)
+
+
+def scattering_width(
+    far_field,
+    *,
+    angles,
+    wavelength: float,
+    bin_frequency: float,
+    incident_amplitude: complex,
+) -> float | None:
+    """TOPLAM SACILMA GENISLIGI `W` [uzunluk] -- 2B'nin sacilma kesiti.
+
+    SINIF: OLCUM ALETI. Fizik cipasi (Rayleigh ussu `W ~ lambda^-p`)
+    `tests/em/test_sacilma.py`de kurulur; bu fonksiyon uslerden hicbir sey
+    bilmez.
+
+    HESAP. `ntff_far_field`in dondurdugu `I(theta)` ile sacilan alan
+    2B'de `E_s = A(k, r) I(theta)`, `A = (i/4) sqrt(2/(pi k r)) e^{-i(kr-pi/4)}`
+    (bu borunun uzlasiminda disari giden dalga `e^{-ikr}`). Dolayisiyla
+
+        d sigma(theta) = 2 pi r |E_s|^2 / |E_i|^2 = |I|^2 / (4 k |E_i|^2)
+        W = (1/2pi) INTEGRAL_0^{2pi} d sigma(theta) d theta
+          = INTEGRAL |I(theta)|^2 d theta / (8 pi k |E_i|^2)
+
+    `k` USSU BIR SUSLEME DEGIL, USSUN KENDISINI TASIYOR: `1/k ~ lambda`
+    oldugu icin `k` carpani dusurulurse olculen `p` TAM BIR BIRIM kayar --
+    olculdu, ayni kayitta 3.242894 yerine 4.242894 (fark 1.000000000). Ve
+    o sayi TAM OLARAK 3B'nin ussudur: bu tek carpan yanlis yazilsaydi modul
+    "3B bulduk" derdi.
+
+    `bin_frequency` ZORUNLUDUR ve KAPI (bkz. `_bin_kapisi`) bu fonksiyonun
+    en sert parcasidir. SEBEP OLCULDU: `W` FFT bininin GERCEK frekansinda
+    olculur, ama cagiran NOMINAL bir `lambda` ile etiketlerse us kayar.
+    Sevk penceresinde nominal kume {128, 100, 80, 64, 50, 40, 32}
+    istendiginde binler gercekte {133.333, 100, 80, 63.158, 50, 40, 32.432}
+    (en buyuk kayma %4.17) ve olculen us 3.248311 yerine 3.290854 cikiyor
+    (+0.042543). Kapinin dogru kullanimi `lambda`yi BIN IZGARASINDAN
+    secmektir (`lambda = T/j`); o zaman kapi tam gecer. Sevk penceresinde
+    kapi yedi nominal `lambda`nin UCUNU reddediyor -- ve bir us fiti butun
+    noktalari istedigi icin fit KURULAMIYOR.
+
+    VE BU ARIZA COZUNURLUK MERDIVENININ TEK BASINA GOREMEYECEGI BIR
+    ARIZADIR: `lambda` ile `dx` BIRLIKTE olceklendigi icin bagil bin kaymasi
+    merdivende sabit kalir. Olculdu -- nominal etiketlemenin us hatasi dort
+    basamakta +0.029448 / +0.032410 / +0.031798 / +0.031639, yani merdiven
+    mertebeleri -0.4295 / +0.0854 / +0.0225. Hata sifira yakinsamiyor,
+    ilk adimda BUYUYOR. Kilitleyen sey merdiven degil BIN KAPISIDIR.
+
+    `angles` [0, 2pi) uzerinde DUZGUN bir izgara olmali; integral orta
+    nokta kuralidir. Duzgun olmayan izgara reddedilir -- `d theta`nin tek
+    bir sayi oldugu varsayimi sessizce yanlis bir `W` uretirdi.
+    """
+    I = np.asarray(far_field, dtype=complex)
+    th = _acilar(angles)
+    if I.shape != th.shape:
+        raise InvalidInputError(
+            f"far_field ile angles ayni sekilde olmali, verilen: "
+            f"{I.shape} ve {th.shape}"
+        )
+    if th.size < 8:
+        raise InvalidInputError(
+            f"tam cember icin en az 8 aci gerekir, verilen: {th.size}"
+        )
+    d = np.diff(th)
+    dth = 2.0 * np.pi / th.size
+    if not np.allclose(d, dth, rtol=1e-9, atol=1e-12):
+        raise InvalidInputError(
+            "angles [0, 2pi) uzerinde DUZGUN bir izgara olmali (adim "
+            f"{dth:.9g}); verilen adimlarin en buyuk sapmasi "
+            f"{float(np.max(np.abs(d - dth))):.3g}. Duzgun olmayan izgarada "
+            "orta nokta kurali sessizce yanlis bir W uretirdi."
+        )
+    if not np.all(np.isfinite(I)):
+        raise InvalidInputError("far_field sonlu olmali")
+    Ei = complex(incident_amplitude)
+    if not np.isfinite(Ei.real) or not np.isfinite(Ei.imag) or Ei == 0:
+        raise InvalidInputError(
+            f"incident_amplitude sonlu ve sifirdan farkli olmali, verilen: {Ei}"
+        )
+    if not _bin_kapisi(wavelength, bin_frequency):
+        return None
+    k = 2.0 * np.pi / float(wavelength)
+    return float((np.abs(I) ** 2).sum() * dth / (8.0 * np.pi * k * abs(Ei) ** 2))
