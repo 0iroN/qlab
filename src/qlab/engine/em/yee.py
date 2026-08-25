@@ -19,7 +19,13 @@ from typing import Callable
 
 import numpy as np
 
-from qlab.engine.em.grid import FieldRecord, FieldState, Window, courant_limit
+from qlab.engine.em.grid import (
+    FieldRecord,
+    FieldState,
+    FieldState2D,
+    Window,
+    courant_limit,
+)
 from qlab.engine.em.medium import Medium
 from qlab.errors import InvalidInputError
 
@@ -158,9 +164,10 @@ def yee_step_1d(
     if state.dim != 1:
         raise InvalidInputError(
             f"yee_step_1d yalniz 1B durum alir, verilen dim = {state.dim}. "
-            "2B Task 4'te gelir; 3B ise KAPSAM DISIDIR ve sebebi olculdu: "
-            "Airy sabiti j_1,1/pi uzerinden 2B'de capalaniyor, 3B karsiligi "
-            "ayni adim sayisinda ciplak cekirdekle bile cok daha pahali."
+            "2B icin `yee_step_2d`/`run_2d` var; 3B ise KAPSAM DISIDIR ve "
+            "sebebi OLCULDU: Airy sabiti j_1,1/pi uzerinden 2B'de "
+            "capalaniyor (16.0 s), ayni adim sayisi ayni dogrusal boyutta "
+            "ciplak 3B cekirdekte ~512 dakika."
         )
     if state.cells != medium.cells:
         raise InvalidInputError(
@@ -241,6 +248,234 @@ def run_1d(
         probe_indices=tuple(int(p) for p in probes),
         window=Window(
             cells=cells,
+            dx=dx,
+            courant=courant,
+            steps=steps,
+            wavelength=wavelength,
+            npml=int(getattr(boundary, "thickness", 0)),
+            sgf=sgf,
+            window_fn=window_fn,
+        ),
+        final=st,
+    )
+
+
+# ===========================================================================
+# 2B (TM_z) -- AYNI SEMA, IKINCI BOYUT
+# ===========================================================================
+
+
+@dataclass(frozen=True, eq=False)
+class YeeCoefficients2D:
+    """2B (TM_z) guncelleme katsayilari.
+
+        Hx: hx <- dax * hx - dbx * (e[:, 1:] - e[:, :-1])
+        Hy: hy <- day * hy + dby * (e[1:, :] - e[:-1, :])
+        Ez: e  <- ca * e + cb * ( (hy[1:,:] - hy[:-1,:])
+                                  - (hx[:,1:] - hx[:,:-1]) )
+
+    Hx'teki EKSI kozmetik degil: TM_z'de dHx/dt = -dEz/dy, dHy/dt = +dEz/dx.
+    1B'de yalniz Hy vardi ve orada isaret artiydi -- yani 1B guncellemesi bu
+    semanin y'den BAGIMSIZ KESITIDIR. Bu bir IDDIADIR ve bit duzeyinde
+    olculuyor (bkz. tests/em/test_bessel.py).
+
+    `pec_mask` bir IC iletken maskesidir ve cekirdek onun NE OLDUGUNU bilmez:
+    dairesel bosluk mu, kare kutu mu, hicbiri mi -- gordugu tek sey bool bir
+    dizidir. `sigma` ile ayni gerekce.
+    """
+
+    ca: np.ndarray
+    cb: np.ndarray
+    dax: np.ndarray
+    dbx: np.ndarray
+    day: np.ndarray
+    dby: np.ndarray
+    pec_mask: np.ndarray
+    dim: int
+    courant: float
+
+
+def yee_coefficients_2d(medium: Medium, *, courant: float, boundary) -> YeeCoefficients2D:
+    """2B katsayilar. COURANT DENETIMI BURADADIR ve SINIRI 2B'NINKIDIR.
+
+    `courant_limit(2)` = 1/sqrt(2), 1B'nin 1'i DEGIL. Devralma tehlikesi
+    gercektir ve olculdu: 1B kapisi S = 0.9'u GECIRIR, 2B'de o sema PATLAR.
+    """
+    shape = medium.shape
+    if len(shape) != 2:
+        raise InvalidInputError(f"2B cozucu 2B ortam ister, verilen sekil: {shape}")
+    nx, ny = shape
+    if nx < 3 or ny < 3:
+        raise InvalidInputError(
+            f"2B izgara her yonde en az 3 hucre olmali, verilen: {nx} x {ny}"
+        )
+    limit = courant_limit(2)
+    if not courant > 0.0:
+        raise InvalidInputError(f"S > 0 olmali, verilen: {courant}")
+    if courant > limit:
+        raise InvalidInputError(
+            f"S = {courant} kararlilik sinirini asiyor (2B'de S_max = {limit}, "
+            "yani 1/sqrt(2)). Bu sinir 1B'ninkinden FARKLIDIR ve 1B kapisi "
+            "DEVRALINAMAZ: S = 0.9 1B'de gecerdi, 2B'de sema patlar. Ayrinti: "
+            "grid.courant_limit."
+        )
+    sigma = np.asarray(boundary.sigma_2d(shape), dtype=float)
+    if sigma.shape != (nx, ny):
+        raise InvalidInputError(
+            f"sinir sigma dizisi {(nx, ny)} olmali, verilen: {sigma.shape}"
+        )
+    mask = np.asarray(boundary.pec_mask_2d(shape))
+    if mask.shape != (nx, ny) or mask.dtype != bool:
+        raise InvalidInputError(
+            f"pec_mask_2d {(nx, ny)} sekilli bool dizi olmali, verilen: "
+            f"{mask.shape} / {mask.dtype}"
+        )
+    eps = medium.eps_r
+    mu_x = medium.mu_yari_2d(1)  # Hx(i, j+1/2)
+    mu_y = medium.mu_yari_2d(0)  # Hy(i+1/2, j)
+
+    d_e = sigma * courant / (2.0 * eps)
+    ca = (1.0 - d_e) / (1.0 + d_e)
+    cb = (courant / eps) / (1.0 + d_e)
+
+    d_hx = 0.5 * (d_e[:, :-1] + d_e[:, 1:])
+    d_hy = 0.5 * (d_e[:-1, :] + d_e[1:, :])
+    return YeeCoefficients2D(
+        ca=ca,
+        cb=cb,
+        dax=(1.0 - d_hx) / (1.0 + d_hx),
+        dbx=(courant / mu_x) / (1.0 + d_hx),
+        day=(1.0 - d_hy) / (1.0 + d_hy),
+        dby=(courant / mu_y) / (1.0 + d_hy),
+        pec_mask=mask,
+        dim=2,
+        courant=courant,
+    )
+
+
+def _adim_2d(state: FieldState2D, co: YeeCoefficients2D) -> FieldState2D:
+    """TEK 2B GUNCELLEME YOLU -- `yee_step_2d` de `run_2d` de buradan gecer.
+
+    1B'deki `_adim` ile ayni gerekce ve ayni sira: once H (yarim adim ileri),
+    sonra E (tam adim). Dort kenardaki PEC duvar ve IC ILETKEN MASKESI E'nin
+    ustune en son uygulanir -- maske, "iletkende alan yok"un en dogrudan
+    halidir ve merdivenlenme tam olarak burada olur.
+    """
+    e, hx, hy = state.e, state.hx, state.hy
+    hx = co.dax * hx - co.dbx * (e[:, 1:] - e[:, :-1])
+    hy = co.day * hy + co.dby * (e[1:, :] - e[:-1, :])
+    e_yeni = co.ca * e
+    e_yeni[1:-1, 1:-1] += co.cb[1:-1, 1:-1] * (
+        (hy[1:, 1:-1] - hy[:-1, 1:-1]) - (hx[1:-1, 1:] - hx[1:-1, :-1])
+    )
+    # Izgaranin DORT kenari PEC duvardir -- 1B'deki iki uc ile ayni kural.
+    e_yeni[0, :] = 0.0
+    e_yeni[-1, :] = 0.0
+    e_yeni[:, 0] = 0.0
+    e_yeni[:, -1] = 0.0
+    e_yeni[co.pec_mask] = 0.0
+    return FieldState2D(e_yeni, hx, hy)
+
+
+def yee_step_2d(
+    state: FieldState2D, medium: Medium, *, courant: float, boundary
+) -> FieldState2D:
+    """Bir 2B Yee adimi. Bu fonksiyon da GEOMETRIYI BILMEZ.
+
+    Ortamdan gordugu adlar `shape`, `eps_r`, `mu_yari_2d`; sinirdan gordugu
+    adlar `sigma_2d`, `pec_mask_2d`. Dairenin yaricapi, kaynagin yeri,
+    dedektorlerin sayisi -- hicbiri buraya girmez. `yee_step_1d` ile ayni
+    gerekce; ve `run_2d` ile ayni ic fonksiyon (`_adim_2d`).
+    """
+    if not isinstance(state, FieldState2D):
+        raise InvalidInputError(
+            f"yee_step_2d FieldState2D alir, verilen: {type(state).__name__}"
+        )
+    if state.shape != medium.shape:
+        raise InvalidInputError(
+            f"durum ve ortam ayni izgarada olmali: {state.shape} != {medium.shape}"
+        )
+    return _adim_2d(
+        state, yee_coefficients_2d(medium, courant=courant, boundary=boundary)
+    )
+
+
+def run_2d(
+    medium: Medium,
+    *,
+    courant: float,
+    boundary,
+    steps: int,
+    source: Callable[[float], float] | None,
+    source_index: tuple[int, int] | None,
+    probes: tuple[tuple[int, int], ...],
+    wavelength: float,
+    sgf: float,
+    window_fn: str = "dikdortgen",
+    dx: float = 1.0,
+    dtype: type = float,
+    state: FieldState2D | None = None,
+) -> FieldRecord:
+    """Cok adimli 2B kosum -- ve PENCERESINI dondurmek ZORUNDA (1B ile ayni).
+
+    `probes` (i, j) IKILILERININ dizisidir; `probe_indices` onlari aynen
+    tasir, dolayisiyla DEDEKTOR SAYISI kayittan SAYILABILIR. Bu bir kolaylik
+    degil: dedektor sayisi bu modulde bir pencere dugmesidir ve
+    `mode_spectrum` onu kendi beyanina koyar.
+
+    `source` yumusak NOKTA kaynagidir (1B ile ayni satir):
+    `e[i, j] += cb[i, j] * source(t)`, `t = n * S * dx`.
+    """
+    if steps < 0:
+        raise InvalidInputError(f"steps negatif olamaz, verilen: {steps}")
+    if (source is None) != (source_index is None):
+        raise InvalidInputError(
+            "source ve source_index birlikte verilir ya da birlikte None olur"
+        )
+    shape = medium.shape
+    if len(shape) != 2:
+        raise InvalidInputError(f"2B cozucu 2B ortam ister, verilen: {shape}")
+    nx, ny = shape
+    for p in probes:
+        if len(tuple(p)) != 2:
+            raise InvalidInputError(f"prob (i, j) ikilisi olmali, verilen: {p}")
+        if not (0 <= p[0] < nx and 0 <= p[1] < ny):
+            raise InvalidInputError(
+                f"prob indisi izgara disinda: {tuple(p)} (sekil {shape})"
+            )
+    if source_index is not None:
+        si, sj = source_index
+        if not (0 < si < nx - 1 and 0 < sj < ny - 1):
+            raise InvalidInputError(
+                f"kaynak indisi PEC duvarlarin ARASINDA olmali: {source_index}"
+            )
+    co = yee_coefficients_2d(medium, courant=courant, boundary=boundary)
+    st = FieldState2D.zeros_2d(nx, ny, dtype=dtype) if state is None else state
+    if not isinstance(st, FieldState2D) or st.shape != shape:
+        raise InvalidInputError(
+            f"baslangic durumu 2B ve {shape} sekilli olmali, verilen: "
+            f"{type(st).__name__} / {getattr(st, 'shape', None)}"
+        )
+    if source_index is not None and bool(co.pec_mask[source_index]):
+        raise InvalidInputError(
+            f"kaynak ILETKENIN ICINDE: {source_index}. Maske orada Ez'yi her "
+            "adimda sifirlar, yani kaynak sessizce HIC calismaz -- ve kayit "
+            "bos donerdi."
+        )
+    pi = np.asarray([p[0] for p in probes], dtype=int)
+    pj = np.asarray([p[1] for p in probes], dtype=int)
+    kayit = np.zeros((len(probes), steps), dtype=st.e.dtype)
+    for n in range(steps):
+        # KAYIT ONCE -- `run_1d` ile ayni hiza secimi ve ayni gerekce.
+        kayit[:, n] = st.e[pi, pj]
+        st = _adim_2d(st, co)
+        if source is not None:
+            st.e[source_index] += co.cb[source_index] * source(n * courant * dx)
+    return FieldRecord(
+        probes=kayit,
+        probe_indices=tuple((int(p[0]), int(p[1])) for p in probes),
+        window=Window(
+            cells=(nx, ny),
             dx=dx,
             courant=courant,
             steps=steps,

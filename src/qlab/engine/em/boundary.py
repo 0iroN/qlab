@@ -1,8 +1,14 @@
 """Sogurucu ve yansitici sinirlar: dereceli iletken PML, ve PEC.
 
-Her sinir tek bir sey saglar: `sigma_1d(cells) -> (cells,)` elektrik
-iletkenlik profili. `yee.py` sinirin TURUNU bilmez, yalniz bu diziyi gorur --
-`medium` ile ayni gerekce.
+Her sinir DIZI saglar, davranis degil: 1B'de `sigma_1d(cells) -> (cells,)`
+elektrik iletkenlik profili; 2B'de `sigma_2d(shape) -> (nx, ny)` ve
+`pec_mask_2d(shape) -> (nx, ny)` bool IC ILETKEN maskesi. `yee.py` sinirin
+TURUNU bilmez, yalniz bu dizileri gorur -- `medium` ile ayni gerekce.
+
+Maskenin BURADA olmasi bilinclidir: geometri (dairenin yaricapi, kutunun
+kenari) sinirin isidir, cekirdegin degil. Modul 5'in en guclu cipasi
+(Bessel oranlari) ile onun pozitif kontrolu (kare kutu) AYNI `_adim_2d`den
+gecer ve aralarindaki tek fark BU DIZIDIR.
 """
 
 from __future__ import annotations
@@ -14,6 +20,18 @@ import numpy as np
 from qlab.errors import InvalidInputError
 
 YUZLER = ("iki", "sol", "sag")
+
+
+def _sekil(shape) -> tuple[int, int]:
+    """2B sekil dogrulamasi -- TEK YERDE, dort sinir sinifi icin."""
+    s = tuple(int(n) for n in shape)
+    if len(s) != 2:
+        raise InvalidInputError(f"2B sekil (nx, ny) olmali, verilen: {shape}")
+    if min(s) < 3:
+        raise InvalidInputError(
+            f"2B izgara her yonde en az 3 hucre olmali, verilen: {s}"
+        )
+    return s
 
 
 def _yerlestir(cells: int, profil: np.ndarray, yuzler: str) -> np.ndarray:
@@ -52,6 +70,18 @@ class PEC:
         if cells < 3:
             raise InvalidInputError(f"cells en az 3 olmali, verilen: {cells}")
         return np.zeros(cells)
+
+    def sigma_2d(self, shape: tuple[int, int]) -> np.ndarray:
+        return np.zeros(_sekil(shape))
+
+    def pec_mask_2d(self, shape: tuple[int, int]) -> np.ndarray:
+        """IC iletken YOK -- bosluk izgaranin TAMAMI (kare kutu).
+
+        Bu, Task 4'un `kare_kutu` KONTROLUDUR ve mutant DEGIL: dairesel
+        boslugun oranlari Bessel kokleri, kare boslugunkiler
+        sqrt(m^2+n^2)'lerdir. Iki geometri AYNI cekirdekten gecer.
+        """
+        return np.zeros(_sekil(shape), dtype=bool)
 
     @property
     def thickness(self) -> int:
@@ -132,7 +162,20 @@ class PML:
     (TUZAK, olculdu: ayni olcum `tracemalloc` acikken 0.111 s veriyor --
     uc kat. Bellek ve sure AYNI kosumda olculurse sure sayisi tracemalloc'un
     yukunu tasir; ikisi ayri kosuldu.)
-    (2B bolunmus-alan PML Task 4'un isidir ve bedeli orada YENIDEN olculur.)
+
+    2B'DE SOZ ODENDI (Task 4) ve IKI SONUC CIKTI:
+    (1) BEDEL 2B'DE DE YOK. `sigma_2d` de bolunmus-alan DEGIL, iki eksende
+        dereceli SKALER iletkenliktir; fazladan alan tutmaz. Olculdu
+        (n = 241, 400 adim, besin en iyisi): npml = 0/15/40 icin
+        0.1601/0.1524/0.1544 s, tepe bellek 7740.0 vs 7740.1 KiB (1.0000).
+    (2) AMA "d = 15 YETER" HUKMU 1B'NINDIR ve 2B'ye TASINMAZ. Nokta kaynak
+        her aciya birden isir, skaler iletken ise yalniz DIK bilende
+        eslesir. Olculen kalan genlik orani (PEC'e gore): d = 8/15/25/40
+        icin 7.999e-02 / 5.299e-02 / 2.117e-02 / 5.950e-03. 1B'de d = 15
+        dik geliste 5.27e-03 veriyordu; 2B'de ayni kalinlik ON KAT daha
+        kotu ve o duzeye inmek icin d = 40 gerekiyor.
+    Bu bir kusur beyanidir, engel degil: Modul 5'in 2B fizik cipasi KAPALI
+    bir bosluktur ve sogurucu KULLANMAZ. Kilit: tests/em/test_bessel.py.
     """
 
     thickness: int = 15
@@ -183,6 +226,84 @@ class PML:
                 f"iki PML katmani izgaraya sigmali: 2 * {self.thickness} >= {cells}"
             )
         return _yerlestir(cells, self.profile(), self.yuzler)
+
+    def sigma_2d(self, shape: tuple[int, int]) -> np.ndarray:
+        """2B'de dort kenara yerlestirilmis profil -- ve ADI PML DEGIL.
+
+        BEYAN, ve bu Task 4'te OLCULDU: burada kurulan sey Berenger'in
+        BOLUNMUS-ALAN PML'i DEGIL, iki eksende ayri ayri dereceli SKALER
+        iletkenliktir (kosede ikisinin BUYUGU alinir). 1B'de dik geliste
+        ikisi AYNI semadir -- bu sinifin 1B dokstringi bunu yaziyor ve
+        dogru. 2B'de DEGILDIR: skaler iletken egik gelen dalgayi
+        eslestirmez, cunku eslestirme kosulu yalniz dik bilesende saglanir.
+        """
+        s = _sekil(shape)
+        d = self.thickness
+        for n in s:
+            if 2 * d >= n:
+                raise InvalidInputError(
+                    f"iki PML katmani izgaraya sigmali: 2 * {d} >= {n} "
+                    f"(sekil {s})"
+                )
+        profil = self.profile()
+        sx = _yerlestir(s[0], profil, self.yuzler)[:, None]
+        sy = _yerlestir(s[1], profil, self.yuzler)[None, :]
+        return np.maximum(np.broadcast_to(sx, s), np.broadcast_to(sy, s))
+
+    def pec_mask_2d(self, shape: tuple[int, int]) -> np.ndarray:
+        """Sogurucu sinirda IC iletken yoktur."""
+        return np.zeros(_sekil(shape), dtype=bool)
+
+
+@dataclass(frozen=True)
+class CircularPEC:
+    """Dairesel PEC bosluk -- Modul 5'in EN GUCLU CIPASININ geometrisi.
+
+    Izgaranin MERKEZINDEN `radius` uzaktaki her Ez dugumu iletkendir
+    (Ez = 0). Merkez bir DUGUM uzerindedir: sekil (2R+1+2*margin)^2 secilir
+    ve merkez tam ortadaki dugumdur.
+
+    SINIR MERDIVENLENMISTIR ve bu bir kusur DEGIL, CIPANIN PENCERESIDIR:
+    dairenin gercek yeri ile "r <= R" dugum kumesinin sinirlari arasindaki
+    fark O(dx)'tir, dolayisiyla MUTLAK kip frekanslari yalniz 1. mertebeden
+    yakinsar. ORANDA merdiven hatasi buyuk olcude gotusur; cipa bu yuzden
+    ORAN olarak kurulur. Iki hukum de Task 4'te ayri ayri OLCULDU ve
+    `tests/em/test_bessel.py`de ayri ayri kilitlendi.
+
+    `sigma_2d` SIFIRDIR: bu bir sogurucu degil, TAM YANSITICI bir bosluktur.
+    Cekirdek yine de `sigma_2d`yi cagirir -- sinirin TURUNU bilmedigi icin
+    (bkz. modul dokstringi), ve "sogurma yok"un karsiligi sifir bir dizidir,
+    ozel bir kod yolu degil.
+    """
+
+    radius: float
+
+    def __post_init__(self) -> None:
+        if not self.radius > 0.0:
+            raise InvalidInputError(
+                f"yaricap pozitif olmali, verilen: {self.radius}"
+            )
+
+    @property
+    def thickness(self) -> int:
+        return 0
+
+    def sigma_1d(self, cells: int) -> np.ndarray:
+        raise InvalidInputError(
+            "CircularPEC yalniz 2B'de tanimlidir; 1B karsiligi PEC'tir "
+            "(bkz. PEC dokstringi: 'ayni fizik, tek boyutta')."
+        )
+
+    def sigma_2d(self, shape: tuple[int, int]) -> np.ndarray:
+        return np.zeros(_sekil(shape))
+
+    def pec_mask_2d(self, shape: tuple[int, int]) -> np.ndarray:
+        """`r > radius` olan dugumler iletken. MERDIVENLENME BURADA OLUYOR."""
+        nx, ny = _sekil(shape)
+        cx, cy = 0.5 * (nx - 1), 0.5 * (ny - 1)
+        i = np.arange(nx)[:, None] - cx
+        j = np.arange(ny)[None, :] - cy
+        return (i * i + j * j) > self.radius * self.radius
 
 
 @dataclass(frozen=True)

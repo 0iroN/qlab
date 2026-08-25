@@ -964,3 +964,216 @@ def tir_phase_ladder(
     return convergence_ladder(
         degerler, 1.0 / lam, noise=noise, ratio=ratio, kappa=kappa
     )
+
+
+# ===========================================================================
+# KIP SPEKTRUMU -- 2B boslugun kip frekanslari
+# ===========================================================================
+#
+# BU BOLUM BESSEL KOKLERINI BILMEZ ve bilmemesi CIPANIN KOSULUDUR. Burada
+# doner sey ADSIZ TEPE FREKANSLARIDIR; hangi tepenin `j_{0,1}`, hangisinin
+# `j_{1,1}` oldugu TESTTE eslenir. Eslestirme ile DEGER birbirinden ayridir:
+# eslestirmenin penceresi %1 mertebesinde, cipanin hukmu 1e-5 mertebesinde --
+# arada 1000 kat var, yani eslestirme hukmu URETEMEZ. (Ayni ayrim Modul 3'te
+# "tautoloji-cipa" olarak olculmustu.)
+
+#: Tepe kapisi: en buyuk tepenin bu kesrinden kucuk yerel maksimumlar tepe
+#: SAYILMAZ. Tolerans degil, PENCERE DUGMESI -- ve iki UCU DA OLCULDU
+#: (bkz. `mode_spectrum` ve WINDOW_SIDELOBE).
+DEFAULT_PEAK_FLOOR: float = 0.01
+
+#: Her FFT penceresinin OLCULEN en buyuk yan lobu, ana lobun tepesine gore.
+#: Pencerenin KENDI donusumunden okundu (n = 4096 ve 8192, 64 kat sifir dolgu;
+#: iki n'de de ayni sayi):
+#:     dikdortgen  0.217178  (-13.3 dB)   ana lob yari genisligi 1 bin
+#:     hann        0.026707  (-31.5 dB)                          2 bin
+#:     blackman    0.001243  (-58.1 dB)                          3 bin
+#: BU SAYILAR BIR TABLODAN ALINMADI, OLCULDU -- ve `mode_spectrum`un
+#: IMKAN KAPISI onlarin uzerine kurulu: `peak_floor` yan lobun ustunde
+#: degilse, bulunan "tepe"lerin bir kismi KIP DEGIL PENCERE ARTIFAKTIDIR.
+WINDOW_SIDELOBE: dict[str, float] = {
+    "dikdortgen": 0.217178,
+    "hann": 0.026707,
+    "blackman": 0.001243,
+}
+
+#: FFT pencereleri. "dikdortgen" = pencere UYGULAMAMAK, ve bu da bir secimdir.
+WINDOW_FNS: tuple[str, ...] = tuple(WINDOW_SIDELOBE)
+
+
+@dataclass(frozen=True)
+class ModeSpectrum:
+    """Bir 2B kosumun kip spektrumu -- ve TAM ANALIZ PENCERESI.
+
+    `frequencies`: tepe frekanslari, ARTAN sirada, `c = 1` biriminde
+    (dolayisiyla `omega = 2 pi f` ve `j = 2 pi R f`).
+    `amplitudes`: her tepenin dedektorler uzerinden toplanmis genligi.
+
+    Geri kalan alanlar ANALIZ PENCERESIDIR ve hepsi ZORUNLUDUR: bu modulde
+    tohumun karsiligi pencerenin tam beyanidir (bkz. `grid.Window`), ve
+    spektral bir sayinin `pad`, pencere fonksiyonu, dedektor sayisi ve kayit
+    uzunlugu soylenmeden yazilamayacagi bu modulde ON BIR kez olculdu.
+    """
+
+    frequencies: tuple[float, ...]
+    amplitudes: tuple[float, ...]
+    bin_width: float
+    raw_bin_width: float
+    pad: int
+    window_fn: str
+    peak_floor: float
+    detectors: int
+    steps: int
+
+    def ratios(self) -> tuple[float, ...]:
+        """Tepe frekanslarinin EN DUSUGUNE oranlari.
+
+        Cipa BU sayilar uzerine kurulur, `frequencies` uzerine DEGIL: oran
+        `R`den, `c`den ve `eps_r`den bagimsizdir, tekil frekans ise DEGILDIR.
+        """
+        if not self.frequencies:
+            return ()
+        f0 = self.frequencies[0]
+        return tuple(f / f0 for f in self.frequencies)
+
+    def as_lines(self) -> list[str]:
+        return [
+            f"tepe sayisi : {len(self.frequencies)}",
+            f"dedektor    : {self.detectors}",
+            f"pad         : {self.pad} (bin {self.raw_bin_width:.6g} -> "
+            f"{self.bin_width:.6g})",
+            f"FFT penceresi: {self.window_fn}",
+            f"tepe tabani : {self.peak_floor:g}",
+        ]
+
+
+def _pencere_dizisi(window_fn: str, n: int) -> np.ndarray:
+    if window_fn == "dikdortgen":
+        return np.ones(n)
+    u = 2.0 * np.pi * np.arange(n) / n
+    if window_fn == "hann":
+        # Periyodik (DFT-simetrik) Hann: `np.hanning` SIMETRIK olani verir ve
+        # spektral sizinti icin dogru olan periyodik olanidir.
+        return 0.5 - 0.5 * np.cos(u)
+    if window_fn == "blackman":
+        return 0.42 - 0.5 * np.cos(u) + 0.08 * np.cos(2.0 * u)
+    raise InvalidInputError(
+        f"window_fn {WINDOW_FNS} icinden olmali, verilen: {window_fn!r}"
+    )
+
+
+def mode_spectrum(
+    record,
+    *,
+    pad: int,
+    window: str,
+    peak_floor: float = DEFAULT_PEAK_FLOOR,
+    interpolate: bool = True,
+) -> ModeSpectrum:
+    """Kayittan kip frekanslari -- ADSIZ tepeler, teori YOK.
+
+    SINIF: OLCUM ALETI. Kendisi ne sema ne fizik cipasidir; Bessel koklerini
+    HIC gormez (dosyada gecmezler) ve hangi tepenin hangi kip oldugunu
+    soylemez. Cipa `tests/em/test_bessel.py`de kurulur.
+
+    HESAP
+        1. Dedektor basina kayit, `window` ile pencerelenir.
+        2. `pad` katina SIFIR DOLGU yapilir ve rfft alinir.
+        3. Dedektorlerin GENLIKLERI toplanir: `M(f) = sum_d |X_d(f)|`.
+           Toplam GENLIKLERINDIR, karmasik degerlerin DEGIL -- karmasik
+           toplamda kipin dedektorler arasindaki isaret degisimi (m != 0
+           kiplerinde acisal bagimlilik) kipi SONDURURDU.
+        4. `M`in yerel maksimumlari, `peak_floor * max(M)` tabaninin ustunde
+           kalanlar, tepe sayilir.
+        5. `interpolate` ise tepe konumu UC NOKTALI PARABOLLE ara degerlenir.
+
+    `interpolate = False` bir hata ayiklama dugmesi DEGIL, olculen bir
+    karsilastirmadir: ara degerleme kalkinca tepe konumu bin izgarasina
+    yapisir ve merdiven mertebesi duser (bkz. tests/em/test_bessel.py).
+
+    `pad` ZORUNLU ANAHTAR KELIME: sifir dolgu YENI BILGI EKLEMEZ, yalniz
+    ayni spektrumu daha sik ORNEKLER; ama ara degerlemenin parabol varsayimi
+    ancak yeterli ornekle gecerlidir. Bu yuzden ikisi bir aradadir ve degeri
+    beyan edilir. OLCULDU (Task 4, 2B Bessel merdiveni): `pad` 8 -> 1
+    yapilinca pencere gurultusu ~1e-06'dan ~1e-04'e cikiyor ve merdivenin
+    hukmu OTURDU(2) -> YARGILANAMAZ'a doner. Tek IZGARADA ise `pad = 1` bes
+    orandan DORDUNDE dogru borudan DAHA YAKIN cikiyor -- yani bu dugmenin
+    bedeli tek noktada GORUNMEZ, yalniz merdivende gorunur.
+
+    `peak_floor`UN IKI UCU DA OLCULDU ve arasi dardir:
+      ALT UC  pencerenin yan lobu (WINDOW_SIDELOBE) -- altinda kalirsa
+              bulunan tepelerin bir kismi kip degil artifakttir; kapi
+              yukarida.
+      UST UC  en zayif capalanan kip. Olculdu (R = 80, 8 dedektor): bes
+              Bessel oraninin genlikleri en buyuk tepenin 1.000 / 0.952 /
+              0.298 / 0.519 / **0.0214**'u. Yani `peak_floor` 0.0214'un
+              ALTINDA olmak zorunda.
+    Ikisi birlikte SEVK EDILEN PENCEREYI BELIRLER: `hann`in yan lobu
+    0.026707'dir ve 0.0214'un USTUNDEDIR -- yani hann ile o kip HICBIR
+    mesru tabanda ayrilamaz (olculdu: hann + 0.03 ile bes orandan dordu
+    bulunuyor). `blackman`in yan lobu 0.001243 ve taban 0.01 ile BESI DE
+    bulunuyor. Planin "Hann, pad = 8" penceresi bu yuzden sevk EDILMEDI.
+    """
+    if not isinstance(pad, int) or isinstance(pad, bool) or pad < 1:
+        raise InvalidInputError(f"pad en az 1 tamsayi olmali, verilen: {pad!r}")
+    if not 0.0 < peak_floor < 1.0:
+        raise InvalidInputError(
+            f"peak_floor (0, 1) araliginda olmali, verilen: {peak_floor}"
+        )
+    if window not in WINDOW_SIDELOBE:
+        raise InvalidInputError(
+            f"window {WINDOW_FNS} icinden olmali, verilen: {window!r}"
+        )
+    # IMKAN KAPISI -- tolerans DEGIL. Yan lob ORANI ana lobun tepesine goredir
+    # ve tepe her zaman <= max(M) oldugundan, `peak_floor > yan_lob` kosulu
+    # HICBIR yan lobun tepe sayilamayacaginin CEBIRSEL garantisidir.
+    yan = WINDOW_SIDELOBE[window]
+    if peak_floor <= yan:
+        raise InvalidInputError(
+            f"peak_floor = {peak_floor} bu pencerenin OLCULEN en buyuk yan "
+            f"lobunun ({window}: {yan}) ustunde DEGIL. Bu ayarda bulunan "
+            "tepelerin bir kismi kip degil PENCERE ARTIFAKTI olur ve en "
+            "dusuk tepe (oranlarin paydasi) SESSIZCE yanlis cikar -- "
+            "olculdu: R = 80'de hann + 0.01 ile en dusuk tepe gercek kipin "
+            "%0.75 altindaki bir yan lobtu ve BUTUN oranlar o kadar kaydi."
+        )
+    seri = np.asarray(record.probes, dtype=float)
+    if seri.ndim != 2 or seri.shape[0] < 1 or seri.shape[1] < 8:
+        raise InvalidInputError(
+            f"kayit (dedektor, adim) sekilli ve en az 8 adim olmali, verilen: "
+            f"{seri.shape}"
+        )
+    w = record.window
+    dt = float(w.courant) * float(w.dx)
+    n = seri.shape[1]
+    pencere = _pencere_dizisi(window, n)
+    nfft = n * pad
+    spek = np.abs(np.fft.rfft(seri * pencere[None, :], n=nfft, axis=1))
+    M = spek.sum(axis=0)
+    frekans = np.fft.rfftfreq(nfft, d=dt)
+    df = float(frekans[1] - frekans[0])
+
+    taban = peak_floor * float(np.max(M))
+    ic = M[1:-1]
+    tepe_mi = (ic > M[:-2]) & (ic > M[2:]) & (ic > taban)
+    idx = np.flatnonzero(tepe_mi) + 1
+
+    fler: list[float] = []
+    aler: list[float] = []
+    for i in idx:
+        a, b, c = float(M[i - 1]), float(M[i]), float(M[i + 1])
+        payda = a - 2.0 * b + c
+        delta = 0.5 * (a - c) / payda if (interpolate and payda != 0.0) else 0.0
+        fler.append(float(frekans[i]) + delta * df)
+        aler.append(b)
+    return ModeSpectrum(
+        frequencies=tuple(fler),
+        amplitudes=tuple(aler),
+        bin_width=df,
+        raw_bin_width=1.0 / (n * dt),
+        pad=pad,
+        window_fn=window,
+        peak_floor=peak_floor,
+        detectors=int(seri.shape[0]),
+        steps=n,
+    )

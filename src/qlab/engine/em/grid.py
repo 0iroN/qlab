@@ -54,6 +54,15 @@ class FieldState:
     dtype KISITLANMIYOR (float ya da complex). Egik gelis indirgemesi
     (Task 3) d/dy -> i*ky ile KARMASIK alanlar kullanir ve ayni cekirdekten
     gecmek zorundadir; burada dtype=float'a zorlamak o yolu keserdi.
+
+    BU SINIFIN *"1B ve 2B tanimlar"* IDDIASI TASK 4'TE OLCULEREK CURUDU.
+    Task 1-3 boyunca `dim = 2` KABUL EDILIYORDU ama HICBIR sekil denetimi
+    yoktu: `FieldState(np.zeros(10), np.zeros(3), 2)` sessizce gecerdi ve
+    `dim = 1`de tipe zorlanan yarim-hucre kaydirmasi 2B'de HIC sinanmazdi.
+    Yani "2B tanimlar" cumlesi bir tanim degil, DENETIMSIZ BIR DELIKTI --
+    ve sevk edilince ilk kez sinanabilir hale geldi. Simdi `dim = 2` bu
+    siniftan REDDEDILIYOR; 2B durum `FieldState2D`de ve orada UC alanin
+    ucu de sekil sekil denetleniyor.
     """
 
     e: np.ndarray
@@ -82,9 +91,11 @@ class FieldState:
                     f"1B'de h, e'den TAM BIR HUCRE kisa olmali (h[i] = H(i+1/2)); "
                     f"verilen e.size = {self.e.size}, h.size = {self.h.size}"
                 )
-        elif self.dim != 2:
+        else:
             raise InvalidInputError(
-                f"FieldState yalniz 1B ve 2B tanimlar, verilen dim = {self.dim}"
+                "FieldState YALNIZ 1B durum tutar (dim = 1); 2B durum "
+                "FieldState2D'dedir cunku IKI H bileseni (Hx, Hy) tek bir `h` "
+                f"alanina sigmaz. Verilen dim = {self.dim}"
             )
 
     @property
@@ -102,6 +113,86 @@ class FieldState:
         return cls(np.zeros(cells, dtype=dtype), np.zeros(cells - 1, dtype=dtype), 1)
 
 
+@dataclass(frozen=True, eq=False)
+class FieldState2D:
+    """2B (TM_z) alan durumu: Ez, Hx, Hy.
+
+    `eq=False`: gerekce `FieldState`teki ile ayni.
+
+    SEKILLER YARIM HUCRE KAYDIRMASININ KENDISIDIR ve ucu de denetlenir:
+
+        e  = Ez(i, j)          (nx, ny)
+        hx = Hx(i, j+1/2)      (nx, ny-1)
+        hy = Hy(i+1/2, j)      (nx-1, ny)
+
+    Yani `hx` YALNIZ y yonunde, `hy` YALNIZ x yonunde bir hucre kisadir.
+    Ikisini de (nx-1, ny-1) yapmak (yaygin bir uygulama kisayolu) kaydirmayi
+    bir yonde dusururdu; burada sekil denetimi bunu TIPTE engelliyor --
+    `FieldState`in 1B'de yaptiginin aynisi, ve `FieldState`in `dim = 2`
+    delikinin kapatilma sebebi (bkz. FieldState dokstringi).
+
+    AYRI BIR SINIF, cunku 2B'de IKI H bileseni var. `dim` bir ALAN degil
+    OZELLIKTIR: bir 2B durumun `dim`i girdiyle degistirilemez.
+    """
+
+    e: np.ndarray
+    hx: np.ndarray
+    hy: np.ndarray
+
+    def __post_init__(self) -> None:
+        for ad in ("e", "hx", "hy"):
+            object.__setattr__(self, ad, np.asarray(getattr(self, ad)))
+        for ad in ("e", "hx", "hy"):
+            dizi = getattr(self, ad)
+            if not np.issubdtype(dizi.dtype, np.number):
+                raise InvalidInputError(
+                    f"{ad} sayisal olmali, verilen dtype: {dizi.dtype}"
+                )
+            if dizi.ndim != 2:
+                raise InvalidInputError(
+                    f"2B'de {ad} iki boyutlu olmali, verilen: {dizi.shape}"
+                )
+        nx, ny = self.e.shape
+        if nx < 3 or ny < 3:
+            raise InvalidInputError(
+                f"2B izgara her yonde en az 3 hucre olmali (dort kenarda PEC "
+                f"duvar var), verilen: {nx} x {ny}"
+            )
+        if self.hx.shape != (nx, ny - 1):
+            raise InvalidInputError(
+                f"hx[i, j] = Hx(i, j+1/2) oldugu icin sekli {(nx, ny - 1)} "
+                f"olmali (yalniz y yonunde TAM BIR HUCRE kisa); verilen: "
+                f"{self.hx.shape}"
+            )
+        if self.hy.shape != (nx - 1, ny):
+            raise InvalidInputError(
+                f"hy[i, j] = Hy(i+1/2, j) oldugu icin sekli {(nx - 1, ny)} "
+                f"olmali (yalniz x yonunde TAM BIR HUCRE kisa); verilen: "
+                f"{self.hy.shape}"
+            )
+
+    @property
+    def dim(self) -> int:
+        return 2
+
+    @property
+    def shape(self) -> tuple[int, int]:
+        nx, ny = self.e.shape
+        return int(nx), int(ny)
+
+    @classmethod
+    def zeros_2d(cls, nx: int, ny: int, *, dtype: type = float) -> FieldState2D:
+        if nx < 3 or ny < 3:
+            raise InvalidInputError(
+                f"2B izgara her yonde en az 3 hucre olmali, verilen: {nx} x {ny}"
+            )
+        return cls(
+            np.zeros((nx, ny), dtype=dtype),
+            np.zeros((nx, ny - 1), dtype=dtype),
+            np.zeros((nx - 1, ny), dtype=dtype),
+        )
+
+
 @dataclass(frozen=True)
 class Window:
     """PENCERE BEYANI -- bu modulde TOHUMUN yerini tutan sey.
@@ -117,7 +208,7 @@ class Window:
     ise FFT penceresi tek basina sonucu oynattigi icin.
     """
 
-    cells: int
+    cells: int | tuple[int, int]
     dx: float
     courant: float
     steps: int
@@ -126,10 +217,22 @@ class Window:
     sgf: float
     window_fn: str
 
+    @property
+    def izgara(self) -> str:
+        """Izgara beyani: 1B'de `N`, 2B'de `nx x ny`.
+
+        `cells` 2B'de bir IKILIDIR ve tek bir tamsayiya indirgenmez. Carpimi
+        (toplam hucre) yazmak nx ile ny'yi gorunmez kilardi ve bu modulde
+        `R` merdiveninin butun hukmu izgaranin KENARINDAN okunuyor.
+        """
+        if isinstance(self.cells, tuple):
+            return " x ".join(str(int(n)) for n in self.cells)
+        return str(int(self.cells))
+
     def as_lines(self) -> list[str]:
         """Panelde ve testlerde basilacak tek satirlik beyan parcalari."""
         return [
-            f"izgara      : {self.cells} hucre, dx = {self.dx:g}",
+            f"izgara      : {self.izgara} hucre, dx = {self.dx:g}",
             f"S (Courant) : {self.courant:g}",
             f"adim        : {self.steps}",
             f"lambda      : {self.wavelength:g} hucre",
@@ -161,13 +264,30 @@ def courant_limit(dim: int) -> float:
     sema kararli olmaktan cikar ve esik ikili aramayla OLCULUR.
 
     OLCULDU. d = 1 SEVK EDILEN cekirdekle (`_adim`, PEC duvar, L = 200,
-    4000 adim, uc tohum), d = 2 ve 3 ciplak periyodik cekirdekle (sevk
-    edilmis karsiligi yok):
+    4000 adim, uc tohum), d = 3 ciplak periyodik cekirdekle (sevk edilmis
+    karsiligi YOK ve olmayacak):
 
         d = 1  S_max = 1.000036472 / 1.000036294 / 1.000038000   (PEC duvar)
         d = 1  S_max = 1.000005483 / 1.000005224 / 1.000005889   (periyodik)
-        d = 2  S*sqrt(2) = 1.000010496 / 1.000012907 / 1.000010883
+        d = 2  S*sqrt(2) = 1.000010496 / 1.000012907 / 1.000010883 (periyodik)
         d = 3  S*sqrt(3) = 1.000048611 / 1.000047909 / 1.000046669
+
+    d = 2 ARTIK CIPLAK CEKIRDEGIN SAYISI DEGIL: Task 4'te 2B sevk edildi ve
+    esik SEVK EDILEN `_adim_2d` ile YENIDEN olculdu (PEC duvar, 400 adim,
+    ikili arama tol 1e-7, uc tohum). Bu dokstringin bir zamanlar "sevk
+    edilmis karsiligi yok" demesi Task 4'te gecerliligini yitirdi:
+
+        L =  32 : S*sqrt(2) = 1.001941 / 1.002003 / 1.002102
+        L =  64 : S*sqrt(2) = 1.000960 / 1.000995 / 1.001103
+        L = 128 : S*sqrt(2) = 1.000786 / 1.000838 / 1.000781
+
+    ve asimin IKI PARCASI 2B'de de aynen duruyor: izgara payi PEC kutuda
+    yine tam olarak 1/cos(pi/(2(L-1))) (32/64/128 icin 1.001285/1.000311/
+    1.000076; olculenin bu forma orani dokuz olcumde de 1.000655-1.000816,
+    yani L'den BAGIMSIZ), kosum payi ise adimla iniyor (L = 64'te 400/1500/
+    4000 adim -> +6.48e-04/+4.18e-05/+5.46e-06; sonuncusu 1B'nin ayni adim
+    sayisindaki +5.99e-06'siyla ayni hanede). Ayrinti ve kilit:
+    tests/em/test_bessel.py.
 
     ESIKTEKI ARTIK ASIM IKI PARCADIR ve plan taslagi ikisini KARISTIRIYORDU
     ("sonlu kosum artefaktidir, 20000 adimda +2.1e-7'ye iniyor"). Olculdu:
@@ -199,8 +319,8 @@ def courant_limit(dim: int) -> float:
     `dim` AYRIKTIR (1, 2, 3) ve surekli bir dugmeye cevrilemez -- spec 3.5'in
     ikincil ayirt edici olcutu. Bu yuzden d = 3 BURADA tanimlidir: 1/sqrt(3)
     boyut merdiveninin ucuncu basamagidir ve semanin saf bir sayisidir.
-    COZUCU ise 3B'yi REDDEDER (bkz. yee.yee_step_1d): sema SAYISI bedavadir,
-    3B KOSUM degildir. Olculdu (ciplak np.roll cekirdegi, D = 80):
+    COZUCU ise 3B'yi REDDEDER (bkz. yee.run_2d): sema SAYISI bedavadir, 3B
+    KOSUM degildir. Olculdu (ciplak np.roll cekirdegi, D = 80):
 
         bellek : 2B 0.15 MiB, 3B 23.44 MiB -> 156 kat, ve bu ORAN KARARLI
         sure   : 2B 0.028-0.073 ms/adim, 3B 18.1-24.7 ms/adim
@@ -210,6 +330,11 @@ def courant_limit(dim: int) -> float:
     kucuk). Yazilabilecek olan bir ALT SINIRDIR -- birkac yuz kat -- ve o da
     ciplak cekirdegin sayisidir; PML + TF/SF'li gercek bir 3B cekirdek daha
     pahalidir.
+
+    TASK 4'TE SEVK EDILEN CIPAYLA YENIDEN OLCULDU ve alt sinir SOMUTLASTI:
+    ciplak 3B cekirdek D = 167'de (sevk edilen 2B cipanin izgarasinin TAM
+    esi) 228.72 ms/adim ve alti alan 213.2 MiB; ayni 134400 adim orada
+    ~512 dakika eder, 2B karsiligi 16.0 s -- yani ~1920 kat.
     """
     if dim not in (1, 2, 3):
         raise InvalidInputError(

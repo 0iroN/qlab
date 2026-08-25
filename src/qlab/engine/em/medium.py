@@ -83,6 +83,10 @@ class Medium:
                 f"ey_kural {EY_KURALLARI} icinden olmali, verilen: "
                 f"{self.ey_kural!r}"
             )
+        if self.eps_r.ndim not in (1, 2):
+            raise InvalidInputError(
+                f"ortam 1B ya da 2B olmali, verilen sekil: {self.eps_r.shape}"
+            )
         for ad, dizi in (("eps_r", self.eps_r), ("mu_r", self.mu_r)):
             if not np.all(dizi > 0.0):
                 raise InvalidInputError(
@@ -92,7 +96,25 @@ class Medium:
 
     @property
     def cells(self) -> int:
+        """1B hucre sayisi. 2B ortamda TANIMSIZDIR ve oyle davranir.
+
+        `shape[0]`i sessizce dondurmek 2B'de YANLIS bir sayiyi dogru gibi
+        gosterirdi (nx, ny degil). Task 4'te 2B sevk edilince bu ayrim
+        olculebilir hale geldi: `yee_coefficients_2d` `cells`e HIC dokunmaz,
+        `shape`e dokunur -- ve iki kod yolunun ortamdan gordugu ad kumeleri
+        testte ayri ayri sayiliyor.
+        """
+        if self.eps_r.ndim != 1:
+            raise InvalidInputError(
+                f"`cells` yalniz 1B ortamda tanimli; bu ortam {self.eps_r.ndim}B "
+                f"(sekil {self.shape}). 2B'de `shape` kullanilir."
+            )
         return int(self.eps_r.shape[0])
+
+    @property
+    def shape(self) -> tuple[int, ...]:
+        """Ortamin izgara sekli -- 1B'de `(N,)`, 2B'de `(nx, ny)`."""
+        return tuple(int(n) for n in self.eps_r.shape)
 
     @property
     def eps_min(self) -> float:
@@ -130,6 +152,44 @@ class Medium:
         eps = np.full(cells, float(eps1))
         eps[interface:] = float(eps2)
         return cls(eps, np.ones(cells), ey_kural)
+
+    @classmethod
+    def uniform_2d(
+        cls, nx: int, ny: int, *, eps_r: float = 1.0, ey_kural: str = "aritmetik"
+    ) -> Medium:
+        """Duzgun 2B ortam. ADI `vacuum_2d` DEGIL -- `eps_r` girilebiliyor.
+
+        Bessel oranlarinin `eps_r`den bagimsiz oldugu sinavi tam olarak bu
+        kurucuyu 1.0 ve 2.25 ile cagirir; kurucu "vakum" diye adlandirilsaydi
+        adi yaptigi seye YALAN SOYLERDI.
+        """
+        if nx < 3 or ny < 3:
+            raise InvalidInputError(
+                f"2B izgara her yonde en az 3 hucre olmali, verilen: {nx} x {ny}"
+            )
+        if eps_r <= 0.0:
+            raise InvalidInputError(f"eps_r > 0 olmali, verilen: {eps_r}")
+        return cls(np.full((nx, ny), float(eps_r)), np.ones((nx, ny)), ey_kural)
+
+    def mu_yari_2d(self, axis: int) -> np.ndarray:
+        """2B'de yarim hucre `mu` -- `axis` KAYDIRMANIN YONUDUR.
+
+        `axis = 0` -> Hy(i+1/2, j), sekil (nx-1, ny)
+        `axis = 1` -> Hx(i, j+1/2), sekil (nx, ny-1)
+
+        1B'deki `mu_yari` gibi HER ZAMAN ARITMETIKTIR ve `ey_kural`a bagli
+        DEGILDIR; gerekce `mu_yari`nin dokstringindedir ve burada tekrar
+        edilmiyor.
+        """
+        if self.mu_r.ndim != 2:
+            raise InvalidInputError(
+                f"mu_yari_2d yalniz 2B ortamda tanimli, verilen sekil: {self.shape}"
+            )
+        if axis == 0:
+            return 0.5 * (self.mu_r[:-1, :] + self.mu_r[1:, :])
+        if axis == 1:
+            return 0.5 * (self.mu_r[:, :-1] + self.mu_r[:, 1:])
+        raise InvalidInputError(f"axis 0 ya da 1 olmali, verilen: {axis}")
 
     def eps_yari(self) -> np.ndarray:
         """(i+1/2)'de TEGET E bileseninin gordugu eps -- kural `ey_kural`."""

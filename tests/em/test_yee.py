@@ -30,7 +30,13 @@ import numpy as np
 import pytest
 
 from qlab.engine.em.boundary import PEC, PML, YUZLER, LossyLayer
-from qlab.engine.em.grid import FieldRecord, FieldState, Window, courant_limit
+from qlab.engine.em.grid import (
+    FieldRecord,
+    FieldState,
+    FieldState2D,
+    Window,
+    courant_limit,
+)
 from qlab.engine.em.medium import EY_KURALLARI, Medium
 from qlab.engine.em.source import gauss_cos, ricker
 from qlab.engine.em.yee import _adim, run_1d, yee_coefficients, yee_step_1d
@@ -215,7 +221,12 @@ def test_COURANT_LIMIT_UC_BOYUTU_TANIYOR_ama_COZUCU_ETMIYOR():
         courant_limit(4)
     with pytest.raises(InvalidInputError):
         courant_limit(0)
-    iki_b = FieldState(np.zeros((8, 8)), np.zeros((8, 8)), 2)
+    # TASK 4 GÜNCELLEMESİ: bu satır bir zamanlar
+    # `FieldState(np.zeros((8,8)), np.zeros((8,8)), 2)` kuruyordu ve O NESNE
+    # HİÇBİR ŞEKİL DENETİMİNDEN GEÇMİYORDU — `dim = 2` dalı boştu. 2B sevk
+    # edilince delik ölçülerek kapandı (bkz. grid.FieldState dokstringi ve
+    # tests/em/test_bessel.py); 2B durum artık `FieldState2D`dir.
+    iki_b = FieldState2D.zeros_2d(8, 8)
     with pytest.raises(InvalidInputError, match="yalniz 1B"):
         yee_step_1d(iki_b, Medium.vacuum(8), courant=0.5, boundary=PEC())
 
@@ -229,14 +240,23 @@ def test_FIELDSTATE_YARIM_HUCRE_KAYDIRMAYI_TIPTE_ZORLUYOR():
     `h[i] = H(i+1/2)` olduğu için `h`, `e`den TAM BİR HÜCRE kısadır. Eşit
     uzunluk kabul edilseydi kaydırmayı düşüren bir hata sessizce geçerdi —
     ve o hata yakınsama mertebesini 2'den 1'e indirir (mutasyonla ölçüldü).
+
+    BU TESTİN SON İKİ SATIRI TASK 4'TE DEĞİŞTİ, ve sebebi bir ÇÜRÜKTÜR:
+    `FieldState` *"yalniz 1B ve 2B tanimlar"* diyordu ve bu test o cümleyi
+    `match="1B ve 2B"` ile kilitliyordu. 2B sevk edilince ölçüldü ki
+    `dim = 2` dalında **hiçbir denetim yoktu** — kilitlenen şey bir tanım
+    değil, DENETİMSİZ BİR DELİKTİ. Artık `FieldState` yalnız 1B tutuyor,
+    2B `FieldState2D`de ve orada üç alanın üçü de denetleniyor.
     """
     FieldState(np.zeros(10), np.zeros(9), 1)
     with pytest.raises(InvalidInputError, match="TAM BIR HUCRE"):
         FieldState(np.zeros(10), np.zeros(10), 1)
     with pytest.raises(InvalidInputError, match="TAM BIR HUCRE"):
         FieldState(np.zeros(10), np.zeros(8), 1)
-    with pytest.raises(InvalidInputError, match="1B ve 2B"):
+    with pytest.raises(InvalidInputError, match="FieldState2D"):
         FieldState(np.zeros(10), np.zeros(9), 3)
+    with pytest.raises(InvalidInputError, match="FieldState2D"):
+        FieldState(np.zeros((8, 8)), np.zeros((8, 8)), 2)
     with pytest.raises(InvalidInputError, match="sayisal"):
         FieldState(np.array(["a", "b"]), np.array(["c"]), 1)
 
