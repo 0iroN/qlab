@@ -378,20 +378,33 @@ pytest tests/ -v -m slow
 `pyproject.toml` bir `addopts` taşımaz, yani `pytest tests/` yavaş işaretli
 testleri de KOŞAR — ikinci komut ayrı bir küme değil, birincinin alt kümesidir.
 
-**Bu makinede ölçüldü** (ilk iki satır Modül 5 kapanışı, kalanı Modül 4):
+**Bu makinede ölçüldü** (ilk dört satır Modül 5, kalanı Modül 4):
 
 | Koşu | Test | Süre |
 |---|---|---|
-| tam süite (Modül 5 kapanışı) | **1389** | **939.68 s** |
-| yalnız Modül 5 (`tests/em/`) | **229** | **237.32 s** |
+| tam süite (`Δx` kapısından SONRA) | **1397** | **727.75 s** |
+| yalnız Modül 5 (`tests/em/`, aynı hâl) | **237** | **191.01 s** |
+| *tam süite (Modül 5 kapanışı, `cda2871`)* | *1389* | *939.68 s* |
+| *yalnız Modül 5 (`tests/em/`, `cda2871`)* | *229* | *237.32 s* |
 | *tam süite (Modül 4 kapanışı)* | *1159* | *585.36 s* |
 | *`-m "not slow"` (Modül 4 kapanışı)* | *1088* | *107.30 s* |
 | *yalnız `-m slow` (Modül 4 kapanışı)* | *71* | *475.33 s* |
 | *yalnız Modül 4 (`tests/spin/`)* | *186* | *187.23 s* |
 | *aynısı, `-m "not slow"`* | *166* | *29.82 s* |
 
-**Eğik yazılan beş satır Modül 4 kapanışının ölçümüdür ve YENİDEN
-ÖLÇÜLMEDİ**; bugünkü toplama uydurmak ölçüm değil uydurma olurdu. Modül 5
+**Eğik yazılan yedi satır ESKİ ölçümlerdir ve YENİDEN ÖLÇÜLMEDİ** (ikisi
+Modül 5 kapanışı `cda2871`, beşi Modül 4 kapanışı); bugünkü toplama uydurmak
+ölçüm değil uydurma olurdu. `cda2871` satırı yine de bugün BİR KEZ yeniden
+koşuldu ve **1389 passed / 738.92 s** verdi — 939.68 s ile arasındaki fark
+aşağıda beyan edilen makine gürültüsündendir, süite değişmedi.
+
+`Δx` kapısı (`engine/em/grid.dx_kapisi`) süiteye `tests/em/test_hucre_birimi.py`
+üzerinden **8 test** ekledi (1389 → 1397, `tests/em` 229 → 237); dosyanın kendi
+süresi **1.51 s** ve içinde hiç `slow` işareti YOK — yani `tests/em`
+tarafındaki 237.32 s → 191.01 s farkı bu dosyadan değil, makine gürültüsünden
+gelir (aynı gün `cda2871` de 939.68 s yerine 738.92 s koştu).
+
+Modül 5
 senaryo/panel görevi süiteye **50 test** ve `tests/em` tarafında
 **200.9 s → 237.32 s** (yani **+36.4 s**) ekledi; bunun **1.49 s**'i sevk
 edilen senaryonun kendi koşumu, geri kalanı `slow` işaretli iki

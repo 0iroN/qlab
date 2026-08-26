@@ -39,7 +39,7 @@ from typing import Callable
 
 import numpy as np
 
-from qlab.engine.em.grid import FieldRecord, FieldState, Window
+from qlab.engine.em.grid import FieldRecord, FieldState, Window, dx_kapisi
 from qlab.engine.em.medium import Medium
 from qlab.engine.em.yee import YeeCoefficients, _adim, yee_coefficients
 from qlab.errors import InvalidInputError
@@ -92,20 +92,37 @@ def oblique_coefficients(
     ikinci bir kararlilik denetimi yazilsaydi iki denetim birbirinden
     sessizce ayrilabilirdi.
 
+    `ky`NIN BIRIMI: RADYAN BOLU HUCRE. Bu bir ayrinti degil, bu dosyanin
+    `dx` ile iliskisinin TAMAMI. Enine terim `cb * (i*ky) * aux` diye
+    girer ve `cb = S/eps`tir; fiziksel karsiligi `(dt/eps) * i*k_y` oldugu
+    icin `ky = k_y * dx`, yani ARGUMANIN KENDISI dimensiyonsuz gruptur.
+    `oblique_coefficients` `dx`i GORMEZ ve `run_oblique_1d`in `dx`i bu
+    terime HIC girmez -- bu yapisaldir, olculmus degil.
+
     KARARLILIK HAKKINDA DURUST OLUMSUZ: `courant_limit(1)` kapisi `ky`yi
     HESABA KATMAZ, oysa gercek sinir `ky` ile DUSER. Indirgenmis semada enine
     turev tam (izgarasiz) oldugu icin kapali form `S_max = 1/sqrt(1 +
-    (ky dx/2)^2)`tir ve OLCULDU (vakum, PEC duvarli N = 201, 800 adim, ikili
+    (ky/2)^2)`tir ve OLCULDU (vakum, PEC duvarli N = 201, 800 adim, ikili
     arama; her iki kutuplanma icin ayni sayi cikti):
 
-        ky dx      0.0      0.2         0.4         0.5554      0.8         1.2
+        ky         0.0      0.2         0.4         0.5554      0.8         1.2
         olculen    1.000000 0.99511662  0.98065818  0.96361252  0.92854756  0.85755547
         kapali     1.000000 0.99503719  0.98058068  0.96353723  0.92847669  0.85749293
         oran       1.000000 1.000080    1.000079    1.000078    1.000076    1.000073
 
-    Artik asim (~8e-05) `grid.courant_limit`te olculen sonlu-izgara/sonlu-
-    kosum payiyla ayni ailedendir. SEVK EDILEN cagrilarda gorulen en buyuk
-    `ky dx` 0.555360'tir (lam = 16, theta = 45) ve oradaki sinir 0.963542;
+    BU TABLONUN SUTUN BASLIGI BIR ZAMANLAR *"ky dx"* IDI ve o etiket, `dx`
+    kapatilirken ILK KEZ sinanabilir hale gelip CURUDU: kapali formu
+    `ky*dx` ile okumak `dx = 4`te 0.4 icin 0.78086881 ongorur, oysa AYNI
+    pencerede olculen esik 0.98092060'tir (ky = 0.8'de 0.52999894'e karsi
+    0.92879012) -- yani %26 sapma. Kilidin GOVDESI zaten dogruyu yaziyordu
+    (`tests/em/test_arayuz.py` `1/sqrt(1 + (ky/2)^2)` hesapliyor); bayat
+    olan ETIKETTI. Pencere farki: bu ikinci olcum tohumlu kosumla yapildi
+    (m = 8 duran kip, buyume olcutu 100x, tol 1e-7) ve artik asimi 3.5e-04;
+    yukaridaki tablo kaynakli kosumun penceresindedir ve orada 8e-05.
+
+    Artik asim `grid.courant_limit`te olculen sonlu-izgara/sonlu-kosum
+    payiyla ayni ailedendir. SEVK EDILEN cagrilarda gorulen en buyuk `ky`
+    0.555360'tir (lam = 16, theta = 45) ve oradaki sinir 0.963542;
     kullanilan `S` = 0.4, yani pay iki katin ustundedir. AMA KAPI BUNU
     SINAMAZ: `ky` yeterince buyutulurse `courant_limit(1)` gecer ve sema
     yine de patlar.
@@ -213,7 +230,43 @@ def run_oblique_1d(
     Yansiyan alan IKI KOSUMUN FARKINDAN okunur (yumusak kaynak iki yonlu
     isir); arayuzsuz referans kosumu cagiranin isidir -- bkz.
     `observable/em_obs.reflection_coefficient`.
+
+    `dx != 1` BURADA DA REDDEDILIYOR (`grid.dx_kapisi`) ve BURADA BEDELI
+    EN AGIR: bu dosyada IKI enine buyukluk var ve `dx != 1`de AYRI
+    BIRIMLERE dusuyorlar -- `ky` radyan/HUCRE (bkz. `oblique_coefficients`),
+    kaynagin saati ise `t = n*S*dx` ile UZUNLUK basina. Sonuc BIR ACI
+    HATASIDIR ve OLCULDU. Pencere: `em_obs.ObliqueWindow` varsayilanlari
+    (N = 3600, npml = 60, S = 0.4, iface = 1500, kaynak 600, prob 1494,
+    sgf = 9, dikdortgen), eps1 = 4, eps2 = 1, BEYAN EDILEN theta = 45 der,
+    ve `wavelength` dx ile birlikte olceklenerek izgara cozunurlugu
+    lambda = 16 hucrede SABIT tutuldu; adim sayisi ucunde de 10040:
+
+        dx     W     ky          etkin theta   olculen |rho_s|
+        1      16    0.55536037  45.000000     1.00000650
+        2      32    0.27768018  20.704811     0.47632473
+        0.5    8     1.11072073  YOK           1.03208644
+
+    theta = 45'te (eps1 = 4, eps2 = 1) TAM IC YANSIMA vardir ve `|rho| = 1`
+    ZORUNLUDUR. `dx = 2`de olculen sayi 0.47632473 -- Fresnel'in 45 der
+    icin dedigi 1.00000000'a 0.5237 uzakta, 20.704811 der icin dedigi
+    0.45141623'e 0.0249 uzakta, yani 21 KAT DAHA YAKIN: cozucu BASKA BIR
+    ACININ sorusunu cevapliyordu. `dx = 0.5`te ise beyan edilen aci hic YOK
+    (sin(theta) = 1.41421 > 1) ve olculen `|rho_s|` 1.03208644, yani 1'in
+    USTUNDE -- fiziksel olarak IMKANSIZ. `t = n*S*dx` bu yuzden `t = n*S`
+    oldu; `* dx` carpani KALDIRILDI.
+
+    DURUST OLUMSUZ -- YUKARIDAKI UC SATIRDA HATA "SESSIZ" DEGILDI: sevk
+    edilen `reflection_coefficient` bu yapilandirmada `|rho| = 1` kapisini
+    KOSAR (`total_internal_reflection(4, 1, 45)` True, `unity_gate` 1e-2) ve
+    ||rho|-1| = 0.5237 ile 1.0321'i ikisini de KESER, yani `None` doner.
+    Kapi yalniz TIY'de ve aynada kosar: KISMI YANSIMADA (ornegin ayni
+    ortamlarda beyan edilen theta = 20 der, `total_internal_reflection`
+    False) hicbir kapi yoktur ve yanlis sayi SESSIZCE geri doner. Ustelik
+    `em_obs` cozucuye `dx` HIC gecirmez -- yani bu yol pratikte de hic
+    acilmamisti. Kapinin gerekcesi bu satirlar degil, `grid.dx_kapisi`daki
+    BIT BIT cokme olcumudur.
     """
+    dx_kapisi(dx)
     if steps < 0:
         raise InvalidInputError(f"steps negatif olamaz, verilen: {steps}")
     if (source is None) != (source_index is None):
@@ -240,7 +293,7 @@ def run_oblique_1d(
         st, aux = oblique_step(st, aux, coeffs)
         if source is not None:
             st.e[source_index] += coeffs.main.cb[source_index] * source(
-                n * courant * dx
+                n * courant
             )
     return FieldRecord(
         probes=kayit,

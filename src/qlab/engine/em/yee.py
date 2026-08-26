@@ -25,6 +25,7 @@ from qlab.engine.em.grid import (
     FieldState2D,
     Window,
     courant_limit,
+    dx_kapisi,
 )
 from qlab.engine.em.medium import Medium
 from qlab.errors import InvalidInputError
@@ -201,8 +202,24 @@ def run_1d(
     koymak onu unutulamaz kilar.
 
     `source` yumusak NOKTA kaynagidir: `e[source_index] += cb * source(t)`,
-    `t = n * S * dx`. Yumusak kaynak IKI YONLU isir ve yansiyan/sacilan alan
+    `t = n * S`. Yumusak kaynak IKI YONLU isir ve yansiyan/sacilan alan
     IKI KOSUMUN FARKINDAN okunur.
+
+    `wavelength` HUCRE cinsindendir ve bu artik bir TANIM DEGIL bir TEOREM:
+    `dx_kapisi` hucre ile uzunlugu ayni sey yaptigi icin kaynagin zaman
+    periyodu DOGRUDAN hucre cinsinden dalga boyudur.
+
+    KAYNAGIN SAATI BIR ZAMANLAR *"t = n * S * dx"* IDI ve `dx` GERCEKTEN
+    CARPILIYORDU -- oysa `wavelength` HUCRE cinsinden beyan ediliyordu
+    (`Window.as_lines`: "lambda ... hucre"). Ikisi yalniz `dx = 1`de
+    ortusuyordu, `dx != 1` SESSIZCE YANLIS calisiyordu, ve kusur Task 6'da
+    BEYAN EDILEREK acik birakilmisti. Simdi OLCULEREK kapatildi: `dx` ayri
+    bir serbestlik derecesi DEGILDIR, `wavelength`in olcekli bir kopyasidir
+    -- davranis yalniz `wavelength/dx` oranina bagli ve bu BIT BIT olculdu
+    (bkz. `grid.dx_kapisi`). `dx != 1` artik REDDEDILIYOR, dolayisiyla
+    `dt = S`tir ve `* dx` carpani BU SATIRDAN KALDIRILDI. Carpani birakmak
+    kapatilmis bir dugmeye 1 ile carpan OLU bir kod yolu birakirdi; kapali
+    bir dugmenin dogru yeri kapidir, carpim degil.
 
     BU SATIR BIR ZAMANLAR *"TF/SF tek yonlu kaynak Task 3'te gelir"*
     DIYORDU ve o soz BAYATLADI: Task 3 geldi gecti, TF/SF sevk EDILMEDI ve
@@ -215,6 +232,7 @@ def run_1d(
     (16.5 s/yapilandirma), baslangic kosuluyla ayni pencere 0.3-2 s.
     Kilit: tests/em/test_uzak_alan.py.
     """
+    dx_kapisi(dx)
     if steps < 0:
         raise InvalidInputError(f"steps negatif olamaz, verilen: {steps}")
     if (source is None) != (source_index is None):
@@ -251,9 +269,7 @@ def run_1d(
             # adim basina bir tam dizi kopyasini ortadan kaldirir. Cagirandan
             # gelen `state`in dizisine HICBIR ZAMAN dokunulmaz (ilk yazma
             # `_adim` sonrasidir).
-            st.e[source_index] += coeffs.cb[source_index] * source(
-                n * courant * dx
-            )
+            st.e[source_index] += coeffs.cb[source_index] * source(n * courant)
     return FieldRecord(
         probes=kayit,
         probe_indices=tuple(int(p) for p in probes),
@@ -435,8 +451,17 @@ def run_2d(
     `mode_spectrum` onu kendi beyanina koyar.
 
     `source` yumusak NOKTA kaynagidir (1B ile ayni satir):
-    `e[i, j] += cb[i, j] * source(t)`, `t = n * S * dx`.
+    `e[i, j] += cb[i, j] * source(t)`, `t = n * S`.
+
+    `dx != 1` BURADA DA REDDEDILIYOR ve gerekce `run_1d`dekinin AYNISIDIR
+    (tek kaynak: `grid.dx_kapisi`). Kusurun 2B'deki olcusu Task 6'da
+    beyan edilmisti: dairesel bosluk merdiveninde (R = 5/10, step_factor
+    120) tepe sayisi dx = 1/0.5/2 icin 20-13 / 4-4 / 31-43 oynarken pencere
+    ucunde de lambda'yi 7.257613 HUCRE diye basiyordu. O yuzden `dx`
+    `EMScenario` icinde de bir alan DEGILDIR -- ama senaryodan cikarmak
+    MOTORU kapatmiyordu; bu kapi onu kapatiyor.
     """
+    dx_kapisi(dx)
     if steps < 0:
         raise InvalidInputError(f"steps negatif olamaz, verilen: {steps}")
     if (source is None) != (source_index is None):
@@ -481,7 +506,7 @@ def run_2d(
         kayit[:, n] = st.e[pi, pj]
         st = _adim_2d(st, co)
         if source is not None:
-            st.e[source_index] += co.cb[source_index] * source(n * courant * dx)
+            st.e[source_index] += co.cb[source_index] * source(n * courant)
     return FieldRecord(
         probes=kayit,
         probe_indices=tuple((int(p[0]), int(p[1])) for p in probes),

@@ -12,12 +12,16 @@
 # FARKLI, ve ikisi de OLCULDU:
 #   npml : dugme BAGLI DEGIL. Dairesel PEC bosluk TAM YANSITICIDIR, sogurucu
 #          katman yoktur, `CircularPEC.thickness` sabit sifirdir.
-#   dx   : dugme BAGLI ama SESSIZCE YANLIS. `run_2d` kaynagi t = n*S*dx
-#          zamaninda besler, oysa wavelength HUCRE cinsinden verilir; ikisi
-#          yalniz dx = 1'de ortusur. Olculdu (R = 5/10, step_factor 120):
-#          dx = 1 -> tepe sayisi 20 / 13, dx = 0.5 -> 4 / 4, dx = 2 -> 31 / 43,
-#          lambda ucunde de 7.257613 kalarak. Yani kaynagin bandi kipin
-#          frekansina gore kayiyor ve panelin okudugu kip kumesi degisiyor.
+#   dx   : dugme BAGLIYDI ama SESSIZCE YANLIS calisiyordu. `run_2d` kaynagi
+#          t = n*S*dx zamaninda besliyordu, oysa wavelength HUCRE cinsinden
+#          verilir; ikisi yalniz dx = 1'de ortusuyordu. Olculdu (R = 5/10,
+#          step_factor 120): dx = 1 -> tepe sayisi 20 / 13, dx = 0.5 -> 4 / 4,
+#          dx = 2 -> 31 / 43, lambda ucunde de 7.257613 kalarak.
+#          BUGUN MOTORDA DA KAPALI: `engine/em/grid.py::dx_kapisi` dx != 1'i
+#          REDDEDER, cunku olculdugunde dx'in AYRI BIR SERBESTLIK DERECESI
+#          OLMADIGI cikti -- davranis yalniz wavelength/dx oranina bagli ve
+#          bu BIT BIT dogrulandi. Yani bu satir artik "senaryo bu dugmeyi
+#          tasimiyor" degil, "boyle bir dugme YOK" demektir.
 # Baglanmamis ya da sessizce yanlis calisan bir dugmeyi kabul etmek bu depoda
 # duzeltilmis bir hatadir (`heisenberg_step` + Ising). Panel ikisini de yine
 # basar (`npml = 0`, `dx = 1`) -- degerleri kosumdan, `Window`dan gelir.

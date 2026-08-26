@@ -593,8 +593,9 @@ def _load_em_scenario(raw: dict, file_path: Path) -> EMScenario:
 
     `dx` VE `npml` BURADA GEÇERLİ ANAHTAR DEĞİLDİR ve ikisi de "bilinmeyen
     anahtar" hatası verir. Gerekçeleri `EMScenario` dokstringinde ölçülmüş
-    hâlde yazılı: `npml` bağlı değildir, `dx` ise bağlıdır ama SESSİZCE YANLIŞ
-    çalışır (tepe sayısı `Δx` = 1/0.5/2 için 20/13 → 4/4 → 31/43).
+    hâlde yazılı: `npml` bağlı değildir, `dx` ise bağlıydı ama SESSİZCE
+    YANLIŞ çalışıyordu (tepe sayısı `Δx` = 1/0.5/2 için 20/13 → 4/4 → 31/43)
+    ve bugün motorda da kapalı (`engine/em/grid.py::dx_kapisi`).
     """
     unknown = set(raw) - _EM_TOP_LEVEL
     if unknown:

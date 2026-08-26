@@ -216,13 +216,17 @@ class EMScenario:
 
     * `npml`: dairesel PEC boşluk TAM YANSITICIDIR, soğurucu katman yoktur ve
       `CircularPEC.thickness` sabit sıfırdır. Yani düğme **bağlı değildir**.
-    * `dx`: düğme bağlıdır ama **sessizce yanlış** çalışır ve bu ÖLÇÜLDÜ.
-      `run_2d` kaynağı `t = n·S·Δx` zamanında besler, oysa `wavelength`
-      **hücre** cinsinden verilir; ikisi yalnız `Δx = 1`'de örtüşür. Ölçüm
-      (R = 5/10, `step_factor` = 120): `Δx` = 1 → tepe sayısı **20 / 13**,
-      `Δx` = 0.5 → **4 / 4**, `Δx` = 2 → **31 / 43**, `λ` üçünde de aynı
-      (7.257613) kalarak. Yani kaynağın bandı kipin frekansına göre kayıyor
-      ve panelin okuduğu kip kümesi değişiyor.
+    * `dx`: düğme bağlıydı ama **sessizce yanlış** çalışıyordu ve bu ÖLÇÜLDÜ.
+      `run_2d` kaynağı `t = n·S·Δx` zamanında besliyordu, oysa `wavelength`
+      **hücre** cinsinden verilir; ikisi yalnız `Δx = 1`'de örtüşüyordu.
+      Ölçüm (R = 5/10, `step_factor` = 120): `Δx` = 1 → tepe sayısı
+      **20 / 13**, `Δx` = 0.5 → **4 / 4**, `Δx` = 2 → **31 / 43**, `λ`
+      üçünde de aynı (7.257613) kalarak. Bugün düğme **motorda da kapalı**:
+      `engine/em/grid.py::dx_kapisi` `Δx ≠ 1`'i reddediyor, çünkü ölçüldüğünde
+      `Δx`in AYRI BİR SERBESTLİK DERECESİ OLMADIĞI çıktı — davranış yalnız
+      `wavelength/Δx` oranına bağlı ve bu BİT BİT doğrulandı. Yani bu satır
+      artık "senaryo bu düğmeyi taşımıyor" değil, "böyle bir düğme YOK"
+      demektir.
 
     İki durumda da kural aynı: bağlanmamış ya da sessizce yanlış çalışan bir
     düğmeyi kabul etmek bu depoda düzeltilmiş bir hatadır (`heisenberg_step` +

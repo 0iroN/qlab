@@ -271,7 +271,7 @@ def test_BILINMEYEN_anahtar_ve_EKSIK_anahtar_reddediliyor(tmp_path):
 
 
 @pytest.mark.parametrize("anahtar,deger", [("npml", "15"), ("dx", "0.5")])
-def test_BAGLANMAMIS_ve_SESSIZCE_YANLIS_DUGMELER_REDDEDILIYOR(
+def test_BAGLANMAMIS_ve_FAZLADAN_DUGMELER_REDDEDILIYOR(
     tmp_path, anahtar, deger
 ):
     """`npml` ve `dx` GEÇERLİ ANAHTAR DEĞİLDİR — ve sebepleri FARKLI.
@@ -279,13 +279,20 @@ def test_BAGLANMAMIS_ve_SESSIZCE_YANLIS_DUGMELER_REDDEDILIYOR(
     * **`npml` bağlı değildir:** dairesel PEC boşluk tam yansıtıcıdır ve
       `CircularPEC.thickness` sabit sıfırdır. Kabul edilseydi kullanıcı
       ayarladığını sanırdı (`heisenberg_step` + Ising ile aynı aile).
-    * **`dx` bağlıdır ama SESSİZCE YANLIŞ çalışır — VE BU ÖLÇÜLDÜ.** `run_2d`
-      kaynağı `t = n·S·Δx` zamanında besler, oysa `wavelength` **hücre**
-      cinsinden verilir; ikisi yalnız `Δx = 1`'de örtüşür. R = 5/10 ve
-      `step_factor` = 120 penceresinde tepe sayısı `Δx` = 1'de **20 / 13**,
-      `Δx` = 0.5'te **4 / 4**, `Δx` = 2'de **31 / 43** çıkıyor — `λ` üçünde de
-      7.257613 kalarak. Yani kaynağın bandı kipin frekansına göre kayıyor ve
-      panelin okuduğu kip kümesi değişiyor.
+    * **`dx` bağlıydı ama SESSİZCE YANLIŞ çalışıyordu — VE BU ÖLÇÜLDÜ.**
+      `run_2d` kaynağı `t = n·S·Δx` zamanında besliyordu, oysa `wavelength`
+      **hücre** cinsinden verilir; ikisi yalnız `Δx = 1`'de örtüşüyordu.
+      R = 5/10 ve `step_factor` = 120 penceresinde tepe sayısı `Δx` = 1'de
+      **20 / 13**, `Δx` = 0.5'te **4 / 4**, `Δx` = 2'de **31 / 43** çıkıyordu
+      — `λ` üçünde de 7.257613 kalarak.
+
+    BU TESTİN ADI BİR ZAMANLAR *"...SESSIZCE_YANLIS_DUGMELER..."* İDİ ve o
+    ad, kusur YALNIZ senaryodan çıkarıldığı, motor açık bırakıldığı için
+    doğruydu. Bugün `Δx` motorda da kapalı (`engine/em/grid.py::dx_kapisi`,
+    ölçümü `tests/em/test_hucre_birimi.py`) ve `Δx` artık "sessizce yanlış
+    çalışan" bir düğme değil, HİÇ OLMAYAN bir düğmedir: ölçüldüğünde ayrı
+    bir serbestlik derecesi olmadığı, `wavelength`in ölçekli bir kopyası
+    olduğu çıktı.
 
     İkisi de reddediliyor ve panel ikisini de yine basıyor (`npml = 0`,
     `dx = 1`), değerleri `Window`dan gelerek.

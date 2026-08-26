@@ -816,15 +816,24 @@ def test_KARARLILIK_SINIRI_ky_ILE_DUSUYOR_ve_KAPI_BUNU_SINAMIYOR():
 
     Sevk edilen kapı `courant_limit(1)` = 1'dir ve `ky`yi HESABA KATMAZ.
     Gerçek sınır ise `ky` ile düşer; kapalı form `S_max = 1/sqrt(1 +
-    (ky dx/2)^2)` ve ÖLÇÜLDÜ (vakum, PEC duvarlı N = 201, 800 adım, ikili
+    (ky/2)^2)` ve ÖLÇÜLDÜ (vakum, PEC duvarlı N = 201, 800 adım, ikili
     arama; iki kutuplanma da aynı sayıyı verdi):
 
-        ky dx      0.2         0.5554      1.2
+        ky         0.2         0.5554      1.2
         ölçülen    0.99511662  0.96361252  0.85755547
         kapalı     0.99503719  0.96353723  0.85749293
         oran       1.000080    1.000078    1.000073
 
-    Sevk edilen çağrılarda görülen en büyük `ky dx` 0.555360'tır (lambda =
+    BU DOKSTRİNG BİR ZAMANLAR SÜTUNU *"ky dx"* DİYE ETİKETLİYORDU ve o
+    etiket, `Δx` kapatılırken ölçülerek ÇÜRÜDÜ. Gövde zaten doğruyu
+    yazıyordu (aşağıda `1/sqrt(1 + (ky/2)**2)` hesaplanıyor); bayat olan
+    başlıktı. `ky` argümanının kendisi RADYAN BÖLÜ HÜCREdir, yani boyutsuz
+    grubun ta kendisi — `oblique_coefficients` `Δx`i görmez. Ölçüm (m = 8
+    duran kip tohumu, 800 adım, büyüme ölçütü 100×, tol 1e-7): `ky` = 0.4
+    için eşik `Δx` = 1'de de `Δx` = 4'te de 0.98092060, oysa `ky·Δx`
+    okuması `Δx` = 4'te 0.78086881 öngörürdü — %26 sapma.
+
+    Sevk edilen çağrılarda görülen en büyük `ky` 0.555360'tır (lambda =
     16, theta = 45) ve oradaki sınır 0.963542; kullanılan `S` = 0.4. Pay iki
     katın üstünde — ama BU BİR PAYDIR, KAPI DEĞİL: `ky` = 1.2'de `S` = 0.9
     kapıyı geçer ve şema PATLAR. Test bunu da ölçer.

@@ -14,6 +14,85 @@ import numpy as np
 
 from qlab.errors import InvalidInputError
 
+#: Bu modulde HUCRE ile UZUNLUK AYNI SEYDIR. `dx` bir DUGME DEGIL bir
+#: BEYANDIR ve gerekcesi `dx_kapisi`da OLCULU duruyor.
+HUCRE_DX: float = 1.0
+
+
+def dx_kapisi(dx: float) -> None:
+    """`dx != 1` REDDI -- ve bu bir "yapamiyorum" DEGIL bir BEYANDIR.
+
+    SINIF: BEYAN. `npml`in `EMScenario`da gordugu muameleyle ayni statude,
+    ama SEBEBI FARKLI ve fark onemli: `npml` BAGLANMAMIS bir dugmeydi, `dx`
+    ise BAGLI ama FAZLADAN bir dugmedir -- `wavelength`in olcekli bir
+    kopyasi. Ucu de olculdu ve ucu de BIT BIT:
+
+    (a) KAYNAKSIZ kosumda `dx` HICBIR SEYE dokunmuyor. Pencere: 1B vakum,
+        PEC, N = 200, S = 0.5, 400 adim, Gauss tohumu (merkez 90, sg = 6).
+        dx = 0.25/0.5/1/2/7 -> `final.e` de prob dizileri de BESINDE DE
+        `np.array_equal` (max|fark| = 0).
+    (b) KAYNAKLI 1B kosumda YALNIZ `wavelength/dx` orani sayiyor. Pencere:
+        N = 1200, PML 40, S = 0.5, 900 adim, gauss_cos sgf = 3,
+        t0 = 5*sgf*W, kaynak 300, problar 700/900. (dx, W) = (1, 40) /
+        (0.5, 20) / (2, 80) / (0.25, 10) / (8, 320) -- hepsinde W/dx = 40 --
+        BESI DE BIT BIT AYNI. Ayni `W` ile `dx` oynatilirsa (0.5 ve 2)
+        bagil fark 1.44 ve 5.73 olur, yani sonuc BASKA BIR KOSUMDUR.
+    (c) 2B'de aynisi. Pencere: 120 x 120, PML 20, S = 0.5, 400 adim,
+        sgf = 2, kaynak (40, 40), problar (70, 70)/(90, 55). (dx, W) =
+        (1, 20)/(0.5, 10)/(2, 40)/(4, 80) -- DORDU DE BIT BIT AYNI.
+    (d) Egik kosumda da aynisi. Pencere: N = 800, PML 40, S = 0.4, 600
+        adim, sgf = 3, ky = 0.5553603673 SABIT, kaynak 200, problar
+        400/500. (dx, W) = (1, 16)/(0.5, 8)/(2, 32)/(8, 128) -- DORDU DE
+        BIT BIT AYNI.
+
+    Yani `dx` bir COZUNURLUK dugmesi OLAMAZ, cunku IZGARAYI olcekleyemez:
+    katsayilar zaten olcekten bagimsizdir (`cb = S/eps`, icinde `dx` YOK),
+    geometri hucre cinsindendir (`probes`, `source_index`,
+    `CircularPEC.radius`, `npml`), PML `sigma`si hucre basinadir ve
+    `oblique`in `ky`si radyan/hucredir. `dx != 1`de degisen TEK sey
+    KAYNAGIN SAATIDIR -- ve o saat `wavelength`in ta kendisidir. Bu modulde
+    cozunurluk `wavelength` ile degistirilir; `observable/em_obs`in
+    yakinsama merdiveni de tam olarak oyle kurulmustur.
+
+    BEDELI OLCULDU: `dx != 1`de `as_lines()`in "lambda ... hucre" satiri
+    tam olarak 1/dx kadar YALAN olur. Pencere: S = 0.5, N = 5000, PML 40,
+    kaynak 1500, problar 2100/2107, sgf = 2, dikdortgen FFT penceresi;
+    izgaradaki dalga boyu iki prob arasindaki FAZ FARKINDAN okundu.
+    `wavelength = 40` beyaniyla:
+
+        dx           1            0.5          2
+        olculen lam  39.969098    79.984570    19.937834   (hucre)
+        beyan        "40 hucre"   "40 hucre"   "40 hucre"
+
+    KAPI KAPANINCA O BEYAN DOGRU OLUYOR ve ILK KEZ SINANABILIYOR -- bkz.
+    `tests/em/test_hucre_birimi.py`.
+
+    SAF KAPI: bir DEGER DONDURMEZ ve girdiyi NORMALLESTIRMEZ. Ilk hali
+    `float(dx)` alip onu donduruyordu; mutasyon kosumunda `return d ->
+    return HUCRE_DX` HAYATTA KALDI ve kalmasi DOGRUYDU -- kapiyi gecen `d`
+    zaten tam olarak `HUCRE_DX`tir, yani mutant ISPATLANABILIR SEKILDE
+    ESDEGERDI. Esdeger bir mutant bir test acigi degildir; ama kapatilmis
+    bir dugmeyi normallestiren bir satir OLU KOD'dur. Ikisi de silindi.
+    """
+    if dx != HUCRE_DX:
+        raise InvalidInputError(
+            f"dx = {dx} REDDEDILDI. Bu modulde HUCRE ile UZUNLUK AYNI "
+            "SEYDIR (c = eps0 = mu0 = 1, dt = S) ve `dx` bir dugme degil "
+            "bir BEYANDIR. `dx` AYRI BIR SERBESTLIK DERECESI DEGILDIR: "
+            "davranis (dx, wavelength) ciftine YALNIZ wavelength/dx orani "
+            "uzerinden baglidir ve bu BIT BIT olculdu -- 1B'de "
+            "(dx, W) = (1, 40)/(0.5, 20)/(2, 80)/(0.25, 10)/(8, 320) BESI "
+            "DE ayni diziyi veriyor, 2B'de (1, 20)/(0.5, 10)/(2, 40)/"
+            "(4, 80) DORDU DE. Kaynaksiz kosumda ise `dx` hicbir seye "
+            "dokunmuyor (dx = 0.25/0.5/1/2/7, max|fark| = 0). Yani `dx` "
+            "izgarayi olcekleyemez, yalniz KAYNAGIN SAATINI olcekler -- ve "
+            "o saat `wavelength`in kendisidir. Bedeli: dx = 0.5 / 2'de "
+            "`wavelength = 40` beyani izgarada 79.984570 / 19.937834 hucre "
+            "dalga boyu uretiyor, oysa pencere ucunde de 'lambda : 40 "
+            "hucre' basiyor. COZUNURLUGU `wavelength` ile degistirin. "
+            "Ayrinti: grid.dx_kapisi."
+        )
+
 
 @dataclass(frozen=True, eq=False)
 class FieldState:
@@ -26,8 +105,16 @@ class FieldState:
 
     BIRIM SECIMI -- BEYAN: c = eps0 = mu0 = 1. Bu bir BIRIM SECIMIDIR, FIZIK
     DEGIL, ve Modul 4'un J = k_B = 1'iyle ayni statudedir: bu modulun hicbir
-    ciktisi metre, saniye ya da volt tasimaz. Uzunluk `dx` cinsinden, zaman
-    da uzunluk cinsindendir (c = 1); `dt = S * dx`.
+    ciktisi metre, saniye ya da volt tasimaz. Uzunluk HUCRE cinsindendir ve
+    zaman da uzunluk cinsindendir (c = 1); yani `dx = 1` ve `dt = S`.
+
+    BU SATIR BIR ZAMANLAR *"Uzunluk `dx` cinsinden ... `dt = S * dx`"*
+    DIYORDU ve o hal IKI OKUMAYA ACIKTI: `dx` hem "bir hucrenin uzunlugu"
+    hem "1" diye okunabiliyordu, ve `wavelength`in HUCRE mi UZUNLUK mu
+    oldugu cumleden CIKARILAMIYORDU. Ikisi yalniz `dx = 1`de ortusuyor ve
+    fark OLCULDU: `wavelength = 40` beyaniyla izgarada olusan dalga boyu
+    dx = 1/0.5/2 icin 39.969098/79.984570/19.937834 hucre. Belirsizlik
+    `dx != 1` KAPATILARAK giderildi -- bkz. `dx_kapisi`.
 
     1B'de `e` = Ez, sekli (N,); `h` = Hy, sekli (N-1,) ve `h[i]` = Hy(i+1/2).
     YARIM HUCRE KAYDIRMA SEMANIN KENDISIDIR, bir uygulama ayrintisi degil --
@@ -206,6 +293,16 @@ class Window:
     Alanlarin hepsi ZORUNLUDUR ve hepsi olculerek secildi: `sgf` buraya
     "analiz ayrintisi degil" diye girdi (bkz. source.gauss_cos), `window_fn`
     ise FFT penceresi tek basina sonucu oynattigi icin.
+
+    `dx` BIR DEGER TASIR ama BIR DUGME DEGILDIR: `__post_init__` onu
+    `dx_kapisi`ndan gecirir (kapi SAF'tir, degeri degistirmez), yani BU
+    TIPTE `dx != 1` bir pencere KURULAMAZ.
+    Sebep dogrudan `as_lines()`tir: "lambda ... hucre" satiri ancak hucre
+    ile uzunluk ayni seyken DOGRUDUR, ve `dx != 1`de tam olarak 1/dx kadar
+    yalan olur (olculdu; bkz. `dx_kapisi`). Kapi kosum fonksiyonlarinda ZATEN
+    var -- buradaki ikinci kapi, ELLE kurulan bir pencerenin yalan
+    soyleyememesi icindir; `FieldState`in `dim = 2` deligini TIPTE kapatmasiyla
+    ayni gerekce.
     """
 
     cells: int | tuple[int, int]
@@ -216,6 +313,9 @@ class Window:
     npml: int
     sgf: float
     window_fn: str
+
+    def __post_init__(self) -> None:
+        dx_kapisi(self.dx)
 
     @property
     def izgara(self) -> str:
@@ -230,7 +330,16 @@ class Window:
         return str(int(self.cells))
 
     def as_lines(self) -> list[str]:
-        """Panelde ve testlerde basilacak tek satirlik beyan parcalari."""
+        """Panelde ve testlerde basilacak tek satirlik beyan parcalari.
+
+        "lambda ... hucre" satiri bir TEOREMDIR, bir etiket degil: `dx`
+        kapisi (bkz. `dx_kapisi`) hucre ile uzunlugu ayni sey yaptigi icin
+        `wavelength` DOGRUDAN hucre sayisidir. Sinav olculdu ve daireselligi
+        yok -- izgaradaki dalga boyu iki prob arasindaki faz farkindan
+        okunup Yee'nin KAPALI FORM dispersiyonuyla karsilastiriliyor
+        (`tests/em/test_hucre_birimi.py`). SATIR SAYISI YEDI, ve bu bir
+        bicim tercihi degil kilit: `tests/em/test_yee.py` sayiyor.
+        """
         return [
             f"izgara      : {self.izgara} hucre, dx = {self.dx:g}",
             f"S (Courant) : {self.courant:g}",

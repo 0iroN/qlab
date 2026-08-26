@@ -266,13 +266,20 @@ def build_em(scenario: EMScenario) -> EMScanResult:
     `wavelength_per_radius` bir teori sabiti DEGIL bir PENCERE DUGMESIDIR --
     senaryoda yazilidir ve bu dosya hicbir Bessel kokunu gormez.
 
-    dx = 1 SABITTIR VE SENARYODA BIR DUGME DEGILDIR -- OLCULDU. `run_2d`
-    kaynagi `t = n*S*dx` zamaninda besler, oysa `wavelength` HUCRE cinsinden
-    verilir; ikisi yalniz dx = 1'de ortusur. Olcum (R = 5/10, step_factor
-    120): dx = 1'de tepe sayisi 20 / 13, dx = 0.5'te 4 / 4, dx = 2'de 31 / 43
-    -- lambda ucunde de 7.257613 kalarak. Yani dugme baglidir ama SESSIZCE
-    YANLIS calisir ve bu yuzden `EMScenario`da hic yoktur. Panel dx'i yine de
-    basar, degeri `Window`dan gelir.
+    dx = 1 SABITTIR VE SENARYODA BIR DUGME DEGILDIR -- OLCULDU. Task 6'da
+    olculen sey suydu: `run_2d` kaynagi `t = n*S*dx` zamaninda besliyordu,
+    oysa `wavelength` HUCRE cinsinden veriliyordu; ikisi yalniz dx = 1'de
+    ortusuyordu. Olcum (R = 5/10, step_factor 120): dx = 1'de tepe sayisi
+    20 / 13, dx = 0.5'te 4 / 4, dx = 2'de 31 / 43 -- lambda ucunde de
+    7.257613 kalarak. Yani dugme baglidir ama SESSIZCE YANLIS calisiyordu.
+
+    O ZAMAN YALNIZ SENARYODAN CIKARILDI, MOTOR ACIK KALDI -- ve bu bir
+    kapsam karariydi, bir cozum degil: kusur Python API'sinden hala
+    erisilebilirdi. Simdi kapatildi: `dx != 1` `grid.dx_kapisi`nda
+    REDDEDILIYOR, cunku olculdugunde `dx`in AYRI BIR SERBESTLIK DERECESI
+    OLMADIGI cikti (davranis yalniz `wavelength/dx` oranina bagli, ve bu
+    1B'de bes, 2B'de dort (dx, W) ciftinde BIT BIT dogrulandi). Panel dx'i
+    yine de basar, degeri `Window`dan gelir ve artik ZORUNLU olarak 1'dir.
 
     BIRIM DONUSUMU YOKTUR ve bu bir eksiklik degil bir OLCUM sonucudur:
     `TBScenario` eV -> hartree cevirir cunku TB literaturu eV'de yayinlanir;

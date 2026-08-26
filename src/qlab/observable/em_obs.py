@@ -2,8 +2,15 @@
 
 Bu dosyanin ilk parcasi `convergence_ladder`dir: Modul 5'in her FIZIK
 cipasi degeriyle birlikte bir YAKINSAMA KAYDI dondurmek zorundadir (spec
-4.3, pazarlik edilmez). Bir FDTD sayisi `dx` kuculurken oturmadiysa
+4.3, pazarlik edilmez). Bir FDTD sayisi IZGARA INCELIRKEN oturmadiysa
 yakinsamamistir ve raporlanan sey bir tahmin degil bir ARA DURAKTIR.
+
+BU CUMLE BIR ZAMANLAR *"`dx` kuculurken"* DIYORDU ve o hal, `dx` kapatilinca
+YANLIS oldu: bu modulde `dx` KUCULEMEZ, `engine/em/grid.dx_kapisi` `dx != 1`i
+REDDEDER. Izgara `lambda` BUYUTULEREK incelir (cozunurluk = hucre/dalgaboyu)
+ve merdiven zaten oyle kurulmustur -- bkz. `convergence_ladder`in kendi
+dokstringi. Ayrim bir yazim ayrintisi degil: `dx` bir cozunurluk dugmesi
+OLAMAZ, cunku izgarayi olcekleyemez (olculdu; gerekce `dx_kapisi`da).
 
 Modul 4'un `binning_error`i ile AYNI AILEDENDIR: orada plato tespiti,
 burada izgara yakinsamasi. Ikisinin de sozu ayni -- olculen sayinin yaninda
@@ -900,6 +907,11 @@ def tir_phase_ladder(
     modulde `dx = 1` ve cozunurluk `lambda` hucre/dalgaboyudur). Izgara
     araligi `h = 1/lambda` olarak verilir; `ratio` lambda'lardan OLCULUR,
     girilmez.
+
+    `dx = 1` ARTIK BIR UZLASIM DEGIL BIR KAPIDIR (`engine/em/grid.dx_kapisi`)
+    ve bu merdivenin ON KOSULUDUR: `dx` bir dugme olsaydi "artan lambda =
+    incelen izgara" cumlesi DUSERDI, cunku cozunurlugu `lambda/dx` belirler
+    ve ikisi ayri ayri oynatilabilirdi.
 
     Herhangi bir basamak kapiya takilirsa (`None`) merdiven de `None`
     doner -- eksik bir merdivenden hukum cikarilmaz.
