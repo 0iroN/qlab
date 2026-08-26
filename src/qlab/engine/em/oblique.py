@@ -49,6 +49,102 @@ from qlab.errors import InvalidInputError
 POLARIZATIONS: tuple[str, ...] = ("s", "p")
 
 
+def oblique_courant_limit(ky: float) -> float:
+    """S_max = 1 / sqrt(1 + (ky/2)^2) -- INDIRGENMIS SEMANIN kendi ozelligi.
+
+    SINIF: SEMA CIPASI -- cozucuyu dogrular, fizigi DEGIL. Sayi GIRILMEZ;
+    sema kararli olmaktan cikar ve esik ikili aramayla OLCULUR.
+    `grid.courant_limit`in egik indirgemedeki karsiligidir ve ONU GENELLER:
+    `ky = 0`da tam olarak `courant_limit(1)` = 1 dondurur.
+
+    NEREDEN GELIYOR: indirgenmis semada enine turev TAM (izgarasiz), x
+    yonunde Yee'dir; buyutme analizi
+
+        sin(omega dt / 2)^2 = S^2 [ sin(kx/2)^2 + (ky/2)^2 ]
+
+    verir ve kararlilik sag tarafin HER desteklenen kx icin <= 1 olmasini
+    ister. Degisen sey `max sin(kx/2)`dir:
+
+      * sonsuz/periyodik izgarada 1     -> S_max = 1/sqrt(1 + (ky/2)^2)
+      * SONLU PEC izgarada (L dugum) kx_m = m*pi/(L-1), m = 1..L-2 oldugu
+        icin cos(pi/(2(L-1)))           -> S_max(L) =
+                            1/sqrt(cos(pi/(2(L-1)))^2 + (ky/2)^2)
+
+    Ikincisi `ky = 0`da tam olarak `1/cos(pi/(2(L-1)))`tir -- yani
+    `grid.courant_limit`te olculen SONLU IZGARA PAYININ ta kendisi, ve bu
+    fonksiyon onu `ky != 0`a TASIR.
+
+    KAPI SONSUZ IZGARA FORMUNA KONUYOR ve bu bir SECIMDIR, olcum degil:
+    `courant_limit`in 1/sqrt(d)'ye konmasiyla ayni statude -- kapi izgara
+    boyutunu BILMEZ ve bilmemelidir. Bedeli olculdu ve 2e-04'un altindadir
+    (asagidaki `olc/PEC` sutunu).
+
+    OLCULDU -- SEVK EDILEN `oblique_step`, KAPI ATLANMIS (esik olcumu kapiyi
+    atlamak ZORUNDADIR; `grid.courant_limit` ile ayni gerekce), vakum, PEC
+    duvar, L = 201, 800 adim, tohumlu rastgele baslangic (tohum 3), ikili
+    arama tol 1e-7, tespit olcutu `max|e| > 1e12 * baslangic`:
+
+        ky           0.0         0.2         0.4         0.5554
+        olculen      1.00019164  0.99522660  0.98076447  0.96372008
+        kapali(inf)  1.00000000  0.99503719  0.98058068  0.96354216
+        kapali(PEC)  1.00003084  0.99506758  0.98060976  0.96356975
+        olc/PEC      1.0001608   1.0001598   1.0001578   1.0001560
+
+        ky           0.8         1.2         2.0
+        olculen      0.92864405  0.85764172  0.70722221
+        kapali(inf)  0.92847669  0.85749293  0.70710678
+        kapali(PEC)  0.92850138  0.85751237  0.70711769
+        olc/PEC      1.0001537   1.0001508   1.0001478
+
+    IKI KUTUPLANMA AYNI SAYIYI VERIYOR ve fark TAM SIFIRDIR (ky = 0.4 ve
+    1.2'de olculdu) -- `ObliqueCoefficients.sign`in bir GAUGE oldugunun
+    ikinci, bagimsiz kaniti.
+
+    ARTIK ASIM IKI PARCADIR ve ikisi de olculdu -- `grid.courant_limit`teki
+    ayrimin AYNISI:
+
+    (a) SONLU IZGARA payi KAPALI FORMUN KENDISINDE. Cikarilinca kalan pay
+        L'den BAGIMSIZ: ky = 0.8, 4000 adim, L = 101/201/401 icin
+        5.252e-06 / 5.078e-06 / 4.926e-06.
+    (b) SONLU KOSUM payi ADIMLA iniyor -- ve TEK BIR SAYI DEGILDIR: adim
+        sayisi ile TESPIT OLCUTU BIRLIKTE belirler. ky = 0.8, L = 201:
+
+            adim     olcut 1e6    olcut 1e12   fark        1e12 - kapali(PEC)
+              800    0.92853445   0.92864406   1.096e-04   1.427e-04
+             2000    0.92850592   0.92852269   1.677e-05   2.131e-05
+             4000    0.92850238   0.92850643   4.046e-06   5.049e-06
+            12000    0.92850147   0.92850189   4.213e-07   5.112e-07
+
+        Yani TESPIT OLCUTU DE BIR PENCERE DUGMESIDIR -- ama ADIM ARTINCA
+        ETKISI DE KAYBOLUYOR: iki sutun birlikte kapali forma iniyor.
+        Olculen sonme ussu adim^-2.08 (iki bagimsiz aralikta 2.074 ve
+        2.084), ve bu `grid.courant_limit`in IZOTROPIK olcumuyle ayni:
+        orada 4000 -> 20000 adimda (5 kat) pay 5.99e-06 -> 2.12e-07, yani
+        28.25 kat; burada 800 -> 4000 adimda (yine 5 kat) 1.427e-04 ->
+        5.049e-06, yani 28.26 kat.
+
+    BU DOSYADA BIR ZAMANLAR SEVK EDILMIS BASKA BIR TABLO VARDI (kaynak
+    surulen `run_oblique_1d`, probda 1e6 MUTLAK esigi, 800 adim): ky = 0.2 /
+    0.5554 / 1.2 icin 0.99511662 / 0.96361252 / 0.85755547. O SAYILAR
+    YANLIS DEGIL, BASKA BIR PENCERENIN sayilari -- ve bu olculdu: ayni
+    prosedur kapi atlanarak yeniden kosuldugunda 0.99511666 / 0.96361740 /
+    0.85755547 (sonuncusu BIREBIR) cikiyor, ve tohumlu prosedur AYNI 1e6
+    olcutuyle kosuldugunda 0.99510612 / 0.96360522 / 0.85754172 veriyor.
+    Yani iki tablo arasindaki ~1.1e-04 SEMADAN DEGIL TESPIT OLCUTUNDEN
+    geliyor. Yeni tablo secildi cunku tohumlu baslangic butun `kx`leri
+    dogrudan uyarir ve `tests/em/test_sema_cipalari.py`nin ev usulu odur.
+
+    TOHUM BIR DUGME DEGIL: ky = 0.8, L = 201, 4000 adim, tohum 1/3/7 icin
+    0.92850612 / 0.92850643 / 0.92850618 (yayilim 3.1e-07).
+
+    KILIT: tests/em/test_arayuz.py.
+    """
+    k = float(ky)
+    if not np.isfinite(k):
+        raise InvalidInputError(f"ky sonlu olmali, verilen: {ky}")
+    return float(1.0 / np.sqrt(1.0 + (k / 2.0) ** 2))
+
+
 @dataclass(frozen=True, eq=False)
 class ObliqueCoefficients:
     """Egik indirgemenin katsayilari -- ve `_adim`e VERILECEK SLOT ATAMASI.
@@ -99,33 +195,40 @@ def oblique_coefficients(
     `oblique_coefficients` `dx`i GORMEZ ve `run_oblique_1d`in `dx`i bu
     terime HIC girmez -- bu yapisaldir, olculmus degil.
 
-    KARARLILIK HAKKINDA DURUST OLUMSUZ: `courant_limit(1)` kapisi `ky`yi
-    HESABA KATMAZ, oysa gercek sinir `ky` ile DUSER. Indirgenmis semada enine
-    turev tam (izgarasiz) oldugu icin kapali form `S_max = 1/sqrt(1 +
-    (ky/2)^2)`tir ve OLCULDU (vakum, PEC duvarli N = 201, 800 adim, ikili
-    arama; her iki kutuplanma icin ayni sayi cikti):
+    KARARLILIK: `courant_limit(1)` kapisi `ky`yi HESABA KATMAZ, oysa gercek
+    sinir `ky` ile DUSER. IKINCI BIR KAPI BU YUZDEN BURADADIR ve esigi
+    `oblique_courant_limit(ky)`dir; kapali formun turetimi, olcumu ve artik
+    asimin iki parcasi ORADA duruyor -- tek kaynak, burada tekrar edilmiyor.
 
-        ky         0.0      0.2         0.4         0.5554      0.8         1.2
-        olculen    1.000000 0.99511662  0.98065818  0.96361252  0.92854756  0.85755547
-        kapali     1.000000 0.99503719  0.98058068  0.96353723  0.92847669  0.85749293
-        oran       1.000000 1.000080    1.000079    1.000078    1.000076    1.000073
+    IKI KAPI DA CANLIDIR ve ikisi de ULASILABILIR; biri otekini OLU
+    birakmiyor, cunku sirayla kosuyorlar ve aralari BOS DEGIL:
+      * `yee_coefficients`in kapisi `S > 1`i keser (izotropik sinir),
+      * bu kapi `oblique_courant_limit(ky) < S <= 1` BANDINI keser.
+    `ky = 0`da band bostur (esik tam 1.0 = `courant_limit(1)`) ve bu bir
+    kusur degil, iki kapinin ORADA CAKISTIGININ ta kendisidir. Kapinin bu
+    SIRADA olmasi da bir secimdir: once konsaydi izotropik kapi hicbir zaman
+    yeni bir sey reddetmezdi ve OLU bir kod yolu olurdu.
 
-    BU TABLONUN SUTUN BASLIGI BIR ZAMANLAR *"ky dx"* IDI ve o etiket, `dx`
-    kapatilirken ILK KEZ sinanabilir hale gelip CURUDU: kapali formu
-    `ky*dx` ile okumak `dx = 4`te 0.4 icin 0.78086881 ongorur, oysa AYNI
-    pencerede olculen esik 0.98092060'tir (ky = 0.8'de 0.52999894'e karsi
-    0.92879012) -- yani %26 sapma. Kilidin GOVDESI zaten dogruyu yaziyordu
-    (`tests/em/test_arayuz.py` `1/sqrt(1 + (ky/2)^2)` hesapliyor); bayat
-    olan ETIKETTI. Pencere farki: bu ikinci olcum tohumlu kosumla yapildi
-    (m = 8 duran kip, buyume olcutu 100x, tol 1e-7) ve artik asimi 3.5e-04;
-    yukaridaki tablo kaynakli kosumun penceresindedir ve orada 8e-05.
-
-    Artik asim `grid.courant_limit`te olculen sonlu-izgara/sonlu-kosum
-    payiyla ayni ailedendir. SEVK EDILEN cagrilarda gorulen en buyuk `ky`
-    0.555360'tir (lam = 16, theta = 45) ve oradaki sinir 0.963542;
-    kullanilan `S` = 0.4, yani pay iki katin ustundedir. AMA KAPI BUNU
+    BU PARAGRAF BIR ZAMANLAR BIR DURUST OLUMSUZ TASIYORDU: *"AMA KAPI BUNU
     SINAMAZ: `ky` yeterince buyutulurse `courant_limit(1)` gecer ve sema
-    yine de patlar.
+    yine de patlar."* O cumle DOGRUYDU ve artik GECERSIZDIR -- kapi kondu.
+    Neyi kestigi OLCULDU (L = 201, 800 adim, tohum 3, kapi atlanmis):
+    `S` = 0.9 `ky` = 0'da KARARLIDIR (800 adimda buyume 1.163606) ve
+    izotropik kapiyi HAKLI OLARAK gecer; ayni `S` `ky` = 1.2'de 800 adimda
+    `|e|`yi 4.22e+216 katina cikariyor ve baslangicin 1e12 katini daha
+    46. ADIMDA asiyor. `ky` = 2.0'da 20. adimda `nan`.
+
+    `ky` ETIKETI BIR ZAMANLAR *"ky dx"* IDI ve o etiket, `dx` kapatilirken
+    ILK KEZ sinanabilir hale gelip CURUDU: kapali formu `ky*dx` ile okumak
+    `dx = 4`te 0.4 icin 0.78086881 ongorur, oysa AYNI pencerede olculen esik
+    0.98092060'tir (ky = 0.8'de 0.52999894'e karsi 0.92879012) -- yani %26
+    sapma. `ky` RADYAN BOLU HUCREdir ve bu fonksiyon `dx`i GORMEZ.
+
+    SEVK EDILEN CAGRILARDA PAY BUYUK: gorulen en buyuk `ky` 0.555360'tir
+    (lam = 16, theta = 45, eps1 = 4) ve oradaki esik 0.963542; kullanilan
+    `S` = 0.4, yani pay 2.41 kattir. `ky` = 2.0 gibi bir uc degerde bile
+    esik 0.707107 ve pay 1.77 kat -- yani kapi sevk edilen hicbir cagriyi
+    kesmez.
 
     `ey_kural` BURADA ILK KEZ GERCEKTEN CAGRILIYOR. Task 1'in raporunda
     "1B TM'de olu kod" diye isaretlenmisti ve dogruydu: 1B TM'de yari hucrede
@@ -139,7 +242,27 @@ def oblique_coefficients(
         )
     if not np.isfinite(ky):
         raise InvalidInputError(f"ky sonlu olmali, verilen: {ky}")
+    # IZOTROPIK KAPI ONCE (S > 1'i keser), EGIK KAPI SONRA (bandi keser).
+    # Sira bir SECIMDIR ve gerekcesi dokstringde: ters cevrilirse izotropik
+    # kapi hicbir zaman yeni bir sey reddetmez ve OLU kalir.
     base = yee_coefficients(medium, courant=courant, boundary=boundary)
+    limit = oblique_courant_limit(ky)
+    if courant > limit:
+        raise InvalidInputError(
+            f"S = {courant} EGIK indirgemenin kararlilik sinirini asiyor: "
+            f"ky = {ky} icin S_max = {limit} (= 1/sqrt(1 + (ky/2)^2)). "
+            "BU SINIR `courant_limit(1)` = 1'DEN KUCUKTUR ve o kapi "
+            "DEVRALINAMAZ -- enine turev TAM (izgarasiz) oldugu icin `ky` "
+            "payi dogrudan buyutme carpanina girer. OLCULDU (L = 201, 800 "
+            "adim, tohum 3, kapi atlanmis): S = 0.9 ky = 0'da sema "
+            "KARARLIDIR (buyume 1.163606) ve izotropik kapiyi hakli olarak "
+            "gecer; AYNI S ky = 1.2'de |e|yi 4.22e+216 katina cikariyor ve "
+            "1e12 katini 46. ADIMDA asiyor. Olculen esik ky = 0/0.2/0.4/"
+            "0.5554/0.8/1.2/2.0 icin 1.00019164/0.99522660/0.98076447/"
+            "0.96372008/0.92864405/0.85764172/0.70722221 ve kapali formun "
+            "ustunde kalan pay her yerde 2e-04'un altinda. Ayrinti: "
+            "oblique.oblique_courant_limit."
+        )
 
     cells = medium.cells
     sigma = np.asarray(boundary.sigma_1d(cells), dtype=float)

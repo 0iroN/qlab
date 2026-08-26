@@ -55,6 +55,7 @@ from qlab.engine.em.grid import (
 from qlab.engine.em.medium import Medium
 from qlab.engine.em.oblique import (
     oblique_coefficients,
+    oblique_courant_limit,
     oblique_step,
     run_oblique_1d,
 )
@@ -524,26 +525,36 @@ def test_EGIK_ky_RADYAN_BOLU_HUCRE_ve_ky_dx_ETIKETI_CURUDU():
     boyutsuz gruptur — radyan BÖLÜ HÜCRE.
 
     ÖLÇÜLEN kısım `tests/em/test_arayuz.py`de duruyor (eşik ikili aramayla
-    ölçülüp `1/sqrt(1 + (ky/2)²)` ile karşılaştırılıyor; oran 1.00008).
-    İkinci bir pencerede (m = 8 duran kip tohumu, N = 201, 800 adım, büyüme
-    ölçütü 100×, tol 1e-7) `ky` = 0.4 için eşik Δx = 1'de de Δx = 4'te de
+    ölçülüp `1/sqrt(1 + (ky/2)²)` ile karşılaştırılıyor). İkinci bir
+    pencerede (m = 8 duran kip tohumu, N = 201, 800 adım, büyüme ölçütü
+    100×, tol 1e-7) `ky` = 0.4 için eşik Δx = 1'de de Δx = 4'te de
     0.98092060 çıktı; `ky·Δx` okuması Δx = 4'te 0.78086881 öngörürdü, yani
     %26 sapma. `ky` = 0.8'de sayılar 0.92879012 / 0.92847669 / 0.52999894.
 
     Kilidin GÖVDESİ zaten doğruyu yazıyordu — bayat olan ETİKETTİ. Bu
     depoda ALTINCI kez görülen desen: hüküm dokstringde eskiyor, testte
     eskimiyor.
+
+    KARARLILIK TABLOSU TAŞINDI: `oblique_courant_limit` sevk edilince
+    (`k_y` kapısı) tablo ve kapalı form ORAYA gitti — tek kaynak. Bu test
+    de içeriği YENİ EVİNDE arıyor; aramasaydı, taşınan bir beyan sessizce
+    sınanmaz hâle gelirdi.
     """
     assert "dx" not in inspect.signature(oblique_coefficients).parameters
     assert "dx" not in inspect.signature(oblique_step).parameters
+    assert "dx" not in inspect.signature(oblique_courant_limit).parameters
 
     metin = oblique_coefficients.__doc__ or ""
     assert "RADYAN BOLU HUCRE" in metin
-    assert "(ky/2)^2" in metin
-    # Tablo başlığı artık `ky`, ve eski etiket YALNIZ çürütülmüş hâliyle var.
-    # (`__doc__` Python 3.13'ten beri DEDENT edilmiş gelir; girinti aranmaz.)
-    assert "ky         0.0      0.2" in metin
+    # Eski etiket YALNIZ çürütülmüş hâliyle var.
     assert metin.count("ky dx") == 1 and '*"ky dx"*' in metin
+
+    # Kapalı form ve tablo artık `oblique_courant_limit`te.
+    # (`__doc__` Python 3.13'ten beri DEDENT edilmiş gelir; girinti aranmaz.)
+    kapi = oblique_courant_limit.__doc__ or ""
+    assert "(ky/2)^2" in kapi
+    assert "ky           0.0         0.2" in kapi
+    assert "ky dx" not in kapi
 
     # Kapalı formun İKİ okuması SAYIYLA ayrışıyor.
     ky = 0.4

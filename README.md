@@ -382,8 +382,8 @@ testleri de KOŞAR — ikinci komut ayrı bir küme değil, birincinin alt küme
 
 | Koşu | Test | Süre |
 |---|---|---|
-| tam süite (`Δx` kapısından SONRA) | **1397** | **727.75 s** |
-| yalnız Modül 5 (`tests/em/`, aynı hâl) | **237** | **191.01 s** |
+| tam süite (iki kapıdan SONRA) | **1397** | **770.02 s** |
+| yalnız Modül 5 (`tests/em/`, aynı hâl) | **237** | **197.39 s** |
 | *tam süite (Modül 5 kapanışı, `cda2871`)* | *1389* | *939.68 s* |
 | *yalnız Modül 5 (`tests/em/`, `cda2871`)* | *229* | *237.32 s* |
 | *tam süite (Modül 4 kapanışı)* | *1159* | *585.36 s* |
@@ -400,9 +400,15 @@ aşağıda beyan edilen makine gürültüsündendir, süite değişmedi.
 
 `Δx` kapısı (`engine/em/grid.dx_kapisi`) süiteye `tests/em/test_hucre_birimi.py`
 üzerinden **8 test** ekledi (1389 → 1397, `tests/em` 229 → 237); dosyanın kendi
-süresi **1.51 s** ve içinde hiç `slow` işareti YOK — yani `tests/em`
-tarafındaki 237.32 s → 191.01 s farkı bu dosyadan değil, makine gürültüsünden
-gelir (aynı gün `cda2871` de 939.68 s yerine 738.92 s koştu).
+süresi **1.51 s** ve içinde hiç `slow` işareti YOK. Eğik Courant kapısı
+(`engine/em/oblique.oblique_courant_limit`) ise **hiç test EKLEMEDİ** — mevcut
+kararlılık kilidini yeniden yazdı, çünkü kapı konunca eski ölçüm kendi kapısını
+ölçer hâle gelirdi.
+
+MAKİNE GÜRÜLTÜSÜ: **aynı** süit aynı gün 727.75 s ve 770.02 s (`tests/em`:
+191.01 s ve 197.39 s), `cda2871` ise 939.68 s ve 738.92 s koştu. Yani
+tablodaki saniyeler ±%6-25 oynar ve **test sayıları dışında** karşılaştırma
+için kullanılamaz.
 
 Modül 5
 senaryo/panel görevi süiteye **50 test** ve `tests/em` tarafında
@@ -2176,10 +2182,15 @@ edilince sınanabilir hâle gelen iddialardı**:
    `wavelength` **hücre** cinsinden verilir; ikisi yalnız `Δx = 1`'de örtüşür.
    Ölçüldü (R = 5/10): tepe sayısı **20/13 → 4/4 → 31/43** (`Δx` = 1/0.5/2),
    `λ` üçünde de 7.257613 kalarak. Düğme senaryodan **çıkarıldı** (`npml` ile
-   aynı muamele, farklı gerekçe) ve reddedildiği testle kilitlendi. **Motorun
-   kendisi düzeltilmedi** — `engine/em/*` bu turda dokunulmadı ve `run_2d`'nin
-   `dx` parametresi hâlâ aynı şekilde davranıyor; kapatılan şey YAML'dan
-   ulaşılabilirliktir. Dürüst olumsuz olarak burada duruyor.
+   aynı muamele, farklı gerekçe) ve reddedildiği testle kilitlendi. O turda
+   **motor düzeltilmemişti** ve dürüst olumsuz olarak burada duruyordu;
+   **26.08.2026'da kapatıldı.** Ölçüldüğünde `Δx` bir düğme ÇIKMADI:
+   davranış yalnız `wavelength/Δx` oranına bağlı ve bu 1B'de beş, 2B'de
+   dört, eğikte dört `(Δx, W)` çiftinde **bit bit** aynı; kaynaksız koşumda
+   ise `Δx` hiçbir şeye dokunmuyor. `engine/em/grid.dx_kapisi` artık
+   `Δx ≠ 1`'i reddediyor, `t = n·S·Δx` üç koşum yolunda da `t = n·S` oldu ve
+   "lambda … hucre" beyanı ilk kez sınanabilir hâle geldi
+   (`tests/em/test_hucre_birimi.py`).
 
 #### Dürüst olumsuzlar
 
@@ -2192,11 +2203,20 @@ edilince sınanabilir hâle gelen iddialardı**:
   cinsinden marj yazılamıyor; hüküm yalnızca aralık olarak duruyor. Üs `a` ve
   `ε_r`'den bu pencerede tam bağımsız da değil (3.2429/3.0933/2.9249 — üçünde de
   tam çözümle 0.0185 içinde, yani oynayan çözücü değil pencere).
-- **`courant_limit` EĞİK YOLU SINAMIYOR.** Eğik şemanın kararlılık sınırı `k_y`
-  ile düşüyor (kapalı form `S_max = 1/√(1+(k_y Δx/2)²)`, ölçülenin bu forma
-  oranı **1.00008**) ama `courant_limit(1)` bunu görmez: `k_y = 1.2`'de
-  `S = 0.9` kapıyı **geçiyor** ve şema patlıyor. Testle kilitli bir dürüst
-  olumsuz.
+- ~~**`courant_limit` EĞİK YOLU SINAMIYOR.**~~ **KAPANDI 26.08.2026.** Eğik
+  şemanın kararlılık sınırı `k_y` ile düşüyor ve `courant_limit(1)` bunu
+  görmüyordu: `k_y = 1.2`'de `S = 0.9` kapıyı **geçiyordu** ve şema
+  patlıyordu (ölçüldü: 800 adımda `|e|` **4.22e+216** katına çıkıyor,
+  başlangıcın 1e12 katını **46. adımda** aşıyor — oysa aynı `S`, `k_y = 0`'da
+  KARARLI, büyüme 1.163606). Artık `oblique.oblique_courant_limit(k_y)` =
+  `1/√(1+(k_y/2)²)` ikinci bir kapı olarak `oblique_coefficients`te duruyor;
+  `k_y = 0`'da tam olarak `courant_limit(1)` = 1 döndürüyor, yani izotropik
+  kapıyı **genelliyor**. Kapalı formun sonlu-PEC hâli
+  `1/√(cos(π/(2(L−1)))² + (k_y/2)²)`'dir ve ölçülenin ona oranı yedi `k_y`
+  değerinde **1.00015-1.00016**; artan pay `adım^-2.08` ile sönüyor
+  (`grid.courant_limit`in izotropik ölçümüyle aynı: 5× adımda 28.2×).
+  Not: kapalı formun etiketi bir zamanlar `k_y Δx` idi — `Δx` o terime hiç
+  girmez, `k_y` **radyan/hücre**dir.
 - **`oblique.py` TAM 2B İLE KARŞILAŞTIRILMADI.** 1B-açılı indirgeme devralınmış
   bir modelleme seçimidir (`k_y` analitik dayatılıyor) ve bedeli ölçülmedi.
   Task 3'ten kalan bu açık **hâlâ açıktır**.

@@ -50,15 +50,18 @@ import numpy as np
 import pytest
 
 from qlab.engine.em.boundary import PEC, PML
-from qlab.engine.em.grid import FieldRecord, courant_limit
+from qlab.engine.em.grid import FieldRecord, FieldState, courant_limit
 from qlab.engine.em.medium import Medium
 from qlab.engine.em.oblique import (
     POLARIZATIONS,
+    ObliqueCoefficients,
     oblique_coefficients,
+    oblique_courant_limit,
+    oblique_step,
     run_oblique_1d,
 )
 from qlab.engine.em.source import gauss_cos
-from qlab.engine.em.yee import run_1d
+from qlab.engine.em.yee import YeeCoefficients, run_1d
 from qlab.errors import InvalidInputError
 from qlab.observable.em_obs import (
     ObliqueWindow,
@@ -811,62 +814,148 @@ def test_EGIK_KATSAYILAR_KUTUPLANMAYA_GORE_DUALITE_ILE_SLOTLANIYOR():
     assert np.array_equal(s.main.db, sb.main.db)
 
 
-def test_KARARLILIK_SINIRI_ky_ILE_DUSUYOR_ve_KAPI_BUNU_SINAMIYOR():
-    """SINIF: ŞEMA ÇIPASI + DÜRÜST OLUMSUZUN kilidi.
+def _vakum_egik_katsayilari(L: int, S: float, ky: float, pol: str):
+    """Vakum + PEC eğik katsayıları, KARARLILIK KAPISINI ATLAYARAK.
 
-    Sevk edilen kapı `courant_limit(1)` = 1'dir ve `ky`yi HESABA KATMAZ.
-    Gerçek sınır ise `ky` ile düşer; kapalı form `S_max = 1/sqrt(1 +
-    (ky/2)^2)` ve ÖLÇÜLDÜ (vakum, PEC duvarlı N = 201, 800 adım, ikili
-    arama; iki kutuplanma da aynı sayıyı verdi):
+    Eşik ölçümü kapıyı atlamak ZORUNDADIR — ölçülecek olan şey tam olarak
+    O REDDİN NEREDE olduğudur, ve kapı devredeyken ölçüm kendi kapısını
+    ölçerdi (daireselleşirdi). `test_sema_cipalari._vakum_katsayilari` ile
+    AYNI gerekçe; koşan güncelleme yine SEVK EDİLEN `oblique_step`tir.
 
-        ky         0.2         0.5554      1.2
-        ölçülen    0.99511662  0.96361252  0.85755547
-        kapalı     0.99503719  0.96353723  0.85749293
-        oran       1.000080    1.000078    1.000073
-
-    BU DOKSTRİNG BİR ZAMANLAR SÜTUNU *"ky dx"* DİYE ETİKETLİYORDU ve o
-    etiket, `Δx` kapatılırken ölçülerek ÇÜRÜDÜ. Gövde zaten doğruyu
-    yazıyordu (aşağıda `1/sqrt(1 + (ky/2)**2)` hesaplanıyor); bayat olan
-    başlıktı. `ky` argümanının kendisi RADYAN BÖLÜ HÜCREdir, yani boyutsuz
-    grubun ta kendisi — `oblique_coefficients` `Δx`i görmez. Ölçüm (m = 8
-    duran kip tohumu, 800 adım, büyüme ölçütü 100×, tol 1e-7): `ky` = 0.4
-    için eşik `Δx` = 1'de de `Δx` = 4'te de 0.98092060, oysa `ky·Δx`
-    okuması `Δx` = 4'te 0.78086881 öngörürdü — %26 sapma.
-
-    Sevk edilen çağrılarda görülen en büyük `ky` 0.555360'tır (lambda =
-    16, theta = 45) ve oradaki sınır 0.963542; kullanılan `S` = 0.4. Pay iki
-    katın üstünde — ama BU BİR PAYDIR, KAPI DEĞİL: `ky` = 1.2'de `S` = 0.9
-    kapıyı geçer ve şema PATLAR. Test bunu da ölçer.
+    Sayılar `oblique_coefficients`in vakumda ürettiğinin AYNISIDIR:
+    `sigma = 0` olduğu için `d_e = 0`, dolayısıyla ca = da = 1, cb = db = S;
+    `mu_r = 1` ve `eps_yarı = 1` olduğu için yardımcı slot da (1, S). İki
+    kutuplanmada SAYILAR AYNI, yalnız `sign` farklı — ve bu, `sign`in bir
+    GAUGE olduğu iddiasının bu testteki ölçülen karşılığıdır.
     """
-    ortam = Medium.vacuum(201)
+    base = YeeCoefficients(
+        ca=np.ones(L), cb=np.full(L, S),
+        da=np.ones(L - 1), db=np.full(L - 1, S), dim=1, courant=S,
+    )
+    return ObliqueCoefficients(
+        main=base, aux_a=np.ones(L), aux_b=np.full(L, S),
+        sign=(-1.0 if pol == "s" else +1.0), polarization=pol, ky=float(ky),
+    )
 
-    def patliyor(S, ky, pol):
-        k = run_oblique_1d(
-            ortam, courant=S, boundary=PEC(), steps=800,
-            source=lambda t: gauss_cos(t, wavelength=20.0, sgf=1.0, t0=20.0),
-            source_index=67, probes=(100,), wavelength=20.0, sgf=1.0,
-            ky=ky, polarization=pol,
-        )
-        v = np.abs(k.probes[0])
-        return (not np.all(np.isfinite(v))) or v.max() > 1e6
 
-    for ky, beklenen in ((0.2, 0.99511662), (1.2, 0.85755547)):
-        lo, hi = 0.05, 1.0
+def _egik_kararli_mi(S: float, ky: float, L: int, adim: int, tohum: int,
+                     pol: str = "s") -> bool:
+    """SEVK EDİLEN `oblique_step`, PEC duvar, tohumlu rastgele başlangıç."""
+    rng = np.random.default_rng(tohum)
+    st = FieldState(rng.standard_normal(L) + 0j,
+                    rng.standard_normal(L - 1) + 0j, 1)
+    aux = rng.standard_normal(L) + 0j
+    co = _vakum_egik_katsayilari(L, S, ky, pol)
+    n0 = float(np.max(np.abs(st.e)))
+    for _ in range(adim):
+        st, aux = oblique_step(st, aux, co)
+        m = float(np.max(np.abs(st.e)))
+        if not np.isfinite(m) or m > 1e12 * n0:
+            return False
+    return True
+
+
+def test_KARARLILIK_SINIRI_ky_ILE_DUSUYOR_ve_KAPI_ARTIK_SINIYOR():
+    """SINIF: ŞEMA ÇIPASI — ve KAPANMIŞ bir dürüst olumsuzun kilidi.
+
+    Sevk edilen izotropik kapı `courant_limit(1)` = 1'dir ve `ky`yi HESABA
+    KATMAZ. Gerçek sınır `ky` ile düşer: `oblique_courant_limit(ky)` =
+    `1/sqrt(1 + (ky/2)^2)`. İKİNCİ BİR KAPI artık `oblique_coefficients`te
+    duruyor; türetimi, iki parçalı artık aşımı ve tam tablosu orada.
+
+    BU TEST BİR ZAMANLAR `..._KAPI_BUNU_SINAMIYOR` ADINI TAŞIYORDU ve
+    dürüst olumsuzu kilitliyordu: *"`ky` yeterince büyütülürse
+    `courant_limit(1)` geçer ve şema yine de patlar."* O cümle DOĞRUYDU ve
+    artık GEÇERSİZDİR — kapı kondu, ve bu testin işi artık kapının YERİNİ
+    ölçmek.
+
+    ÖLÇÜM KAPIYI ATLAMAK ZORUNDA (`_vakum_egik_katsayilari`), yoksa ölçülen
+    şey şema değil kapının kendisi olurdu — `test_sema_cipalari`nin Courant
+    eşiği ölçümüyle aynı gerekçe.
+
+    PENCERE: vakum, PEC duvarlı L = 201, 800 adım, tohumlu rastgele
+    başlangıç (tohum 3), ikili arama 30 adım (60 kısa koşum), tespit ölçütü
+    `max|e| > 1e12 * başlangıç`. ÖLÇÜLEN:
+
+        ky           0.2         1.2
+        ölçülen      0.99522660  0.85764172
+        kapalı(inf)  0.99503719  0.85749293
+        kapalı(PEC)  0.99506758  0.85751237
+
+    TESPİT ÖLÇÜTÜ DE BİR PENCERE DÜĞMESİDİR ve bu ölçüldü: aynı pencerede
+    ölçüt 1e12 yerine 1e6 olsaydı ky = 1.2'de 0.85754172 çıkardı (fark
+    1.0e-04). Bu dosyada bir zamanlar sevk edilen tablo (kaynak sürülen
+    koşum, 1e6 mutlak eşiği) tam da o yüzden 0.85755547 diyordu — sayı
+    yanlış değildi, PENCERESİ farklıydı. Ayrıntı ve yakınsama:
+    `oblique.oblique_courant_limit`.
+    """
+    L, ADIM, TOHUM = 201, 800, 3
+    for ky, beklenen in ((0.2, 0.99522660), (1.2, 0.85764172)):
+        lo, hi = 0.05, 1.5
         for _ in range(30):
             m = 0.5 * (lo + hi)
-            if patliyor(m, ky, "s"):
-                hi = m
-            else:
+            if _egik_kararli_mi(m, ky, L, ADIM, TOHUM):
                 lo = m
-        kapali = 1.0 / np.sqrt(1.0 + (ky / 2.0) ** 2)
-        assert lo == pytest.approx(beklenen, abs=1e-7)
-        assert lo / kapali == pytest.approx(1.00008, abs=2e-5)
+            else:
+                hi = m
+        olculen = 0.5 * (lo + hi)
+        kapali = oblique_courant_limit(ky)
+        kapali_pec = 1.0 / np.sqrt(
+            np.cos(np.pi / (2 * (L - 1))) ** 2 + (ky / 2.0) ** 2
+        )
+        assert olculen == pytest.approx(beklenen, abs=1e-7)
+        # ÖLÇÜLEN eşik kapalı formun ÜSTÜNDE — işareti de bir iddiadır.
+        assert olculen > kapali_pec > kapali
+        # ve artık aşım 2e-04'ün altında (sonlu ızgara + sonlu koşum payı).
+        assert olculen / kapali_pec == pytest.approx(1.00016, abs=1e-5)
 
-    # KAPI BUNU SINAMIYOR: S = 0.9 `courant_limit(1)`i geçiyor ama ky = 1.2'de
-    # şema patlıyor. Sevk edilen kapı bu yüzden bir DÜRÜST OLUMSUZ taşıyor.
+    # KAPALI FORM `courant_limit(1)`İ GENELLİYOR, ONU ÇELİŞMİYOR.
+    assert oblique_courant_limit(0.0) == courant_limit(1)
+    assert oblique_courant_limit(1.2) == pytest.approx(0.85749293, abs=5e-9)
+    with pytest.raises(InvalidInputError, match="ky sonlu"):
+        oblique_courant_limit(float("nan"))
+
+    # KAPI ARTIK SINIYOR: S = 0.9 izotropik kapıyı GEÇER (ve ky = 0'da haklı
+    # olarak geçer, çünkü orada KARARLIDIR) ama ky = 1.2'de KESİLİR.
+    vak = Medium.vacuum(64)
+
+    def kur(S, ky):
+        return oblique_coefficients(vak, courant=S, boundary=PEC(),
+                                    polarization="s", ky=ky)
+
     assert 0.9 < courant_limit(1)
-    assert patliyor(0.9, 1.2, "s")
-    assert not patliyor(0.4, 1.2, "s")
+    assert kur(0.9, 0.0).main.courant == 0.9  # ky = 0'da geçiyor
+    assert _egik_kararli_mi(0.9, 0.0, L, ADIM, TOHUM)  # ve GERÇEKTEN kararlı
+    with pytest.raises(InvalidInputError, match="EGIK indirgemenin"):
+        kur(0.9, 1.2)
+    assert not _egik_kararli_mi(0.9, 1.2, L, ADIM, TOHUM)  # kesilen HAKLI
+
+    # İKİ KAPI DA CANLI: izotropik olan S > 1'i, eğik olan BANDI kesiyor.
+    with pytest.raises(InvalidInputError, match="1B'de S_max"):
+        kur(1.5, 0.1)
+    with pytest.raises(InvalidInputError, match="EGIK indirgemenin"):
+        kur(0.99, 0.4)
+    assert kur(0.98, 0.4).ky == 0.4  # bandın hemen altı GEÇİYOR
+
+    # KAPI SINIRIN TAM ÜSTÜNDE AÇILIYOR — izotropik kapıyla AYNI uzlaşım
+    # (`test_yee.test_COURANT_KAPISI_SINIRIN_TAM_USTUNDE_ACILIYOR...`).
+    # `S == S_max` GEÇER, bir sonraki temsil edilebilir sayı KESİLİR — ve
+    # HANGİ KAPININ kestiği `ky`ye bağlı: `ky = 0`da iki eşik ÇAKIŞTIĞI için
+    # kesen şey izotropik kapıdır, `ky > 0`da eğik kapı.
+    for ky, desen in ((0.0, "1B'de S_max"), (0.4, "EGIK indirgemenin"),
+                      (1.2, "EGIK indirgemenin")):
+        tam = oblique_courant_limit(ky)
+        assert kur(tam, ky).ky == ky
+        with pytest.raises(InvalidInputError, match=desen):
+            kur(np.nextafter(tam, 2.0), ky)
+
+    # SEVK EDİLEN PENCEREDE PAY BÜYÜK — kapı hiçbir şeyi kesmiyor.
+    ky_sevk = (2.0 * np.pi / 16.0) * np.sqrt(EPS1) * np.sin(np.deg2rad(45.0))
+    assert ky_sevk == pytest.approx(0.555360, abs=1e-6)
+    assert oblique_courant_limit(ky_sevk) == pytest.approx(0.963542, abs=1e-6)
+    assert oblique_courant_limit(ky_sevk) / SEVK.courant == pytest.approx(
+        2.41, abs=0.01
+    )
 
 
 def test_EGIK_KOSUM_PENCERESINI_DONDURMEK_ZORUNDA():
@@ -1031,25 +1120,43 @@ def test_SLOW_ESIGI_OLCULDU():
     Bu dosyada `@pytest.mark.slow` eşiği **setup+call > 1.0 s** olarak
     ölçüldü, devralınmadı. Ölçülen iki küme ve ARALARINDAKİ BOŞLUK:
 
-        işaretsiz, en pahalı : 0.69 s
-            (`test_KARARLILIK_SINIRI_ky_ILE_DUSUYOR...`, 60 kısa koşum)
-        `slow`, en ucuz      : 1.61 s
-            (`test_FRESNEL_R_CEVIRI_DENETIMI...`, 4 tam koşum)
+        işaretsiz, en pahalı : 0.67 s
+            (`test_MERDIVEN_KAPIYA_TAKILAN...` ve
+             `test_KARARLILIK_SINIRI_ky_ILE_DUSUYOR...` — aynı koşumda
+             İKİSİ DE 0.67 s, yani gürültü içinde BERABERE)
+        `slow`, en ucuz      : 1.52 s
+            (`test_FFT_BINI_OTURMAZSA_NONE...`)
 
-    Eşik ikisinin ARASINDA ve ikisine de pay bırakıyor (aşağıda 1.45 kat,
-    yukarıda 1.61 kat). Sebep yapısaldır: `tir_phase_difference` çağrısı
+    Eşik ikisinin ARASINDA ve ikisine de pay bırakıyor (aşağıda 1.49 kat,
+    yukarıda 1.52 kat). Sebep yapısaldır: `tir_phase_difference` çağrısı
     başına 4 FDTD koşumudur ve sevk penceresinde 1.414-2.595 s sürer, yani
     BİR çağrı bile eşiği aşar.
+
+    İKİ ATIF DA YENİLENDİ ve sebepleri FARKLI:
+      * Alt uç, `oblique_courant_limit` kapısı konurken DEĞİŞTİ: bu dosyanın
+        kararlılık kilidi kaynak sürülen koşumdan tohumlu koşuma geçti
+        (kapıyı atlamak zorunlu olduğu için) ve 0.69 s → 0.58-0.67 s'ye
+        indi; artık en pahalı işaretsiz test TEK BAŞINA o değil.
+      * Üst uç ATIFI ise ÖLÇÜLDÜĞÜNDE ZATEN BAYATTI: aynı koşumda
+        `test_FRESNEL_R_CEVIRI_DENETIMI...` 1.84 s, `test_FFT_BINI...` ise
+        1.52 s çıktı — yani `slow` kümesinin en ucuzu artık ikincisidir.
+        Ne zaman değiştiği bilinmiyor ve UYDURULMUYOR; yazılan şey bugün
+        ölçülendir.
+
+    MAKİNE GÜRÜLTÜSÜ BEYAN EDİLİR: aynı dosyanın iki ardışık koşumunda
+    bu dört sayı 0.61/0.58/1.27/1.70 ve 0.67/0.67/1.52/1.84 çıktı, yani
+    %20'ye varan oynama var. Eşiğin ikisine de bıraktığı pay (1.49 ve 1.52
+    kat) bu oynamanın ÜSTÜNDEDİR — sınıflandırma gürültüyle değişmiyor.
 
     Test eşiğin ARİTMETİĞİNİ kilitler, SÜREYİ ÖLÇMEZ: süre ölçen bir test
     makinenin yüküne bağlı olurdu ve bu depoda o tuzağa daha önce girilmişti.
     """
-    isaretsiz_en_pahali = 0.69  # ölçüldü
-    slow_en_ucuz = 1.61  # ölçüldü
+    isaretsiz_en_pahali = 0.67  # ölçüldü
+    slow_en_ucuz = 1.52  # ölçüldü
     esik = 1.0
     assert isaretsiz_en_pahali < esik < slow_en_ucuz
-    assert esik / isaretsiz_en_pahali == pytest.approx(1.45, abs=0.02)
-    assert slow_en_ucuz / esik == pytest.approx(1.61, abs=0.02)
+    assert esik / isaretsiz_en_pahali == pytest.approx(1.49, abs=0.02)
+    assert slow_en_ucuz / esik == pytest.approx(1.52, abs=0.02)
 
     # Ve `slow` işaretinin gerçekten uygulandığının SAYIMI:
     import inspect
