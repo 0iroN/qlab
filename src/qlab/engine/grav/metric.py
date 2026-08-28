@@ -76,6 +76,60 @@ class Theory:
 
 
 @dataclass(frozen=True)
+class IsotropicOrbit:
+    """Izotropik ayarda BAGLI bir yorungenin kareleme cekirdegi -- CIPA YOLU.
+
+    Schwarzschild ayarinin `radial_w`i ile AYNI ISI gorur ama BASKA BIR
+    MEKANIZMAYLA, ve ikisinin ORTAK DUGMESI YOKTUR (olculdu, kaydeden vekil:
+    Schwarzschild yolu `Theory`nin yalniz `lam`ini, bu yol yalniz `gamma` ile
+    `beta`sini okur). Task 3'un capraz kontrolu bu ayrimin uzerinde durur.
+
+    TUREV -- ve her adimi cebirsel, sayisal bir fit YOK:
+
+        ds^2 = -A dt^2 + B (dr^2 + r^2 dphi^2),   u = 1/r_izotropik
+        E = A t',  L = B r^2 phi'  (korunanlar)
+        (du/dphi)^2 = X*(B/A)(u) - Y*B(u) - u^2,  X = E^2/L^2, Y = 1/L^2
+
+    `X` ile `Y` yorungeden OKUNUR, girilmez: donus noktalarinda `du/dphi = 0`
+    oldugu icin iki denklem `X` ve `Y`de DOGRUSALDIR ve 2x2 Cramer ile tam
+    cozulur. (Schwarzschild yolunda karsiligi `u1`, `u2`nin `w`ye girmesidir.)
+
+    Sonra ifade `A(u)` ile carpilir: `N(u) = (du/dphi)^2 * A(u)` DORDUNCU
+    DERECEDEN bir POLINOMDUR ve `u1` ile `u2` onun kokleridir. Deflasyonla
+
+        N(u) = (u - u1)(u2 - u) R(u),   R ikinci dereceden
+
+    ve `psi = arcsin((u - orta)/yari)` ikamesinden sonra integrand TAM OLARAK
+    `1/sqrt(R(u)/A(u))` olur -- Schwarzschild yolunun `1/sqrt(w(u))`suyla ayni
+    KALIP, tamamen farkli GOVDE.
+
+    DEFLASYON DORT KATSAYIDAN YALNIZ UCUNU KULLANIR (`n2`, `n3`, `n4`), ve
+    KALAN IKISI BEDAVA BIR SINAVDIR: `n0 = -Pr*r0` ile `n1 = S*r0 - Pr*r1`
+    yeniden uretilmek zorundadir. Olculdu (SEVK EDILEN kodla, sekiz
+    (gamma, beta) noktasi, p = 3e5, e = 0.3, M = 1):
+    |n0 artigi| 2.391e-22 ... 1.551e-21, |n1 artigi| 6.667e-18 ... 4.507e-16.
+    Bu bir tautoloji DEGILDIR: `n0` ile `n1` `X`, `Y`, `r0`, `r1`, `r2`
+    zincirinin HICBIR yerinde kullanilmaz.
+
+    Alanlar:
+      `time_poly`   -- `A(u) = 1 - 2*M*u + 2*beta*(M*u)^2` katsayilari (c0,c1,c2)
+      `radial_poly` -- `R(u)` katsayilari, ayni sirayla
+      `energy_term` -- `X = E^2/L^2`
+      `inverse_L2`  -- `Y = 1/L^2`
+
+    IKI POLINOM AYNI SIRAYLA VE AYNI BICIMDE saklanir, cunku Newton
+    noktasinda (`gamma = -1, beta = 0`) `R` ile `A` OZDES olur ve `isotropic_w`
+    orada BIT BIT 1.0 dondurmelidir; farkli bicimde degerlendirilen iki ozdes
+    polinom bunu yarim ulp'le kacirir.
+    """
+
+    time_poly: tuple[float, float, float]
+    radial_poly: tuple[float, float, float]
+    energy_term: float
+    inverse_L2: float
+
+
+@dataclass(frozen=True)
 class IsotropicPotentials:
     """Izotropik PPN metriginin iki potansiyeli, tek bir `u` noktasinda.
 
@@ -219,3 +273,81 @@ def isotropic_potential(u, *, theory: Theory, M: float) -> IsotropicPotentials:
         time_factor=1.0 - 2.0 * x + 2.0 * theory.beta * x * x,
         space_factor=1.0 + 2.0 * theory.gamma * x,
     )
+
+
+def isotropic_orbit(u1: float, u2: float, *, theory: Theory, M: float) -> IsotropicOrbit:
+    """Izotropik ayarin CIPA YOLU: donus noktalarindan kareleme cekirdegi.
+
+    Girdi Schwarzschild yolununkiyle AYNIDIR (`u1` afel, `u2` perihel, `M`),
+    cikti FARKLI BIR NESNEDIR. Turev `IsotropicOrbit` dokstringinde.
+
+    KAPILAR `radial_w`inkiyle AYNI GEREKCEYE dayanir ve burada YENIDEN
+    yazilmistir, cunku iki yol birbirinin kapisina GUVENMEZ -- guvenselerdi
+    ortak bir dugme dogardi ve capraz kontrol tam oradan korlesirdi.
+    """
+    if not math.isfinite(u1) or not math.isfinite(u2):
+        raise InvalidInputError(
+            f"donus noktalari sonlu olmali, verilen: u1={u1!r}, u2={u2!r}"
+        )
+    if u1 >= u2:
+        raise InvalidInputError(
+            f"donus noktalari AYRI olmali (u1 < u2), verilen: u1={u1!r}, "
+            f"u2={u2!r}. u1 == u2 dairedir; orada olculecek perihel kaymasi "
+            "yoktur ve `X`, `Y` icin kurulan 2x2 dizge TEKILDIR (det = 0)."
+        )
+    if not (M > 0.0) or not math.isfinite(M):
+        raise InvalidInputError(
+            f"M pozitif ve sonlu olmali, verilen: {M!r}."
+        )
+    g = theory.gamma
+    b = theory.beta
+    x1 = M * u1
+    x2 = M * u2
+    B1 = 1.0 + 2.0 * g * x1
+    B2 = 1.0 + 2.0 * g * x2
+    A1 = 1.0 - 2.0 * x1 + 2.0 * b * x1 * x1
+    A2 = 1.0 - 2.0 * x2 + 2.0 * b * x2 * x2
+    P1 = B1 / A1
+    P2 = B2 / A2
+    det = B1 * P2 - B2 * P1
+    if det == 0.0 or not math.isfinite(det):
+        raise InvalidInputError(
+            f"izotropik yorunge dizgesi tekil: det={det!r} (u1={u1!r}, "
+            f"u2={u2!r}, gamma={g!r}, beta={b!r}, M={M!r})."
+        )
+    X = (B1 * u2 * u2 - B2 * u1 * u1) / det
+    Y = (P1 * u2 * u2 - P2 * u1 * u1) / det
+
+    # N(u) = (du/dphi)^2 * A(u), dorduncu dereceden. `n0` ile `n1` BILEREK
+    # HESAPLANMIYOR: deflasyon icin gerekmiyorlar ve hesaplanmadiklari icin
+    # `test_perihel.py`de bedava bir SINAV oluyorlar. (Ilk yazdigimda `n1`
+    # burada duruyordu ve HICBIR YERDE kullanilmiyordu -- olu koddu.)
+    n2 = -1.0 - 2.0 * Y * M * M * (b - 2.0 * g)
+    n3 = 2.0 * M - 4.0 * Y * b * g * M ** 3
+    n4 = -2.0 * b * M * M
+
+    S = u1 + u2
+    Pr = u1 * u2
+    r2 = -n4
+    r1 = S * r2 - n3
+    r0 = S * r1 - Pr * r2 - n2
+    return IsotropicOrbit(
+        time_poly=(1.0, -2.0 * M, 2.0 * b * M * M),
+        radial_poly=(r0, r1, r2),
+        energy_term=X,
+        inverse_L2=Y,
+    )
+
+
+def isotropic_w(u, orbit: IsotropicOrbit):
+    """Izotropik ayarin `w`si: `R(u)/A(u)`. Integrand `1/sqrt(w)` -- AYNI KALIP.
+
+    `radial_w` ile bilerek ayni role sahiptir ve ayni bicimde tuketilir, ama
+    `Theory`ye HIC dokunmaz: kuram bagimliligi zaten `isotropic_orbit`te
+    tuketilmistir. Bu ayrim capraz kontrolun ON KOSULUDUR.
+
+    `u` bir `float` ya da `numpy.ndarray` olabilir; govde eleman elemandir.
+    """
+    a0, a1, a2 = orbit.time_poly
+    r0, r1, r2 = orbit.radial_poly
+    return (r0 + r1 * u + r2 * u * u) / (a0 + a1 * u + a2 * u * u)

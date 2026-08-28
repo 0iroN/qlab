@@ -43,10 +43,13 @@ pencereyi bu yuzden ADIYLA yazar.
 
 from __future__ import annotations
 
+import inspect
 import math
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from qlab.engine.grav.geodesic import perihelion_coefficient
+from qlab.engine.grav.metric import Theory, closed_form_coefficient
 from qlab.errors import InvalidInputError
 
 #: Hukmun UC degeri. `DEJENERE`, `observable/em_obs.VERDICTS`in
@@ -86,6 +89,33 @@ class NoiseFloor:
     verdict: str
 
 
+def _boru_secici_etiketi(fn: Callable[..., float], kw: dict[str, Any]) -> str:
+    """`fn.PIPELINE_KEYS`teki argumanlarin DEGERLERINI etiket parcasina cevirir.
+
+    Beyan etmeyen borular icin bos dizge doner, yani etiket HARFI HARFINE
+    eskisi gibi kalir -- bu, `PIPELINE_KEYS`in var olan borulari bozmadan
+    eklenebilmesinin kosuludur ve testte kilitlidir.
+    """
+    anahtarlar = getattr(fn, "PIPELINE_KEYS", ())
+    if not anahtarlar:
+        return ""
+    imza = inspect.signature(fn).parameters
+    parcalar = []
+    for ad in anahtarlar:
+        if ad in kw:
+            deger = kw[ad]
+        elif ad in imza and imza[ad].default is not inspect.Parameter.empty:
+            deger = imza[ad].default
+        else:
+            raise InvalidInputError(
+                f"{getattr(fn, 'PIPELINE', fn)!r} borusu {ad!r}i boru secici "
+                "ilan ediyor ama ne cagride verilmis ne de imzada varsayilani "
+                "var; etiket boruyu adlandiramaz."
+            )
+        parcalar.append(f"{ad}={deger}")
+    return " | " + ", ".join(parcalar)
+
+
 def newton_noise_floor(fn: Callable[..., float], **kw: Any) -> NoiseFloor:
     """Fizigi KAPAT, AYNI boruyu kostur -- ve tabanin bir sey olctugunu OLC.
 
@@ -97,6 +127,23 @@ def newton_noise_floor(fn: Callable[..., float], **kw: Any) -> NoiseFloor:
                              kullanabilmelidir)
         fn.NEWTON_PROBES  -- `(kwargs, TAM deger)` ciftleri; `kwargs` `fn`e
                              fizigi kapatan argumanlari verir
+        fn.PIPELINE_KEYS  -- (istege bagli) HANGI ARGUMANLARIN boruyu SECTIGI.
+                             Degerleri etikete islenir.
+
+    `PIPELINE_KEYS` TASK 3'TE OLCULEREK EKLENDI, TASARLANMADI. Task 2'de
+    `perihelion_coefficient` TEK bir boruydu ve "kareleme" onu tam
+    adlandiriyordu. Task 3 ayni fonksiyona `gauge` anahtar argumanini ekledi ve
+    o an ETIKET YALAN SOYLEMEYE BASLADI: iki AYRI govde (Schwarzschild `w`si ve
+    izotropik `R/A`si, ortak dugmesi olmayan iki mekanizma) ayni `"kareleme"`
+    etiketini donduruyordu. Olculdu, ayni cagrida yalniz `gauge` degistirilerek:
+    taban 1.594187e-09 <-> 2.346903e-09, merdiven olum esigi p/M = 1e13 <-> 1e14.
+    Yani KARISIK BORU YASAGININ KAYDI, tam da bu modulun iki-ayarli capraz
+    kontrolu sevk edildigi anda ayirt edemez hale gelmisti. Anahtar degerleri
+    artik etikete yazilir; `PIPELINE_KEYS` beyan etmeyen borular (tek govdeli
+    olanlar) icin etiket HARFI HARFINE eskisi gibi kalir.
+
+    Varsayilanlar `fn`in IMZASINDAN okunur, ikinci bir yere yazilmaz -- iki alan
+    ayni seyi belirlerse sessiz bir kazanan dogar (Task 1'in olcumu).
 
     CAGIRAN BU ARGUMANLARDAN HICBIRINI VEREMEZ. Verebilseydi "fizigi kapatma"
     cagirana birakilmis bir dugme olurdu ve makine kendi sinavini secebilirdi;
@@ -157,7 +204,9 @@ def newton_noise_floor(fn: Callable[..., float], **kw: Any) -> NoiseFloor:
         artiklar.append(abs(deger - tam))
 
     canli = len(artiklar)
-    boru = f"{etiket} | fizik-kapali merdiven {canli}/{len(probes)} canli"
+    secici = _boru_secici_etiketi(fn, kw)
+    boru = (f"{etiket}{secici} | fizik-kapali merdiven "
+            f"{canli}/{len(probes)} canli")
     if canli == 0:
         return NoiseFloor(
             value=0.0, signal=signal, ratio=math.nan,
@@ -169,3 +218,74 @@ def newton_noise_floor(fn: Callable[..., float], **kw: Any) -> NoiseFloor:
         value=value, signal=signal, ratio=ratio,
         pipeline=boru, verdict="CURUK" if ratio < 1.0 else "SAGLAM",
     )
+
+
+def second_order_coefficient(*, theory: Theory = Theory(), M: float,
+                             p: float, e: float) -> float:
+    """Ikinci mertebe katsayisi `K`: `C(p) = 2*pi*lam + K*M/p + O((M/p)^2)`.
+
+        K = (C(p) - 2*pi*lam) * p / M
+
+    SINIF: FIZIK CIPASI. Hedefi `K = pi*lam^2*(3 + e^2/6)` -- spec 3.2, ve
+    spec'in ilk hali olan `27*pi + 1.5*pi*e^2` bu ailenin `lam = 3` DILIMIDIR.
+
+    UC AYRI PENCERE DUGMESI VAR VE UCU DE HUKME GIRER:
+
+    (1) `p` BIR OPTIMUMDUR, VE PLANIN SAYISI BU PENCEREDE CIKMIYOR. Olculdu
+        (Schwarzschild ayari, izgara lam in {0.5,1,2,3,4,6} x
+        e in {0.3,0.7,0.95}, EN KOTU bagil fark):
+
+            p = 1e4 -> 1.097e-03 | 3e4 -> 3.653e-04 | 1e5 -> 1.096e-04 |
+            p = 3e5 -> 4.086e-05 | 1e6 -> 3.414e-04 | 3e6 -> 2.900e-03 |
+            p = 1e7 -> 5.528e-02
+
+        Optimum `p = 3e5`te ve orada en kotu fark 4.086e-05'tir. Planin
+        6.7e-05'i BU IZGARADA VE BU PENCEREDE URETILEMEDI; 4.086e-05 Task 1'in
+        yan olcumuyle de birebir ayni cikti.
+
+        OPTIMUMUN YERI KAPALI FORMDAN ONGORULUYOR, ve ongoru KARELEMEDEN
+        BAGIMSIZ bir yoldan gelir: `dphi - 2*pi`nin yuvarlama kuantumu
+        `ulp(2*pi)` idi, `K` onu `(p/M)^2` ile buyutur, yani gurultu
+        `ulp(2*pi)*(p/M)^2`dir. Izgaranin EN KOTU MUTLAK hatasi bu ongoruye
+        boluunce (her `p`de kendi en kotu noktasinda):
+
+            p = 1e4 -> 4.4e+06 | 3e4 -> 1.6e+05 | 1e5 -> 4.4e+03 |
+            p = 3e5 -> 1.265   | 1e6 -> 0.930   | 3e6 -> 0.878   | 1e7 -> 1.540
+
+        Yani `p <= 1e5` KESME SINIRLIDIR (oran binlerce), `p >= 3e5` YUVARLAMA
+        SINIRLIDIR (oran ~1). Optimum tam bu gecisin uzerindedir; bu, Task 2'nin
+        "kesme sinirli / yuvarlama sinirli pencere" ayriminin `K` tarafindaki
+        karsiligidir ve orada oldugu gibi burada da gurultu tabanini bir hata
+        cubugu YAPAN sey pencerenin YUVARLAMA SINIRLI olmasidir.
+
+    (2) RICHARDSON KULLANILMAZ, VE SEBEBI ILK YAZDIGIMDAN BASKA CIKTI.
+        Ilk gerekcem "disdegerlenmis `C`den okunsaydi artik `(p/M)^2` ile
+        carpilip 166 buyuklugunde bir K verirdi" idi; OLCULDU VE YANLIS.
+        Richardson `1/p`de dogrusal disdegerleme yapar, yani `K*M/p` terimini
+        TAM OLARAK SILER. Yanlis yolun verdigi sayi (p = 3e5, GR):
+        e = 0.3 -> -5.556419e-04 (dogrusu 85.24858543879077),
+        e = 0.7 -> +6.100720e-05 (dogrusu 87.13363755319392).
+        Yani sinyal BUYUMUYOR, TAMAMEN KAYBOLUYOR. Kural ayni kaliyor,
+        gerekcesi tersine donuyor: `K` tam da Richardson'in SILDIGI terimdir.
+        Bu yuzden govde `richardson=None` ile cagirir.
+
+    (3) `AYAR` DUGMESI YOK, VE SEBEBI OLCULDU: `K` AYAR-BAGIMLIDIR.
+        `C` (birinci mertebe) iki ayarda ayni sayidir; `K` DEGILDIR --
+        GR, e = 0.3, p = 3e5: Schwarzschild 85.248585, izotropik 26.577757.
+        Iki sebep birlikte: (a) `p` ile `e` birer KOORDINAT ETIKETIDIR ve iki
+        ayarda ayni yorunge farkli (p, e) ile adlandirilir; (b) sevk edilen
+        izotropik metrik 1PN'de KESILMISTIR (`metric.isotropic_potential`),
+        yani ikinci mertebesi bir MODELLEME ARTIGIDIR, fizik degil. Izotropik
+        K bir GURULTU DEGIL, tanimli bir sayidir (p = 1e4 ... 1e6 boyunca
+        26.576587 -> 26.577775, bes hanede kararli) -- ama BASKA BIR SAYIDIR.
+
+        SONUC, VE BU MODULUN CAPRAZ KONTROLUNUN SINIRIDIR: iki ayarli capraz
+        kontrol BIRINCI MERTEBEYI belgeler, ikinci mertebeyi BELGELEMEZ.
+
+    `2*pi*lam` cikarilmasi `closed_form_coefficient`tan okunur, burada YENIDEN
+    yazilmaz. Bunun bedeli acikca beyan edilir: `K`nin dogrulugu kapali formun
+    dogruluguna BAGLIDIR ve bu yuzden `K` testi `lam`i ELLE yazar (bir mutant
+    iki tarafi birlikte kaydiramasin diye).
+    """
+    C_p = perihelion_coefficient(theory=theory, M=M, p=p, e=e, richardson=None)
+    return (C_p - closed_form_coefficient(theory)) * (p / M)
