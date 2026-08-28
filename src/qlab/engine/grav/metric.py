@@ -1,0 +1,221 @@
+"""Metrik, `w` formu ve KURAM SECICI.
+
+BIRIM SECIMI: `G = c = 1`. Bu bir YAKLASIM DEGILDIR, bir birim secimidir --
+`M` bir uzunluktur (Schwarzschild yaricapi `r_s = 2M`), `u = 1/r` bir ters
+uzunluktur, ve `radial_w` ile `closed_form_coefficient` BOYUTSUZDUR.
+
+IKI AYAR SEVK EDILIYOR ve ikisi de bu dosyada:
+
+- SCHWARZSCHILD ayari (`radial_w`): duzeltme `u`da KARESEL girer
+  (`u'' + u = M/L^2 + lam*M*u^2`), yani enerji denkleminde KUBIK bir terim.
+- IZOTROPIK PPN ayari (`isotropic_potential`): duzeltme metrik
+  potansiyellerinde `u`da DOGRUSAL girer (`B = 1 + 2*gamma*M*u`).
+
+Ikisi ayni `C = 2*pi*(2 + 2*gamma - beta)` sayisini verir; Task 3 bunu GERCEK
+CAPRAZ KONTROL olarak kilitleyecek. Bu dosyanin kendi iki olcumu daha dardir
+ve IKISININ GUCU AYNI DEGILDIR -- fark mutasyonla olculdu:
+
+- kareleme (Schwarzschild ayari) <-> `closed_form_coefficient`: bes PPN
+  noktasinda 2.0e-10'da usuyorlar, AMA IKISI DE `Theory.lam`i okur. Ortak
+  dugme capraz kontrolu KORLESTIRIR (spec 7.3'un dorduncu maddesi): `lam`in
+  formulunu `2+gamma-beta` yapan mutantta iki taraf BIRLIKTE kayar ve bu
+  karsilastirma sessiz kalir. Onu oldurmek icin testteki ELLE yazilmis
+  carpanlar (3, 1, 4, 5, 1) gerekir.
+- izotropik acilimin ikinci mertebe katsayisi <-> ayni kapali form: sekiz
+  noktada 2.3e-09'da usuyorlar, ve BU ORTAK DUGMEYI TASIMAZ -- izotropik
+  taraf `gamma` ile `beta`yi dogrudan okur, `lam`i HIC gormez. Olculdu:
+  `Theory.lam` mutanti bu testi de OLDURUYOR.
+
+(`tests/grav/test_metric.py`, pencereler orada yazili.)
+"""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+
+from qlab.errors import InvalidInputError
+
+
+@dataclass(frozen=True)
+class Theory:
+    """Hangi kuramin cozuldugunu SECEN dugmeler -- YENI BIR KUTU.
+
+    Bunlar bir YAKLASIM DEGILDIR (yaklasim YAPILAN bir seydir: "test
+    parcacigi aldik"), bir BIRIM SECIMI de degildir (`G = c = 1` oyle).
+    Bunlar HANGI KURAMIN cozuldugunu secer, ve panel bunu boyle yazar.
+
+    GR: gamma = beta = 1 <=> lam = 3. HERHANGI BASKA DEGER GR DEGILDIR.
+    `lam` BIR ALAN DEGIL, TURETILMIS BIR OZELLIKTIR -- asagiya bak.
+
+    VE IKISI AYNI KAPALI FORMUN IKI YUZUDUR:
+
+        C = 2*pi*(2 + 2*gamma - beta)        lam_eff = 2 + 2*gamma - beta
+
+    `LAM` NEDEN GERCEK VARSAYILANLI BIR ALAN DEGIL -- BU YASAK OLCULDU,
+    TERCIH EDILMEDI. Bir dataclass alani gercek bir varsayilan tasidiginda
+    "verildi" ile "verilmedi" ayirt EDILEMEZ, yani "lam ile (gamma, beta)
+    catisirsa hata" kurali ancak deger tabanli bir tutarlilik sinavi olarak
+    uygulanabilirdi. O halde kural su uc govdeyi de OLDURURDU:
+      - Newton noktasi `Theory(gamma=-1, beta=0)` (lam_eff = 0, varsayilan 3),
+      - kapali formun bes parametre satirindan DORDU (lam_eff 1/4/5/1),
+      - Task 2'nin `Theory(gamma=g, beta=2+2*g)` enjeksiyonu (lam_eff = 0).
+    Yani spec 4.3'un "pazarlik edilmez" hata cubugu makinesi ILK CAGRIDA
+    istisna atardi. `@property` bu ailenin tamamini serbest birakir, ve
+    `Theory(lam=...)` yine de `TypeError` verir cunku `lam` kurucu argumani
+    DEGILDIR.
+    """
+
+    gamma: float = 1.0
+    beta: float = 1.0
+
+    @property
+    def lam(self) -> float:
+        """TURETILMIS -- BIR ALAN DEGIL. Tek kaynak (gamma, beta)."""
+        return 2.0 + 2.0 * self.gamma - self.beta
+
+
+@dataclass(frozen=True)
+class IsotropicPotentials:
+    """Izotropik PPN metriginin iki potansiyeli, tek bir `u` noktasinda.
+
+        ds^2 = -A(u) dt^2 + B(u) (dx^2 + dy^2 + dz^2)
+
+    `time_factor` = A, `space_factor` = B. Ikisi de BOYUTSUZDUR ve `u = 0`da
+    (sonsuzda) 1'e gider.
+    """
+
+    time_factor: float
+    space_factor: float
+
+
+def closed_form_coefficient(theory: Theory) -> float:
+    """Perihel katsayisinin KAPALI FORMU: `C = 2*pi*(2 + 2*gamma - beta)`.
+
+    SINIF -- ve bu dosyada iki ayri sinifi var, karistirmak pahalidir:
+
+      * TEK BASINA cagrilip bir sabitle karsilastirildiginda bu bir
+        TRANSKRIPSIYON KILIDIDIR. Cozulen bir model yoktur; deponun olcutu
+        ("simulasyon bu sayi hakkinda YANLIS olabilir miydi?") HAYIR der.
+      * Bir KARELEME sonucuyla karsilastirildiginda FIZIK CIPASININ REFERANS
+        TARAFIDIR. Olculdu (`tests/grav/test_metric.py`, psi ikamesi,
+        quad 1e-14/1e-13/400, Richardson (3e5, 1e6), e = 0.3, M = 1): bes PPN
+        noktasinda kareleme ile bagil fark 9.826e-11 ... 2.003e-10; GR'de
+        `6*pi = 18.84955592153876`den fark -1.852e-09, 10.01 durust hane.
+
+    `C`nin donduruldugu deger bes noktada `2*pi*k` ile BIT BIT esittir
+    (olculdu; yaklasiklik payi degil, tam esitlik).
+
+    TEK YOL: `lam` bu fonksiyonda YENIDEN yazilmaz, `theory.lam` uzerinden
+    okunur. Ikinci bir kopya, ikinci bir sessiz kazanan demektir.
+    """
+    return 2.0 * math.pi * theory.lam
+
+
+def radial_w(u, u1: float, u2: float, *, theory: Theory, M: float):
+    """Radyal karelemenin `w` FORMU: `w(u) = 1 - a*(u1 + u2 + u)`.
+
+    `a = 2*lam*M/3`. Bagli yorunge icin
+
+        (du/dphi)^2 = (u - u1) * (u2 - u) * w(u)
+
+    ve `u1 = (1-e)/p` (afel), `u2 = (1+e)/p` (perihel), `p = a_yariboyut(1-e^2)`.
+
+    BU FORM BIR TERCIH DEGIL, SPEC 4.3'UN ON KOSULUDUR. Ayni carpan kok
+    formunda `(2*lam*M/3) * (3/(2*lam*M) - u1 - u2 - u)` diye yazilabilir ve
+    OLCULDU: lam = 0'da `3/(2*lam*M)` Python float aritmetiginde
+    `ZeroDivisionError` atar -- yani "lambda = 0 kosusu HATA CUBUGUDUR" kurali
+    kok formunda ILK CAGRIDA coker. `w` formu ayni noktada TAM 1.0 dondurur
+    (olculdu: on bes (u, M) ciftinde bit bit 1.0).
+
+    VE lam = 3'te KOK FORMUNDAN AYIRT EDILEMEZ -- ama "bit bit ayni" DEGIL,
+    ve bu fark olcumle bulundu (ilk yazdigim test noktasal esitlik isteyip
+    KIRMIZI dustu). Olculdu: 336 (p, e, u) noktasinda noktasal bit bit
+    esitlik 248/336, en kotu bagil fark 1.205e-16 -- yani YARIM ulp
+    (1 ulp = 2.220e-16). HUKUM duzeyinde ise fark HIC YOK: disdegerlenmis
+    `C` uc dismerkezlikte de bit bit ayni (0.000e+00; Richardson (3e5, 1e6),
+    e in {0.3, 0.7, 0.95}).
+
+    `u` bir `float` ya da `numpy.ndarray` olabilir; govde eleman elemandir.
+
+    `u1 < u2` KAPISI -- ve gerekcesi spec 4.6'dan DAR:
+    spec "kareleme dairesel yorungede cokuyor" diyor. Olculdu (GR, M = 1,
+    p = 3e5, quad 1e-14/1e-13/400; hedef `3*pi*lam^2` = 84.82300164692441):
+
+        e        ham-u karelemesi K      psi ikamesi K
+        1e-12    -4.141e+09              +84.82444
+        1e-06    -5.314e+03              +84.82444
+        1e-03    +7.278e+01              +84.82444
+
+    Yani (1) `e > 0` kapisi ham-u borusunu KURTARMAZ -- e = 1e-6 kapidan gecer
+    ve sonuc orada zaten hem ISARET olarak ters hem buyukluk olarak 63 kat
+    yanlistir (-5.314e+03 vs +84.823); (2) `psi` ikameli boru e = 0'da bile
+    dogru sayiyi verir, yani kapiya SAYISAL olarak ihtiyaci yoktur. Kapi
+    burada SOZLESMESEL bir kapidir: `radial_w`in girdisi bagli bir yorungenin
+    IKI AYRI donus noktasidir, `u1 == u2` bir dairedir ve orada olculecek bir
+    perihel kaymasi yoktur.
+    """
+    if not math.isfinite(u1) or not math.isfinite(u2):
+        raise InvalidInputError(
+            f"donus noktalari sonlu olmali, verilen: u1={u1!r}, u2={u2!r}"
+        )
+    if u1 >= u2:
+        raise InvalidInputError(
+            f"donus noktalari AYRI olmali (u1 < u2), verilen: u1={u1!r}, "
+            f"u2={u2!r}. u1 == u2 dairesel yorunge demektir, yani e = 0, ve "
+            "orada perihel kaymasi tanimsizdir. Olculdu (GR, M=1, p=3e5, "
+            "ham-u karelemesi): e = 1e-6'da ikinci mertebe katsayisi "
+            "K = -5.314e+03 cikiyor, dogrusu 3*pi*lam^2 = 84.823002. "
+            "e > 0 verin."
+        )
+    if not (M > 0.0) or not math.isfinite(M):
+        raise InvalidInputError(
+            f"M pozitif ve sonlu olmali, verilen: {M!r}. M <= 0 sessizce "
+            "Newton limitine dusmez, fiziksel olarak anlamsizdir."
+        )
+    a = 2.0 * theory.lam * M / 3.0
+    return 1.0 - a * (u1 + u2 + u)
+
+
+def isotropic_potential(u, *, theory: Theory, M: float) -> IsotropicPotentials:
+    """Izotropik PPN metriginin iki potansiyeli:
+
+        A(u) = 1 - 2*M*u + 2*beta*(M*u)^2        (time_factor)
+        B(u) = 1 + 2*gamma*M*u                   (space_factor)
+
+    `u = 1/r_izotropik`. Metrik STANDART 1PN mertebesinde kesilmistir; `B`nin
+    `(M*u)^2` terimi 1PN'de gerekmez ve BILINCLI olarak yoktur. Oran `B/A`
+    YENIDEN kesilmez, oldugu gibi alinir -- bu bir MODELLEME SECIMIDIR ve
+    getirdigi 2PN artiklari `C`yi (birinci mertebe) etkilemez.
+
+    JEODEZIK DENKLEMDE TEORI BAGIMLILIGININ TAMAMI `B/A` ORANINDADIR:
+
+        B/A = 1 + (2 + 2*gamma)*x + (4 - 2*beta + 4*gamma)*x^2 + O(x^3),
+        x = M*u
+
+    ve ikinci mertebe katsayisi `4 - 2*beta + 4*gamma = 2*lam`, yani
+    `closed_form_coefficient(theory)/pi`. Olculdu (`x = 1e-3`, iki kademeli
+    Richardson): sekiz (gamma, beta) noktasinda en kotu bagil fark 2.302e-09,
+    ve `x = 1e-3` bir OPTIMUMDUR (x = 1e-2'de 1.845e-06, x = 1e-5'te
+    3.442e-05) -- bir disdegerleme sonsuza kadar iyilesmez.
+
+    NEWTON NOKTASINDA (gamma = -1, beta = 0) `A` ile `B` OZDESTIR: ikisi de
+    `1 - 2*M*u`. Olculdu: 2000 rastgele (u, M) noktasinda esitsizlik sayisi 0,
+    bit bit. Bu, `w == 1` ile ayni isi goren izotropik karsiliktir -- A == B
+    olunca jeodezik denklem cebirsel olarak Newton'un Kepler denklemine iner,
+    ve spec 4.3'un hata cubugu BU ayarda da kosulabilir hale gelir.
+
+    DURUST NITELIK: o esitlik `beta`yi TEK BASINA kilitlemez -- olculdu,
+    (gamma, beta) = (-1, 1e-16)'da da A == B cikiyor cunku `2*beta*(M*u)^2`
+    terimi 0.98'in ulp'sinin altinda kaliyor. `beta`nin degerini goren sinav
+    `B/A` aciliminin ikinci mertebesidir.
+    """
+    if not (M > 0.0) or not math.isfinite(M):
+        raise InvalidInputError(
+            f"M pozitif ve sonlu olmali, verilen: {M!r}."
+        )
+    x = M * u
+    return IsotropicPotentials(
+        time_factor=1.0 - 2.0 * x + 2.0 * theory.beta * x * x,
+        space_factor=1.0 + 2.0 * theory.gamma * x,
+    )
