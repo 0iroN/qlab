@@ -38,14 +38,19 @@ seyi belirlerse sessiz bir kazanan dogar" olcumunun bu dosyadaki uygulanisidir.
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
-from scipy.integrate import quad
+import numpy as np
+from scipy.integrate import quad, solve_ivp
 
 from qlab.engine.grav.metric import (
+    GAUGE_NAMES,
     Theory,
     closed_form_coefficient,
     isotropic_orbit,
     isotropic_w,
+    null_kernel,
+    null_w,
     radial_w,
 )
 from qlab.errors import InvalidInputError
@@ -95,11 +100,16 @@ DEFAULT_RICHARDSON: tuple[float, float] = (3e5, 1e6)
 NEWTON_PROBE_LAMBDAS: tuple[float, ...] = (1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9)
 
 
-#: SEVK EDILEN IKI AYAR. "Ayar" burada bir KOORDINAT SECIMIDIR: ayni fizik,
-#: baska bir `r` tanimi ve baska bir metrik yazilisi. Birinci mertebe katsayisi
-#: `C` ayardan BAGIMSIZDIR (olculdu, `tests/grav/test_perihel.py`); ikinci
-#: mertebe DEGILDIR (`grav_obs.second_order_coefficient` dokstringi).
-GAUGES: tuple[str, ...] = ("schwarzschild", "isotropic")
+#: SEVK EDILEN IKI AYAR -- ve bu ad artik `metric.GAUGE_NAMES`ten OKUNUR,
+#: burada YENIDEN yazilmaz. Task 4 ayni adlari bos jeodezikte de ihtiyac
+#: duydu; iki liste ayni seyi belirlerse sessiz bir kazanan dogar (Task 1'in
+#: olcumu) ve o kazanan adlandirilmamis bir pencere dugmesidir.
+#: Birinci mertebe katsayisi `C` ayardan BAGIMSIZDIR (olculdu,
+#: `tests/grav/test_perihel.py`); ikinci mertebe DEGILDIR
+#: (`grav_obs.second_order_coefficient` dokstringi). Bukulmede AYNI HUKUM
+#: cikti (`tests/grav/test_bukulme.py`): `1+gamma` ayardan bagimsiz,
+#: `(oran-2)*b/M` degil.
+GAUGES: tuple[str, ...] = GAUGE_NAMES
 
 
 def _donus_noktalari(p: float, e: float) -> tuple[float, float]:
@@ -374,3 +384,472 @@ perihelion_coefficient.NEWTON_PROBES = _newton_probes()  # type: ignore[attr-def
 #: yazilirsa iki ayari ayirt edebilir. Varsayilan buraya KOPYALANMAZ,
 #: imzadan okunur.
 perihelion_coefficient.PIPELINE_KEYS = ("gauge",)  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# BOS JEODEZIK -- ISIK BUKULMESI (kareleme, CIPA YOLU)
+# ---------------------------------------------------------------------------
+
+#: Bukulme karelemesinin `theta` ikamesi icin `quad` dugmeleri. Bagli
+#: yorungenin `psi` dugmeleriyle AYNI degerler ama AYRI sabitler: iki boru
+#: birbirinin dugmesine guvenmez.
+#:
+#: VE BU BORUDA TOLERANS TAMAMEN ETKISIZ -- olculdu, varsayilmadi. Sevk
+#: edilen kodda bu iki sabit degistirilip kosuldu, DORT ayar:
+#: (1.49e-8, 1.49e-8) yani `quad`in kendi varsayilani, (1e-12, 1e-11),
+#: (1e-14, 1e-13), (1e-16, 1e-15). DORDUNDE DE:
+#:     delta(GR, M=1, b=1e5) = 4.000117813962589e-05   BIT BIT ayni
+#:     oran                  = 1.9999999996887523      BIT BIT ayni
+#:     gurultu tabani        = 3.651917e-10            BIT BIT ayni
+#: Sebep yapisaldir: `theta` ikamesinden sonra integrand [0, pi/2]'de
+#: PURUZSUZDUR ve `quad`in 21 noktali Gauss-Kronrod kurali onu daha ilk
+#: bolmede makine hassasiyetinde integre eder. Yani bu boruda hane KARELEME
+#: toleransiyla degil, `1/b`de Richardson penceresiyle kazanilir.
+#: (1e-16, 1e-15) ayari burada da `IntegrationWarning` URETIYOR -- ama
+#: DEGERI DEGISTIRMIYOR, ve bu ikisi ayri seylerdir. Bagli yorungenin `psi`
+#: borusunda ayni ayar tabani 1.5942e-09'dan 2.2123e-09'a ZIPLATIYORDU;
+#: burada uyari cikiyor, sayi bit bit ayni kaliyor.
+NULL_EPSABS: float = 1e-14
+NULL_EPSREL: float = 1e-13
+NULL_LIMIT: int = 400
+
+#: Bukulme oraninin sevk edilen Richardson cifti -- `1/b`de dogrusal.
+#: OLCULEN merdiven (GR, M = 1, Schwarzschild ayari, durust hane
+#: `-log10(|oran-2|/2)`):
+#:   (1e3,3e3) -> 5.64 | (1e4,3e4) -> 7.64 | (1e4,1e5) -> 8.16 |
+#:   (1e5,3e5) -> 9.81 | (1e5,1e6) -> 9.37 | (1e6,3e6) -> 9.30 |
+#:   (1e6,1e7) -> 8.41 | (1e7,3e7) -> 7.69
+#: Optimum (1e5, 3e5)'tedir ve ORADAN SONRA BOZULUYOR -- karelemenin
+#: `p` merdiveninin bukulme tarafindaki birebir karsiligi.
+DEFAULT_NULL_RICHARDSON: tuple[float, float] = (1e5, 3e5)
+
+
+#: BUKULME BORUSUNUN FIZIGI KAPATMA MERDIVENI: `gamma = -1 + eps`.
+#:
+#: `M = 0` NOKTASI TEK BASINA BIR HATA CUBUGU DEGILDIR ve bu olculdu:
+#: `M = 0`da `A = T = 1`, `Q(u) = u0 + u` olur ve integrand BIT BIT 1.0'a
+#: duser, `delta` TAM 0.0 cikar -- iki ayarda da. Karelemedeki `lambda = 0`
+#: sabitinin birebir esi. (Ustelik `M > 0` kapisi o noktayi API'den de
+#: erisilemez kilar.)
+#:
+#: Merdiven yerine `1 + gamma -> 0` LIMITI sevk ediliyor.
+#:
+#: VE BU MERDIVENIN UCLARI ZORUNLU DEGILDIR -- bu, karelemenin
+#: `NEWTON_PROBE_LAMBDAS`iyla arasindaki OLCULMUS FARKTIR ve orada yazan
+#: gerekce buraya TASINMAZ. Karelemede ust ucu kesme hatasi, alt ucu `w`nin
+#: yeniden tam 1.0'a yuvarlanmasi (basamagin OLMESI) zorluyordu; burada
+#: ikisi de olmuyor. Olculdu (Schwarzschild, M = 1, Richardson (1e5, 3e5),
+#: artik `|oran - (1+gamma)|`):
+#:
+#:   eps    5e-1      1e-1      1e-2      1e-3      1e-4      1e-9
+#:   artik  1.353e-10 8.141e-11 3.082e-10 3.398e-10 3.652e-10 2.451e-10
+#:   eps    1e-12     1e-14     1e-15     1e-16
+#:   artik  3.448e-10 3.458e-10 3.458e-10 3.458e-10
+#:
+#: Yani artik ON BESTEN FAZLA DEKAT boyunca 8.14e-11 ile 3.65e-10 arasinda,
+#: toplam 4.5 kat oynuyor: merdiven FIZIGI DEGIL ARITMETIGI olcuyor. Alt
+#: uctaki DOYMA da olculdu: eps <= 1e-12'de `oran` BIT BIT ayni degeri
+#: (3.45805844e-10) donduruyor, cunku `2*INT - pi` farkinin mutlak
+#: yuvarlamasi `(1+gamma)`yi tamamen orter. OLU basamak (bit bit 0.0) HIC
+#: gorulmedi: her pencerede 6/6 canli, yani bu boru `DEJENERE` OLAMAZ.
+#: 1e-4 ... 1e-9 araligi bu platonun TEMSILI bir dilimidir; secim
+#: karelemedeki gibi zorunlu degil, ACIKCA BIR TERCIHTIR.
+DEFLECTION_PROBE_EPSILONS: tuple[float, ...] = (1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9)
+
+
+def deflection_angle(*, theory: Theory = Theory(), M: float, b: float,
+                     gauge: str = "schwarzschild") -> float:
+    """Isigin bukulme ACISI `delta` -- KARELEME (CIPA YOLU).
+
+        delta = 2 * INT_0^{u0} du / sqrt((du/dphi)^2) - pi
+
+    ve `metric.null_kernel`in `w` formunda, `u = u0*sin(theta)` ikamesiyle
+
+        delta = 2 * INT_0^{pi/2} sqrt(u0*(1 + sin theta)*w(u)) dtheta - pi.
+
+    INTEGRAL `u = 0`DAN BASLAR, YANI KESME YOKTUR. Bu bir ayrinti degil,
+    olculmus bir gerekce: sonlu bir `r_start`tan baslayan bir surumde
+    kacirilan asimptot acisi `2b/r_start`tir ve b = 1e5, r_start = 1e6'da
+    0.2 rad eder -- sinyalin (4e-5 rad) 5000 KATI. O surum "oran = 1.000000"
+    verir, yani GR'yi NEWTON SANIR. Burada alt sinir TAM `u = 0`dir.
+
+    OLCULEN (GR, M = 1, dosya penceresi):
+
+        b       delta                      delta*b/M     (delta*b/M - 4)*b/M
+        1e3     4.011823809925e-03         4.011824      11.823810
+        1e4     4.001178524082e-04         4.001179      11.785241
+        1e5     4.000117813963e-05         4.000118      11.781396
+        1e6     4.000011781358e-06         4.000012      11.781358
+
+    Birinci mertebe `4*M/b` (GR), ikinci mertebe `15*pi/4` = 11.780972
+    (`NullPotentials` dokstringi: literaturun `15*pi/4 - 4`u `r0` cinsinden,
+    bu `b` cinsinden). b = 1e7'de sayi BOZULUYOR (11.791719) cunku `delta`nin
+    mutlak ulp'si `b^2` ile carpilir: b = 1e6'da +-3e-04, b = 1e7'de +-3e-02.
+
+    `beta` IKINCI MERTEBEDE GORUNUR VE O DA KAPALI FORMDUR:
+    `d(delta)/d(beta) = -pi*M^2/b^2`. Olculdu (SEVK EDILEN kodla, merkezi
+    fark h = 1e-3); `d(delta)/d(beta) / (-pi*M^2/b^2)`:
+
+        b        schwarzschild   isotropic
+        1e3      1.007687        1.010255
+        1e4      1.000751        1.001020
+        1e5      1.000815        1.000108
+
+    Fark adimi `h` BIR PENCERE DUGMESIDIR: ayni b = 1e5'te h = 1e-4 ile iki
+    ayar da 1.010710 verir, cunku turevin mutlak buyuklugu `1/b^2` ile
+    duserken farkin mutlak yuvarlamasi sabit kalir ve `h` kuculdukce oran
+    BOZULUR -- iyilesmez.
+
+    `b <= b_krit` ISE FOTON YAKALANIR ve `InvalidInputError` atilir
+    (`metric._en_kucuk_pozitif_kok`).
+    """
+    _null_kapi(M=M, b=b, gauge=gauge)
+    kernel = null_kernel(theory=theory, M=M, b=b, gauge=gauge)
+    u0 = kernel.turning_point
+
+    def integrand(theta: float) -> float:
+        s = math.sin(theta)
+        return math.sqrt(u0 * (1.0 + s) * null_w(u0 * s, kernel))
+
+    deger, _ = quad(
+        integrand, 0.0, math.pi / 2,
+        epsabs=NULL_EPSABS, epsrel=NULL_EPSREL, limit=NULL_LIMIT,
+    )
+    return 2.0 * deger - math.pi
+
+
+def _null_kapi(*, M: float, b: float, gauge: str) -> None:
+    """Bukulme borusunun girdi kapilari; mesajlarinda OLCUM tasirlar."""
+    if gauge not in GAUGE_NAMES:
+        raise InvalidInputError(
+            f"bilinmeyen ayar: {gauge!r}. Sevk edilen ayarlar: {GAUGE_NAMES}. "
+            "Ayar bukulmede de pencereye girer: birinci mertebe (`1+gamma`) "
+            "ayardan bagimsizdir (iki ayar 1.159457e-10'da usuyor), ikinci "
+            "mertebe DEGILDIR ((oran-2)*b/M = 7*pi/8 <-> pi/2, fark tam "
+            "3*pi/8)."
+        )
+    if not (M > 0.0) or not math.isfinite(M):
+        raise InvalidInputError(
+            f"M pozitif ve sonlu olmali, verilen: {M!r}."
+        )
+    if not math.isfinite(b) or not (b > 0.0):
+        raise InvalidInputError(f"b pozitif ve sonlu olmali, verilen: {b!r}")
+
+
+# ---------------------------------------------------------------------------
+# ODE -- YORUNGE MOTORU (cipa yolu DEGIL) ve KENDI BORUSU
+# ---------------------------------------------------------------------------
+
+#: ODE penceresi. `rtol`/`atol` BIRER PENCERE DUGMESIDIR ve hukme girer;
+#: OLCULEN merdiven (GR, e = 0.3, M = 1, DOP853, durust hane):
+#:
+#:   rtol      (1e3,3e3)  (3e3,1e4)  (1e4,3e4)  (3e4,1e5)  (1e5,3e5)
+#:   1e-10       5.22       4.91       4.18       2.99       2.26
+#:   1e-12       5.12       6.20       5.93       4.88       3.83
+#:   1e-13       5.12       6.12       7.59       5.87       4.90
+#:
+#: Yani ODE'nin Richardson optimumu `rtol`la YER DEGISTIRIR (1e-12'de
+#: (3e3,1e4), 1e-13'te (1e4,3e4)). Spec 4.5'in "(1e4,3e4) -> 7.20" satiri bir
+#: PENCERE BEYANI TASIMIYORDU; bu depoda ayni cift rtol = 1e-12'de 5.93,
+#: rtol = 1e-13'te 7.59 veriyor.
+ODE_RTOL: float = 1e-13
+ODE_ATOL: float = 1e-15
+
+#: ODE'nin sevk edilen Richardson cifti (yukaridaki tablonun optimumu).
+DEFAULT_ODE_RICHARDSON: tuple[float, float] = (1e4, 3e4)
+
+#: Sevk edilen integratorler. KAPALI BIR LISTE, ve sebebi olculdu:
+#: `newton_noise_floor` tabani metoda gore DORT MERTEBE oynuyor (asagida).
+ODE_METHODS: tuple[str, ...] = ("DOP853", "RK45", "Radau", "LSODA", "BDF")
+
+
+@dataclass(frozen=True)
+class Trajectory:
+    """Bir radyal periyot boyunca esit arali `phi`de ornek alinmis yorunge.
+
+    `phi` [0, dphi] araliginda `n_points` esit arali deger; `u = 1/r` ve
+    `r = 1/u` ayni izgarada. `phi[0] = 0.0` perihelden baslar.
+
+    ESIT ARALI `PHI` KARELEMEDEN ALINAMAZ ve bu ODE'nin buradaki gerekcesinin
+    ASIL yarisidir: kareleme `phi(u)` uretir, yani TERS FONKSIYONU; esit arali
+    `phi` istemek her nokta icin ayri bir kok bulma ya da ayri bir integral
+    demektir. `viz/grav_frames.py` bu yuzden ODE'ye baglanir.
+    """
+
+    phi: "np.ndarray"
+    u: "np.ndarray"
+    r: "np.ndarray"
+
+
+def _ode_cekirdek(*, theory: Theory, M: float, p: float, e: float,
+                  rtol: float, atol: float, method: str, dense: bool):
+    """Bir radyal periyodu ODE ile supuren cekirdek. `(dphi, sol)` doner.
+
+    DENKLEM Schwarzschild ayarindadir ve `radial_w`nin ta kendisinin turevidir:
+
+        u'' + u = M/L^2 + lam*M*u^2,
+        M/L^2 = (S - a*(S^2 - P))/2,  a = 2*lam*M/3, S = u1+u2, P = u1*u2
+
+    (yani `(u-u1)(u2-u)*w(u)` acilimindaki `u` katsayisinin yarisi -- ayni
+    cekirdegin iki yazilisi; kareleme ile ODE arasindaki tek ORTAK govde bu
+    iliskidir ve o yuzden ikisi CAPRAZ KONTROL DEGILDIR, spec 7.3).
+
+    `t0 = 0` VE KUSUR NEREDEYDI -- OLCULDU, VE SPEC 4.4'TEN DAHA DAR:
+    spec "`t0 = 0` ZORUNLU" diyor ve tabanin `1.0001e-9 * p` ciktigini
+    yaziyor. Kusur `t0`nin DEGERINDE degil, supurulen acinin `t_olay - t0`
+    yerine `t_olay` diye OKUNMASINDAYDI. Olculdu (BU dosyanin penceresinde --
+    DOP853, rtol 1e-13, atol 1e-15, lam = 0, tek basamak; `t0` sevk edilen
+    imzada bir arguman OLMADIGI icin olcum bu govdenin bir kopyasiyla
+    yapildi):
+
+        p     t0      dphi = t_olay - t0     dphi = t_olay  (KUSURLU)
+        1e3   0       +1.135092e-09          +1.135092e-09
+        1e3   1e-9    +1.137757e-09          +1.001138e-06   (= 1e-9*p + taban)
+        1e4   0       +1.317702e-07          +1.317702e-07
+        1e4   1e-9    +1.317702e-07          +1.013177e-05   (= 1e-9*p + taban)
+
+    Yani cikarma yapilinca `t0` PRATIK OLARAK ETKISIZDIR (p = 1e3'te dorduncu
+    hanede oynuyor, p = 1e4'te BIT BIT ayni), yapilmayinca `1e-9*p` tam olarak
+    geri geliyor. Spec 4.4'un "5 800 kat" duzelmesi de aslinda bu sutunun
+    duzelmesidir: dugme `t0` degil, CIKARMADIR. Sevk edilen surum `t0 = 0`
+    KULLANIR *ve* cikarmayi yapar -- iki onlem birbirinin yedegidir.
+
+    `t0`DAKI SAHTE OLAY: baslangic perihelde (`v = 0`) oldugu icin `solve_ivp`
+    olay islevini `t0`da TAM 0.0 gorur ve `direction = -1` kosulunu orada da
+    saglar. Olculdu, sevk edilen cagride: `t_events[0]` =
+    `[0.0, 6.283248140523368]`, yani BIRINCI kok sahtedir. Ilk taslagim bu
+    yuzden `t0 = 1e-9` yaziyordu; dogru cozum koku SUZMEKTIR.
+
+    SUZGECIN ESIGI `pi`DIR AMA SINIRI `0`DAN AYIRT EDILEMEZ -- VE BU
+    MUTASYONLA OLCULDU, VARSAYILMADI. `if t > math.pi` yerine `if t > 0.0`
+    yazan mutant 237 testin HEPSINDEN sag cikiyor, cunku `t0 = 0`da sahte kok
+    TAM `0.0`dir ve `0.0 > 0.0` zaten YANLIS. Yani bu iki esik sevk edilen
+    pencerede DAVRANIS OLARAK OZDESTIR; `pi` esigi bir davranis farki icin
+    degil, (a) `t0 != 0` alan bir kopyada da dogru kalsin diye, (b) cozucu
+    gurultusunun uretebilecegi kucuk sahte kokleri kapsam disi biraksin diye
+    secilmistir. `t >= 0.0` yazan mutant ise OLUR: sahte kok alinir, `dphi`
+    sifira duser ve asagidaki kapi atar.
+
+    "SON koku al" suzgeci OLCULEREK ELENDI: RK45 ve LSODA'da olay islevi
+    `v ~ 0` civarinda gurultuye girip 4*pi'ye yakin sahte kokler uretiyor ve
+    son kok `(4*pi - 2*pi)*p` = 2.513274e+05 gibi bir sayi donduruyordu --
+    SESSIZCE. `pi < dphi < 3*pi` kapisi o sessiz yolu da kapatir.
+    """
+    u1, u2 = _donus_noktalari(p, e)
+    lam = theory.lam
+    a = 2.0 * lam * M / 3.0
+    S = u1 + u2
+    P = u1 * u2
+    M_over_L2 = 0.5 * (S - a * (S * S - P))
+    lamM = lam * M
+
+    def rhs(phi, y):
+        u, v = y
+        return (v, M_over_L2 + lamM * u * u - u)
+
+    def donus(phi, y):
+        return y[1]
+    donus.direction = -1.0
+
+    sol = solve_ivp(
+        rhs, (0.0, 4.0 * math.pi), (u2, 0.0), method=method,
+        rtol=rtol, atol=atol, events=donus, dense_output=dense,
+    )
+    if not sol.success:
+        raise InvalidInputError(
+            f"ODE cozucusu basarisiz: {sol.message!r} "
+            f"(method={method!r}, rtol={rtol!r}, atol={atol!r}, p={p!r})"
+        )
+    kokler = [float(t) for t in sol.t_events[0] if t > math.pi]
+    if not kokler:
+        raise InvalidInputError(
+            f"radyal periyot bulunamadi (method={method!r}, p={p!r}, e={e!r}): "
+            f"phi > pi olan donus noktasi yok. Bulunan kokler: "
+            f"{list(sol.t_events[0])!r}"
+        )
+    dphi = kokler[0]
+    if not (math.pi < dphi < 3.0 * math.pi):
+        raise InvalidInputError(
+            f"supurulen aci penceresi disinda: dphi = {dphi!r} "
+            f"(method={method!r}, p={p!r}). Bagli bir yorungede bir radyal "
+            "periyot 2*pi civarindadir; bu deger olay suzgecinin sahte bir "
+            "kok yakaladigini soyler."
+        )
+    return dphi, sol
+
+
+def run_trajectory(*, theory: Theory = Theory(), M: float, p: float, e: float,
+                   n_points: int = 2000, rtol: float = ODE_RTOL,
+                   atol: float = ODE_ATOL, method: str = "DOP853") -> Trajectory:
+    """ODE yolu -- YORUNGE MOTORU, CIPA YOLU DEGIL.
+
+    SINIF: CIPA DEGIL. Bu fonksiyon bir sayiyi belgelemez, bir egri uretir;
+    belgelenen sayi `perihelion_coefficient` (kareleme) ile gelir.
+
+    IHTIYAC OLCULDU, VE PLANIN ORANI URETILEMEDI. Plan "2000 nokta ODE
+    1.35 ms, kareleme 19.44 ms (14.4 kat)" diyor. Bu depoda, ayni makinede:
+
+        ODE + dense_output, 2000 nokta          2.482 ms
+        BIRIKIMLI kareleme, 2000 nokta         12.026 ms   ( 4.8 kat)
+        NOKTA BASINA ayri `quad`, 2000 nokta  207.568 ms   (83.6 kat)
+
+    Yani "kat" sayisi tamamen karelemenin NASIL yazildigina bagli ve tek bir
+    oran yazmak yaniltici olur; ucu de burada. ASIL gerekce zaman DEGILDIR:
+    kareleme `phi(u)` verir, yani TERS FONKSIYONU, ve esit arali `phi`
+    istendiginde her nokta ayri bir kok bulma isidir. `dense_output` bunu
+    bedavaya verir.
+
+    `n_points` ORNEKLEME YOGUNLUGUDUR, DOGRULUK DUGMESI DEGIL: cozucu adimini
+    `rtol`/`atol` secer, `n_points` yalnizca `dense_output`tan kac nokta
+    okundugunu belirler. Ikisi karistirilirsa "cozunurlugu artirdim ama sonuc
+    degismedi" seklinde sahte bir sasirma dogar.
+    """
+    if not isinstance(n_points, int) or n_points < 2:
+        raise InvalidInputError(
+            f"n_points en az 2 olmali (tamsayi), verilen: {n_points!r}. "
+            "n_points bir ORNEKLEME yogunlugudur, dogruluk dugmesi degil; "
+            "dogrulugu `rtol`/`atol` belirler."
+        )
+    _ode_kapi(M=M, p=p, e=e, rtol=rtol, atol=atol, method=method)
+    dphi, sol = _ode_cekirdek(theory=theory, M=M, p=p, e=e, rtol=rtol,
+                              atol=atol, method=method, dense=True)
+    phi = np.linspace(0.0, dphi, n_points)
+    u = sol.sol(phi)[0]
+    return Trajectory(phi=phi, u=u, r=1.0 / u)
+
+
+def perihelion_coefficient_ode(
+    *,
+    theory: Theory = Theory(),
+    M: float,
+    e: float,
+    p: float | None = None,
+    richardson: tuple[float, float] | None = DEFAULT_ODE_RICHARDSON,
+    rtol: float = ODE_RTOL,
+    atol: float = ODE_ATOL,
+    method: str = "DOP853",
+) -> float:
+    """Perihel katsayisi -- ODE BORUSUNDAN. CIPA YOLU DEGIL.
+
+    SINIF: CIPA DEGIL, ODE BORUSUNUN KENDI OLCULEBILIR CIKTISI. Cipa
+    `perihelion_coefficient`tir (kareleme, 10.01 durust hane); bu fonksiyon
+    ODE'nin KENDI hata cubugunun okunabilmesi icin vardir -- spec 4.3'un
+    karisik boru yasagi, "ODE'nin gurultusunu karelemenin sinyaline bolme"
+    yasagidir ve ancak ODE'nin KENDI sinyali ve KENDI tabani varsa
+    uygulanabilir.
+
+    OLCULEN (GR, M = 1, e = 0.3, DOP853, rtol 1e-13, atol 1e-15,
+    Richardson (1e4, 3e4)):
+
+        C_ode = 18.8495564061          6pi = 18.84955592153876
+        fark  = -4.845e-07  ->  7.59 DURUST HANE
+        taban = 1.9218e-06,  S/G = 9.8082e+06,  6/6 basamak canli
+        taban/gercek hata = 3.966
+
+    Yani ODE tabani gercek hatayi 4 KAT BUYUK gosterir: bu pencerede hata
+    cubugu MUHAFAZAKARDIR (karelemede oran 0.861 idi, yani hafif iyimser).
+    Komsu pencerelerde kalibrasyon 1.00'e oturuyor (rtol 1e-12 & (1e4,3e4):
+    1.065; rtol 1e-13 & (3e4,1e5): 1.006).
+
+    METOT BIR PENCERE DUGMESIDIR VE SPEC 4.4'UN SATIRI BURADA DUSTU. Spec
+    "taban DOP853'e ozgu degil (RK45, Radau, LSODA ayni mertebede)" diyor;
+    olculdu (Richardson (1e4,3e4), rtol 1e-13, ayni suzgec):
+
+        metot     durust hane   taban        sure
+        DOP853        7.59      1.9218e-06     4.2 ms
+        RK45          6.83      1.3768e-06    21.4 ms
+        Radau         7.12      3.2953e-09   247.4 ms
+        LSODA         5.84      2.5587e-05     3.7 ms
+        BDF           5.75      3.2038e-05    61.7 ms
+
+    Taban 3.2953e-09 ile 3.2038e-05 arasinda, yani 9722 KAT oynuyor -- DORT
+    MERTEBE. "Ayni mertebede" cumlesi bu boruda YANLIS. `method` bu yuzden
+    `PIPELINE_KEYS`e girer: etiket hangi integratorun kullanildigini TASIR.
+
+    `p` ile `richardson` iliskisi `perihelion_coefficient`taki ile AYNIDIR ve
+    ayni gerekceyle YASAKLAYICIDIR.
+    """
+    _ode_kapi(M=M, p=p, e=e, rtol=rtol, atol=atol, method=method,
+              richardson=richardson)
+    if richardson is None:
+        return _C_ode_tek(theory=theory, M=M, p=float(p), e=e, rtol=rtol,
+                          atol=atol, method=method)
+    alt, ust = richardson
+    f1 = _C_ode_tek(theory=theory, M=M, p=alt, e=e, rtol=rtol, atol=atol,
+                    method=method)
+    f2 = _C_ode_tek(theory=theory, M=M, p=ust, e=e, rtol=rtol, atol=atol,
+                    method=method)
+    h1, h2 = 1.0 / alt, 1.0 / ust
+    return (f1 * h2 - f2 * h1) / (h2 - h1)
+
+
+def _C_ode_tek(*, theory: Theory, M: float, p: float, e: float, rtol: float,
+               atol: float, method: str) -> float:
+    dphi, _ = _ode_cekirdek(theory=theory, M=M, p=p, e=e, rtol=rtol,
+                            atol=atol, method=method, dense=False)
+    return (dphi - 2.0 * math.pi) * p / M
+
+
+def _ode_kapi(*, M: float, p: float | None, e: float, rtol: float,
+              atol: float, method: str,
+              richardson: tuple[float, float] | None = None) -> None:
+    """ODE borusunun girdi kapilari."""
+    if method not in ODE_METHODS:
+        raise InvalidInputError(
+            f"bilinmeyen integrator: {method!r}. Sevk edilenler: {ODE_METHODS}. "
+            "Integrator bir PENCERE DUGMESIDIR ve hukme girer: gurultu tabani "
+            "DOP853'te 1.9218e-06, Radau'da 3.2953e-09, BDF'te 3.2038e-05 "
+            "(7767 kat)."
+        )
+    if not (M > 0.0) or not math.isfinite(M):
+        raise InvalidInputError(f"M pozitif ve sonlu olmali, verilen: {M!r}.")
+    if not math.isfinite(e) or not (0.0 < e < 1.0):
+        raise InvalidInputError(
+            f"e BAGLI bir yorungenin dismerkezligi olmali (0 < e < 1), "
+            f"verilen: {e!r}."
+        )
+    for ad, deger in (("rtol", rtol), ("atol", atol)):
+        if not math.isfinite(deger) or not (deger > 0.0):
+            raise InvalidInputError(
+                f"{ad} pozitif ve sonlu olmali, verilen: {deger!r}"
+            )
+    if richardson is None:
+        if p is None:
+            raise InvalidInputError(
+                "basamak tanimsiz: `richardson=None` verildiginde tek basamak "
+                "`p` ZORUNLUDUR."
+            )
+    elif p is not None:
+        raise InvalidInputError(
+            f"`p` ile `richardson` AYNI SEYI belirler, ikisi birden verilemez "
+            f"(verilen p={p!r}, richardson={richardson!r})."
+        )
+    if richardson is not None:
+        if len(richardson) != 2:
+            raise InvalidInputError(
+                f"richardson bir (alt, ust) CIFTI olmali, verilen: {richardson!r}"
+            )
+        alt, ust = richardson
+        for ad, deger in (("alt", alt), ("ust", ust)):
+            if not math.isfinite(deger) or not (deger > 0.0):
+                raise InvalidInputError(
+                    f"richardson.{ad} pozitif ve sonlu olmali, verilen: {deger!r}"
+                )
+        if alt == ust:
+            raise InvalidInputError(
+                f"richardson basamaklari AYRI olmali, verilen: {richardson!r}."
+            )
+    elif p is not None and (not math.isfinite(p) or not (p > 0.0)):
+        raise InvalidInputError(f"p pozitif ve sonlu olmali, verilen: {p!r}")
+
+
+#: ODE BORUSUNUN KENDI ETIKETI. Karelemenin `"kareleme"`siyle KARISTIRILAMAZ
+#: -- karisik boru yasaginin kaydi tam olarak budur: ODE'nin tabani
+#: (1.9218e-06) karelemenin tabaniyla (1.594187e-09) ayni etiketi tasisaydi
+#: bir tablo sinyali birinden, gurultuyu otekinden alabilirdi.
+perihelion_coefficient_ode.PIPELINE = "ode"  # type: ignore[attr-defined]
+perihelion_coefficient_ode.NEWTON_PROBES = _newton_probes()  # type: ignore[attr-defined]
+
+#: `method` BORUYU SECER (yukaridaki dort mertebelik taban tablosu), `gauge`
+#: ise BU BORUDA YOKTUR: ODE yalnizca Schwarzschild ayarinda kosar.
+perihelion_coefficient_ode.PIPELINE_KEYS = ("method",)  # type: ignore[attr-defined]

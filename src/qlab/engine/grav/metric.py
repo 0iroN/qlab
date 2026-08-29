@@ -34,7 +34,16 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from scipy.optimize import brentq
+
 from qlab.errors import InvalidInputError
+
+#: SEVK EDILEN IKI AYARIN ADLARI -- TEK KAYNAK. `geodesic.GAUGES` bunu yeniden
+#: yazmaz, buradan okur; iki liste ayni seyi belirlerse sessiz bir kazanan
+#: dogar (Task 1'in olcumu) ve o kazanan adlandirilmamis bir pencere
+#: dugmesidir. "Ayar" burada bir KOORDINAT SECIMIDIR: ayni fizik, baska bir
+#: `r` tanimi ve baska bir metrik yazilisi.
+GAUGE_NAMES: tuple[str, ...] = ("schwarzschild", "isotropic")
 
 
 @dataclass(frozen=True)
@@ -164,6 +173,26 @@ def closed_form_coefficient(theory: Theory) -> float:
     okunur. Ikinci bir kopya, ikinci bir sessiz kazanan demektir.
     """
     return 2.0 * math.pi * theory.lam
+
+
+def deflection_closed_form(theory: Theory) -> float:
+    """Isik bukulmesi oraninin KAPALI FORMU: `delta(gamma)/delta(0) = 1 + gamma`.
+
+    SINIF -- `closed_form_coefficient`taki AYNI ikilik burada da gecerlidir:
+    tek basina bir sabitle karsilastirilirsa TRANSKRIPSIYON KILIDI, bir
+    kareleme sonucuyla karsilastirilirsa FIZIK CIPASININ REFERANS TARAFI.
+    Olculdu (`tests/grav/test_bukulme.py`, Richardson (1e5,3e5), M = 1):
+    GR'de Schwarzschild ayari 1.9999999996887523 (9.81 durust hane),
+    izotropik 1.999999999804698 (10.01); PPN ailesinde en kotu sapma
+    4.3487e-09.
+
+    `beta` BURAYA GIRMEZ, ve bu bir ihmal degil bir OLCUM: `beta` bukulmeye
+    IKINCI mertebede girer ve o da kapali formdur --
+    `d(delta)/d(beta) = -pi*M^2/b^2` (olculdu, b = 1e4: oran 1.000751).
+
+    TEK YOL: `1 + gamma` bu depoda YALNIZ burada yazilir.
+    """
+    return 1.0 + theory.gamma
 
 
 def radial_w(u, u1: float, u2: float, *, theory: Theory, M: float):
@@ -351,3 +380,214 @@ def isotropic_w(u, orbit: IsotropicOrbit):
     a0, a1, a2 = orbit.time_poly
     r0, r1, r2 = orbit.radial_poly
     return (r0 + r1 * u + r2 * u * u) / (a0 + a1 * u + a2 * u * u)
+
+
+@dataclass(frozen=True)
+class NullPotentials:
+    """BOS jeodeziklerin metrik parcalari -- SECILEN ayarda, POLINOM olarak.
+
+    Kutlesiz bir parcacik icin (`b = L/E`, `u = 1/r`):
+
+        (du/dphi)^2 = N(u) / D(u),
+        N(u) = S(u)/b^2 - u^2 * A(u),        D(u) = A(u) / T(u)
+
+    ve iki ayar YALNIZ (A, S, T) uclusunde ayrilir:
+
+        schwarzschild : A = 1 - 2*M*u + 2*(beta-gamma)*(M*u)^2
+                        S = 1
+                        T = 1 - 2*gamma*M*u          (yani g^rr)
+        isotropic     : A = 1 - 2*M*u + 2*beta*(M*u)^2
+                        S = B = 1 + 2*gamma*M*u
+                        T = 1
+
+    NEDEN SCHWARZSCHILD TARAFINDA `1/B` DEGIL `g^rr = 1 - 2*gamma*M*u`:
+    cunku GR'de (gamma = beta = 1) bu secim metrigi TAM Schwarzschild yapar --
+    `A = 1-2Mu`, `T = 1-2Mu`, `D = 1` ve `(du/dphi)^2 = 1/b^2 - u^2 + 2*M*u^3`,
+    yani 1PN'de KESILMIS bir yaklasim degil, kapali cozumun kendisi. Olculdu:
+    ikinci mertebe katsayisi `(delta*b/M - 4)*b/M` bu boruda b = 1e6'da
+    11.781358, `15*pi/4` = 11.780972 (fark 3.9e-04, ve o farkin tamami
+    yuvarlamadir: delta'nin mutlak ulp'si b^2 ile carpilinca b = 1e6'da
+    +-3e-04 eder). Literaturun `15*pi/4 - 4` sayisi EN YAKIN GECIS `r0`
+    cinsindendir; `b` (carpisma parametresi) cinsinden ayni sonuc `15*pi/4`tur
+    (`1/b = (1/r0)(1 - M/r0 + ...)` katsayiyi tam +4 kaydirir).
+
+    IZOTROPIK TARAF 1PN'DE KESILMISTIR ve bu bilinclidir
+    (`isotropic_potential` dokstringi): orada ikinci mertebe bir MODELLEME
+    ARTIGIDIR -- olculdu `3*pi` = 9.424778 (b = 1e6'da 9.424576). Yani
+    bukulmenin BIRINCI mertebesi ayardan bagimsizdir (`1+gamma`; iki ayar
+    1.159457e-10'da usuyor), IKINCI mertebesi DEGILDIR. Bu,
+    `second_order_coefficient`in perihel tarafinda olculen hukmunun ta
+    kendisidir.
+
+    Alanlar (hepsi (c0, c1, c2) sirasinda, `P(u) = c0 + c1*u + c2*u^2`):
+      `time_poly`   -- A
+      `source_poly` -- S
+      `damp_poly`   -- T
+    """
+
+    time_poly: tuple[float, float, float]
+    source_poly: tuple[float, float, float]
+    damp_poly: tuple[float, float, float]
+
+
+@dataclass(frozen=True)
+class NullKernel:
+    """Bir BOS jeodezigin kareleme cekirdegi -- `w` FORMUNDA.
+
+    `N(u)` DORDUNCU dereceden bir polinomdur; fiziksel donus noktasi `u0`
+    onun [0, 1/(2M)] araligindaki EN KUCUK pozitif kokudur. Deflasyonla
+
+        N(u) = (u0 - u) * Q(u),   Q ucuncu dereceden
+
+    ve `u = u0*sin(theta)`, `theta` [0, pi/2] ikamesinden sonra
+
+        delta = 2 * INT_0^{pi/2} sqrt(u0 * (1 + sin theta) * w(u)) dtheta - pi,
+        w(u) = D(u) / Q(u)
+
+    olur; kok tekilligi ANALITIK kalkar (`cos(theta)` ile `sqrt(1 - sin)`
+    sadelesir). Bu, bagli yorungenin `psi` ikamesinin kutlesiz karsiligidir ve
+    AYNI GEREKCEYLE sevk edilmistir.
+
+    VE `w` FORMU BURADA DA SPEC 4.3'UN ON KOSULUDUR: `M -> 0`da `A = T = 1`,
+    `Q(u) = u0 + u` olur, integrandin TAMAMI `sqrt(u0*(1+s)/(u0+u0*s))` = 1.0
+    olur (bit bit) ve `delta` TAM 0.0 cikar. Olculdu (`M = 1e-200`, b = 1e5,
+    iki ayarda da `delta == 0.0`; `M = 0`in kendisi `M > 0` kapisiyla zaten
+    reddediliyor). Yani "kutleyi kapat" noktasi TEK BASINA bir hata cubugu
+    DEGILDIR, tipki karelemede `lambda = 0`in olmadigi gibi. Bu borunun tabani bu yuzden bir
+    NOKTADAN degil `gamma -> -1` LIMITINDEN okunur
+    (`observable/grav_obs.deflection_ratio`).
+
+    DEFLASYON BES KATSAYIDAN YALNIZ DORDUNU KULLANIR (`n1`..`n4`) ve BESINCISI
+    BEDAVA BIR SINAVDIR: `u0*q0 = n0` yeniden uretilmek zorundadir. Olculdu
+    (sevk edilen kod, GR, M = 1, b = 1e3 ... 1e6): |u0*q0 - n0| 1.212e-27 ...
+    6.353e-22. Bu bir tautoloji DEGILDIR -- `n0` deflasyon zincirinin hicbir
+    yerinde kullanilmaz.
+
+    Alanlar:
+      `turning_point`     -- `u0`
+      `radial_poly`       -- `Q` katsayilari (q0, q1, q2, q3)
+      `time_poly`         -- `A` (D'nin payi)
+      `damp_poly`         -- `T` (D'nin paydasi)
+      `constant_residual` -- `u0*q0 - n0`, BEDAVA SINAVIN artigi
+    """
+
+    turning_point: float
+    radial_poly: tuple[float, float, float, float]
+    time_poly: tuple[float, float, float]
+    damp_poly: tuple[float, float, float]
+    constant_residual: float
+
+
+def null_potentials(*, theory: Theory, M: float, gauge: str) -> NullPotentials:
+    """Bos jeodezigin (A, S, T) uclusu -- BU UCLUNUN TEK KAYNAGI.
+
+    Tablo `NullPotentials` dokstringinde. Bu fonksiyon `A`yi ikinci bir yerde
+    YENIDEN yazmamak icin vardir: `null_kernel`, `isco_radius`,
+    `photon_sphere` ve `critical_impact_parameter` DORDU DE buradan okur.
+
+    IZOTROPIK TARAF `isotropic_potential` ILE AYNI METRIGI tarif etmek
+    ZORUNDADIR, ve bu bir GOVDE PAYLASIMIYLA degil bir SINAVLA saglanir
+    (`tests/grav/test_bukulme.py`): iki yol bagimsiz yazilir, sonra buradan
+    kurulan `A` ve `S` degerleri `isotropic_potential`in dondurduklerine BIT
+    BIT esit mi diye bakilir. Govde paylassalardi ortak bir dugme dogardi;
+    yalnizca sinav paylasinca dogan sey TUTARLILIKTIR.
+    """
+    if gauge not in GAUGE_NAMES:
+        raise InvalidInputError(
+            f"bilinmeyen ayar: {gauge!r}. Sevk edilen ayarlar: {GAUGE_NAMES}."
+        )
+    if not (M > 0.0) or not math.isfinite(M):
+        raise InvalidInputError(f"M pozitif ve sonlu olmali, verilen: {M!r}.")
+    g = theory.gamma
+    b = theory.beta
+    if gauge == "schwarzschild":
+        return NullPotentials(
+            time_poly=(1.0, -2.0 * M, 2.0 * (b - g) * M * M),
+            source_poly=(1.0, 0.0, 0.0),
+            damp_poly=(1.0, -2.0 * g * M, 0.0),
+        )
+    return NullPotentials(
+        time_poly=(1.0, -2.0 * M, 2.0 * b * M * M),
+        source_poly=(1.0, 2.0 * g * M, 0.0),
+        damp_poly=(1.0, 0.0, 0.0),
+    )
+
+
+def evaluate_poly(coeffs, u):
+    """Horner. `u` bir `float` ya da `numpy.ndarray` olabilir."""
+    toplam = coeffs[-1] + 0.0 * u
+    for k in reversed(coeffs[:-1]):
+        toplam = toplam * u + k
+    return toplam
+
+
+def _en_kucuk_pozitif_kok(N, *, b: float, M: float) -> float:
+    """`N(u) = 0`in (0, 1/(2M)] araligindaki EN KUCUK pozitif koku.
+
+    `N(0) = S(0)/b^2 > 0` oldugu icin kok, `N`nin ilk isaret degistirdigi
+    yerdedir; ust sinir `1.05/b`den baslanip 1.05 ile buyutulerek ARANIR.
+    Tavan `u = 1/(2M)`dir.
+
+    `np.roots` KULLANILMIYOR ve sebebi olculdu: dorduncu dereceden katsayi
+    `-2*(beta-gamma)*M^2` GR'de TAM 0.0'dir, `np.roots` orada derecesi
+    dusen bir polinomla calisip kok SAYISINI ayardan ayara degistirir;
+    deflasyon ise TEK bir koke ihtiyac duyar. `brentq` her iki durumda da
+    ayni sayida kok dondurur: bir tane.
+    """
+    f = lambda u: evaluate_poly(N, u)
+    tavan = 0.5 / M
+    ust = min(1.05 / b, tavan)
+    while f(ust) > 0.0:
+        ust *= 1.05
+        if ust >= tavan:
+            raise InvalidInputError(
+                f"b = {b!r} (M = {M!r}) icin donus noktasi YOK: foton "
+                "yakalanir ve sonsuza donmez, yani 'bukulme acisi' orada "
+                "tanimsizdir. Olculdu (GR, M = 1): b_krit/M = 3*sqrt(3) = "
+                "5.196152422706632; b = 5.19 yakalanir, b = 5.20 gecer."
+            )
+    return brentq(f, 0.0, ust, xtol=1e-18, rtol=8.9e-16, maxiter=200)
+
+
+def null_kernel(*, theory: Theory, M: float, b: float, gauge: str) -> NullKernel:
+    """Bos jeodezigin donus noktasi + deflasyonlu cekirdegi.
+
+    `b` CARPISMA PARAMETRESIDIR (`b = L/E`), en yakin gecis yaricapi DEGIL.
+    Ayrim olculdu ve hukme girer: ayni ikinci mertebe katsayisi `r0`
+    cinsinden `15*pi/4 - 4`, `b` cinsinden `15*pi/4`tur.
+    """
+    if not math.isfinite(b) or not (b > 0.0):
+        raise InvalidInputError(
+            f"b pozitif ve sonlu olmali, verilen: {b!r}. `b` carpisma "
+            "parametresidir (b = L/E), en yakin gecis yaricapi degil."
+        )
+    pot = null_potentials(theory=theory, M=M, gauge=gauge)
+    a0, a1, a2 = pot.time_poly
+    s0, s1, _ = pot.source_poly
+    ib2 = 1.0 / (b * b)
+    N = (s0 * ib2, s1 * ib2, -a0, -a1, -a2)
+    u0 = _en_kucuk_pozitif_kok(N, b=b, M=M)
+    q3 = -N[4]
+    q2 = u0 * q3 - N[3]
+    q1 = u0 * q2 - N[2]
+    q0 = u0 * q1 - N[1]
+    return NullKernel(
+        turning_point=u0,
+        radial_poly=(q0, q1, q2, q3),
+        time_poly=pot.time_poly,
+        damp_poly=pot.damp_poly,
+        constant_residual=u0 * q0 - N[0],
+    )
+
+
+def null_w(u, kernel: NullKernel):
+    """Bos jeodezigin `w`si: `D(u)/Q(u)` = `(A(u)/T(u)) / Q(u)`.
+
+    `radial_w` ve `isotropic_w` ile AYNI role sahiptir ve ayni bicimde
+    tuketilir: integrand `sqrt(u0 * (1 + sin theta) * w(u))`.
+
+    `u` bir `float` ya da `numpy.ndarray` olabilir; govde eleman elemandir.
+    """
+    return (
+        evaluate_poly(kernel.time_poly, u) / evaluate_poly(kernel.damp_poly, u)
+    ) / evaluate_poly(kernel.radial_poly, u)
