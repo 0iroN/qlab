@@ -64,6 +64,17 @@ from qlab.engine.grav.metric import (
     evaluate_poly,
     null_potentials,
 )
+from qlab.engine.grav.nbody import (
+    NBODY_ATOL,
+    NBODY_RTOL,
+    FigureEight,
+    NBodyState,
+    figure_eight_state,
+    monodromy,
+    sample_positions,
+    total_energy,
+    variational_flow,
+)
 from qlab.errors import InvalidInputError
 
 #: `apsidal_exponent`in sevk edilen `n` izgarasi. `n = -1` YOK (log
@@ -212,9 +223,34 @@ def newton_noise_floor(fn: Callable[..., float], **kw: Any) -> NoiseFloor:
     yani 1'in USTUNDEN yaklasiyor. Bu boruda hicbir zaman GENIS bir CURUK
     bandi yok. Ve `DEJENERE` ODE'de HIC gorulmedi (her pencerede 6/6 canli),
     yani iki boru birbirinin tam tersi: kareleme `DEJENERE` olabilir ama
-    `CURUK` olamaz, ODE `CURUK` olabilir ama `DEJENERE` olamaz. Genis ve
-    guvenli bir `CURUK` bandi hala N-body'den (`m2 = 0`, sinyal `~m2^2`)
-    bekleniyor -- ama artik "erisilemez" diye degil, "dar" diye.
+    `CURUK` olamaz, ODE `CURUK` olabilir ama `DEJENERE` olamaz.
+
+    >>> TASK 5'TE DUSEN IDDIA -- YINE BU DOKSTRINGIN KENDI CUMLESI. Buraya
+    Task 4'te "Genis ve guvenli bir `CURUK` bandi hala N-body'den
+    (`m2 = 0`, sinyal `~m2^2`) bekleniyor -- ama artik 'erisilemez' diye
+    degil, 'dar' diye" yazilmisti. Task 5 `circular_frequency_defect`
+    borusunu getirdi ve cumle ILK KEZ SINANABILIR hale geldi: SINANDI VE
+    DUSTU, HER IKI YARISIYLA.
+
+      (1) `sinyal ~ m2^2` YANLIS -- ve bu ARTIK SPEC'IN KENDI
+          GOZLENEBILIRINDE DE olculdu (`third_body_influence`): ucuncu
+          cismin dogrusal haritaya etkisi `m2`de BIRINCI mertebeden ve
+          katsayisi sifir degil (1.123391199e+10). Kendi borumun kapali
+          formu da ayni sonucu veriyor: `sqrt(1+4*m2) - 1 = 2*m2 - 2*m2^2
+          + ...`, olculen log-log egimi 0.99418.
+      (2) `GENIS BANT` YOK. `rtol` 1e-6 -> 7e-1 taramasinda S/G 2.75e+06'dan
+          duzgun iniyor ama 1'i yalniz TEK bir noktada geciyor (3e-1'de
+          0.993068), iki yaninda 11.95 ve 9.07.
+
+    VE SEBEBI ARTIK BILINIYOR -- N-body'de degil, TAM BU FONKSIYONUN
+    SOZLESMESINDE: cagiran bir `NEWTON_PROBES` anahtarini VEREMEZ (yukarida,
+    ve gerekcesi saglam), dolayisiyla `signal` her zaman `fn`in VARSAYILAN
+    fizik noktasinin degeridir. Taban ona ancak boru cope dondugunde
+    yetisir, ve orada `signal` de artik fizik degildir. YANI: *ayni borudan
+    okunan bir hata cubugunda `CURUK` yapisal olarak DAR bir olaydir.*
+    Uc boruda uc kez olculdu; bu bir boru ozelligi degil, olcutun kendi
+    ozelligiymis. `CURUK` dali yine de sevk edilir ve panel onu tasir --
+    ama artik "burada genis bir bant var" beklentisi YOK.
     """
     etiket = getattr(fn, "PIPELINE", None)
     if not isinstance(etiket, str) or not etiket:
@@ -770,6 +806,440 @@ def apsidal_exponent(*, force_exponents: tuple[float, ...] = APSIDAL_GRID) -> fl
             "soyler ve o bozulma egimde GORUNMEZ."
         )
     return float(egim)
+
+
+# ---------------------------------------------------------------------------
+# N-BODY -- SEKIZ YORUNGESI, MONODROMI, VE `m2 = 0` HATA CUBUGU
+# ---------------------------------------------------------------------------
+#: `circular_frequency_defect`in "fizigi kapat" merdiveni. ILK BASAMAK TAM
+#: SIFIRDIR ve bu OLCULEREK konuldu: karelemede `lambda = 0` NOKTASI dejenereydi
+#: (integrand sabit 1.0'a dusuyor, `dphi - 2*pi` BIT BIT 0.0 cikiyordu) ve
+#: Task 2 tabani bir LIMITTEN okumak zorunda kalmisti. N-BODY BORUSUNDA NOKTA
+#: CALISIYOR: `m2 = 0`da ucuncu cisim bir test parcacigidir, integrator hala
+#: iki cismi bir tam devir tasir ve donen sapma bit bit sifir DEGILDIR
+#: (rtol 1e-13 -> -3.874678e-14, 1e-11 -> -3.872458e-12, 1e-9 -> -3.988428e-10).
+#: Yani spec 4.3'un N-body yarisinin YAZDIGI GIBI `m2 = 0` burada gercekten
+#: kullanilabilir -- iki borunun dejenerelik yuzeyleri AYNI DEGIL, ve bu
+#: modulde artik UC ayri davranis olculmustur: kareleme `DEJENERE` olabilir
+#: `CURUK` olamaz, ODE `CURUK` olabilir `DEJENERE` olamaz, N-body ise
+#: hicbirini kolay vermez (asagida).
+NBODY_PROBE_MASSES: tuple[float, ...] = (0.0, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8,
+                                         1e-9)
+
+#: `monodromy_angles`in "eliptik cift `lambda = 1` kumesinden ayirt edilebilir
+#: mi" kapisi. Olculdu: kucuk aci 0.052921540137, `lambda = 1` kumesinin en
+#: buyuk acisi 5.047990e-06 -- ARADA 1.048e+04 KAT bosluk var. Kapi bu boslugu
+#: SINAR, sabit bir aci esigi KOYMAZ; sabit bir esik olsaydi `rtol` gevsedikce
+#: kume acilarinin buyumesi (karekok tepkisi) sinavi sessizce kirardi.
+MONODROMY_GAP: float = 100.0
+
+
+def eight_invariant(fe: FigureEight) -> float:
+    """`|E|^{3/2} T / (G^2 m^{5/2})` -- N-BODY'NIN FIZIK CIPASI.
+
+    SINIF: FIZIK CIPASI. Statik koku YOKTUR: `T` ancak yorunge cozulerek
+    bulunur (BVP), `E` ise o cozumun baslangic durumundan. `6*pi` ile ayni raf.
+
+    OLCULEN (DOP853, rtol 1e-13, atol 1e-15, m = 1, p = 2):
+    **9.237681250723917**, yani plana yazilan 9.237681250724 ile BIREBIR.
+
+    YAKINSIYOR (BVP her `rtol`de YENIDEN cozulur, referans rtol 1e-13):
+
+        rtol      1e-9       1e-10      1e-11      1e-12      1e-13
+        |fark|    1.027e-08  6.437e-10  6.864e-11  4.967e-12  0
+        T         6.325913985533 ... 6.325913982926
+
+    (Plan "7.1e-9 -> 5.0e-13" diyordu; olculen uc noktalar 1.027e-08 ve
+    4.967e-12, yani IKISI DE bir mertebe kaymis. Yon ve sekil ayni.)
+
+    DORT INTEGRATORDE (DOP853/RK45/Radau/LSODA, hepsinde BVP yeniden
+    cozulur): yayilim **1.972e-12** (plan 1.6e-11 diyordu).
+
+    PAYDANIN IKI CARPANI AYNI STATUDE DEGIL, ve bu acikca yaziliyor:
+
+      `m^{5/2}` GERCEKTEN IS YAPIYOR -- olculdu, `m = 0.5 / 1 / 2 / 7`de BVP
+      yeniden cozuluyor (`T` = 8.946193349060 / 6.325913982926 /
+      4.473096674530 / 2.390970744858, yani `T ~ m^{-1/2}`) ve bolme sonrasi
+      dordunun yayilimi **6.573e-14**, yani 12 hanede AYNI. Kutle bir geri
+      okuma dugmesi DEGIL.
+
+      `G^2` SAYISAL OLARAK IS YAPMIYOR -- `engine/grav/nbody.py`de `G` diye
+      bir sabit YOKTUR (`G = 1` kuvvetin icine yazilidir) cunku o dosya birim
+      beyanini tasiyan `metric.py`yi IMPORT EDEMEZ (spec 4.2'nin on kosulu).
+      Formulde durur cunku BOYUTSAL olarak oradadir; ama bu boruda sinanmis
+      DEGILDIR ve panel bunu boyle yazar.
+
+    YANILABILIR -- ve yanilabilirligi kuvvet ussuyle olculdu (`p != 2` bir
+    yaklasim degil BASKA BIR KURAM, `nbody.py`nin `power` dugmesi):
+
+        p     1.7        1.9        2.0       2.1       2.3       2.6    3.0
+        cipa  23.956761  12.586202  9.237681  6.778916  3.556908  1.095405  YOK
+
+    `p = 3`te BVP'nin cozumu KALMIYOR (`InvalidInputError`: integrator adim
+    boyutu makine epsilonunun altina duser). PLANIN AYNI TABLOSU YENIDEN
+    URETILEMEDI (plan: 35.47 / 13.26 / 9.24 / 6.7560 / 3.91 / 1.73) ve sebebi
+    olculdu: `p != 2`de potansiyelin kapali formu bir SECIMDIR ve plan onu
+    HIC BEYAN ETMEMISTI. Burada secim `U = -m_i m_j / ((p-1) r^{p-1})`dir
+    (kuvvetin integrali) ve `nbody.py` modul dokstringinde yazilidir.
+    `p = 2`de iki secim CAKISIR, o yuzden CIPANIN KENDISI etkilenmez --
+    ayrisan yalniz yanilabilirlik tablosudur. Adlandirilmamis bir pencere
+    dugmesi yine bir tabloyu hukum disina tasidi.
+
+    ARAMADAN SONRA DAIRESELLESEN UC IDDIA -- panelde ve testte oyle etiketli:
+      1. "ucu de ayni egride T/3 kaymayla" = BVP KOSULUNUN TA KENDISI.
+      2. tam periyot donusu = `Phi_T = (Phi_{T/3})^3` CEBIRSEL SONUCU;
+         `nbody.return_defect` integratoru olcer, fizigi degil.
+      3. `L = 0` BIR OLCUM DEGIL: `euler_state(0.0, 0.0)` bile 0 verir.
+    Girdi olarak kalan tek sey SIMETRI SINIFIDIR -- bir sayi degil.
+    """
+    st = figure_eight_state(fe)
+    E = total_energy(st, power=fe.power)
+    if E >= 0.0:
+        raise InvalidInputError(
+            f"E = {E!r} >= 0: bagli olmayan bir konfigurasyonda "
+            "|E|^(3/2) T bir periyot tasimaz."
+        )
+    return abs(E) ** 1.5 * fe.period / fe.mass ** 2.5
+
+
+def monodromy_angles(fe: FigureEight, *, rtol: float = NBODY_RTOL,
+                     atol: float = NBODY_ATOL,
+                     method: str = "DOP853") -> tuple[float, float]:
+    """Sekizin kararliligi -- ELIPTIK CIFTIN ACILARIYLA, `max|lambda|` ILE DEGIL.
+
+    OLCULEN (DOP853, rtol 1e-13, atol 1e-15): **1.872970598421** ve
+    **0.052921540137** rad; ikisi de `+-` cift halinde, birim cember uzerinde.
+    Ikisi de planin yazdigi degerlerle BIREBIR.
+
+    `max|lambda| - 1` BIR KARARSIZLIK OLCUSU DEGILDIR ve bu depoda IKINCI kez
+    tuzak kurdu (ilki L4/L5 esiginde). Sebep: `lambda = 1` SEKIZ KATLI ve
+    DEFEKTIFTIR -- OLCULDU, varsayilmadi:
+
+        cebirsel kat = 8   (12 ozdegerin 8'i `|arg| < 1e-3`)
+        geometrik kat = 4  (`(M - I)`nin 12 tekil degerinin 4'u < 1e-6:
+                            3.55e-13, 1.81e-13, 8.04e-15, 3.75e-15;
+                            kalan 8'i 1.72e-02 ... 7.26e+01)
+
+    yani DORT TANE 2x2 Jordan blogu. Defektif bir ozdeger bozulmaya
+    KAREKOKLE tepki verir; gorunur sonucu `max|lambda| - 1`in YAKINSAMAMASIDIR:
+
+        rtol      1e-13      1e-12      1e-11      1e-10      1e-9
+        max|l|-1  1.500e-07  2.560e-07  1.920e-07  1.503e-07  2.195e-07
+        metot     DOP853     RK45       Radau      LSODA
+        max|l|-1  1.500e-07  9.266e-07  3.923e-06  2.482e-07
+
+    Dort mertebe daralan bir `rtol` bu sayiyi HIC kucultmuyor, metot onu 26
+    KAT oynatiyor. AYNI KOSUMLARDA ELIPTIK ACILAR SABIT:
+
+        buyuk aci  1.872970598421 / ...8423 / ...8423 / ...8420  (dort metot)
+        kucuk aci  0.052921540137 / ...133  / ...132  / ...143
+
+    yani 11-12 hane. Bir sayinin dugmelere tepkisi, onun ne olctugunu soyler.
+    (Planin "8.0e-8"i olculen bandin -- 1.5e-07 ... 3.9e-06 -- hemen altinda ve
+    ayni mertebede; ama asil bulgu SAYININ DEGERI DEGIL, YAKINSAMAMASIDIR:
+    plan onu tek bir sayi gibi yaziyordu.)
+
+    KAREKOK TEPKISI DE DOGRUDAN OLCULDU, deterministik ve JENERIK bir
+    bozulmayla (`MONODROMY_PERTURBATION`, RNG YOK): `M + delta*N`de
+    `max|lambda| - 1` degerleri delta = 1e-4/1e-6/1e-8/1e-10 icin
+    1.201e-02 / 1.199e-03 / 1.199e-04 / 1.205e-05, log-log egimi **0.4998**,
+    yani US 1/2 (plan 0.4981 demisti).
+
+    KAPI SABIT BIR ESIK DEGIL BIR BOSLUK SINAVIDIR: 4. en buyuk `|arg|` ile
+    5.'si arasindaki oran `MONODROMY_GAP`ten buyuk olmali. Olculen bosluk
+    1.048e+04 kat (0.052921540137 <-> 5.047990e-06).
+    """
+    M = monodromy(fe, rtol=rtol, atol=atol, method=method)
+    lam = np.linalg.eigvals(M)
+    acilar = np.sort(np.abs(np.angle(lam)))[::-1]
+    if acilar.size < 5:
+        raise InvalidInputError(
+            f"monodromi {acilar.size} ozdegerli; eliptik cift okunamaz.")
+    if acilar[4] <= 0.0 or acilar[3] / acilar[4] < MONODROMY_GAP:
+        raise InvalidInputError(
+            f"eliptik cift `lambda = 1` kumesinden ayrilamiyor: 4. aci "
+            f"{acilar[3]!r}, 5. aci {acilar[4]!r}, oran "
+            f"{acilar[3] / acilar[4] if acilar[4] else float('inf')!r} < "
+            f"{MONODROMY_GAP}. Kapi sabit bir esik degil bir BOSLUK sinavidir."
+        )
+    return float(acilar[0]), float(acilar[2])
+
+
+#: `monodromy_angles` dokstringindeki karekok sinavinin bozulma matrisi.
+#: DETERMINISTIK ve JENERIK: `N[i,j] = 1 / (1 + i + 2j)` (Cauchy tipi),
+#: Frobenius normu 1'e olceklendi. RNG YOK -- depo kurali. `N = I` OLMAZDI:
+#: `M + delta*I`nin ozdegerleri TAM `lambda + delta`dir, yani us 1 cikardi ve
+#: sinav defektifligi hic gormezdi (olculdu, testte kilitli).
+MONODROMY_PERTURBATION: "np.ndarray" = (
+    lambda A: A / np.linalg.norm(A))(
+        np.array([[1.0 / (1.0 + i + 2.0 * j) for j in range(12)]
+                  for i in range(12)]))
+
+
+#: Simetrik dairesel ciftin `m2 = 0` periyodu, `2*pi/omega(0)` = `4*pi`.
+#: `revolutions` ve `third_body_influence` bu TEK kaynaktan okur.
+CIRCULAR_PAIR_PERIOD: float = 4.0 * math.pi
+
+#: Durum vektorunde `[q0 q1 q2 | v0 v1 v2]` duzeninde CIFTIN ve UCUNCU
+#: CISMIN indisleri. Blok ayrimi bir tercih degil, spec 4.3'un cumlesinin
+#: ("ucuncu cisim kuvvet uygulamaz") dogrudan karsiligidir.
+PAIR_INDICES: tuple[int, ...] = (0, 1, 2, 3, 6, 7, 8, 9)
+THIRD_BODY_INDICES: tuple[int, ...] = (4, 5, 10, 11)
+
+
+def circular_pair_state(m2: float) -> NBodyState:
+    """Merkezde `m2` kutlesi olan SIMETRIK DAIRESEL cift -- TEK KAYNAK.
+
+    Esit iki kutle `(+-1, 0)`da, ucuncu cisim `m2` kutlesiyle TAM MERKEZDE
+    ve DURGUN. Iki esit kutle her an `+-r(t)`de oldugu icin ucuncu cisme
+    gelen kuvvetler her an birbirini goturur; cisim merkezde KALIR. Hiz
+    `omega = sqrt(1/4 + m2)` ile kurulur, yani yorunge her `m2` icin TAM
+    DAIRESEL.
+
+    `circular_frequency_defect` ve `third_body_influence` AYNI kurulumu
+    kullanir; ikinci bir kopya ikinci bir sessiz kazanan olurdu.
+    """
+    if m2 < 0.0:
+        raise InvalidInputError(f"m2 = {m2!r} negatif olamaz.")
+    omega = math.sqrt(0.25 + m2)
+    return NBodyState(
+        masses=np.array([1.0, 1.0, float(m2)]),
+        positions=np.array([[1.0, 0.0], [-1.0, 0.0], [0.0, 0.0]]),
+        velocities=np.array([[0.0, omega], [0.0, -omega], [0.0, 0.0]]),
+    )
+
+
+
+def circular_frequency_defect(*, m2: float = 1.0, revolutions: float = 1.0,
+                              rtol: float = NBODY_RTOL,
+                              atol: float = NBODY_ATOL,
+                              method: str = "DOP853",
+                              samples: int = 256) -> float:
+    """N-BODY BORUSUNUN KENDI HATA CUBUGU -- `m2 = 0` (spec 4.3, N-body yarisi).
+
+    KURULUM (tam cozulebilir, ve tam cozulebilirligi bir SIMETRIDEN gelir):
+    esit iki kutle `(+-1, 0)`da dairesel yorungede, UCUNCU CISIM `m2`
+    kutlesiyle BASLANGICTA DURGUN ve TAM MERKEZDE. Iki esit kutle her an
+    `+-r(t)`de oldugu icin ucuncu cisme gelen kuvvetler her an birbirini
+    goturur; cisim merkezde KALIR ve cifte yalnizca merkezcil bir katki ekler.
+    Hiz `omega = sqrt(1/4 + m2)` ile kurulur, yani yorunge her `m2` icin TAM
+    DAIRESEL.
+
+    GOZLENEN: 1. cismin `t = revolutions * 2*pi/omega(0)` sonundaki toplam
+    sarilmis acisinin `2*pi*revolutions`e orani eksi 1. KAPALI FORMU
+
+        sqrt(1 + 4*m2) - 1
+
+    ve `m2 = 0`da TAM SIFIR. "Fizigi kapat, AYNI boruyu kostur"un N-body
+    tarafi budur; boru `nbody.integrate`in ta kendisidir (ayni `rtol`, ayni
+    `atol`, ayni `method`, ayni ivme cekirdegi).
+
+    >>> BU GOZLENEBILIR SPEC 4.3'UN GOZLENEBILIRI DEGILDIR -- BEYAN EDILMIS
+    BIR IKAMEDIR, ve gerekcesi OLCULMUSTUR. Spec 4.3'un N-body satiri
+    *"`m2 = 0` (ucuncu cisim kuvvet uygulamaz -> DOGRUSAL HARITA BIRIM
+    olmali). Taban 1e-11 -> 3.651e-15; sinyal `~ m2^2`; kesisim `m2 ~ 3e-4`"*
+    diyor. Oradaki gozlenebilir MONODROMI/DOGRUSAL HARITAdir; burasi
+    SARILMA ACISI kusurudur. Ikisi FARKLI gozlenebilirdir, dolayisiyla
+    spec'in taban ve kesisim sayilari BURADA CURUTULMUS OLMAZ -- bu boruda
+    TANIMLI DEGILLER.
+
+    Spec'in kendi gozlenebiliri de sevk edildi ve olculdu:
+    `third_body_influence` (asagida). Ozet -- ve IKAME ORADAN GEREKCELENIYOR:
+    orada `m2 = 0` NOKTASI bit bit dejenere, ve LIMIT de kurtarmiyor cunku
+    gurultu sinyalle BIRLIKTE olcekleniyor (16 dekatta oran on hanede sabit)
+    -> `newton_noise_floor` o boruya **DEJENERE** diyor, yani orada bir hata
+    cubugu YOK. Buradaki tabansa `m2`den BAGIMSIZ, o yuzden gercek bir
+    kesisimi var. Iki gozlenebilirden HANGISININ sevk edildigi bir tercih
+    degil, bu olcumun sonucu.
+
+    SPEC'IN SADECE BIR SAYISI IKI GOZLENEBILIRDE DE SINANABILIYOR VE
+    IKISINDE DE DUSTU -- `sinyal ~ m2^2`:
+
+      (a) BURADA sinyal `m2` ile DOGRUSAL, ve bu bir fit degil KAPALI
+          FORMDAN cikan bir sonuc: `sqrt(1+4*m2) - 1 = 2*m2 - 2*m2^2 + ...`.
+          Olculen `defect/m2` orani m2 = 1e-1 ... 1e-6 icin 1.832160 /
+          1.980390 / 1.998004 / 1.999800 / 1.999980 / 1.999998, yani 2'ye
+          gidiyor; log-log egimi **0.99418**.
+      (b) SPEC'IN KENDI GOZLENEBILIRINDE de birinci mertebeden, katsayisi
+          **1.123391199e+10** (sifir degil, on hanede sabit, sekiz dekat).
+          Ortak YAPISAL sebep: ucuncu cismin cift denklemlerine girdigi her
+          yol TAM BIR carpan `m2` tasir.
+
+    BU BORUNUN KENDI TABANI (spec'inkiyle karsilastirilamaz, ayri
+    gozlenebilir): rtol 1e-11'de **3.914646e-12**; kesisim (kapali-form
+    sinyal egrisinin tabani kestigi nokta) `m2 ~ taban/2`: rtol 1e-13'te
+    **2.0e-14**, 1e-11'de **2.0e-12**, 1e-9'da **2.0e-10**.
+
+    TABAN KIPIRDIYOR -- uc bagimsiz yonde olculdu (merdivenin en buyuk artigi,
+    revolutions = 1):
+
+        rtol   1e-13      1e-12      1e-11      1e-10      1e-9       1e-6
+        taban  3.997e-14  3.888e-13  3.915e-12  3.942e-11  3.993e-10  4.456e-07
+        metot  DOP853     RK45       Radau      LSODA
+        taban  3.997e-14  1.629e-13  7.550e-15  7.595e-11  (LSODA 1.90e+03 kat)
+        atol   1e-15      1e-13      1e-11      1e-9       1e-7
+        taban  3.997e-14  8.171e-14  4.046e-12  3.934e-10  3.963e-08
+
+    `revolutions` ise TABANI KIPIRDATMIYOR (1/4/16/64 -> 3.997e-14 /
+    3.408e-14 / 1.132e-14 / 9.459e-14, yani 8.4 kat icinde ve YONSUZ) ve
+    sebebi yapisal: gozlenen aci DEVIR BASINA normalize edilir, birikmis hata
+    da ~dogrusal biriktigi icin oran sabit kalir. Bir dugmenin tabani
+    kipirdatMAMASI da bir olcumdur.
+
+    VE BURADA SEVK EDILMIS BIR IDDIA DAHA DUSTU -- `newton_noise_floor`in
+    kendi dokstringi. Task 4 oraya "Genis ve guvenli bir CURUK bandi hala
+    N-body'den bekleniyor" yazmisti. SINANDI: N-body borusunda da GENIS BIR
+    BANT YOK. `rtol`i 1e-6'dan 7e-1'e tarayan olcumde (atol = rtol/100) S/G
+
+        1e-6 -> 2.75e+06 | 1e-3 -> 1.92e+03 | 1e-2 -> 216.97 | 1e-1 -> 21.64
+        2e-1 -> 11.95    | 3e-1 -> 0.993068 CURUK | 4e-1 -> 9.07 | 7e-1 -> 5.73
+
+    yani `CURUK` TEK BIR dugme noktasinda beliriyor ve iki yaninda kayboluyor.
+    SEBEBI YAPISALDIR VE `newton_noise_floor`IN SOZLESMESINDEN GELIR, N-body'den
+    degil: cagiran bir `NEWTON_PROBES` anahtarini VEREMEZ, yani `m2`yi
+    secemez; sinyal her zaman VARSAYILAN `m2 = 1`in O(1) fizik degeridir
+    (1.236067977500) ve taban ona ancak integrasyon COPE dondugunde yetisir --
+    o noktada "sinyal" de artik fizik degildir (1.236 yerine 0.0856).
+    Bir hata cubugunun sinyali kendi borusundan geliyorsa, S/G < 1 bandi ancak
+    sinyalin de bozuldugu yerde acilir. Bu, karisik boru yasaginin odenen
+    bedelidir ve artik UC boruda da olculmustur.
+
+    `PIPELINE_KEYS = ("method",)` -- Task 4'un olcutu: GOVDEYI degistiren
+    argumanlar. `rtol`, `atol` ve `revolutions` tabani oynatir ama AYNI
+    satirlari kosturur; `method` gercekten baska bir integratordur.
+    """
+    if samples < 8:
+        raise InvalidInputError(
+            f"samples = {samples}: aci sarmasi icin devir basina ornek "
+            "yeterli degil (en az 8).")
+    if revolutions <= 0.0:
+        raise InvalidInputError(
+            f"revolutions = {revolutions!r} pozitif olmali.")
+    if m2 < 0.0:
+        raise InvalidInputError(f"m2 = {m2!r} negatif olamaz.")
+    t_end = revolutions * CIRCULAR_PAIR_PERIOD
+    st = circular_pair_state(m2)
+    n = max(8, int(samples * max(1.0, revolutions)))
+    ts = np.linspace(0.0, t_end, n + 1)
+    Q = sample_positions(st, times=ts, rtol=rtol, atol=atol, method=method)
+    th = np.unwrap(np.arctan2(Q[:, 0, 1], Q[:, 0, 0]))
+    return float((th[-1] - th[0]) / (2.0 * math.pi * revolutions) - 1.0)
+
+
+def circular_defect_closed_form(m2: float) -> float:
+    """`sqrt(1 + 4*m2) - 1` -- `circular_frequency_defect`in kapali formu.
+
+    TEK KAYNAK: `NEWTON_PROBES`in "TAM deger"leri buradan okunur, orada
+    YENIDEN yazilmaz. Ikinci bir kopya ikinci bir sessiz kazanan olurdu
+    (Task 1'in olcumu; `_newton_probes` ve `_deflection_probes` de ayni
+    kurali uyguluyor).
+    """
+    if m2 < 0.0:
+        raise InvalidInputError(f"m2 = {m2!r} negatif olamaz.")
+    return math.sqrt(1.0 + 4.0 * m2) - 1.0
+
+
+#: Boru etiketi -- kareleme, bukulme ve ODE'den AYRI. Dort boru, dort etiket.
+circular_frequency_defect.PIPELINE = "nbody"  # type: ignore[attr-defined]
+circular_frequency_defect.NEWTON_PROBES = tuple(  # type: ignore[attr-defined]
+    ({"m2": _m}, circular_defect_closed_form(_m)) for _m in NBODY_PROBE_MASSES
+)
+circular_frequency_defect.PIPELINE_KEYS = ("method",)  # type: ignore[attr-defined]
+
+
+def third_body_influence(*, m2: float = 1.0,
+                         rtol: float = NBODY_RTOL, atol: float = NBODY_ATOL,
+                         method: str = "DOP853",
+                         t_span: float = CIRCULAR_PAIR_PERIOD) -> float:
+    """SPEC 4.3'UN KENDI N-BODY GOZLENEBILIRI -- ve neden SEVK EDILMEDIGI.
+
+    Spec 4.3 sunu diyor: *"fizigi kapat" = `m2 = 0` (ucuncu cisim kuvvet
+    uygulamaz -> DOGRUSAL HARITA BIRIM olmali). Taban rtol'e bagli
+    (1e-11 -> 3.651e-15); sinyal `~ m2^2`; kesisim `m2 ~ 3e-4`.*
+
+    Gozlenebilir budur: `Phi_t`nin (varyasyonel dogrusal harita) ETKI BLOGU
+
+        B(m2) = Phi_t[cift satirlari, ucuncu cisim sutunlari]     (8 x 4)
+
+    yani "ucuncu cismin durumundaki bir bozulma, bir sure sonra CIFTI ne
+    kadar oynatiyor". `m2 = 0`da ucuncu cisim kuvvet uygulamaz, dolayisiyla
+    bu blok TAM SIFIR olmalidir (esdeger ifade: harita blok-ucgendir, yani
+    ciftin uzerindeki etki haritasi birimdir).
+
+    OLCULDU (DOP853, rtol 1e-13, atol 1e-15, `t_span = 4*pi`, norm
+    `max` mutlak eleman, `circular_pair_state` kurulumu):
+
+        m2      max|B(m2)|      max|B|/m2
+        1e-02   1.137460e+08    1.137459541e+10
+        1e-04   1.123617e+06    1.123616781e+10
+        1e-06   1.123393e+04    1.123393463e+10
+        1e-08   1.123391e+02    1.123391222e+10
+        1e-10   1.123391e+00    1.123391199e+10
+        1e-12   1.123391e-02    1.123391199e+10
+        1e-14   1.123391e-04    1.123391199e+10
+        1e-16   1.123391e-06    1.123391199e+10
+
+    >>> SPEC'IN `~ m2^2`SI KENDI GOZLENEBILIRINDE DE DUSTU. Sinyal `m2`de
+    BIRINCI mertebeden ve katsayisi sifir DEGIL: `max|B|/m2` on hanede
+    sabit, **1.123391199e+10**, SEKIZ DEKAT boyunca. `m2^2` terimi VAR ama
+    ALT mertebedir (m2 = 1e-2'de orana %1.25 katki; yani
+    `B = c0*m2 + c1*m2^2`, `c1/c0 ~ 1.25`). Ve bu bir fit degil YAPISAL bir
+    sonuctur: ucuncu cismin cift denklemlerine girdigi TEK yol
+    `d a_{0,1} / d r_2 = m2 * (...)`dir, yani her yol TAM BIR carpan `m2`
+    tasir. Ayni sebep `circular_frequency_defect`in dogrusalligini da
+    aciklar -- iki AYRI gozlenebilir, ayni yapisal neden.
+
+    >>> AMA SPEC'IN OTEKI IKI SAYISI (taban 3.651e-15, kesisim 3e-4)
+    CURUTULMEDI: BU GOZLENEBILIRDE URETILEMIYORLAR, ve sebebi yapisal:
+
+      (a) `m2 = 0` NOKTASI DEJENERE. `B(0)` BIT BIT sifirdir (blogun 32
+          elemaninin 32'si tam 0.0) -- cunku varyasyonel denklemin kaynak
+          terimi `m2` ile CARPILIR ve `0.0 * x` tam 0.0'dir. Karsi kontrol:
+          `max|Phi_t| = 2.246782e+10`, yani boru CALISIYOR, olu olan yalniz
+          bu blok. Bu, Task 2'nin karelemede yasadigi arizanin TA KENDISI:
+          "fizigi kapat" bir NOKTA olarak dejenere.
+      (b) LIMIT DE KURTARMIYOR, ve iste ayrim burada: `B` bir taban'a HIC
+          inmiyor. `m2` 16 dekat kucultuldugunde `max|B|` DE 16 dekat
+          kuculuyor ve oran on hanede sabit kaliyor -- yani gurultu
+          sinyalle BIRLIKTE olcekleniyor. **KESISIM YOK.** Bir hata cubugu
+          icin gereken sey (sinyalden BAGIMSIZ bir taban) bu gozlenebilirde
+          yapisal olarak yok.
+
+    ISTE `circular_frequency_defect`IN SEVK EDILME GEREKCESI BUDUR, ve bu
+    bir tercih degil bir OLCUMDUR: onun tabani `m2`den BAGIMSIZ (merdiven
+    boyunca plato) oldugu icin gercek bir kesisimi vardir; bunun yok.
+    Bu fonksiyon `newton_noise_floor`a baglidir ve makine ona **DEJENERE**
+    der -- yani iddia laf olarak degil, deponun kendi olcutuyle kayitli.
+
+    IKINCI OKUMA DA OLCULDU ("harita DEGISMEZ": `D(m2) = max|Phi(m2) -
+    Phi(0)|`, ayni pencere): `D/m2` = 2.773089e+11 (m2 = 1e-10) ...
+    2.779245e+11 (1e-14), yani O DA DOGRUSAL. Orada taban tanimlanabilir
+    ama ancak BAGIMSIZ bir integratorle: RK45 **1.836777e-02**, LSODA
+    **3.125000e-02** (mutlak; `max|Phi(0)| = 2.246782e+10`e gore bagil
+    **1.391e-12**). Kesisim `D = taban`: **m2 = 1.127e-13** -- spec'in
+    3e-4'unden ON BIR MERTEBE asagida, ve spec'in 3.651e-15 tabaniyla
+    karsilastirilamaz cunku birimleri farkli (matris elemani <-> boyutsuz
+    oran).
+
+    MALIYET: tek varyasyonel kosum **0.141 s** (rtol 1e-13, `t_span = 4*pi`).
+    """
+    st = circular_pair_state(m2)
+    Phi = variational_flow(st, t_span=t_span, rtol=rtol, atol=atol,
+                           method=method, power=2.0)
+    B = Phi[np.ix_(PAIR_INDICES, THIRD_BODY_INDICES)]
+    return float(np.max(np.abs(B)))
+
+
+#: Ayri boru, ayri etiket: bu govde `variational_flow`u kosturur, oteki
+#: `integrate`i. Ayni `NBodyState` kurulumu, FARKLI cozucu -- yani
+#: `PIPELINE_KEYS` olcutunun ("govdeyi degistiren") ta kendisi.
+third_body_influence.PIPELINE = "nbody-dogrusal-harita"  # type: ignore[attr-defined]
+#: TEK BASAMAK, ve tam degeri SIFIR: spec 4.3'un cumlesi birebir budur.
+#: Merdiven UZATILMADI cunku `m2 = eps`in kapali formu YOK; ve uzatmanin
+#: anlami da olmazdi -- (b) maddesi olculdu, artik `m2` ile birlikte
+#: olcekleniyor.
+third_body_influence.NEWTON_PROBES = (({"m2": 0.0}, 0.0),)  # type: ignore[attr-defined]
+third_body_influence.PIPELINE_KEYS = ("method",)  # type: ignore[attr-defined]
 
 
 def _a2(*, theory: Theory, M: float) -> float:
