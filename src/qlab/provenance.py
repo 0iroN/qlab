@@ -139,6 +139,18 @@ class Provenance:
     # söylenen bir sayının yanında bir onay işareti. Modül 5'in kendi kuralı
     # tam olarak bunu yasaklar: YARGILANAMAZ sessizce "oturdu" diye basılmaz.
     convergence_diagnosis: str | None = None
+    # KURAM SEÇİCİ — Modül 6'da eklendi, ve `diagnostics` sözlüğüne KONMADI.
+    # Gerekçe Modül 4'ün `sampling`i ve Modül 5'in `convergence_diagnosis`i ile
+    # AYNI aile, ve bu modülde en serti: `_diagnostics_summary()` çıktısı
+    # "Yakınsama" satırının İÇİNE, ✓/✗ işaretinin HEMEN ARDINA basılır. `γ`, `β`
+    # ve `λ` oraya konsaydı panelde **"✓ … theory=NOT-GR"** diye görünürdü —
+    # yani "çözülen kuram genel görelilik DEĞİL" uyarısının yanında bir onay
+    # işareti. `approximations` listesine de konamaz ve bu bir kategori
+    # ayrımıdır: bir kuram seçicisi YAPILAN bir şey (yaklaşım) değildir, bir
+    # BİRİM SEÇİMİ de değildir (`G = c = 1` odur) — HANGİ KURAMIN çözüldüğünü
+    # seçer. `anchor_class`tan da ayrıdır: çıpa sınıfı okunan sayının NEYİ
+    # doğruladığını söyler, kuram seçici ise sayının HANGİ KURAMA ait olduğunu.
+    theory_selector: str | None = None
 
     def as_lines(self) -> list[tuple[str, str]]:
         """Şeffaflık panelinin doğrudan bastığı etiket/değer çiftleri."""
@@ -153,6 +165,8 @@ class Provenance:
             lines.append(("Dairesellik", self.circularity))
         if self.anchor_class is not None:
             lines.append(("Çıpa sınıfı", self.anchor_class))
+        if self.theory_selector is not None:
+            lines.append(("Kuram seçici", self.theory_selector))
         if self.window is not None:
             lines.append(("Pencere", self.window))
         lines.append(("Yakınsama", f"{mark} {self._diagnostics_summary()}".strip()))

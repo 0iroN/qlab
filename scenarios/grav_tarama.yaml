@@ -1,0 +1,65 @@
+# Yercekimi ve uzay-zaman -- Modul 6 (jeodezik cipalar + Newtonyen N-cisim).
+#
+# TOHUM YOKTUR VE BU BIR EKSIKLIK DEGIL BIR BEYANDIR. Bu modulde RNG hic
+# kullanilmaz: kareleme determinist, `solve_ivp` determinist, sekiz
+# yorungesinin BVP'si sabit bir baslangic tahmininden kosuyor.
+# Tekrarlanabilirligin karsiligi burada PENCERENIN TAM BEYANIDIR ve asagidaki
+# anahtarlarin HEPSI zorunludur -- varsayilanli alan YOK. Bu, `em_tarama.yaml`
+# den bir adim daha ileridir (orada `eps_r` ve `margin` varsayilanliydi);
+# gerekce ayni: bu depoda bir hukmun kendi penceresinin disina tasinmasi ON
+# BIRDEN FAZLA kez olculdu.
+#
+# BIRIMLER: `G = c = 1` bir BIRIM SECIMIDIR (Modul 4'un `J = k_B = 1`i ve
+# Modul 5'in `c = eps_0 = mu_0 = 1`i ile ayni statude). `mass` kilogram
+# DEGILDIR, `richardson` basamaklari metre DEGILDIR ve bu senaryonun hicbir
+# ciktisi yay saniyesi tasimaz. Olculen dort buyuklugun dordu de boyutsuzdur.
+#
+# `gamma` VE `beta` BIRER PENCERE DUGMESI DEGIL BIRER KURAM SECICIDIR:
+# gamma = beta = 1 genel goreliliktir (lam = 2 + 2*gamma - beta = 3) ve
+# HERHANGI BASKA DEGER GENEL GORELILIK DEGILDIR. Yukleyici GR olmayan bir
+# secimi REDDETMEZ -- reddetseydi spec 4.3'un hata cubugu makinesi (lam = 0,
+# yani beta = 2 + 2*gamma) senaryo yolundan hic gorunmezdi. Panel bunun
+# yerine kendi `Kuram secici` satirinda ne cozuldugunu YAZAR.
+#
+# `lam` BU DOSYADA GECERLI BIR ANAHTAR DEGILDIR ve "bilinmeyen anahtar"
+# hatasi verir. Tek kaynak (gamma, beta)dir; `lam` motorda turetilmis bir
+# `@property`dir. Iki alan ayni seyi belirlerse sessiz bir kazanan dogar ve o
+# kazanan adlandirilmamis yeni bir pencere dugmesidir -- Task 1'de olculdu.
+#
+# RICHARDSON CIFTLERI OLCULEREK SECILDI, DEVRALINMADI:
+#   kareleme  (3e5, 1e6) -> 10.01 durust hane. Merdivenin sekli olculdu ve
+#             OPTIMUMDAN SONRA BOZULUYOR: (1e5,3e5) 9.12 | (3e5,1e6) 10.01 |
+#             (1e6,3e6) 9.94 | (3e6,1e7) 8.98. Daha ince basamak daha iyi
+#             cevap DEMEK DEGILDIR.
+#   bukulme   (1e5, 3e5) -> bu boru `b` cinsinden calisir ve olcegi
+#             karelemeninkiyle AYNI DEGILDIR; tek alan paylassalardi biri
+#             icin secilen cift otekinin hukmunu sessizce penceresinin
+#             disina tasirdi.
+#
+# `trajectory_p` CIPA PENCERESI DEGIL VITRIN PENCERESIDIR ve bu bilerek
+# boyle: cipa `p = 3e5`te okunur (perihel kaymasi 6.28e-05 rad, GOZLE
+# GORUNMEZ), yorunge izi ise `p = 100`de cizilir -- orada bir radyal periyot
+# 2*pi'den ~0.19 rad buyuktur ve gul deseni EKRANDA gorunur. Ayni dosyada iki
+# ayri `p` olmasi bir tutarsizlik degil, iki AYRI isin iki ayri penceresidir;
+# panel ikisini de adiyla basar.
+#
+# SEVK EDILEN KOSUM OLCULDU (29.08.2026, bu makine): toplam ~0.7 s
+# (sekizin BVP'si 0.19 s + monodromi 0.24 s + tabanlar 0.13 s + gerisi
+# mikrosaniyeler). Bu senaryonun isi bir CIPA KURMAK DEGIL, PANELIN BEYANINI
+# gostermektir; cipalarin olcumu `tests/grav/` altindadir ve burasi onlari
+# yeniden olcmez, yeniden OKUR.
+kind: grav
+name: Egri uzay-zamanda yorunge ve isik
+gauge: schwarzschild
+gamma: 1.0
+beta: 1.0
+mass: 1.0
+eccentricity: 0.3
+richardson: [3.0e5, 1.0e6]
+second_order_p: 3.0e5
+deflection_richardson: [1.0e5, 3.0e5]
+trajectory_p: 100.0
+trajectory_points: 2000
+nbody_rtol: 1.0e-13
+nbody_atol: 1.0e-15
+nbody_method: DOP853

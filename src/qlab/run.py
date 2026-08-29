@@ -17,6 +17,7 @@ import argparse
 import dataclasses
 import io
 import json
+import math
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,6 +38,7 @@ from qlab.scenario.loader import load_scenario
 from qlab.scenario.schema import (
     DownfoldScenario,
     EMScenario,
+    GravScenario,
     HFScanScenario,
     MDScenario,
     SpinScenario,
@@ -176,6 +178,11 @@ def main(argv: list[str] | None = None) -> int:
         # `AttributeError` verirdi.
         if isinstance(scenario, EMScenario):
             return _run_em(scenario, args.output)
+        # YERÇEKİMİ DALI: `EMScenario` ile aynı gerekçe — `GravScenario` da
+        # `grid` taşımaz ve `_run_loaded` yolundan geçerse yakalanmayan bir
+        # `AttributeError` verirdi.
+        if isinstance(scenario, GravScenario):
+            return _run_grav(scenario, args.output)
         result = _run_loaded(scenario)
     except QLabError as exc:
         print(str(exc), file=sys.stderr)
@@ -449,6 +456,116 @@ def _run_em(scenario: EMScenario, output: str | None) -> int:
         if merdiven.uncertainty is not None:
             alanlar["uncertainty"] = np.array(merdiven.uncertainty)
         np.savez(output, **alanlar)
+    return 0
+
+
+def _run_grav(scenario: GravScenario, output: str | None) -> int:
+    """Yerçekimi senaryosunu koşturur ve şeffaflık panelini basar.
+
+    `_run_em`/`_run_spin`/`_run_downfold`/`_run_tb`/`_run_md` ile aynı kalıp:
+    kendi panelini basar ve kendi `.npz`'sini yazar, `save()` yolundan
+    geçmez.
+
+    BU FONKSİYON HİÇBİR BEYAN METNİ YAZMAZ. Yöntem / Yaklaşımlar / İhmal
+    edilen / Beklenen hata / Dairesellik / Çıpa sınıfı / **Kuram seçici** /
+    Pencere / Yakınsama tanısı satırlarının tek kaynağı
+    `engine/grav/factory.py`dir ve buradan yalnızca `provenance.as_lines()`
+    basılır. İki kopya metin bu depoda bir kez panelin iki farklı şey iddia
+    etmesine yol açtı (bkz. `tests/hf/test_hf_scenario.py`); kopya sayısı
+    `tests/grav/test_grav_senaryo.py` ile kilitlidir — ve kilit bu modülde
+    TAM CÜMLE değil **PARÇA** düzeyindedir, çünkü Modül 5'te bir mutant 55
+    karakterlik bir parça kopyalayarak tam-cümle sayımından kaçmıştı.
+
+    Aşağıdaki tablo BEYAN DEĞİL SAYIDIR (`_run_em`in yarıçap tablosu ve
+    `_run_spin`in sıcaklık tablosuyla aynı sınıf). Tek kelimelik istisna
+    `GR_DEGIL_ISARETI`dir ve o da yazılmaz, fabrikadan İTHAL EDİLİR.
+
+    GÜRÜLTÜ TABANI SATIRLARI TABLODA DA KISALTILMAZ ve `DEJENERE` olan boru
+    SAKLANMAZ: oranı okunamayan bir borunun yerine bir sayı basmak
+    ("nan", "inf" ya da boş) o borunun ölçtüğü şeyi gizlerdi. Panelin işi
+    ölçülmüş kusurları taşımaktır.
+    """
+    from qlab.engine.grav.factory import (
+        GR_DEGIL_ISARETI,
+        KAPALI_FORM_YOK,
+        KURAMA_BAGLI_KAPALI_FORMLAR,
+        build_grav,
+        provenance_for,
+    )
+    from qlab.viz.grav_frames import build_grav_payload
+
+    setup = build_grav(scenario)
+    yuk = build_grav_payload(setup)
+    provenance = provenance_for(
+        scenario,
+        setup=setup,
+        floors=yuk.floors,
+        second_order=yuk.second_order,
+        closed_forms=yuk.closed_forms,
+        eight=yuk.eight,
+        angles=yuk.angles,
+    )
+
+    gr = (scenario.gamma, scenario.beta) == (1.0, 1.0)
+    print(
+        f"{scenario.name}: ayar {scenario.gauge}, "
+        f"gamma={scenario.gamma:g}, beta={scenario.beta:g}, "
+        f"lam={setup.theory.lam:g}"
+        + ("" if gr else f"  <- {GR_DEGIL_ISARETI}")
+    )
+    print(f"  perihel katsayısı C  = {yuk.coefficient:.14f}")
+    print(f"  ikinci mertebe   K   = {yuk.second_order:.12f}")
+    print(f"  bükülme oranı        = {yuk.deflection:.14f}")
+    print(f"  sekiz sabiti         = {yuk.eight:.14f}")
+    print(
+        f"  kararlılık (eliptik çiftin AÇISI, max|λ| DEĞİL) = "
+        f"±{yuk.angles[0]:.12f} ve ±{yuk.angles[1]:.12f} rad"
+    )
+    # OKUNAMAYAN KAPALI-FORM TÜREV SESSİZCE ATLANMAZ: atlansaydı tablo "bu
+    # kuram noktasında ISCO yok" ile "hesaplamayı unuttum" arasındaki farkı
+    # göstermezdi. İşaret burada YAZILMAZ, fabrikadan İTHAL EDİLİR.
+    for ad in KURAMA_BAGLI_KAPALI_FORMLAR:
+        if ad in yuk.closed_forms:
+            print(f"  kapalı-form türev    {ad:<18} = {yuk.closed_forms[ad]:.14f}")
+        else:
+            print(f"  kapalı-form türev    {ad:<18} = {KAPALI_FORM_YOK}")
+    for ad, deger in yuk.closed_forms.items():
+        if ad not in KURAMA_BAGLI_KAPALI_FORMLAR:
+            print(f"  kapalı-form türev    {ad:<18} = {deger:.14f}")
+    for f in yuk.floors:
+        oran = "S/G OKUNAMADI" if math.isnan(f.ratio) else f"S/G={f.ratio:.4e}"
+        isaret = "" if f.anchor else "   (ÇIPA DEĞİL)"
+        print(
+            f"  taban {f.value:.6e}  {oran:<18} {f.verdict:<9}"
+            f"{f.label}{isaret}"
+        )
+    for etiket, deger in provenance.as_lines():
+        print(f"{etiket:<16}: {deger}")
+
+    if output is not None:
+        np.savez(
+            output,
+            phi=yuk.phi,
+            u=yuk.u,
+            r=yuk.r,
+            x=yuk.x,
+            y=yuk.y,
+            coefficient=np.array(yuk.coefficient),
+            second_order=np.array(yuk.second_order),
+            deflection=np.array(yuk.deflection),
+            eight=np.array(yuk.eight),
+            angles=np.array(yuk.angles),
+            closed_forms=np.array(list(yuk.closed_forms.values())),
+            closed_form_names=np.array(list(yuk.closed_forms)),
+            floor_values=np.array([f.value for f in yuk.floors]),
+            floor_ratios=np.array([f.ratio for f in yuk.floors]),
+            floor_verdicts=np.array([f.verdict for f in yuk.floors]),
+            floor_pipelines=np.array([f.pipeline for f in yuk.floors]),
+            floor_is_anchor=np.array([f.anchor for f in yuk.floors]),
+            provenance_json=json.dumps(
+                dataclasses.asdict(provenance), ensure_ascii=False
+            ),
+        )
     return 0
 
 

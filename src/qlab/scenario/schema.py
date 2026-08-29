@@ -252,3 +252,78 @@ class EMScenario:
     peak_floor: float
     eps_r: float = 1.0
     margin: int = 3
+
+
+#: Sevk edilen iki AYAR. `engine/grav/metric.py::GAUGE_NAMES` ile AYNI liste, aynı
+#: katman ayrımıyla tekrar edilir (`EM_WINDOW_FNS`in gerekçesinin aynısı):
+#: asıl otorite motordadır ve iki gövdeyi o taşır, ama `scenario` katmanı
+#: `engine`i import EDEMEZ. Yükleyici burada yalnızca "böyle bir ayar var mı"
+#: diye bakar; ayarın hangi çekirdeği seçtiği motorda kalır. İki denetim ayrı
+#: tür fırlatır (`ScenarioError` ile `InvalidInputError`).
+GRAV_GAUGES = ("schwarzschild", "isotropic")
+
+#: Sevk edilen N-cisim integratörleri — `engine/grav/nbody.py::NBODY_METHODS`
+#: ile aynı liste, `GRAV_GAUGES` ile aynı katman gerekçesiyle.
+GRAV_NBODY_METHODS = ("DOP853", "RK45", "Radau", "LSODA")
+
+
+@dataclass(frozen=True)
+class GravScenario:
+    """Yerçekimi ve uzay-zaman — jeodezik çıpalar + Newtonyen N-cisim.
+
+    PYDANTIC DEĞİL: bu dosyanın kendi dokstringi *hiçbir şey import etmediğini*
+    söyler ve bu depoda `pydantic` KURULU DEĞİLDİR (ölçüldü: `import pydantic`
+    → `ModuleNotFoundError`, ağaç genelinde 0 eşleşme). Bu sınıf da öteki yedi
+    `*Scenario` gibi düz bir `@dataclass(frozen=True)`tir.
+
+    TOHUM YOKTUR VE BU BİR EKSİKLİK DEĞİL BİR BEYANDIR: bu modülde RNG hiç
+    kullanılmaz (kareleme deterministtir, `solve_ivp` deterministtir, BVP
+    `least_squares` sabit bir başlangıç tahmininden koşar). `EMScenario`nun
+    gerekçesinin aynısı: tekrarlanabilirliğin karşılığı **pencerenin tam
+    beyanıdır** ve bu yüzden aşağıdaki alanların hepsi ZORUNLUDUR,
+    varsayılanı olan yoktur — Richardson çiftleri, `p`/`b` basamakları,
+    N-cisim toleransları ve integratör adı dahil. Bu depoda bir hükmün kendi
+    penceresinin dışına taşınması ON BİRDEN FAZLA kez ölçüldü.
+
+    BİRİM DÖNÜŞÜMÜ YOKTUR, çünkü çevrilecek bir şey yoktur: `G = c = 1` bir
+    BİRİM SEÇİMİDİR (Modül 4'ün `J = k_B = 1`'i ve Modül 5'in
+    `c = ε₀ = μ₀ = 1`'i ile aynı statüde). `mass` bu yüzden kilogram DEĞİLDİR
+    ve `richardson`ın basamakları metre değildir; ölçülen büyüklüklerin hepsi
+    (`2π(2+2γ−β)`, `πλ²(3+e²/6)`, `1+γ`, `|E|^{3/2}T/(G²m^{5/2})`) zaten
+    boyutsuzdur. Bu, `SpinScenario`nun "dönüşümün yokluğu bir unutma değil bir
+    ölçüm sonucudur" gerekçesiyle aynı ailedir.
+
+    `gamma` VE `beta` BİRER PENCERE DÜĞMESİ DEĞİL, BİRER KURAM SEÇİCİDİR.
+    `γ = β = 1` genel göreliliktir (`λ = 2+2γ−β = 3`); **herhangi başka değer
+    GR DEĞİLDİR** ve panel bunu kendi satırında öyle yazar
+    (`Provenance.theory_selector`). Yükleyici GR olmayan bir seçimi
+    REDDETMEZ — reddetseydi §4.3'ün hata çubuğu makinesi (`λ = 0` koşusu)
+    senaryo yolundan hiç görünmezdi.
+
+    `lam` BİR ALAN DEĞİLDİR ve senaryoda bir anahtar da değildir: tek kaynak
+    `(gamma, beta)`dır ve `λ` motorda türetilmiş bir `@property`dir. İki alan
+    aynı şeyi belirlerse sessiz bir kazanan doğar ve o kazanan adlandırılmamış
+    yeni bir pencere düğmesidir.
+
+    `richardson` VE `deflection_richardson` AYRI ALANLARDIR, ve bu bir tekrar
+    değil bir ÖLÇÜM SONUCUDUR: iki borunun optimum çifti aynı yerde değildir
+    (kareleme (3e5, 1e6)'da 10.01 dürüst hane verir, bükülme borusu `b`
+    cinsinden çalışır ve ölçeği tamamen başkadır). Tek alan paylaşsalardı
+    biri için seçilen çift ötekinin hükmünü sessizce penceresinin dışına
+    taşırdı.
+    """
+
+    name: str
+    gauge: str
+    gamma: float
+    beta: float
+    mass: float
+    eccentricity: float
+    richardson: tuple[float, float]
+    second_order_p: float
+    deflection_richardson: tuple[float, float]
+    trajectory_p: float
+    trajectory_points: int
+    nbody_rtol: float
+    nbody_atol: float
+    nbody_method: str

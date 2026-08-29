@@ -1,4 +1,5 @@
 import dataclasses
+import math
 import textwrap
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from qlab.scenario.loader import load_scenario
 from qlab.scenario.schema import (
     DownfoldScenario,
     EMScenario,
+    GravScenario,
     HFScanScenario,
     MDScenario,
     SpinScenario,
@@ -283,6 +285,15 @@ _SPIN_SAMPLE_BURN = 10
 _EM_SAMPLE_RADII = 2
 _EM_SAMPLE_STEP_FACTOR = 120.0
 
+#: Yerçekimi senaryosunda yörünge örneklemesi KISALTILIR (2000 → 64) ama
+#: Richardson çiftleri ve N-cisim toleransları KISALTILMAZ, ve bu bilinçli:
+#: `trajectory_points` bir ÖRNEKLEME yoğunluğudur (doğruluk düğmesi değil),
+#: oysa Richardson çifti ile `rtol` doğrudan hükme girer — kısaltılsalardı bu
+#: test panelin ✓ dalını başka bir pencerede sınıyor olurdu. Tam koşum
+#: `tests/grav/test_grav_senaryo.py::test_CLI_UCTAN_UCA`dadır (ölçüldü,
+#: ≈ 0.7 s + yorumlayıcı başlangıcı).
+_GRAV_SAMPLE_POINTS = 64
+
 
 def test_scenario_directory_is_not_empty():
     """Keşfe dayalı parametrizasyonun sessizce boşa düşmemesi için güvenlik ağı:
@@ -450,6 +461,48 @@ def test_shipped_scenario_loads_and_runs(scenario_path):
         assert yuk.ladder.settled_order is None
         assert provenance.converged is False
         assert "OTURDU(" not in provenance.convergence_diagnosis.split("[BEYAN")[0]
+        return
+
+    if isinstance(scenario, GravScenario):
+        # Yerçekimi tarafında "koşturulabilir" demek: iki çözücü de koşuyor
+        # (jeodezik ODE + N-cisim BVP), her çıpanın KENDİ borusundan bir
+        # hata çubuğu okunuyor ve panel dolu. Yalnız yörünge ÖRNEKLEMESİ
+        # kısaltılır; hükme giren hiçbir düğmeye dokunulmaz.
+        from qlab.engine.grav.factory import build_grav, provenance_for
+        from qlab.viz.grav_frames import build_grav_payload
+
+        kisa = dataclasses.replace(
+            scenario, trajectory_points=_GRAV_SAMPLE_POINTS
+        )
+        setup = build_grav(kisa)
+        yuk = build_grav_payload(setup)
+        assert yuk.phi.shape == (_GRAV_SAMPLE_POINTS,)
+        assert np.all(np.isfinite(yuk.r)) and np.all(yuk.r > 0.0)
+        for sayi in (yuk.coefficient, yuk.second_order, yuk.deflection,
+                     yuk.eight, *yuk.angles):
+            assert math.isfinite(sayi), f"{scenario_path.name}: {sayi} sonlu degil"
+        provenance = provenance_for(
+            kisa,
+            setup=setup,
+            floors=yuk.floors,
+            second_order=yuk.second_order,
+            closed_forms=yuk.closed_forms,
+            eight=yuk.eight,
+            angles=yuk.angles,
+        )
+        assert provenance.method.startswith("Yercekimi ve uzay-zaman")
+        # Bu senaryo türünün panelinde BEŞ EK SATIR ZORUNLUDUR ve `Kuram
+        # seçici` başka HİÇBİR türde yoktur. Keşif-tabanlı bu testte
+        # kilitlenmesi, yeni bir yerçekimi senaryosu eklendiğinde de
+        # aranacağı anlamına gelir.
+        assert provenance.circularity is not None
+        assert provenance.anchor_class is not None
+        assert provenance.theory_selector is not None
+        assert provenance.window is not None
+        assert provenance.convergence_diagnosis is not None
+        # DEJENERE bir boru PANELDE DURUR ama ÇIPA hükmüne girmez.
+        assert [f.verdict for f in yuk.floors].count("DEJENERE") == 1
+        assert provenance.converged is True
         return
 
     assert isinstance(scenario, TDSEScenario)

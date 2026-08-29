@@ -8,7 +8,7 @@ Senaryo türü isteğe bağlı bir "kind" anahtarıyla seçilir: yoksa veya "tds
 ise mevcut TDSEScenario yolu izlenir (geriye uyumluluk — Task 1A'dan kalan
 mevcut YAML dosyaları "kind" taşımıyor). Diğerleri: "hf_scan" → HFScanScenario,
 "md" → MDScenario, "tb" → TBScenario, "downfold" → DownfoldScenario,
-"spin" → SpinScenario, "em" → EMScenario.
+"spin" → SpinScenario, "em" → EMScenario, "grav" → GravScenario.
 Bilinmeyen bir "kind" değeri ScenarioError üretir ve geçerli türleri sayar.
 """
 
@@ -23,11 +23,14 @@ from qlab.errors import ScenarioError
 from qlab.scenario.schema import (
     EM_MIN_DEPTH,
     EM_WINDOW_FNS,
+    GRAV_GAUGES,
+    GRAV_NBODY_METHODS,
     POTENTIAL_KINDS,
     SPIN_ALGORITHM_KINDS,
     SPIN_MODEL_KINDS,
     DownfoldScenario,
     EMScenario,
+    GravScenario,
     GridSpec,
     HFScanScenario,
     PacketSpec,
@@ -101,7 +104,20 @@ _EM_REQUIRED = {
 #: yakalar ve ikisi ayri tur firlatir.
 _EM_COURANT_LIMIT_2D = 2.0 ** -0.5
 
-_KNOWN_KINDS = ("tdse", "hf_scan", "md", "tb", "downfold", "spin", "em")
+_GRAV_TOP_LEVEL = {
+    "kind", "name", "gauge", "gamma", "beta", "mass", "eccentricity",
+    "richardson", "second_order_p", "deflection_richardson", "trajectory_p",
+    "trajectory_points", "nbody_rtol", "nbody_atol", "nbody_method",
+}
+# HEPSI ZORUNLU (kind haric). `_EM_REQUIRED` ile ayni gerekce ve ondan bir
+# adim daha ileri: EM'de `eps_r`/`margin` varsayilanliydi, burada VARSAYILANLI
+# ALAN YOK. Bu modulde tekrarlanabilirligin karsiligi pencerenin tam
+# beyanidir ve pencerenin her dugmesi -- Richardson ciftleri, `p`/`b`
+# basamaklari, N-cisim toleranslari, integrator adi ve KURAM SECICI (gamma,
+# beta) -- yazilmak zorundadir.
+_GRAV_REQUIRED = _GRAV_TOP_LEVEL - {"kind"}
+
+_KNOWN_KINDS = ("tdse", "hf_scan", "md", "tb", "downfold", "spin", "em", "grav")
 
 
 def load_scenario(path: str | Path) -> TDSEScenario | HFScanScenario | MDScenario:
@@ -136,6 +152,8 @@ def load_scenario(path: str | Path) -> TDSEScenario | HFScanScenario | MDScenari
         return _load_spin_scenario(raw, file_path)
     if kind == "em":
         return _load_em_scenario(raw, file_path)
+    if kind == "grav":
+        return _load_grav_scenario(raw, file_path)
     raise ScenarioError(
         f"Bilinmeyen senaryo türü (kind): {kind!r}. Geçerli türler: {list(_KNOWN_KINDS)}"
     )
@@ -721,4 +739,157 @@ def _load_em_scenario(raw: dict, file_path: Path) -> EMScenario:
         peak_floor=peak_floor,
         eps_r=eps_r,
         margin=margin,
+    )
+
+
+def _grav_richardson(raw: dict, anahtar: str) -> tuple[float, float]:
+    """Bir Richardson çiftini okur ve KENDİ KAPILARINI koşar.
+
+    Çift ARTAN olmak zorundadır ve bu bir biçim tercihi değildir: dışdeğerleme
+    `(f1*h2 - f2*h1)/(h2 - h1)` ile `h = 1/basamak` üzerinden yapılır, yani
+    eşit basamaklarda sıfıra bölmedir ve ters sıralı bir çift kaba basamağı
+    "ince" sayar. Motor eşitliği zaten reddediyor (`InvalidInputError`), ama
+    buradaki kapı YAML'ın hatasını hiçbir kareleme koşmadan önce yakalar —
+    `_load_em_scenario`ın Courant kapısıyla aynı katman ayrımı.
+    """
+    deger = raw[anahtar]
+    if not isinstance(deger, (list, tuple)) or len(deger) != 2:
+        raise ScenarioError(
+            f"'{anahtar}' iki elemanlı bir liste olmalı (alt, üst), "
+            f"verilen: {deger!r}"
+        )
+    try:
+        alt, ust = float(deger[0]), float(deger[1])
+    except (TypeError, ValueError) as exc:
+        raise ScenarioError(
+            f"'{anahtar}' basamakları sayıya dönüştürülemedi: {exc}"
+        ) from exc
+    if not math.isfinite(alt) or not math.isfinite(ust) or alt <= 0.0 or ust <= 0.0:
+        raise ScenarioError(
+            f"'{anahtar}' basamakları pozitif ve sonlu olmalı, verilen: "
+            f"({alt}, {ust})"
+        )
+    if not alt < ust:
+        raise ScenarioError(
+            f"'{anahtar}' KESİN ARTAN olmalı (alt < üst), verilen: "
+            f"({alt}, {ust}). Eşit basamaklarda `1/p`de dışdeğerleme sıfıra "
+            "bölmedir; ters sıralı bir çift ise kaba basamağı ince sayar."
+        )
+    return alt, ust
+
+
+def _load_grav_scenario(raw: dict, file_path: Path) -> GravScenario:
+    """Yerçekimi senaryosu — ve PENCERENİN TAM BEYANI.
+
+    Bu yükleyici motorun üç kontrolünü (ayar adı, integratör adı, `e > 0`
+    kapısı) BİLEREK tekrarlar ve bu bir kopya değil bir KATMAN AYRIMIDIR —
+    `_load_em_scenario`, `_load_spin_scenario` ve `_load_downfold_scenario`
+    ile aynı gerekçe: burada yakalanan şey YAML'ın hatasıdır ve hata hiçbir
+    kareleme, hiçbir `solve_ivp` adımı koşmadan ÖNCE verilir; motorda
+    yakalanan şey ÇAĞRININ hatasıdır. İkisi ayrı tür fırlatır
+    (`ScenarioError` ile `InvalidInputError`) ve testler bu farkı kilitler.
+
+    Yükleyiciye ÖZGÜ olanlar — motorda karşılıkları YOKTUR:
+
+    * **`e = 0` ile `e = 1` İKİ AYRI SEBEPLE reddedilir.** `e = 0`da `u₁ = u₂`
+      bir DAİREDİR ve orada ölçülecek bir perihel kayması yoktur (motorun
+      kapısı da sözleşmeseldir, sayısal değil); `e ≥ 1` ise bağlı bir yörünge
+      değildir ve dönüş noktaları gerçek kalmaz.
+    * **`gamma`/`beta` REDDEDİLMEZ.** GR olmayan bir seçim geçerli bir
+      senaryodur — reddedilseydi §4.3'ün hata çubuğu makinesi (`λ = 0`, yani
+      `β = 2 + 2γ`) senaryo yolundan hiç görünmezdi. Panel bunun yerine
+      `Kuram seçici` satırında ne çözüldüğünü YAZAR.
+    * **`richardson` ve `deflection_richardson` AYRI kapılardan geçer**
+      (`_grav_richardson`), çünkü ikisi ayrı borunun penceresidir.
+
+    `lam` BURADA GEÇERLİ BİR ANAHTAR DEĞİLDİR ve "bilinmeyen anahtar" hatası
+    verir: tek kaynak `(gamma, beta)`dır, `λ` motorda türetilmiş bir
+    `@property`dir. İki alan aynı şeyi belirlerse sessiz bir kazanan doğar.
+    """
+    unknown = set(raw) - _GRAV_TOP_LEVEL
+    if unknown:
+        raise ScenarioError(
+            f"Bilinmeyen anahtar(lar): {sorted(unknown)}. "
+            f"Geçerli anahtarlar: {sorted(_GRAV_TOP_LEVEL)}"
+        )
+    missing = _GRAV_REQUIRED - set(raw)
+    if missing:
+        raise ScenarioError(f"Eksik anahtar(lar): {sorted(missing)}")
+
+    try:
+        gamma = float(raw["gamma"])
+        beta = float(raw["beta"])
+        mass = float(raw["mass"])
+        eccentricity = float(raw["eccentricity"])
+        second_order_p = float(raw["second_order_p"])
+        trajectory_p = float(raw["trajectory_p"])
+        nbody_rtol = float(raw["nbody_rtol"])
+        nbody_atol = float(raw["nbody_atol"])
+    except (TypeError, ValueError) as exc:
+        raise ScenarioError(
+            f"Yerçekimi senaryosunun sayısal alanları hatalı: {exc}"
+        ) from exc
+
+    try:
+        trajectory_points = int(raw["trajectory_points"])
+    except (TypeError, ValueError) as exc:
+        raise ScenarioError(
+            f"'trajectory_points' tam sayı olmalı: {exc}"
+        ) from exc
+
+    gauge = str(raw["gauge"])
+    if gauge not in GRAV_GAUGES:
+        raise ScenarioError(
+            f"Bilinmeyen ayar (gauge): {gauge!r}. "
+            f"Geçerli ayarlar: {list(GRAV_GAUGES)}"
+        )
+    nbody_method = str(raw["nbody_method"])
+    if nbody_method not in GRAV_NBODY_METHODS:
+        raise ScenarioError(
+            f"Bilinmeyen N-cisim integratörü: {nbody_method!r}. "
+            f"Geçerli integratörler: {list(GRAV_NBODY_METHODS)}"
+        )
+
+    for ad, deger in (("gamma", gamma), ("beta", beta)):
+        if not math.isfinite(deger):
+            raise ScenarioError(f"'{ad}' sonlu olmalı, verilen: {deger}")
+    if not math.isfinite(mass) or mass <= 0.0:
+        raise ScenarioError(f"'mass' pozitif ve sonlu olmalı, verilen: {mass}")
+    if not 0.0 < eccentricity < 1.0:
+        raise ScenarioError(
+            f"'eccentricity' (0, 1) aralığında olmalı, verilen: {eccentricity}. "
+            "e = 0'da u₁ = u₂ bir DAİREDİR ve orada ölçülecek bir perihel "
+            "kayması yoktur; e ≥ 1 bağlı bir yörünge değildir."
+        )
+    for ad, deger in (("second_order_p", second_order_p),
+                      ("trajectory_p", trajectory_p)):
+        if not math.isfinite(deger) or deger <= 0.0:
+            raise ScenarioError(f"'{ad}' pozitif ve sonlu olmalı, verilen: {deger}")
+    for ad, deger in (("nbody_rtol", nbody_rtol), ("nbody_atol", nbody_atol)):
+        if not math.isfinite(deger) or not 0.0 < deger < 1.0:
+            raise ScenarioError(
+                f"'{ad}' (0, 1) aralığında ve sonlu olmalı, verilen: {deger}"
+            )
+    if trajectory_points < 2:
+        raise ScenarioError(
+            f"'trajectory_points' en az 2 olmalı, verilen: {trajectory_points}. "
+            "Bu bir ÖRNEKLEME yoğunluğudur, doğruluk düğmesi DEĞİL; doğruluğu "
+            "çözücünün kendi `rtol`/`atol`ü belirler."
+        )
+
+    return GravScenario(
+        name=str(raw["name"]),
+        gauge=gauge,
+        gamma=gamma,
+        beta=beta,
+        mass=mass,
+        eccentricity=eccentricity,
+        richardson=_grav_richardson(raw, "richardson"),
+        second_order_p=second_order_p,
+        deflection_richardson=_grav_richardson(raw, "deflection_richardson"),
+        trajectory_p=trajectory_p,
+        trajectory_points=trajectory_points,
+        nbody_rtol=nbody_rtol,
+        nbody_atol=nbody_atol,
+        nbody_method=nbody_method,
     )

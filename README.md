@@ -151,6 +151,25 @@ Tasarım belgesi: `../docs/superpowers/specs/2026-08-05-qlab-kuantum-cekirdegi-d
   sonuncusu panelde sessizce "oturdu" diye basılamaz. **Modül hiçbir malzemenin
   optik sabitini iddia etmez.** Ölçülen sayılar ve düzeltilen otuz altı plan
   iddiası aşağıdaki Doğrulama bölümündedir.
+- **Modül 6 — yerçekimi ve uzay-zaman: tamam.** `engine/grav/` (Schwarzschild
+  **ve** izotropik PPN metrikleri, `w(u)` formu, kareleme **çıpa yolu**, ODE
+  **yörünge motoru**, ve metriği HİÇ görmeyen ayrı bir Newtonyen N-cisim
+  çözücüsü), `observable/grav_obs.py` (perihel katsayısı, ikinci mertebe,
+  bükülme oranı, **`newton_noise_floor`**, beş kapalı-form türev, sekiz
+  yörüngesinin sabiti ve monodromi açıları), `viz/grav_frames.py` ve
+  `kind: grav` senaryosu. **Dört fizik çıpası** — `C = 2π(2+2γ−β)`
+  (**18.84955591968662**, `6π`'den 1.85e-09), `K = πλ²(3+e²/6)`, bükülme oranı
+  `1+γ` (**1.9999999996887523**) ve sekizin `|E|^{3/2}T/(G²m^{5/2})`
+  (**9.237681250723917**) — ve dördü de girilen `M`'den, `a`'dan, `e`'den ve
+  birim seçiminden **bağımsızdır**. Bu modülde depoya ilk kez bir **hata
+  çubuğu makinesi** girdi: her fizik sayısının yanında **kendi borusundan**
+  okunan `λ = 0` (ya da `m2 = 0`) tabanı ve S/G oranı — **karışık boru
+  yasak**. `λ`, `γ`, `β` ve N-cisimdeki `power` panelde yeni bir kutuya,
+  **KURAM SEÇİCİ**ye yazılır: bunlar bir yaklaşım da bir birim seçimi de
+  değildir, **hangi kuramın çözüldüğünü** seçerler. **Modül Merkür'ün perihel
+  kaymasını ÖNGÖRMEZ** — 43″ `M`, `a` ve `e`'den bire bir geri okunur ve
+  değeri hangi efemeris tablosunun seçildiğine bağlıdır. Ölçülen sayılar ve
+  düzeltilen **otuz dört** plan iddiası aşağıdaki Doğrulama bölümündedir.
 
 ## Ne iddia etmiyor
 
@@ -2275,6 +2294,327 @@ Plan J'nin **otuz altı** sayısı ölçümle düzeltildi (Task 1'de dokuz, 2'de
 | `ε_r` 1.0 → 2.25'te oranlar 8e-6'da aynı | kayma R ile **dört kat** iniyor → bu bir fizik çıpası değil **şema ölçümü** |
 | **R = 5'te tepe kapısı kipi bulamıyor** (sevk edilmiş test dokstringi) | **28 tepe** bulunuyor ve `j11/j01` eşleşiyor; düşen şey **%2'lik eşleme penceresi** |
 
+### Modül 6 — yerçekimi ve uzay-zaman (Plan K)
+
+#### Yol haritasının hedefi bir TAUTOLOJİYDİ — ve ölçüldü
+
+Yol haritası *"Merkür'ün perihel kayması (43″/yüzyıl)"* diyordu. **Bu bir
+öngörü değildir.** Kayma `Δϖ = 6πGM/(c²a(1−e²))` ile verilir ve `M`, `a`, `e`
+GİRDİDİR; dolayısıyla 43″ üç düğmenin **her birinden bire bir geri okunur.**
+Ölçüldü (float64, bu depoda):
+
+| bozulma | sonuç oranı | kapalı form | bağıl fark |
+|---|---|---|---|
+| `M` × 1.01 | 1.0099999999999996 | 1.01 | 4.40e-16 |
+| `a` × 1.01 | 0.99009900990099 | 1/1.01 | 1.12e-16 |
+| `e`: 0.20563069 → 0.3 | 1.0524351860770593 | (1−e₀²)/(1−e²) = 1.052435186077059 | 2.11e-16 |
+
+Modül 3F'nin silisyum bant aralığı, Modül 4'ün demir `T_c`'si ve Modül 5'in
+Fresnel `R`'si ile **aynı ailenin dördüncü üyesi**.
+
+**VE DEĞERİN KENDİSİ HANGİ TABLONUN SEÇİLDİĞİNE BAĞLIDIR** — dört **adı
+konmuş** seçim ölçüldü (IAU 2015 `GM_☉`, JPL J2000 elemanları):
+
+    A  (a, e, T) tablodan + Julyen yüzyıl        42.980644"
+    B  T Kepler III'ten (a, e, GM tablodan)      42.980473"
+    C  a Kepler III'ten (T, e, GM tablodan)      42.980758"
+    D  A ile aynı, ama TROPİK yüzyıl             42.979726"
+
+yayılım **0.0010320″**, yani 43'ten ölçülen farkın (0.019600″) **%5.27**'si.
+Planın *"dört seçim 42.979758…42.991703, yayılım 0.0119″ = farkın %59'u"*
+satırı **yeniden üretilemedi** ve sebebi tanıdık: plan hangi dört tablo
+olduğunu **hiç yazmamıştı**. Alt uç yakın çıkıyor (42.979726 ≈ 42.979758) ama
+üst uç (42.991703) standart hiçbir tablodan gelmiyor — denenen sekiz varyantın
+hepsi 42.9797–42.9808 bandına düşüyor.
+
+Yerine **dört fizik çıpası** kondu ve dördü de `M`'den, `a`'dan, `e`'den ve
+birim seçiminden bağımsızdır (`G = c = 1` bir birim seçimidir):
+
+| çıpa | ölçülen | hedef | dürüst hane |
+|---|---|---|---|
+| perihel katsayısı `C = 2π(2+2γ−β)` | **18.84955591968662** | `6π` = 18.84955592153876 | 10.01 |
+| aynısı, **izotropik ayarda** | **18.849555921564487** | `6π` | 11.86 |
+| ikinci mertebe `K = πλ²(3+e²/6)` | **85.24858543879077** | `27π + 1.5πe²` (λ = 3 dilimi) | en kötü bağıl 4.086e-05 |
+| bükülme oranı `1+γ` | **1.9999999996887523** | 2 | 9.81 |
+| aynısı, **izotropik ayarda** | **1.999999999804698** | 2 | 10.01 |
+| sekiz sabiti `|E|^{3/2}T/(G²m^{5/2})` | **9.237681250723917** | — (kapalı formu yok) | 4 integratörde 1.972e-12 |
+
+#### Hata çubuğu makinesi — deponun ilk "fiziği kapat, aynı boruyu koştur"u
+
+Her fizik sayısının yanında **kendi borusundan** okunan bir taban vardır:
+fiziği kapat (`λ = 0`, yani `β = 2+2γ`; N-cisimde `m2 = 0`), **aynı** boruyu
+**aynı** pencerede koştur, çıkan sapmayı taban say. **KARIŞIK BORU YASAK** —
+spec §4.3'ün ilk tablosu gürültüyü ODE'den sinyali karelemeden alıyordu ve o
+tablo geçersizdi.
+
+Sevk edilen koşumda beş boru, beş etiket:
+
+    boru                         taban          S/G          hüküm     canlı
+    kareleme | gauge=schw    1.594187e-09   1.1824e+10     SAGLAM      6/6
+    ode | method=DOP853      1.921807e-06   9.8082e+06     SAGLAM      6/6
+    bukulme | gauge=schw     3.651917e-10   5.4766e+09     SAGLAM      6/6
+    nbody | method=DOP853    3.996803e-14   3.0926e+13     SAGLAM      7/7
+    nbody-dogrusal-harita    0.000000e+00   OKUNAMADI      DEJENERE    0/1
+
+**ÜÇ BORU ÜÇ AYRI ŞEKİLDE DAVRANIYOR VE PANEL BUNU YAZAR** — "S/G büyük"
+cümlesi bu farklar olmadan yanıltır:
+
+- **Kareleme**: `w−1` ile `dφ−2π` aynı büyüklüğün iki yüzü olduğu için hüküm
+  `SAGLAM`'dan doğrudan `DEJENERE`'ye geçer; **`CURUK`'e ERİŞİLEMEZ**.
+- **ODE**: hiçbir basamak ölmez; **`CURUK` erişilebilir, `DEJENERE` değil** —
+  karelemenin **tam tersi**.
+- **N-cisim**: iki gözlemlenebilir **iki ayrı dejenerelik yüzeyi** taşır.
+
+Ve `CURUK` **yapısal olarak dar bir olaydır** (üç boruda üç kez ölçüldü):
+sinyal her zaman varsayılan fizik noktasının O(1) değeridir ve taban ona ancak
+boru çöpe döndüğünde yetişir.
+
+#### Kuram seçici — panelde YENİ BİR KUTU, ve İKİ üyesi var
+
+`λ`, `γ`, `β` bir **yaklaşım değildir** (yaklaşım YAPILAN bir şeydir: "test
+parçacığı aldık") ve bir **birim seçimi de değildir** (`G = c = 1` odur).
+**Hangi kuramın çözüldüğünü** seçerler: GR `γ = β = 1` ⇔ `λ = 3`, ve **herhangi
+başka değer GR DEĞİLDİR**. `Provenance.theory_selector` bu yüzden ayrı bir
+alandır ve `diagnostics`e **konmadı**: `_diagnostics_summary()` çıktısı
+"Yakınsama" satırının **içine**, ✓ işaretinin hemen ardına basılır — kuram
+seçici oraya konsaydı panelde **"✓ … theory=NOT-GR"** görünürdü.
+
+**İKİNCİ ÜYE TASK 5'TE BULUNDU:** N-cisim tarafındaki `power` (kuvvet üssü) de
+hangi kuramın çözüldüğünü seçer, ve `p ≠ 2`'de **potansiyelin kapalı formu bir
+SEÇİMDİR** (sevk edilen seçim `U = −mᵢmⱼ/((p−1)r^(p−1))`). O seçim
+adlandırılmadığı için planın bütün bir üs tablosu yeniden üretilemedi.
+`p = 2`'de iki seçim çakışır, o yüzden çıpanın kendisi etkilenmez.
+
+#### Sekiz yörüngesi — ARAMADAN SONRA daireselleşen ÜÇ iddia
+
+Başlangıç koşulları **depo içinde aranır**, literatürden alınmaz: bilinmeyen
+`(vx, vy, T)`, koşul `Φ_{T/3}(y₀) = P_{(2,0,1)} y₀`. Çözüm
+`vx = 0.347116888119`, `vy = 0.532724945388`, `T = 6.325913982926`; BVP artığı
+**2.498002e-14** ve literatür IC'sinden **874 kat** daha iyi.
+
+Ama aramadan **sonra** üç iddia daireselleşir ve panel bunu böyle yazar:
+
+1. *"üçü de aynı eğride `T/3` kaymayla dolaşıyor"* → **BVP koşulunun ta
+   kendisi** (arama tam olarak onu sıfırlar);
+2. tam periyot dönüşü → `Φ_T = (Φ_{T/3})³` **cebirsel sonucu**; integratörü
+   ölçer, fiziği değil;
+3. **`L = 0` bir ÖLÇÜM DEĞİL** — simetrik ansatz'ta `build(0, 0)` bile sıfır
+   verir.
+
+**Girdi olarak kalan tek şey SİMETRİ SINIFIDIR** (Euler dizilimi + `T/3`
+devri) ve o bir sayı değildir. Bu üç madde `Provenance.circularity`nin
+**ikinci parçasıdır**; birinci parça 43″/efemeristir. Tek parçalı bir
+dairesellik beyanı §9 kriteri 5'in ikinci yarısını **karşılamaz**.
+
+**KARARLILIK `max|λ|` İLE RAPORLANMAZ:** `λ = 1` sekiz katlı ve **defektiftir**
+(cebirsel kat 8, geometrik kat 4 → dört tane 2×2 Jordan bloğu) ve defektif bir
+özdeğer bozulmaya **karekökle** tepki verir; `max|λ| − 1` yakınsamaz. Hüküm
+**eliptik çiftin açısıyla** verilir: **±1.872970598421** ve
+**±0.052921540137** rad.
+
+#### Üç sınıf, "çıpa değil" rafı, ve Task 5'in düzeltmesi
+
+- **FİZİK ÇIPASI** (statik kökü yok, yörünge çözülmek zorunda): `C`, `K`,
+  bükülme oranı, sekiz sabiti.
+- **KAPALI-FORM TÜREV** (fizik çıpası **değil**): ISCO `r/r_s` = 3, foton
+  küresi 1.5, `b_krit/M` = `3√3` = 5.196152422706632,
+  `μ_c` = 0.038520898328784976, apsidal üs −0.4999999923696353.
+  Statik/dinamik oranları **ISCO'da 40418×**, **`b_krit`'te 483×** — dinamik
+  yol her ikisinde de daha pahalı **ve** daha az hassas. Üçü yalnız `β−γ`'ya
+  bağlıdır ve **`β > γ`'da yoktur**; orada motor inanılır görünen bir sayı
+  döndürmek yerine **reddeder** ve panel yokluğu yazar.
+- **ŞEMA ÇIPASI**: Richardson merdiveninin kendi optimumu, `t0 = 0`
+  sözleşmesi.
+- **ÇIPA DEĞİL — rafta ÜÇ üye ve üçünün sebebi ayrı:** Kepler 3/2
+  (`[GM] = L³T⁻²` onu **zorunlu** kılar) · `⟨U⟩/|E| = 2` (viryal) · **enerji
+  korunumu** (`n = −2, −2.5, −1.3, 0, +3`'ün hepsinde geçiyor → bir
+  **integratör** kapısı, tautoloji).
+
+**VE TASK 5'İN DÜZELTMESİ PANELDE:** bir çıpa olarak **tautoloji olmak,
+mutasyon kapsaması olmamak demek değildir** — o test bir mutantı öldürdü. Bir
+çıpanın **fizik değeri** ile bir testin **ayırt etme gücü** iki ayrı
+büyüklüktür.
+
+#### Yöntem/hedef uyuşmazlığı — İKİ TÜR, AYRI SATIRDA
+
+| tür | anlamı | bu modüldeki üye |
+|---|---|---|
+| **A — yöntem hedefi KAPSAMIYOR** | düzeltilemez; başka bir **kuram** gerekir | Newtonyen N-cisim perihel kaymasını **yanlış üretmez, HİÇ üretmez** (`λ = 0`'da kapalı form tam sıfır); jeodezik çözücü **test parçacığı** taşıdığı için geri-tepkiyi üreten bir denklem taşımaz |
+| **B — hedef bu modülün DIŞINDA** | ertelendi, engel yok | Kerr (tüm `ISCO(a)` tablosu **0.27 ms**, ODE'siz — maliyeti sıfır, **çıpa değeri de sıfır**), ışıma sönümü, gelgit deformasyonu |
+
+**A'yı B sanmak "sonraki modülde ekleriz" yalanını üretir; B'yi A sanmak
+yapılabilir işi gereksiz yere gömer.** Modül 5'in tam sayısı buydu (Zeeman'ın
+yörüngesel `g = 1`'i) ve o zaman iki tür ayrılmamıştı.
+
+#### Modüller arası bağ — YOKLUK beyanı, ölçülmüş sayılarla
+
+Bu modül atom ölçeğindeki modüllerle **fiziksel olarak bağlanmaz**, ve engel
+**boyut değil ENERJİDİR** (CODATA 2018 / SI 2019, bu depoda):
+
+- **`F_g/F_e = 8.093550856608016e-37`** — ve bu **iki PROTON** içindir. Çift
+  seçimi bir düğmedir: elektron-proton için aynı oran **4.407886e-40**, yani
+  **üç mertebe** başka. Plan hangi çift olduğunu yazmamıştı; ölçüm iki protonu
+  gösterdi ve panel bunu adıyla yazıyor.
+- Yerçekimsel "atom"un (`α_g = Gm_p²/(ħc)` = 5.906149e-39) taban durum enerjisi
+  **2.621912e-87 J**, yani KAF fotonlarının `k_BT` = 3.762931e-23 J'unun
+  **6.967737e-65** katı. **İKİ DÜĞME DAHA:** indirgenmiş kütle kullanılsaydı
+  sayı **tam yarıya** düşerdi (3.483869e-65), ve `T = 2.725 K` yuvarlamasıyla
+  **6.968950e-65** çıkardı — planın **6.969e-65**'i tam olarak budur. Yani o
+  sayı yanlış değildi, **penceresi yazılmamıştı**.
+- Protonun `r_s`'ine (`2Gm_p/c²` = 2.484232e-54 m) inmek, kenarı bir Bohr
+  yarıçapı olan bir küpte **9.665562e+129** ızgara noktası ister. Planın
+  **~6.5e127**'si **yeniden üretilemedi** ve sebebi yine aynı: **span bir
+  düğmedir ve adlandırılmamıştı** — kenar 1 Å seçilseydi **6.522644e+130**,
+  planın sayısı için kenarın ≈ 1e-11 m olması gerekirdi. Bir dekat span üç
+  mertebe nokta demek.
+
+Kurulabilen tek bağ `1/r`'nin **yapı ortaklığıdır** ve o da bir **kapı**, çıpa
+değil.
+
+#### Panel ve senaryo
+
+```bash
+python -m qlab.run scenarios/grav_tarama.yaml -o grav.npz
+```
+
+Çıkış 0; panel **on** satır basar — Yöntem / Yaklaşımlar / İhmal edilen /
+Beklenen hata / Dairesellik / Çıpa sınıfı / **Kuram seçici** / Pencere /
+Yakınsama / Yakınsama tanısı. Ortadaki yeni satır bu modülde `Provenance`a
+eklendi.
+
+`Yakınsama` burada "hesap bitti" **demek değildir** ve bir merdivenin oturması
+da değildir. Bağlandığı şey şudur: **bu koşumun her ÇIPA borusu kendi hata
+çubuğunu okuyabildi mi?** Yani tik "hesap bitti" değil, *"bastığım her çıpa
+sayısının yanında geçerli bir hata çubuğu var"* demektir. `CURUK` ya da
+`DEJENERE` bir çıpa borusu tiki düşürür — ve bu **ölçülerek** gösterildi
+(`test_CIPA_BORUSU_CURURSE_PANEL_TIK_BASMAZ`).
+
+**DEJENERE BORU PANELDEN ÇIKARILMADI.** Spec §4.3'ün kendi N-cisim
+gözlemlenebiliri (`third_body_influence`) `m2 = 0`'da **bit bit sıfır** verir
+(0/1 canlı basamak) ve limit de kurtarmaz — gürültü sinyalle birlikte
+ölçeklenir. Sevk edilen `circular_frequency_defect` bunun bir **İKAMESİDİR** ve
+gerekçesi tam olarak bu ölçümdür; dejenerelik saklansaydı ikamenin gerekçesi de
+kaybolurdu. Satır basılır, `converged` hükmüne girmez, ve ikisi de testte
+kilitli.
+
+**TOHUM YERİNE PENCERE.** Bu modülde RNG hiç kullanılmaz. `grav_tarama.yaml`
+bir tohum taşımaz ama pencerenin **her düğmesini** taşır ve **varsayılanlı
+alanı YOKTUR** (`em_tarama.yaml`den bir adım daha ileri): ayar, `γ`, `β`, `M`,
+`e`, iki ayrı Richardson çifti, ikinci mertebenin basamağı, yörünge motorunun
+`p`'si ve nokta sayısı, N-cisim `rtol`/`atol` ve integratör adı.
+
+**`lam` BİR ANAHTAR DEĞİLDİR** — tek kaynak `(γ, β)`dır ve `λ` motorda
+türetilmiş bir `@property`dir. İki alan aynı şeyi belirlerse **sessiz bir
+kazanan** doğar ve o kazanan adlandırılmamış yeni bir pencere düğmesidir.
+
+**`trajectory_p` = 100 ile `richardson` = (3e5, 1e6) AYNI DOSYADA, ve bu bir
+tutarsızlık değil:** çıpa `p = 3e5`'te okunur (perihel kayması 6.28e-05 rad,
+gözle görünmez), yörünge izi `p = 100`'de çizilir (bir radyal periyot 2π'den
+**0.197475 rad** büyük, gül deseni ekranda görünür). İki ayrı işin iki ayrı
+penceresi; panel ikisini de adıyla basar.
+
+Beyan metninin **tek kaynağı** `engine/grav/factory.py`dir ve bu bir disiplin
+değil bir **test**tir — üstelik **iki katmanlı**: yirmi dört beyan girdisinin
+her biri `src/` ağacında tam bir kez geçer, **ve** hiçbir dize sabiti bir beyan
+cümlesinin **içinde** geçemez. İkinci katman Modül 5'in ölçülmüş deliğidir: bir
+mutant `_PENCERE_BEYANI`nin **55 karakterlik bir parçasını** kopyalayarak
+tam-cümle sayımından kaçmıştı. Eşik bu modülde **yeniden ölçüldü**
+(4 → 92, 6 → 20, 8 → 13, 12 → 2, 16 → **0**) ve yine **16** çıktı — bir
+devralma değil, bağımsız bir ölçümün aynı yere düşmesi.
+
+#### Dokstring denetimi — YEDİNCİ kez ürün verdi
+
+Desen sabit: *yeni bir parça sevk edilince ilk kez sınanabilir hâle gelen bir
+iddia düşer.* Bu turda düşen, `geodesic.run_trajectory`nin **maliyet
+tablosuydu**. Sevk edilen dokstring şunu yazıyordu:
+
+    ODE + dense_output, 2000 nokta          2.482 ms
+    BIRIKIMLI kareleme, 2000 nokta         12.026 ms   ( 4.8 kat)
+    NOKTA BASINA ayri quad, 2000 nokta    207.568 ms   (83.6 kat)
+
+Tablo üç satırında da ODE'yi **en ucuz** gösteriyordu. Ölçüldü — ve
+**VEKTÖRLEŞTİRİLMİŞ** bir birikimli kareleme (aynı `ψ` ikamesi, yamuk kuralı)
+2000 noktayı **0.050 ms**'de veriyor, yani ODE'den **57 kat UCUZ**; dahası
+`φ(π)` değeri `quad`'ınkiyle **bit bit aynı** (bağıl fark 0.0). Yani "kat"
+sayısı bir yöntem farkı değil bir **yazım** farkıydı.
+
+Ama düşen şey tablonun **ikincil** yarısıdır; dokstringin asıl gerekçesi
+**güçlenerek** ayakta kaldı: kareleme `φ(u)` verir, yani **ters fonksiyonu**,
+ve **eşit aralıklı `φ`** istendiğinde her nokta ayrı bir kök bulma işidir.
+Elmayla elma karşılaştırması ancak orada yapılır ve ölçüldü:
+
+    ODE + dense_output (eşit aralıklı φ)                  2.842 ms
+    `quad` + `brentq` ile ters çevirme (eşit aralıklı φ)  72.325 ms   (25 kat)
+
+Yani planın **14.4 kat**'ı da Task 4'ün **4.8 kat**'ı da bu pencerede
+üretilemiyor; doğru sayı **25 kat**tır ve karşılaştırılan şey ilk kez aynı
+çıktıdır.
+
+#### Dürüst olumsuzlar
+
+Beşi de **panelde ve `.npz` kaydında** yazılıdır — saklanmıyorlar:
+
+- **Taban YALNIZ ARİTMETİĞİ ölçer.** Kesme hatası fizikle birlikte kapandığı
+  için "fiziği kapat, aynı boruyu koştur" sınavı onu **yapısal olarak
+  göremez**: tek basamaklı bir pencerede gerçek hata 2.842e-04 iken taban
+  2.453e-10, yani gerçeğin **1/1 158 000**'i. **S/G ancak YUVARLAMA SINIRLI bir
+  pencerede bir hata çubuğudur.**
+- **`K` ayar-bağımlıdır** (Schwarzschild 85.248585 ↔ izotropik 26.577757),
+  dolayısıyla iki ayarlı çapraz kontrol **yalnız birinci mertebeyi** belgeler.
+- **Çapraz kontrolün görmediği yüzey ölçüldü:** iki ayar dönüş noktalarını,
+  `quad` düğmelerini, `ψ` ikamesini ve Richardson çiftini **paylaşır**; o
+  yüzeye sokulan bir bozulma iki tarafı **birlikte** kaydırır ve farkı
+  **büyütmez, KÜÇÜLTÜR** — orada çapraz kontrol kör değil **yanıltıcıdır**.
+  Öldüren şey `6π` çıpasıdır.
+- **Spec §4.3'ün kendi N-cisim gözlemlenebilirinde taban ve kesişim
+  üretilemiyor**; sevk edilen `circular_frequency_defect` beyan edilmiş bir
+  **ikamedir** ve gerekçesi bu ölçümdür.
+- **İzotropik `K`'nın kapalı formu türetilmedi**, ve izotropik `λ = 0`
+  çizgisinin model artığı **`−24π(1+γ)²` ÖLÇÜLDÜ ama TÜRETİLMEDİ**.
+
+Bunlara ek olarak, panelde değil ama burada yazılı olan üç açık kalem:
+
+- **`slow` eşiğinden sapma beyan edildi:** modülün ölçülmüş eşiği 1.0 s,
+  `test_CLI_UCTAN_UCA` **1.43 s** sürüyor ve bilerek işaretlenmedi — yoksa
+  `-m "not slow"` koşumu senaryo sınırını hiç sınamazdı.
+- **Sekiz yörüngesinin havza yüzdesi bir TANIMSIZLIKTI** ve iki kutu ilan
+  edilerek ölçüldü (dar %96.3, geniş %63.0); planın "%58.2"si kutusuz
+  yazılmıştı.
+- **`b = 1.1 b_krit` güçlü alan noktası sevk edildi, dinamik `b_krit`
+  edilmedi** — Task 4'te ölçüldü: **168 kat ucuz** (0.0386 ms ↔ 6.50 ms) ve
+  duyarlılık eşiği `ε ≈ 3.5e-16` ↔ `2.5e-5`, yani ~**1e11 kat** daha duyarlı;
+  planın *90 kat / 8-10 kat* sayıları o turda **üretilemedi** ama hüküm aynı
+  yönde çıktı. Dinamik yolun yakalayıp güçlü-alan bükülmesinin kaçırdığı bir
+  `ε` **arandı, bulunamadı**.
+
+#### Planın bayat çıkan iddiaları
+
+Plan K'nın **otuz dört** sayısı ölçümle düzeltildi (Task 1–5'te otuz, Task
+6'da dört). Task 6'nın dördü:
+
+| planın/spec'in dediği | ölçülen |
+|---|---|
+| efemeris yayılımı **0.0119″** = farkın **%59**'u (dört seçim 42.979758…42.991703) | dört **adı konmuş** seçimle **0.0010320″** = **%5.27**; üst uç (42.991703) standart hiçbir tablodan gelmiyor — plan tabloları **hiç adlandırmamıştı** |
+| yerçekimsel atom / KAF oranı **6.969e-65** | `T = 2.72548 K` ile **6.967737e-65**; planın sayısı `T = 2.725 K` yuvarlamasınındır (6.968950e-65) — yanlış değil, **penceresi yazılmamış** |
+| protonun `r_s`'ine **~6.5e127** ızgara noktası | **span adlandırılmamıştı**; kenar `a₀` ile **9.665562e+129**, kenar 1 Å ile **6.522644e+130**, planın sayısı için kenar ≈ 1e-11 m gerekir |
+| yörünge maliyeti **14.4 kat** (Task 4: **4.8 kat**) | elmayla elma (eşit aralıklı `φ`) **25 kat**; vektörleştirilmiş birikimli kareleme ODE'den **57 kat UCUZ** ve `φ(π)`de `quad` ile **bit bit aynı** |
+
+Ve **doğrulanan** sayılar da yazılı: `F_g/F_e = 8.093551e-37` birebir çıktı
+(8.093550856608016e-37 — ama **iki proton** için; plan çifti yazmamıştı), ve
+Task 1–5'in bütün çıpa değerleri ile beş gürültü tabanı senaryo yolundan
+**yeniden okunduğunda birebir aynı** geldi.
+
+#### Ne yapılmadı
+
+Kerr metriği (tüm `ISCO(a)` tablosu **0.27 ms**) · Kozai-Lidov salınımı
+(ölçümle reddedildi: `cos²i_c = 0.602 ± 0.003`, `|Δ| < 1e-4` için maliyet
+**4.5 gün**) — **bu dört sayı tasarım belgesinin ön ölçümünden ALINTIDIR ve bu
+depoda yeniden üretilmedi**, çünkü ne Kerr ne Kozai gövdesi sevk edildi; panel
+alıntı olduklarını kendi cümlesiyle yazar · kuantum yerçekimi · kozmoloji
+ve kozmolojik sabit · ışıma sönümü · gelgit deformasyonu · `N > 3` kaotik
+sistemler, Lyapunov üsleri, 3B yörüngeler, Simó'nun öteki koreografileri ·
+**gözlem verisiyle karşılaştırma**.
+
 ## Mimari kuralı
 
 `engine` paketi `viz` veya `app` import **edemez** — ve GUI'nin kendisini de,
@@ -2309,7 +2649,7 @@ Spec §15'teki yedi maddenin gerçek durumu (ölçüm ayrıntıları
 
 | # | Kriter | Durum |
 |---|---|---|
-| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — **1389/1389 test yeşil** (`pytest tests/`, 939.68 s; Modül 5 kapanışında ölçüldü). Önceki ölçümler 1159/1159 (585.36 s, Modül 4 kapanışı) ve 971/971 (432.22 s, Modül 3H kapanışı) idi; aşağıdaki `reference/` deneyi o günden de eskidir. Ayrıca `reference/` geçici olarak kaldırılıp tam süite yeniden koşuldu: testler ATLANMIYOR, KIRMIZI oluyor — ölçüldü, **128 failed + 132 error + 291 passed, 0 skipped** (toplam 551, 154.20 s). Yani 260 test kırmızıya dönüyor ve hiçbiri sessizce atlanmıyor. Dikkat: bu ikinci deney süite 551 testliyken yapıldı ve o günün sayılarını taşır; yeniden koşulmadı, sayıları bugünkü toplama uydurmak ölçüm değil uydurma olurdu. Not: PySCF bu makinede **kurulu değildir** — `reference/*.json` kayıtları PySCF 2.14.0 ile başka bir yerde üretilmiştir ve testler koşarken PySCF'e bağımlı değildir; "PySCF referans testleri dahil" ifadesi kayıtlarla karşılaştırmayı anlatır, canlı bir PySCF çağrısını değil |
+| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — **1705/1705 test yeşil** (`pytest tests/`, 766.92 s; Modül 6 kapanışında ölçüldü). Önceki ölçümler 1389/1389 (939.68 s, Modül 5 kapanışı), 1159/1159 (585.36 s, Modül 4 kapanışı) ve 971/971 (432.22 s, Modül 3H kapanışı) idi; süre 1389 → 1705'te DÜŞTÜ ve bu bir hızlanma değil bir KARIŞIM değişimidir — Modül 6'nın 307 testinin çoğu mikrosaniyelik kapalı-form ve panel denetimidir; aşağıdaki `reference/` deneyi o günden de eskidir. Ayrıca `reference/` geçici olarak kaldırılıp tam süite yeniden koşuldu: testler ATLANMIYOR, KIRMIZI oluyor — ölçüldü, **128 failed + 132 error + 291 passed, 0 skipped** (toplam 551, 154.20 s). Yani 260 test kırmızıya dönüyor ve hiçbiri sessizce atlanmıyor. Dikkat: bu ikinci deney süite 551 testliyken yapıldı ve o günün sayılarını taşır; yeniden koşulmadı, sayıları bugünkü toplama uydurmak ölçüm değil uydurma olurdu. Not: PySCF bu makinede **kurulu değildir** — `reference/*.json` kayıtları PySCF 2.14.0 ile başka bir yerde üretilmiştir ve testler koşarken PySCF'e bağımlı değildir; "PySCF referans testleri dahil" ifadesi kayıtlarla karşılaştırmayı anlatır, canlı bir PySCF çağrısını değil |
 | 2 | Headless koşucu çalışır + H₂ eğrisi bağ uzunluğu ±%8 | **Kapandı** — `python -m qlab.run scenarios/h2_bond_scan.yaml -o h2_curve.npz`; taramanın parabol fiti **0.71348 Å**, deneyselden sapma %3.7, kriterin istediği ±%8 sağlanıyor. Bu sayı yöntemin denge uzunluğu DEĞİL: STO-3G'nin gerçek minimumu 0.71223 Å, fark taramanın ızgara eseridir (Modül 1B tablosunun altındaki nota bakın). Bu satır bir zamanlar 0.7156 Å diyordu — o sayı bu komuttan değil, `test_physical`'ın ayrı ızgarasından geliyordu; artık `test_shipped_h2_scan_fit_is_grid_biased_but_less_than_the_uniform_grid` senaryonun kendi sayısını kilitliyor |
 | 3 | GUI'de H₂O HOMO izoyüzeyi döndürülebilir | **Kapandı — bu depoda ilk gerçek-ekran doğrulaması.** `python -m qlab.app.main --molecule "O 0 0 0; H 0 0.757 0.587; H 0 -0.757 0.587"` gerçek Windows platformunda açıldı; su HOMO'su (1b₁) çizildi, ±faz iki renkte, 1764/1764 tepe, çekirdekler ve şeffaflık paneli görüldü. Döndürme ölçüldü: kamera azimutu değişince kare piksel bileşenlerinin **%14.1'i**, elevasyon değişince **%7.2'si** değişiyor — sahne gerçekten 3B ve görünüm tepki veriyor. **Ne ölçülmedi:** fareyle sürükleyerek döndürme; kamera programatik değiştirildi. Kriterin "döndürülebilir" kelimesi bu yüzden yalnızca sahne tarafında kapalıdır, girdi tarafında bir insanın bakması gerekir. Doğrulamanın kendisi bir kusuru da GÖRÜNÜR KILDI: 12 satırlık beyan 140 px'lik panelde katlanın altında kalıyordu (düzeltildi, `TransparencyPanel(max_height=…)`) |
 | 4 | Kaydırıcı ile canlı iletim, analitiğin ±%2'si içinde | **Kapandı** — ölçülen fark %0.07 |
