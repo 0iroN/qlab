@@ -89,6 +89,13 @@ type = "layers"
 # en altta. (İkisi dolaylı olarak zaten yakalanıyordu -- katmanlı modüller
 # TARAFINDAN import edildikleri için zincir katman kesiyordu -- ama `run` ve
 # `units` yakalanmıyordu; artık dördü de açıkça adlandırılmış.)
+#
+# `qlab.bridge_map` (Modül 7) `qlab.types`ın YANINA, bağımsız kardeş olarak
+# konuldu: saf tanım katmanıdır ve hiçbir motoru import etmez, o yüzden
+# `engine`in ALTINDA durmak zorundadır. Katman SIRASI değişmedi, yalnız
+# mevcut bir katmana kardeş eklendi. ÖLÇÜLDÜ (30.08.2026): listede
+# olmadığında `bridge_map -> qlab.engine.hf.scf` ihlali rc=0 ile KAÇIYORDU;
+# bu satırla aynı ihlal rc=1 veriyor.
 layers = [
     "(qlab.run) : (qlab.app)",
     "(qlab.viz)",
@@ -96,6 +103,6 @@ layers = [
     "(qlab.engine)",
     "(qlab.scenario)",
     "(qlab.provenance)",
-    "(qlab.types)",
+    "(qlab.types) : (qlab.bridge_map)",
     "(qlab.units) : (qlab.errors)",
 ]
