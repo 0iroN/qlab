@@ -415,23 +415,31 @@ def test_UNITS_EKSENI_IKI_KENARIN_DUGUM_KUMESIYLE_AYNI():
 # --- 6. `observable/` bağlaşım eklemiyor -------------------------------------
 
 
-def test_OBSERVABLE_KATMANI_BAGLASIM_EKLEMIYOR_ve_dosya_sayisi_SEKIZ():
+def test_OBSERVABLE_KATMANI_BAGLASIM_EKLEMIYOR_ve_dosya_sayisi_DOKUZ():
     """Bağlaşım bir kat yukarıda gizlenmiyor — ve spec'in bir sayısı daha
     çürüyor.
 
-    ÖLÇÜLDÜ: `observable/` içinde `__init__.py` hariç **8** dosya var
-    (em_obs, grav_obs, hf_obs, md_obs, spin_obs, tb_obs, tdse_obs,
-    tdse_obs_2d). Spec §2.1 "yedi gözlenebilir dosyasının yedisi" diyor
-    ama kendi parantezinde bu SEKİZ adı tek tek sayıyor — yani sayı
-    yanlış, liste doğru.
+    ÖLÇÜLDÜ (Task 1, HEAD = b221a9c): `observable/` içinde `__init__.py`
+    hariç **8** dosya vardı (em_obs, grav_obs, hf_obs, md_obs, spin_obs,
+    tb_obs, tdse_obs, tdse_obs_2d). Spec §2.1 "yedi gözlenebilir dosyasının
+    yedisi" diyor ama kendi parantezinde bu SEKİZ adı tek tek sayıyor —
+    yani sayı yanlış, liste doğru.
 
-    Yük taşıyan iddia ayakta: sekizin HİÇBİRİ birden çok motor import
-    etmiyor; altısı yalnız kendi motorunu, `spin_obs` ve `tb_obs` hiçbirini.
+    TASK 2'DE SAYI DOKUZ OLDU ve BU TEST ONU YAKALADI — istenen davranış tam
+    da budur: `bridge_obs` eklendiğinde test KIRMIZI doğdu ve tablo
+    güncellenmeye ZORLANDI. Bayat bir beyanın yalana dönüşmesi burada
+    yapısal olarak engelleniyor.
+
+    Yük taşıyan iddia AYAKTA KALDI ve yeni dosyada da ölçüldü: dokuzun
+    HİÇBİRİ birden çok motor import etmiyor; yedisi yalnız kendi motorunu
+    (`bridge_obs` → `md`), `spin_obs` ve `tb_obs` hiçbirini. `bridge_obs`
+    ayrıca `observable.grav_obs`u import ediyor ama o bir MOTOR DEĞİL,
+    aynı katmanın kardeşidir — bağlaşım motorlar arasında değil.
     """
     dosyalar = sorted(
         p for p in (KAYNAK / "observable").glob("*.py") if p.name != "__init__.py"
     )
-    assert len(dosyalar) == 8
+    assert len(dosyalar) == 9
     motorlar = {p.name for p in _motor_paketleri()}
     harita: dict[str, set[str]] = {}
     for dosya in dosyalar:
@@ -445,6 +453,7 @@ def test_OBSERVABLE_KATMANI_BAGLASIM_EKLEMIYOR_ve_dosya_sayisi_SEKIZ():
         assert hedefler <= motorlar
 
     assert harita == {
+        "bridge_obs": {"md"},
         "em_obs": {"em"},
         "grav_obs": {"grav"},
         "hf_obs": {"hf"},

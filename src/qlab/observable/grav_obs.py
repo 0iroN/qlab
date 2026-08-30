@@ -189,6 +189,18 @@ def newton_noise_floor(fn: Callable[..., float], **kw: Any) -> NoiseFloor:
     olu bir basamagin "artigi" `|0 - TAM| = |TAM|` olurdu, yani sinyalin
     kendisi taban diye raporlanirdi.
 
+    >>> MODUL 7 TASK 2'DE GENISLETILDI -- VE GENISLETME OLCULEREK BULUNDU.
+    Olcut yalnizca `deger == 0.0` idi ve bu, sonlu olmayan bir basamagi OLU
+    saymiyordu: olculdu, `float("nan") == 0.0` -> `False`. Yani bir `nan`
+    elenmeden `artiklar`a giriyordu ve oradan `max()`e siziyordu -- ustelik
+    sonucu ARGUMAN SIRASINA baglayarak: `max([nan, 1.0, 2.0])` `nan`
+    dondururken `max([1.0, nan, 2.0])` `2.0` donduruyor. Bir hukmun probe
+    sirasina bagli olmasi, hukum olmamasidir. Olcut artik
+    `not math.isfinite(deger) or deger == 0.0`dir. Genisletme SEVK EDILEN
+    grav borularinin hicbirini oynatmaz (hicbiri sonsuz ya da `nan`
+    dondurmuyor; tum suit yesil kaldi), ama Modul 7'nin kenar borusunda
+    "kenari tam kesmek" adayi tam olarak `inf`/`nan` uretiyor.
+
     OLCULEN (kareleme, GR sinyali, e = 0.3, M = 1, Richardson (3e5, 1e6),
     quad 1e-14/1e-13/400): taban **1.594187e-09**, sinyal **18.84955591968662**,
     S/G **1.1824e+10**, 6/6 basamak canli, hukum `SAGLAM`.
@@ -278,7 +290,7 @@ def newton_noise_floor(fn: Callable[..., float], **kw: Any) -> NoiseFloor:
     artiklar: list[float] = []
     for probe_kw, tam in probes:
         deger = float(fn(**{**kw, **probe_kw}))
-        if deger == 0.0:
+        if not math.isfinite(deger) or deger == 0.0:
             continue          # OLU basamak: boru aritmetik yapmadi
         artiklar.append(abs(deger - tam))
 
