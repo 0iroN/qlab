@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from qlab.scenario.loader import load_scenario
 from qlab.bridge_map import (
     HICBIR_SAYI_GELMEDI,
     KOVA_SAYILARI,
@@ -109,9 +110,11 @@ def test_KOVA_TABLOSU_KODDAN_TURETILIYOR_elle_listelenmiyor():
     Bir yokluk beyanı BAYATLARSA BİR YALANDIR. "Çapraz-motor import sayısı
     2'dir" iddiası elle yazılırsa ilk değişiklikte sessizce yanlış olur.
 
-    BU TUZAĞIN BİR ÖRNEĞİ ZATEN DEPODA (`test_MD_FORCE_FIELD_KINDS_...`
-    testine bakınız): `scenario/schema.py:56`ın demeti hem ölü hem bayat.
-    Aynı desen burada TEKRARLANMAYACAK.
+BU TUZAĞIN BİR ÖRNEĞİ DEPODA ÖLÇÜLDÜ (`test_MD_FORCE_FIELD_KINDS_...`
+    testine bakınız): `scenario/schema.py`nin `MD_FORCE_FIELD_KINDS` demeti
+    hem ölüydü hem bayattı. 30.08.2026'da kapatıldı, ve kapatma biçimi bu
+    dosyanın fikrini doğruluyor: demet SİLİNMEDİ, kaynağa karşı sınanan bir
+    TÜRETME KİLİDİNE bağlandı. Aynı desen burada TEKRARLANMAYACAK.
 
     ÖLÇÜLDÜ (30.08.2026, HEAD = b221a9c): tam İKİ kenar,
     `md → hf` (`engine/md/forcefields.py:13`) ve
@@ -465,41 +468,49 @@ def test_OBSERVABLE_KATMANI_BAGLASIM_EKLEMIYOR_ve_dosya_sayisi_DOKUZ():
     }
 
 
-# --- 7. Depodaki tuzağın kendisi ---------------------------------------------
+# --- 7. Depodaki tuzağın kendisi -- ve kapanışı ------------------------------
 
 
-def test_MD_FORCE_FIELD_KINDS_TUZAGI_HEM_OLU_HEM_BAYAT():
-    """Bu görevin taşıyıcı fikrinin depodaki KANITI — ölçüldü, doğrulandı.
+def test_MD_FORCE_FIELD_KINDS_TUZAGI_KAPANDI_VE_KILITLENDI():
+    """Bu görevin taşıyıcı fikrinin depodaki KANITI — ve artık ÇÖZÜMÜ.
 
-    `scenario/schema.py:56`:
+    TUZAK NEYDİ (ölçüldü 29-30.08.2026, `scenario/schema.py:56`):
         `MD_FORCE_FIELD_KINDS = ("harmonic", "morse", "lennard_jones")`
+    hem ÖLÜydü (adın `src/`+`tests/` ağacındaki tek geçişi bir ATAMAydı;
+    hiçbir yerde okunmuyordu) hem BAYATtı (`hartree_fock` listede yoktu,
+    oysa `engine/md/factory.py` onu sevk ediyor ve `scenarios/h2_aimd.yaml`
+    onu kullanıyor). Yani biri o demeti bir doğrulama kapısı olarak
+    bağlasaydı, depo KENDİ senaryosunu reddederdi.
 
-    (a) ÖLÜ: `src/` ve `tests/` ağacında adın TEK geçişi bir ATAMADIR
-        (`ast.Store`); hiçbir yerde okunmuyor, hiçbir yere import edilmiyor.
-    (b) BAYAT: `hartree_fock` listede yok, oysa `engine/md/factory.py`
-        onu sevk ediyor ve `scenarios/h2_aimd.yaml` onu kullanıyor.
+    NASIL KAPANDI (30.08.2026): demete `hartree_fock` eklendi ve demet
+    `scenario/loader.py`de GERÇEK bir kapıya bağlandı. Ama asıl iş bu
+    değil: elle yazılan bir demeti kapıya bağlamak tuzağı ÇÖZMEZ,
+    PAHALILAŞTIRIR — bayat demet artık sessizce yanlış olmakla kalmaz,
+    geçerli senaryoları REDDEDER. Bu yüzden demet bir TÜRETME KİLİDİNE
+    bağlandı: `tests/md/test_md_scenario.py`deki
+    `test_MD_FORCE_FIELD_KINDS_FACTORY_SEVKINDEN_TURETILIYOR` factory'nin
+    sevk dallarını `ast` ile tarar ve demeti ona karşı sınar.
 
-    Yani biri o demeti bir doğrulama kapısı olarak bağlasaydı, depo KENDİ
-    senaryosunu reddederdi. Bu test tuzağı KAPATMIYOR (kapsam dışı) —
-    tuzağın hâlâ orada olduğunu ve tarif edildiği gibi olduğunu belgeliyor;
-    biri onu düzeltirse test kırmızı olur ve bu dosyanın gerekçesi
-    güncellenmeye zorlanır.
+    DERS, `bridge_map.py`NİN TAŞIYICI FİKRİNİN TA KENDİSİ: elle yazılmak
+    ZORUNDA olan bir yokluk beyanı (burada katman sözleşmesi yüzünden --
+    `scenario`, `engine`i import EDEMEZ) silinmek zorunda değildir; KAYNAĞA
+    KARŞI SINANMAK zorundadır. Kova tablosu da tam olarak böyle yaşıyor.
 
     PLANIN BİR SATIR NUMARASI ÇÜRÜDÜ: plan `scenarios/h2_aimd.yaml:13`
     diyor; ölçüldü, `kind: hartree_fock` **10.** satırda, 13. satır
     `basis: sto-3g`. (13 numarası spec §4'ün `basis` maddesinden
     kopyalanmış.)
     """
-    schema = (KAYNAK / "scenario" / "schema.py").read_text(encoding="utf-8").splitlines()
-    assert schema[55].strip() == (
-        'MD_FORCE_FIELD_KINDS = ("harmonic", "morse", "lennard_jones")'
-    )
+    schema_metni = (KAYNAK / "scenario" / "schema.py").read_text(encoding="utf-8")
 
-    # "ÖLÜ" ölçütü yine `ast` ile okunuyor, düz metinle değil: bu dosya ve
-    # `bridge_map.py` adı DOKSTRINGDE anıyor, ve düz metin taraması onları
-    # "kullanım" sayıp testi yanlış yere yeşilden çıkarırdı. Gerçek ölçüt
-    # adın bir DEĞER olarak okunmasıdır (Load bağlamı) ya da import
-    # edilmesidir; `schema.py:56`daki tek geçiş bir ATAMADIR (Store).
+    # (a) ARTIK BAYAT DEĞİL: `hartree_fock` demette.
+    assert 'MD_FORCE_FIELD_KINDS = ("harmonic", "morse", "lennard_jones", "hartree_fock")' in schema_metni
+
+    # (b) ARTIK ÖLÜ DEĞİL. Ölçüt yine `ast` ile okunuyor, düz metinle değil:
+    # bu dosya ve `bridge_map.py` adı DOKSTRINGDE anıyor, ve düz metin
+    # taraması onları "kullanım" sayıp testi yanlış yere yeşile çevirirdi.
+    # Gerçek ölçüt adın bir DEĞER olarak okunması (Load) ya da import
+    # edilmesidir.
     yazma: list[tuple[str, int]] = []
     okuma: list[tuple[str, int]] = []
     for kok in (KAYNAK, PROJE_KOKU / "tests"):
@@ -522,9 +533,18 @@ def test_MD_FORCE_FIELD_KINDS_TUZAGI_HEM_OLU_HEM_BAYAT():
                     ad.name == "MD_FORCE_FIELD_KINDS" for ad in dugum.names
                 ):
                     okuma.append((dosya.name, dugum.lineno))
-    assert yazma == [("schema.py", 56)]
-    assert okuma == [], f"artık ölü değil, okunuyor: {okuma}"
+    assert [ad for ad, _ in yazma] == ["schema.py"]
+    okuyan_dosyalar = {ad for ad, _ in okuma}
+    assert "loader.py" in okuyan_dosyalar, (
+        f"kapıya bağlı değil, demet yine ÖLÜ: {sorted(okuyan_dosyalar)}"
+    )
 
+    # (c) KAPI GERÇEKTEN KAPI: `loader.py` demeti bir RED ölçütü olarak
+    # kullanıyor, yalnızca import etmiş olmak için değil.
+    loader_metni = (KAYNAK / "scenario" / "loader.py").read_text(encoding="utf-8")
+    assert "if ff_kind not in MD_FORCE_FIELD_KINDS:" in loader_metni
+
+    # (d) Tuzağın kurbanı olacak senaryo ARTIK GEÇİYOR.
     yaml_satirlari = (
         (PROJE_KOKU / "scenarios" / "h2_aimd.yaml")
         .read_text(encoding="utf-8")
@@ -534,7 +554,8 @@ def test_MD_FORCE_FIELD_KINDS_TUZAGI_HEM_OLU_HEM_BAYAT():
     assert yaml_satirlari[12].strip() == "basis: sto-3g"
     fabrika = (MOTOR_KOKU / "md" / "factory.py").read_text(encoding="utf-8")
     assert '"hartree_fock"' in fabrika
-    assert "hartree_fock" not in schema[55]
+    senaryo = load_scenario(str(PROJE_KOKU / "scenarios" / "h2_aimd.yaml"))
+    assert senaryo.force_field["kind"] == "hartree_fock"
 
 
 # --- 8. Saf tanım katmanı ----------------------------------------------------

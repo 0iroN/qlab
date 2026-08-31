@@ -10,6 +10,10 @@ mevcut YAML dosyaları "kind" taşımıyor). Diğerleri: "hf_scan" → HFScanSce
 "md" → MDScenario, "tb" → TBScenario, "downfold" → DownfoldScenario,
 "spin" → SpinScenario, "em" → EMScenario, "grav" → GravScenario.
 Bilinmeyen bir "kind" değeri ScenarioError üretir ve geçerli türleri sayar.
+
+ALT TÜRLER de aynı kuralla denetlenir, tüketiciye ham hata sızmadan:
+"potential.kind" → POTENTIAL_KINDS, "model"/"algorithm" → SPIN_*_KINDS,
+ve "force_field.kind"/"thermostat.kind" → MD_*_KINDS.
 """
 
 from __future__ import annotations
@@ -25,6 +29,8 @@ from qlab.scenario.schema import (
     EM_WINDOW_FNS,
     GRAV_GAUGES,
     GRAV_NBODY_METHODS,
+    MD_FORCE_FIELD_KINDS,
+    MD_THERMOSTAT_KINDS,
     POTENTIAL_KINDS,
     SPIN_ALGORITHM_KINDS,
     SPIN_MODEL_KINDS,
@@ -292,11 +298,52 @@ def _load_md_scenario(raw: dict, file_path: Path) -> MDScenario:
     missing = _MD_REQUIRED - set(raw)
     if missing:
         raise ScenarioError(f"Eksik anahtar(lar): {sorted(missing)}")
+
+    # Kuvvet alanı türü BURADA denetlenir, `engine/md/factory.py`ye varmadan.
+    # Factory'nin `else: raise` dalı DURUYOR ve kaldırılmamalı: o dal
+    # `MDScenario(...)` doğrudan kurulduğunda (testler bunu yapıyor) tek
+    # bekçidir. Buradaki kapının kazancı ayrı: hata YAML'ı okurken çıkar ve
+    # geçerli türleri SAYAR -- `POTENTIAL_KINDS`/`SPIN_MODEL_KINDS`
+    # kapılarının deseni.
+    force_field = raw["force_field"]
+    if not isinstance(force_field, dict):
+        raise ScenarioError(
+            f"'force_field' bir sözlük olmalı, verilen: "
+            f"{type(force_field).__name__}"
+        )
+    ff_kind = force_field.get("kind")
+    if ff_kind not in MD_FORCE_FIELD_KINDS:
+        raise ScenarioError(
+            f"Bilinmeyen kuvvet alanı: {ff_kind!r}. "
+            f"Geçerli kuvvet alanları: {list(MD_FORCE_FIELD_KINDS)}"
+        )
+
+    # Termostat türü de BURADA denetlenir -- yukarıdaki kapıyla aynı gerekçe.
+    # FARK ÖLÇÜLDÜ (30.08.2026): `MD_THERMOSTAT_KINDS` ÖLÜydü ama BAYAT
+    # DEĞİLDİ. Yani bu kapı mevcut bir kusuru değil, aynı tuzağın ikinci
+    # kopyasını kapatıyor -- ve asıl işi türetme kilidi yapıyor.
+    #
+    # Termostat İSTEĞE BAĞLIDIR: yoksa ya da boşsa NVE koşusudur ve kapı
+    # ateşlenmez. Bu `else None` semantiği KORUNUYOR, daraltılmıyor.
+    thermostat = raw.get("thermostat")
+    if thermostat:
+        if not isinstance(thermostat, dict):
+            raise ScenarioError(
+                f"'thermostat' bir sözlük olmalı, verilen: "
+                f"{type(thermostat).__name__}"
+            )
+        t_kind = thermostat.get("kind")
+        if t_kind not in MD_THERMOSTAT_KINDS:
+            raise ScenarioError(
+                f"Bilinmeyen termostat: {t_kind!r}. "
+                f"Geçerli termostatlar: {list(MD_THERMOSTAT_KINDS)}"
+            )
+
     return MDScenario(
         name=str(raw["name"]),
-        force_field=dict(raw["force_field"]),
+        force_field=dict(force_field),
         initial=dict(raw["initial"]),
-        thermostat=dict(raw["thermostat"]) if raw.get("thermostat") else None,
+        thermostat=dict(thermostat) if thermostat else None,
         dt=float(raw["dt"]),
         n_steps=int(raw["n_steps"]),
         save_every=int(raw.get("save_every", 1)),

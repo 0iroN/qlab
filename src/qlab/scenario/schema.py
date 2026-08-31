@@ -8,6 +8,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+#: `engine/tdse/factory.py::_build_potential`un SEVK ETTİĞİ potansiyeller.
+#: `loader.py`de zaten bir KAPIYA bağlıydı; 30.08.2026'da eksik olan
+#: TÜRETME KİLİDİ eklendi (`tests/test_scenario.py`). Kapı ile kilit ayrı
+#: şeylerdir: kapı, demet bayat olsa bile yeşil kalır -- geçersiz bir ad
+#: her hâlükârda reddedilir. Bayat demetin bedeli, factory'nin
+#: desteklediği bir potansiyelin YAML'dan HİÇ yüklenememesidir.
+#: Demet ölçüldü ve BAYAT DEĞİLDİ; kilit o günü beklemiyor.
 POTENTIAL_KINDS = ("free", "barrier", "well", "harmonic", "uniform_field")
 
 
@@ -53,7 +60,22 @@ class HFScanScenario:
     unit: str = "angstrom"
 
 
-MD_FORCE_FIELD_KINDS = ("harmonic", "morse", "lennard_jones")
+#: `engine/md/factory.py`nin SEVK ETTİĞİ kuvvet alanları. Bu demet ELLE
+#: yazılır, çünkü katman sözleşmesi `scenario`nun `engine`i import etmesini
+#: yasaklar (ölçüldü: `scenario -> qlab.engine` enjeksiyonu rc=1 veriyor).
+#: Ama artık BAYATLAYAMAZ: `tests/md/test_md_scenario.py`deki türetme
+#: kilidi factory'nin sevk dallarını `ast` ile tarayıp bu demete karşı
+#: sınar. Kilit, demetin ÖLÜ ve BAYAT olduğu dönemde (`hartree_fock`
+#: eksikti, oysa `scenarios/h2_aimd.yaml:10` tam olarak onu kullanıyor)
+#: yokluğu ölçülerek eklendi -- 30.08.2026.
+MD_FORCE_FIELD_KINDS = ("harmonic", "morse", "lennard_jones", "hartree_fock")
+#: `engine/md/factory.py`nin SEVK ETTİĞİ termostatlar. Yukarıdaki demetle
+#: aynı gerekçe ve aynı türetme kilidi. TEK FARK ÖLÇÜLDÜ (30.08.2026): bu
+#: demet ÖLÜydü ama BAYAT DEĞİLDİ -- factory tam olarak `langevin` +
+#: `nose_hoover` sevk ediyor. Yani burada kapatılan şey mevcut bir kusur
+#: değil, aynı tuzağın İKİNCİ KOPYASI: bir üçüncü termostat eklendiğinde
+#: bayatlayacaktı ve o an kapıya bağlıysa `argon_nvt.yaml` tipi geçerli
+#: senaryolar reddedilirdi. Kilit o günü beklemiyor.
 MD_THERMOSTAT_KINDS = ("langevin", "nose_hoover")
 
 

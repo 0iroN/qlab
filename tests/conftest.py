@@ -63,6 +63,7 @@ _reconfigure_utf8("stderr")
 # kosul degil, bozuk bir ortamdir (ayni gerekce README'de de yazili).
 # ---------------------------------------------------------------------------
 
+import ast
 import json
 from pathlib import Path
 
@@ -105,3 +106,60 @@ def h2o_sto3g_integrals() -> dict:
 @pytest.fixture(scope="session")
 def hf_energies() -> dict:
     return _load("hf_energies.json")
+
+
+# ---------------------------------------------------------------------------
+# Sevk tarayıcısı -- TÜRETME KİLİTLERİNİN ORTAK MAKİNESİ
+#
+# `scenario/schema.py`deki izin demetleri (`POTENTIAL_KINDS`,
+# `MD_FORCE_FIELD_KINDS`, `MD_THERMOSTAT_KINDS`) ELLE yazılmak zorundadır:
+# katman sözleşmesi `scenario`nun `engine`i import etmesini yasaklar
+# (ölçüldü 30.08.2026, `loader.py`ye `import qlab.engine` konarak:
+# `lint-imports` rc=1, "Katmanlı mimari BROKEN"). Elle yazılan bir demet
+# bayatlayabilir, ve demet bir KAPIYA bağlı olduğu için bayatlık artık
+# sessiz değil YIKICIDIR: factory'nin desteklediği bir türü YAML'dan
+# yüklenemez kılar.
+#
+# Bu yüzden doğruluk kaynağı demet değil FACTORY'NİN SEVK DALLARIDIR, ve
+# demetler onlara karşı sınanır. Tarayıcı BURADA, kök conftest'te yaşıyor
+# çünkü iki ayrı test dizini kullanıyor (`tests/md/` ve `tests/`) ve bu
+# dosyanın yukarısında belgelenen ÖLÇÜLMÜŞ ders tam olarak budur: alt
+# dizin conftest'lerindeki paylaşımlar yol SIRASINA göre kayboluyordu,
+# çalışan tek çözüm kök conftest'ti. İki kopya tutmak ise daha kötüsü
+# olurdu: birinde düzeltilip ötekinde unutulan bir kusur demektir.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def sevk_tarayici():
+    """`<degisken> == "..."` biçimindeki sevk dallarını `ast` ile tarar.
+
+    DÜZ METİNLE DEĞİL: düz metin taraması yorum satırındaki ya da
+    dokstringdeki bir adı "sevk dalı" sayardı. Bu deponun `bridge_map.py`si
+    aynı bedeli ölçerek öğrendi ve bir plan sayısını çürüttü.
+
+    Ölçüt yapısaldır: verilen işlevin gövdesindeki, solu `degisken` adı ve
+    tek işleci `==` olan karşılaştırmaların dizge sabitleri.
+    """
+
+    def tara(modul, islev: str, degisken: str) -> set[str]:
+        kaynak = Path(modul.__file__).read_text(encoding="utf-8")
+        govde = next(
+            d
+            for d in ast.walk(ast.parse(kaynak))
+            if isinstance(d, ast.FunctionDef) and d.name == islev
+        )
+        turler: set[str] = set()
+        for dugum in ast.walk(govde):
+            if not isinstance(dugum, ast.Compare):
+                continue
+            if not (isinstance(dugum.left, ast.Name) and dugum.left.id == degisken):
+                continue
+            if len(dugum.ops) != 1 or not isinstance(dugum.ops[0], ast.Eq):
+                continue
+            sag = dugum.comparators[0]
+            if isinstance(sag, ast.Constant) and isinstance(sag.value, str):
+                turler.add(sag.value)
+        return turler
+
+    return tara

@@ -12,6 +12,7 @@ from qlab.engine.tdse import factory
 from qlab.errors import ScenarioError
 from qlab.scenario.loader import load_scenario
 from qlab.scenario.schema import (
+    POTENTIAL_KINDS,
     DownfoldScenario,
     EMScenario,
     GravScenario,
@@ -82,6 +83,33 @@ def test_rejects_unknown_potential_kind(tmp_path):
     broken = VALID_YAML.replace("kind: barrier", "kind: banana")
     with pytest.raises(ScenarioError, match="banana"):
         load_scenario(write(tmp_path, broken))
+
+
+def test_POTENTIAL_KINDS_FACTORY_SEVKINDEN_TURETILIYOR(sevk_tarayici):
+    """`POTENTIAL_KINDS`in bayatlamasını yasaklar.
+
+    Yukarıdaki `test_rejects_unknown_potential_kind` KAPIYI sınıyor; bu
+    test kapının LİSTESİNİ sınıyor, ve ikisi ayrı şeylerdir. Kapı, demet
+    yanlış olsa bile yeşil kalır: `banana` her hâlükârda reddedilir. Bir
+    ALTINCI potansiyel `tdse/factory.py`ye eklenip demete eklenmezse kapı
+    yine yeşildir ama o potansiyel YAML'dan HİÇ yüklenemez -- sessiz ve
+    yanlış. Bu testin yakaladığı şey tam olarak odur.
+
+    `MD_FORCE_FIELD_KINDS`/`MD_THERMOSTAT_KINDS` kilitleriyle AYNI
+    sözleşme ve AYNI tarayıcı (kök `conftest.py`).
+
+    ÖLÇÜLDÜ (30.08.2026): beş sevk dalı -- free, barrier, well, harmonic,
+    uniform_field; ve demet BAYAT DEĞİLDİ, yani burada onarılan mevcut bir
+    kusur yok, kapatılan şey aynı tuzağın üçüncü kopyası.
+    """
+    sevk = sevk_tarayici(factory, "_build_potential", "kind")
+    assert sevk == set(POTENTIAL_KINDS), (
+        f"factory {sorted(sevk)} sevk ediyor, şema {sorted(POTENTIAL_KINDS)} "
+        f"diyor -- demet bayatladı"
+    )
+    # Sayı LİTERAL: tarayıcı sessizce boşalırsa (ör. sevk `kind` yerine
+    # başka bir değişkene taşınırsa) boş küme boş demete karşı yeşil kalırdı.
+    assert len(sevk) == 5
 
 
 def test_rejects_missing_required_section(tmp_path):

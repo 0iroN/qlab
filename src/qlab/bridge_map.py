@@ -12,14 +12,22 @@ import sayisi 2'dir" iddiasi elle yazilirsa ilk degisiklikte sessizce
 yanlis olur; burada `olculen_kenarlar()` kaynak agacini TARAR ve tablo ona
 karsi sinanir.
 
-BU TUZAGIN BIR ORNEGI ZATEN DEPODA -- OLCULDU (30.08.2026):
-`scenario/schema.py:56` satirindaki
-`MD_FORCE_FIELD_KINDS = ("harmonic", "morse", "lennard_jones")` hem OLU
-(`src/` ve `tests/` icinde YALNIZ tanimi bulunuyor, hicbir yerde okunmuyor)
-hem BAYAT (`hartree_fock` listede YOK, oysa `scenarios/h2_aimd.yaml:10`
-tam olarak onu kullaniyor ve `engine/md/factory.py:126` onu sevk ediyor).
-Biri o demeti bir dogrulama kapisi olarak baglasaydi, depo KENDI
-senaryosunu reddederdi. Ayni desen burada TEKRARLANMAYACAK.
+BU TUZAGIN BIR ORNEGI DEPODA OLCULDU VE KAPATILDI (30.08.2026):
+`scenario/schema.py`nin `MD_FORCE_FIELD_KINDS` demeti hem OLUydu (`src/` ve
+`tests/` icinde YALNIZ tanimi bulunuyordu, hicbir yerde okunmuyordu) hem
+BAYATti (`hartree_fock` listede YOKtu, oysa `scenarios/h2_aimd.yaml:10` tam
+olarak onu kullaniyor ve `engine/md/factory.py:126` onu sevk ediyor). Biri o
+demeti bir dogrulama kapisi olarak baglasaydi, depo KENDI senaryosunu
+reddederdi.
+
+KAPATMA BICIMI BU MODULUN FIKRINI DOGRULUYOR: demet SILINMEDI. Katman
+sozlesmesi `scenario`nun `engine`i import etmesini yasakladigi icin elle
+yazilmak ZORUNDA; o yuzden `loader.py`de gercek bir kapiya baglandi VE
+factory'nin sevk dallarini `ast` ile tarayan bir TURETME KILIDINE
+(`tests/md/test_md_scenario.py`) bagli kilindi. Elle yazilan bir yokluk
+beyani silinmek zorunda degildir; KAYNAGA KARSI SINANMAK zorundadir.
+Kova tablosu da tam olarak boyle yasiyor. Ayni desen burada
+TEKRARLANMAYACAK.
 
 TARAMA `ast` ILE YAPILIR, REGEX ILE DEGIL. Yorum satirindaki ya da dizge
 icindeki bir import METNI tabloyu kirletir. Bunun bedeli bu depoda
@@ -48,7 +56,7 @@ class Kova:
     kullanilmiyor -- olculdu 30.08.2026: bu dosya disinda `src/` agacinda
     "enum" gecen 13 satirin 13'u de `enumerate`, `import enum` /
     `from enum import` sayisi SIFIR. Ve `scenario/schema.py`nin kalibi duz
-    dizge sabitleridir (`POTENTIAL_KINDS:11`, `MD_THERMOSTAT_KINDS:57`).
+    dizge sabitleridir (`POTENTIAL_KINDS:18`, `MD_THERMOSTAT_KINDS:79`).
 
     OLCULMEDI AYRI BIR KOVADIR -- spec 7.2.
     "OLCULDU, SIFIR CIKTI" ile "HIC OLCULMEDI" AYNI HUCREYE YAZILAMAZ.
