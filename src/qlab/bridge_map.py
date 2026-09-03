@@ -201,6 +201,28 @@ def olculen_kenarlar(kok: Path | str | None = None) -> frozenset[tuple[str, str]
 _GRAV_ORANI = 8.093550856608016e-37
 _HF_TDSE_NOKTA = 4.096e09
 
+# --- Dusen iki adayin OLCULMUS buyuklukleri (Task 4, 02.09.2026) -----------
+# Bu iki sayi bir motor kosturularak uretildi ama BURAYA LITERAL yazildi:
+# bu modul hicbir motoru import etmez. Testler (`tests/bridge/
+# test_dusen_adaylar.py`) motoru kosturup bu literalleri canli olcume karsi
+# sinar. Pencereleri asagidaki gerekcelerde yazilidir; pencere olmadan
+# tasinamazlar.
+
+#: `hf -> tb` ozdesliginin BAGIL artigi, REFERANS PENCEREDE:
+#: N = 6, d = 2.6 bohr, STO-3G, seeds = 12, TAM menzil (n_neighbour = 3).
+#: max|model - H_eff^alfa| = 0.010670502034857853; en buyuk CIFT kabugun
+#: yayiliminin yarisi = 0.010670502034857829; bagil fark 2.276006188306662e-15,
+#: yani ON BES anlamli hane -- spec'in "on alti hane"si DARALTILDI. Bu sayi
+#: SISTEME BAGLIDIR (N = 8 d = 2.0'da 1.0898620259967446e-08, yedi mertebe
+#: kotu); gerekcede alti sistemin altisi da yazilidir.
+_HF_TB_OZDESLIK_BAGIL = 2.276006188306662e-15
+
+#: `tb -> spin` koprusunun CIKTIYI NE KADAR KIPIRDATTIGI: bes farkli `J`de
+#: miknatislanma serisinin max|farki| = 0.0, BIT BIT. Sifir bir OLCUM
+#: SONUCUDUR, "olculmedi" DEGIL -- OLCULMEDI kovasi `None` tasir, bu girdi
+#: `0.0` tasir ve ikisi ayni sey degildir.
+_TB_SPIN_M_FARKI = 0.0
+
 _GRAV_GEREKCE = (
     "Yercekimi atom olcegine BAGLANMAZ ve engel BOYUT DEGIL ENERJIDIR: "
     "iki proton arasinda F_g/F_e = 8.093550856608016e-37. Bu sayi "
@@ -245,16 +267,32 @@ KOVA_TABLOSU: tuple[EdgeFact, ...] = (
             "KOD KENARI VAR ve tarandi: `engine/tb/downfold.py:130-132` -> "
             "`qlab.engine.hf.{basis, integrals, multistart}`. Ama BORU "
             "HATTINDA AKIS YOK: `model_from_downfold` (tanim "
-            "`downfold.py:283`) `src/` icinde hic cagrilmiyor -- 30.08.2026 "
-            "tarandi, tek tuketicisi `tests/tb/test_downfold_kesme.py`; "
-            "olan sey `downfold.py`nin `tb/` klasorunde OTURMASIDIR. Ve "
-            "`t_m` halka kabugu uzerinde bir `np.mean` olarak TANIMLANIYOR "
-            "(`downfold.py:256-268`, dogrulandi), sonra Python `==`'inde "
-            "geri okunuyor. Sayilari ve "
-            "pencereleri Task 4 sevk eder; " + YENIDEN_URETILMEDI + " "
-            "oldugu icin burada buyukluk None."
+            "`downfold.py:283`) `src/` icinde hic cagrilmiyor -- `ast` ile "
+            "kilitli (Task 4); tuketicileri YALNIZ testlerdir "
+            "(`tests/tb/test_downfold_kesme.py` ve "
+            "`tests/bridge/test_dusen_adaylar.py`); olan sey `downfold.py`nin "
+            "`tb/` klasorunde OTURMASIDIR. TAUTOLOJI YENIDEN OLCULDU (Task 4, "
+            "02.09.2026): `t_m` halka kabugu uzerinde bir `np.mean` olarak "
+            "TANIMLANIYOR (`downfold.py:256-268`), sonra `p.hoppings[m-1]` "
+            "ile Python `==`'inde geri okunuyor -- ALTI sistemde, (N, d) = "
+            "(6, 2.6) (6, 3.0) (6, 3.6) (8, 2.0) (8, 2.6) (10, 2.6), STO-3G, "
+            "seeds = 12, HER kabukta True, |fark| = 0.0; `eps_bar` ve "
+            "`delta` da ayni. Bu bir UYUM degil TANIMIN YENIDEN "
+            "KOSULMASIDIR: ayni elemanlar TERS sirayla toplaninca 22 kabugun "
+            "10'unda `==` DUSUYOR (fark en cok 1 ulp). 'ON ALTI HANE' "
+            "DARALTILDI: tam menzilde max|model - H_eff^alfa| ozdesligi (en "
+            "buyuk CIFT kabuk yayiliminin yarisi) referans pencerede "
+            "(6, 2.6) bagil 2.276006188306662e-15 = ON BES hane, ve SISTEME "
+            "BAGLI: (6, 3.0) 2.024e-15 / (6, 3.6) 4.729e-14 / (8, 2.0) "
+            "1.090e-08 / (8, 2.6) 1.310e-08 / (10, 2.6) 3.769e-08 -- yedi "
+            "mertebe. Lowdin adimi tam bir benzerlik donusumu: "
+            "eig(H_eff^alfa) ile UHF alfa orbital enerjileri arasindaki fark "
+            "(6, 2.6)'da 3.490441824460788e-10, ALTI sistemin EN KUCUGU; en "
+            "buyugu (8, 2.6) 2.8906645410664566e-09 (8.28 kat). PENCERE "
+            "(N, d, baz, seeds) YAZILMADAN bu sayilar tasinamaz; buyukluk, "
+            "referans pencerenin bagil ozdeslik artigidir."
         ),
-        buyukluk=None,
+        buyukluk=_HF_TB_OZDESLIK_BAGIL,
     ),
     EdgeFact(
         kaynak="tb",
@@ -262,19 +300,34 @@ KOVA_TABLOSU: tuple[EdgeFact, ...] = (
         kova=Kova.TAUTOLOJI,
         gerekce=(
             "SIFIR kod kenari, ama HUKUM VAR: `J = 4t^2/U` koprusu BIT BIT "
-            "olu. Kok neden `engine/spin/metropolis.py:164-166` "
-            "(dogrulandi): `delta` yalniz `coupling` ile carpiliyor ve "
-            "kabul olcutune `exp(-delta/temperature)` olarak giriyor, yani "
-            "`coupling` ciktiya SADECE `coupling/temperature` ORANI olarak "
-            "giriyor; `h = 0`'da baska enerji olcegi yok -- yani spin "
-            "motoru `J` hakkinda "
-            "YANILAMAZ. `z` uyusmazligi (TB halkasi 1B z=2 <-> spin motoru "
-            "kodda 2B z=4) BU SATIRIN ICINDEDIR, ayri satir DEGIL: ayri "
-            "satir 'duzeltirsen kenar acilir' diye okunur ve acilmiyor. "
-            "Sayilari Task 4 sevk eder; " + YENIDEN_URETILMEDI + " oldugu "
-            "icin burada buyukluk None."
+            "olu. YENIDEN OLCULDU (Task 4, 02.09.2026). Kaynak: N = 8 "
+            "d = 2.0 STO-3G seeds = 12 halkasi, t1 = -0.407144651592, "
+            "Delta = +0.193177917796; bosluk denklemi U = 0.827765644 -> "
+            "U/|t| = 2.033100 (guclu baglasim sarti IHLAL -- BU BORUDA "
+            "OLCULEMEZ). Bes U'dan bes J: 0.801032362 / 0.750154440 / "
+            "0.407144652 / 0.203572326 / 0.119479403 (U/|t| = 2.033100 / "
+            "2.170991 / 4.000000 / 8.000000 / 13.630622), her biri kendi "
+            "T = 2.269185 * J'siyle, AYNI pencere: Ising, L = 32, h = 0, "
+            "tohum 20260822, n_burn = 500, n_sweep = 1500. Besinde de "
+            "max|m farki| = 0.0 (bit bit), E == J * E(J=1) (bit bit), kabul "
+            "orani 0.187216796875 = 287565/1536000 besinde `==`. J 6.70 kat "
+            "degisti, cikti SIFIR kipirdadi. KOK NEDEN "
+            "`engine/spin/metropolis.py:164-166` (`ast` ile kilitli): "
+            "`coupling` yalniz `delta`yi carpiyor ve kabul olcutune "
+            "`delta / temperature` olarak giriyor, yani ciktiya SADECE "
+            "`coupling/temperature` ORANI olarak giriyor; `h = 0`'da baska "
+            "enerji olcegi YOK. KONTROL: h = 0.1'de ayni iki J'nin ciktisi "
+            "9.961e-02 ayrisiyor -- motor ikinci bir olcek varsa J'yi GORUR, "
+            "TB o olcegi (h) URETMEZ. BU YUZDEN TEK SATIR, kovasi TAUTOLOJI: "
+            "U'yu buyutmek kenari ACMAZ (U/|t| = 4.07 / 8.13 / 16.26 / "
+            "101.65 / 1016.55'te de bit bit ayni) ve z uyusmazligi (TB "
+            "halkasi 1B z = 2 <-> spin motoru kodda 2B z = 4, "
+            "`lattice.py::neighbour_sum` dort `np.roll`) da ACMAZ (J * 2/4 "
+            "ile de bit bit ayni) -- BU BORUDA OLCULEMEZ, cunku engel ORAN "
+            "SADELESMESIDIR. Ayri satir 'duzeltirsen kenar acilir' diye "
+            "okunur ve ACILMIYOR. TUR A -- DUZELTILEMEZ (bu boruda)."
         ),
-        buyukluk=None,
+        buyukluk=_TB_SPIN_M_FARKI,
     ),
     EdgeFact(
         kaynak="md",
