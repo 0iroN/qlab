@@ -1,0 +1,37 @@
+# Moduller arasi YOKLUK HARITASI ve tek gercek kenarin tabani -- Modul 7.
+#
+# BU SENARYO BIR CIPA KURMAZ VE BIR TABLO TASIMAZ. Kova tablosu (21 cift,
+# bes kova) YAML'dan gelmez, KODDAN TURETILIR: `qlab.bridge_map` her kosumda
+# `src/qlab/engine/*/` agacini `ast` ile tarar ve tabloyu ona karsi sinar;
+# celisirse panel tik basmaz. Bu dosyanin tasidigi tek sey KENAR TABANININ
+# PENCERESIDIR ve o pencerenin her dugmesi ZORUNLUDUR -- varsayilanli alan
+# YOK (`em_tarama.yaml`/`grav_tarama.yaml` gerekcesi: pencereyi yazmayi
+# unutan bir senaryo sessizce "tekrarlanabilir" gorunurdu; bu modulde spec'in
+# bir sayisi daha tam bu yuzden yeniden uretilemedi -- 6-31G'nin omega_A'si,
+# r_e yazilmadigi icin iki pencerede 275 cm^-1 ayrisiyor).
+#
+# TOHUM YOKTUR: YOL B deterministtir (velocity-Verlet + polyfit), RNG hic
+# kullanilmaz. Tekrarlanabilirligin karsiligi pencerenin tam beyanidir.
+#
+# `a` BU DOSYADA GECERLI BIR ANAHTAR DEGILDIR ve "bilinmeyen anahtar" hatasi
+# verir: A1'in fizik-kapatma merdiveni CAGRILANIN tasarim kararidir
+# (`bridge_obs.A1_MERDIVENI`), cagiranin dugmesi degil -- Modul 6'nin
+# "fizigi kapatma noktasini cagrilan belirler" sozlesmesi. `a_ikiz` ise A2'nin
+# HANGI ikiz oldugunu soyler; bu bir kacak degil sinavin kendisidir: ikiz
+# degisince taban degismelidir (olculdu, a = 0.5'te sevk edilenin 0.1668'i).
+#
+# PENCERE, `tests/md/test_aimd.py`nin YOL B'siyle AYNI: N = 200 bolme, 6
+# periyot, genlikler (0.01, 0.02, 0.04). Bu bir tercih degil bir zorunluluk:
+# kenar tabani "AYNI boru, AYNI pencere" ile okunur; pencere degisirse taban
+# degisir (dt'ye dorduncu mertebeden: N = 200 -> 400 orani 14.89) ve panel
+# bunu yazar, ama artik cipanin borusu degildir.
+#
+# SEVK EDILEN KOSUM OLCULDU (03.09.2026, bu makine): A1 tabani ~0.50 s
+# (8 YOL B kosumu, Morse/harmonik yuzey), A2 ~0.12 s, kenar taramasi ~0.05 s;
+# toplam ~0.7 s. HF HIC COZULMEZ (`hf.scf.solve` 0 kez; testte kilitli).
+kind: bridge
+name: Moduller arasi yokluk haritasi ve kenar tabani
+a_ikiz: 0.9137
+n_bolme: 200
+periyot_sayisi: 6
+genlikler: [0.01, 0.02, 0.04]

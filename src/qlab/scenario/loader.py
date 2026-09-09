@@ -8,7 +8,8 @@ Senaryo türü isteğe bağlı bir "kind" anahtarıyla seçilir: yoksa veya "tds
 ise mevcut TDSEScenario yolu izlenir (geriye uyumluluk — Task 1A'dan kalan
 mevcut YAML dosyaları "kind" taşımıyor). Diğerleri: "hf_scan" → HFScanScenario,
 "md" → MDScenario, "tb" → TBScenario, "downfold" → DownfoldScenario,
-"spin" → SpinScenario, "em" → EMScenario, "grav" → GravScenario.
+"spin" → SpinScenario, "em" → EMScenario, "grav" → GravScenario,
+"bridge" → BridgeScenario.
 Bilinmeyen bir "kind" değeri ScenarioError üretir ve geçerli türleri sayar.
 
 ALT TÜRLER de aynı kuralla denetlenir, tüketiciye ham hata sızmadan:
@@ -34,6 +35,7 @@ from qlab.scenario.schema import (
     POTENTIAL_KINDS,
     SPIN_ALGORITHM_KINDS,
     SPIN_MODEL_KINDS,
+    BridgeScenario,
     DownfoldScenario,
     EMScenario,
     GravScenario,
@@ -123,7 +125,18 @@ _GRAV_TOP_LEVEL = {
 # beta) -- yazilmak zorundadir.
 _GRAV_REQUIRED = _GRAV_TOP_LEVEL - {"kind"}
 
-_KNOWN_KINDS = ("tdse", "hf_scan", "md", "tb", "downfold", "spin", "em", "grav")
+_BRIDGE_TOP_LEVEL = {
+    "kind", "name", "a_ikiz", "n_bolme", "periyot_sayisi", "genlikler",
+}
+# HEPSİ ZORUNLU (kind hariç) — `_GRAV_REQUIRED` ile aynı gerekçe: bu modülde
+# tekrarlanabilirliğin karşılığı pencerenin tam beyanıdır. `a` (A1'in
+# fizik-kapatma merdiveni) BİLEREK bu kümede DEĞİLDİR ve "bilinmeyen anahtar"
+# hatası verir; gerekçesi `BridgeScenario` dokstringinde.
+_BRIDGE_REQUIRED = _BRIDGE_TOP_LEVEL - {"kind"}
+
+_KNOWN_KINDS = (
+    "tdse", "hf_scan", "md", "tb", "downfold", "spin", "em", "grav", "bridge",
+)
 
 
 def load_scenario(path: str | Path) -> TDSEScenario | HFScanScenario | MDScenario:
@@ -160,6 +173,8 @@ def load_scenario(path: str | Path) -> TDSEScenario | HFScanScenario | MDScenari
         return _load_em_scenario(raw, file_path)
     if kind == "grav":
         return _load_grav_scenario(raw, file_path)
+    if kind == "bridge":
+        return _load_bridge_scenario(raw, file_path)
     raise ScenarioError(
         f"Bilinmeyen senaryo türü (kind): {kind!r}. Geçerli türler: {list(_KNOWN_KINDS)}"
     )
@@ -939,4 +954,91 @@ def _load_grav_scenario(raw: dict, file_path: Path) -> GravScenario:
         nbody_rtol=nbody_rtol,
         nbody_atol=nbody_atol,
         nbody_method=nbody_method,
+    )
+
+
+def _load_bridge_scenario(raw: dict, file_path: Path) -> BridgeScenario:
+    """Modüller arası yokluk haritası senaryosu — kenar tabanının PENCERESİ.
+
+    Bu yükleyici motorun üç kontrolünü (`n_bolme`/`periyot_sayisi` pozitif,
+    en az iki genlik, ikiz `a` pozitif ve sonlu) BİLEREK tekrarlar ve bu bir
+    kopya değil bir KATMAN AYRIMIDIR — `_load_grav_scenario` ile aynı gerekçe:
+    burada yakalanan şey YAML'ın hatasıdır ve hata hiçbir MD adımı koşmadan
+    ÖNCE verilir; motorda (`bridge_obs.edge_noise_floor`/`omega_b`) yakalanan
+    şey ÇAĞRININ hatasıdır. İkisi ayrı tür fırlatır (`ScenarioError` ile
+    `InvalidInputError`) ve testler bu farkı kilitler.
+
+    Yükleyiciye ÖZGÜ olanlar — motorda karşılıkları YOKTUR:
+
+    * **`genlikler` KESİN ARTAN ve tekrarsız.** `A²`'de doğrusal uydurma
+      iki farklı `A²` ister; tekrarlı bir liste `polyfit`e tekil bir
+      tasarım matrisi verir ve uyarıyla "geçer".
+    * **`a` GEÇERLİ BİR ANAHTAR DEĞİLDİR** ve "bilinmeyen anahtar" hatası
+      verir: A1'in fizik-kapatma merdiveni çağrılanın tasarım kararıdır,
+      YAML'dan seçilemez (Modül 6'nın `lam` anahtarı dersinin aynısı: iki
+      yer aynı şeyi belirlerse sessiz bir kazanan doğar).
+    """
+    unknown = set(raw) - _BRIDGE_TOP_LEVEL
+    if unknown:
+        raise ScenarioError(
+            f"Bilinmeyen anahtar(lar): {sorted(unknown)}. "
+            f"Geçerli anahtarlar: {sorted(_BRIDGE_TOP_LEVEL)}"
+        )
+    missing = _BRIDGE_REQUIRED - set(raw)
+    if missing:
+        raise ScenarioError(f"Eksik anahtar(lar): {sorted(missing)}")
+
+    try:
+        a_ikiz = float(raw["a_ikiz"])
+    except (TypeError, ValueError) as exc:
+        raise ScenarioError(f"'a_ikiz' sayıya dönüştürülemedi: {exc}") from exc
+    try:
+        n_bolme = int(raw["n_bolme"])
+        periyot_sayisi = int(raw["periyot_sayisi"])
+    except (TypeError, ValueError) as exc:
+        raise ScenarioError(
+            f"'n_bolme'/'periyot_sayisi' tam sayı olmalı: {exc}"
+        ) from exc
+    try:
+        genlikler = tuple(float(x) for x in raw["genlikler"])
+    except TypeError as exc:
+        raise ScenarioError(f"'genlikler' bir sayı listesi olmalı: {exc}") from exc
+    except ValueError as exc:
+        raise ScenarioError(
+            f"'genlikler' listesindeki bir eleman sayıya dönüştürülemedi: {exc}"
+        ) from exc
+
+    if not math.isfinite(a_ikiz) or a_ikiz <= 0.0:
+        raise ScenarioError(
+            f"'a_ikiz' pozitif ve sonlu olmalı, verilen: {a_ikiz}. `a = 0` "
+            "A1'in cebirsel noktasıdır ve A2'nin ikizi olamaz; A1 merdiveni "
+            "zaten çağrılanın elindedir."
+        )
+    if n_bolme < 1:
+        raise ScenarioError(f"'n_bolme' en az 1 olmalı, verilen: {n_bolme}")
+    if periyot_sayisi < 1:
+        raise ScenarioError(
+            f"'periyot_sayisi' en az 1 olmalı, verilen: {periyot_sayisi}"
+        )
+    if len(genlikler) < 2:
+        raise ScenarioError(
+            f"'genlikler' en az iki genlik taşımalı, verilen: {genlikler}. "
+            "A² uydurması tek noktadan doğru geçiremez."
+        )
+    if any(not math.isfinite(g) or g <= 0.0 for g in genlikler):
+        raise ScenarioError(
+            f"'genlikler' değerleri pozitif ve sonlu olmalı: {genlikler}"
+        )
+    if any(b <= a for a, b in zip(genlikler, genlikler[1:])):
+        raise ScenarioError(
+            f"'genlikler' KESİN ARTAN olmalı, verilen: {genlikler}. Tekrarlı "
+            "bir liste `polyfit`e tekil bir tasarım matrisi verir."
+        )
+
+    return BridgeScenario(
+        name=str(raw["name"]),
+        a_ikiz=a_ikiz,
+        n_bolme=n_bolme,
+        periyot_sayisi=periyot_sayisi,
+        genlikler=genlikler,
     )

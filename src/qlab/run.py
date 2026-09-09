@@ -36,6 +36,7 @@ from qlab.errors import InvalidInputError, QLabError
 from qlab.provenance import Provenance
 from qlab.scenario.loader import load_scenario
 from qlab.scenario.schema import (
+    BridgeScenario,
     DownfoldScenario,
     EMScenario,
     GravScenario,
@@ -183,6 +184,12 @@ def main(argv: list[str] | None = None) -> int:
         # `AttributeError` verirdi.
         if isinstance(scenario, GravScenario):
             return _run_grav(scenario, args.output)
+        # KÖPRÜ DALI: `GravScenario` ile aynı gerekçe — `BridgeScenario` da
+        # `grid` taşımaz ve `_run_loaded` yolundan geçerse yakalanmayan bir
+        # `AttributeError` verirdi (ölçüldü, Task 5: dal eklenmeden önce
+        # tam olarak bu hata çıkıyordu).
+        if isinstance(scenario, BridgeScenario):
+            return _run_bridge(scenario, args.output)
         result = _run_loaded(scenario)
     except QLabError as exc:
         print(str(exc), file=sys.stderr)
@@ -562,6 +569,109 @@ def _run_grav(scenario: GravScenario, output: str | None) -> int:
             floor_verdicts=np.array([f.verdict for f in yuk.floors]),
             floor_pipelines=np.array([f.pipeline for f in yuk.floors]),
             floor_is_anchor=np.array([f.anchor for f in yuk.floors]),
+            provenance_json=json.dumps(
+                dataclasses.asdict(provenance), ensure_ascii=False
+            ),
+        )
+    return 0
+
+
+def _run_bridge(scenario: BridgeScenario, output: str | None) -> int:
+    """Köprü haritası senaryosunu koşturur ve şeffaflık panelini basar.
+
+    `_run_grav`/`_run_em`/`_run_spin`/`_run_downfold`/`_run_tb`/`_run_md` ile
+    aynı kalıp: kendi panelini basar ve kendi `.npz`'sini yazar, `save()`
+    yolundan geçmez.
+
+    BU FONKSİYON HİÇBİR BEYAN METNİ YAZMAZ. Yöntem / Yaklaşımlar / İhmal
+    edilen / Beklenen hata / Dairesellik / Çıpa sınıfı / Kuram seçici /
+    Pencere / Yakınsama tanısı satırlarının tek kaynağı `qlab.bridge_map`tir
+    (saf tanım katmanı — bir motor fabrikası DEĞİL, çünkü bu modülün motoru
+    yok); `viz/bridge_frames.py` sayıları toplar, buradan yalnızca
+    `provenance.as_lines()` basılır. Kopya sayısı
+    `tests/bridge/test_bridge_senaryo.py` ile kilitlidir ve kilit Modül 6'daki
+    gibi PARÇA düzeyindedir — eşik orada yeniden ölçüldü.
+
+    Aşağıdaki tablo BEYAN DEĞİL SAYIDIR (`_run_grav`ın taban tablosuyla aynı
+    sınıf). Kova adları yazılmaz, `bridge_map.KOVALAR`dan İTHAL EDİLİR.
+
+    `None` İLE `0.0` AYNI HÜCREYE BASILMAZ: ölçülmemiş ya da iki sayıya
+    bölünmüş bir büyüklük tabloda `None` diye görünür, `tb -> spin`in bit
+    bit ölümü `0.000000e+00` diye — ikisi ayrı şeydir (`OLCULMEDI` kovasının
+    gerekçesi). `.npz`'de de aynı ayrım: `magnitude` `nan` taşır ama yanında
+    `magnitude_is_none` maskesi vardır; `nan` tek başına "ölçüldü, tanımsız
+    çıktı" diye okunabilirdi.
+
+    İKİ TABAN İKİ SATIR: A1 ile A2 tek satıra sığdırılmaz, çünkü ikisi
+    ayrı soruya cevaptır (aritmetik / hata çubuğu) ve tek satır "taban"
+    diye okunurdu — bu modülün taşıyıcı hükmü tam olarak bunun yasağıdır.
+    """
+    from qlab.bridge_map import KOVA_TABLOSU, KOVALAR
+    from qlab.viz.bridge_frames import build_bridge_payload, provenance_for
+
+    yuk = build_bridge_payload(scenario)
+    provenance = provenance_for(yuk)
+
+    print(
+        f"{scenario.name}: {len(KOVA_TABLOSU)} çift, "
+        f"{len(yuk.kenarlar)} kod kenarı, "
+        f"{sum(1 for n in yuk.eksen.values() if n > 0)} eksenli motor"
+    )
+    for kova in KOVALAR:
+        girdiler = [f for f in KOVA_TABLOSU if f.kova == kova]
+        print(f"  {kova:<13} {len(girdiler)}")
+        for f in girdiler:
+            buyukluk = "None" if f.buyukluk is None else f"{f.buyukluk:.6e}"
+            print(f"      {f.kaynak:>4} -> {f.hedef:<4}  {buyukluk}")
+    print(
+        "  kod kenarı       : "
+        + (", ".join(f"{a} -> {b}" for a, b in sorted(yuk.kenarlar)) or "YOK")
+    )
+    print(
+        "  units ekseni     : "
+        + " ".join(f"{ad}={n}" for ad, n in sorted(yuk.eksen.items()))
+    )
+    for etiket, f in (("A1", yuk.a1), ("A2", yuk.a2)):
+        print(
+            f"  taban {etiket} {f.tur:<12} {f.taban:.8e}  S/G={f.oran:.4e}  "
+            f"{f.hukum:<9}[{f.boru}]"
+        )
+    print(
+        f"  gerçek hata          {yuk.gercek_hata:.8e}  "
+        f"gerçek/A1={yuk.gercek_hata / yuk.a1.taban:.6g}  "
+        f"A2/gerçek={yuk.a2.taban / yuk.gercek_hata:.6g}"
+    )
+    if yuk.tutarsizliklar:
+        for sorun in yuk.tutarsizliklar:
+            print(f"  TABLO ≠ KOD          {sorun}")
+    for etiket, deger in provenance.as_lines():
+        print(f"{etiket:<16}: {deger}")
+
+    if output is not None:
+        kenarlar = sorted(yuk.kenarlar)
+        eksen = sorted(yuk.eksen.items())
+        np.savez(
+            output,
+            pair_a=np.array([f.kaynak for f in KOVA_TABLOSU]),
+            pair_b=np.array([f.hedef for f in KOVA_TABLOSU]),
+            kova=np.array([f.kova for f in KOVA_TABLOSU]),
+            magnitude=np.array(
+                [math.nan if f.buyukluk is None else f.buyukluk
+                 for f in KOVA_TABLOSU]
+            ),
+            magnitude_is_none=np.array([f.buyukluk is None for f in KOVA_TABLOSU]),
+            edges=np.array(kenarlar, dtype=str).reshape(-1, 2),
+            units_axis_names=np.array([ad for ad, _ in eksen]),
+            units_axis_counts=np.array([n for _, n in eksen]),
+            floor_turler=np.array([yuk.a1.tur, yuk.a2.tur]),
+            floor_values=np.array([yuk.a1.taban, yuk.a2.taban]),
+            floor_signals=np.array([yuk.a1.sinyal, yuk.a2.sinyal]),
+            floor_ratios=np.array([yuk.a1.oran, yuk.a2.oran]),
+            floor_verdicts=np.array([yuk.a1.hukum, yuk.a2.hukum]),
+            floor_pipelines=np.array([yuk.a1.boru, yuk.a2.boru]),
+            real_error=np.array(yuk.gercek_hata),
+            inconsistencies=np.array(list(yuk.tutarsizliklar), dtype=str),
+            converged=np.array(provenance.converged),
             provenance_json=json.dumps(
                 dataclasses.asdict(provenance), ensure_ascii=False
             ),

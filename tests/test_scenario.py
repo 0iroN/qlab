@@ -12,6 +12,7 @@ from qlab.engine.tdse import factory
 from qlab.errors import ScenarioError
 from qlab.scenario.loader import load_scenario
 from qlab.scenario.schema import (
+    BridgeScenario,
     POTENTIAL_KINDS,
     DownfoldScenario,
     EMScenario,
@@ -489,6 +490,38 @@ def test_shipped_scenario_loads_and_runs(scenario_path):
         assert yuk.ladder.settled_order is None
         assert provenance.converged is False
         assert "OTURDU(" not in provenance.convergence_diagnosis.split("[BEYAN")[0]
+        return
+
+    if isinstance(scenario, BridgeScenario):
+        # Köprü tarafında "koşturulabilir" demek: tablo koda karşı taranıyor
+        # (tutarsızlık YOK), kenarın İKİ tabanı da okunuyor ve panel dolu.
+        # YOL B penceresi KÜÇÜLTÜLÜR (N = 50, 2 periyot; ölçüldü, iki taban
+        # da SAGLAM kalıyor); ikiz `a` ve genlikler senaryonun kendisidir.
+        from qlab.viz.bridge_frames import build_bridge_payload, provenance_for
+
+        kisa = dataclasses.replace(scenario, n_bolme=50, periyot_sayisi=2)
+        yuk = build_bridge_payload(kisa)
+        assert yuk.tutarsizliklar == ()
+        assert yuk.kova_sayim == {
+            "GERCEK_KOPRU": 1, "TAUTOLOJI": 4, "YAPISAL_YOK": 8,
+            "BENZERLIK": 0, "OLCULMEDI": 8,
+        }
+        assert len(yuk.kenarlar) == 2
+        for taban in (yuk.a1, yuk.a2):
+            assert math.isfinite(taban.taban) and taban.taban > 0.0, (
+                f"{scenario_path.name}: kenar tabanı sonlu/pozitif değil"
+            )
+            assert taban.hukum == "SAGLAM"
+        assert yuk.a1.tur != yuk.a2.tur
+        provenance = provenance_for(yuk)
+        assert provenance.method.startswith("Moduller arasi yokluk haritasi")
+        # Bu senaryo türünün panelinde altı ek satır ZORUNLUDUR.
+        assert provenance.circularity is not None
+        assert provenance.anchor_class is not None
+        assert provenance.theory_selector is not None
+        assert provenance.window is not None
+        assert provenance.convergence_diagnosis is not None
+        assert provenance.converged is True
         return
 
     if isinstance(scenario, GravScenario):

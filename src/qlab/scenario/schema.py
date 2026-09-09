@@ -349,3 +349,43 @@ class GravScenario:
     nbody_rtol: float
     nbody_atol: float
     nbody_method: str
+
+
+@dataclass(frozen=True)
+class BridgeScenario:
+    """Modüller arası yokluk haritası + tek gerçek kenarın tabanı (Modül 7).
+
+    PYDANTIC DEĞİL — `GravScenario` ile aynı gerekçe: bu depoda `pydantic`
+    kurulu değildir (ölçüldü, Task 5'te yeniden: `import pydantic` →
+    `ModuleNotFoundError`, ağaçta 0 eşleşme) ve bu dosya hiçbir şey import
+    etmez. Öteki sekiz `*Scenario` gibi düz bir `@dataclass(frozen=True)`.
+
+    BU SENARYO BİR ÇIPA KURMAZ. Kova tablosu YAML'dan gelmez, koddan
+    türetilir (`qlab.bridge_map`); senaryonun taşıdığı tek şey KENAR
+    TABANININ PENCERESİDİR — YOL B'nin `N`i, periyot sayısı, genlikleri ve
+    A2 probunun ikizi (`a_ikiz`). Hepsi ZORUNLUDUR, varsayılanı olan alan
+    YOKTUR (`EMScenario`/`GravScenario` gerekçesi: pencereyi yazmayı unutan
+    bir senaryo sessizce "tekrarlanabilir" görünürdü; bu depoda bir hükmün
+    penceresinin dışına taşınması ON BİRDEN FAZLA kez ölçüldü ve bu modülde
+    spec'in bir sayısı daha tam bu yüzden yeniden üretilemedi — 6-31G'nin
+    `ω_A`sı, `r_e` yazılmadığı için).
+
+    `a` BİR ALAN DEĞİLDİR ve YAML'da bir anahtar da değildir: A1'in
+    fizik-kapatma merdiveni ÇAĞRILANIN tasarım kararıdır
+    (`bridge_obs.A1_MERDIVENI`), çağıranın düğmesi değil — Modül 6'nın
+    "fiziği kapatma noktasını çağrılan belirler" sözleşmesi. `a_ikiz` ise
+    A2'nin HANGİ ikiz olduğunu söyler ve bu bir kaçak değil sınavın
+    kendisidir: ikiz değişince taban değişmelidir (ölçüldü: `a = 0.5`te
+    sevk edilenin 0.1668'i).
+
+    TOHUM YOKTUR: YOL B deterministtir (velocity-Verlet + `polyfit`), RNG
+    hiç kullanılmaz; tekrarlanabilirliğin karşılığı pencerenin tam beyanıdır.
+    BİRİM DÖNÜŞÜMÜ tek sınırda: taban cm⁻¹ raporlanır, boru atomik birimde
+    koşar (`HARTREE_TO_WAVENUMBER`, `observable/bridge_obs.py`).
+    """
+
+    name: str
+    a_ikiz: float
+    n_bolme: int
+    periyot_sayisi: int
+    genlikler: tuple[float, ...]

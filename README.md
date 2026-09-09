@@ -170,6 +170,28 @@ Tasarım belgesi: `../docs/superpowers/specs/2026-08-05-qlab-kuantum-cekirdegi-d
   kaymasını ÖNGÖRMEZ** — 43″ `M`, `a` ve `e`'den bire bir geri okunur ve
   değeri hangi efemeris tablosunun seçildiğine bağlıdır. Ölçülen sayılar ve
   düzeltilen **otuz dört** plan iddiası aşağıdaki Doğrulama bölümündedir.
+- **Modül 7 — modüller arası yokluk haritası ve kenar ölçümü: tamam.**
+  `bridge_map.py` (saf tanım katmanı: 21 çiftin kova tablosu **koddan
+  türetilir** — `olculen_kenarlar()` ve `olculen_units_ekseni()` `engine/`
+  ağacını `ast` ile tarar, tablo her koşumda ona karşı sınanır ve çelişirse
+  panel tik basmaz), `observable/bridge_obs.py` (tek gerçek kenar `hf → md`'nin
+  tabanı — **iki sayı**), `viz/bridge_frames.py` ve `kind: bridge` senaryosu.
+  **Sıfır yeni fizik.** Kova tablosu **1 / 4 / 8 / 0 / 8** (gerçek köprü /
+  tautoloji / yapısal yokluk / benzerlik / **ölçülmedi** — ayrı kova, §7.2 açık);
+  çapraz-motor import **tam iki kenar**, ikisi de HF'e (merdiven değil **iki
+  çubuklu yıldız**); `qlab.units`e dokunan küme `{hf, md, tb}` = bağlı küme.
+  Kenar tabanı **A1** fizik-kapalı limit **3.3986707e-05 cm⁻¹** (*aritmetiği*
+  ölçer, S/G 1.61e+08) ve **A2** anharmoniklik-eşleştirilmiş prob
+  **1.2025992e-02 cm⁻¹** (*hata çubuğunu* ölçer, S/G 4.56e+05); gerçek hata
+  1.4472809e-02 → **A1 425.84 kat iyimser, A2/gerçek 0.8309** — Modül 6'nın
+  "taban yalnız aritmetiği ölçer" kusur beyanı burada ikinci probla **kapandı**,
+  ve iki sayı iki ayrı düğmeye tepki veriyor (N = 200 → 400: A1 15.18 kat,
+  A2 1.0008 kat). Kenar bir **şema çıpasıdır** (iki tüketici de aynı HF
+  çözümünün soyundan); mevcut `ω_B/ω_A` çıpası kütleye **bit bit kör** ve kütle
+  borusu kendi mutlak sınavını aldı; düşen iki aday (`hf → tb`, `tb → spin`)
+  **tautoloji olarak, penceresiyle** sevk edildi. Planın/spec'in **yirmi beş**
+  sayısı ölçümle düzeltildi (Task 5'te bir: 6-31G'nin `ω_A`sı **penceresizdi**).
+  Ölçülen sayılar ve dürüst olumsuzlar aşağıdaki Doğrulama bölümündedir.
 
 ## Ne iddia etmiyor
 
@@ -269,6 +291,20 @@ geometrisi girdide yok), **3B kapsam dışıdır** (3B Ising'in tam çözümü y
 ve çıpa Onsager yerine literatürün sayısal değerlerine dayanırdı), ve
 denge-dışı süreçler (histerezis, tavlama) yazılmadı. Korelasyon uzunluğu
 sevk edilen senaryoda **raporlanmaz** — gerekçesi ölçüldü ve panelde yazılı.
+
+**Modül 7 hiçbir modüller arası fiziksel bağ kurmaz ve bir "ölçek merdiveni"
+olduğunu iddia etmez — ölçüldü, yok.** Yedi motorun 21 çiftinde tek gerçek kod
+kenarı `hf → md`dir ve o da bir **fizik çıpası değil şema çıpasıdır**: iki
+tüketici (statik ikinci türev ve MD periyodu) aynı HF çözümünün soyundan gelir,
+uyum doğayı değil iki uygulamayı ölçer. `hf → tb` ve `tb → spin` birer
+tautolojidir (ilki `np.mean` tanımının `==` ile geri okunması, ikincisi `J`'nin
+yalnız `J/T` oranı olarak girmesi); `grav` atom ölçeğine **bağlanmaz**
+(`F_g/F_e = 8.09e-37`); sekiz çift ise **hiç ölçülmedi** ve panel bunu "ölçüldü,
+sıfır çıktı" ile aynı hücreye yazmaz. Kenarın tabanı **iki sayıdır** ve yalnız
+birincisi (fizik-kapalı, 3.40e-05 cm⁻¹) yazılsaydı panel gerçek hatayı **425.84
+kat iyimser** gösterirdi — ikincisi (analitik ikiz, 1.20e-02 cm⁻¹) gerçek
+hatanın 0.83'ü. Kova tablosu elle listelenmez, koddan türetilir; bayat bir
+yokluk beyanı bir yalandır ve yalanın yanında tik basılmaz.
 
 Qt penceresi bu depoda **bir kez** gerçek ekranda açılıp gözle doğrulandı:
 orbital penceresi (su/STO-3G HOMO), Windows platformunda, kabul kriteri 3
@@ -371,6 +407,27 @@ hangisi fizik, hangisi çeviri denetimi), `Pencere` (ızgara/`Δx`/`S`/adım/`λ
 `npml`/`sgf`/FFT penceresi + hükmün nerede geçerli olduğu) ve `Yakınsama tanısı` (merdiven,
 `p_inf ± u`, ve **üç değerli hüküm**). `YARGILANAMAZ` sessizce "oturdu" diye
 basılmaz.
+
+Modüller arası yokluk haritası (Modül 7) — 21 çiftin kova tablosu koddan
+türetilir ve tek gerçek kenarın tabanı iki sayı olarak okunur (ölçüldü,
+0.7 s; HF hiç çözülmez):
+
+```bash
+python -m qlab.run scenarios/kopru_haritasi.yaml -o kopru.npz
+```
+
+Çıktı `.npz`'si `pair_a`/`pair_b`/`kova`/`magnitude` (21 çift), `edges`,
+`units_axis_*`, `floor_*` (A1 ve A2 ayrı ayrı), `real_error`, `inconsistencies`,
+`converged` ve `provenance_json` taşır. **`magnitude` `nan` taşıdığında yanında
+`magnitude_is_none` maskesi vardır** — ölçülmemiş bir büyüklük (`None`) ile
+bit bit sıfır ölçülmüş bir büyüklük (`tb → spin`, `0.0`) aynı değerle
+gösterilemez. Senaryo bir tablo taşımaz: tablo koddan gelir, YAML yalnız kenar
+tabanının **penceresini** (`n_bolme`, `periyot_sayisi`, `genlikler`, `a_ikiz`)
+taşır ve hepsi zorunludur; `a` (A1'in fizik-kapatma merdiveni) bir anahtar
+**değildir**. Panel on satır basar; `Yakınsama` burada "hesap bitti" değil,
+"tablo koda karşı tarandı ve tutarlı **ve** kenarın iki tabanı da okunabildi"
+demektir. `Kuram seçici` satırı baz setidir: spec'in 6-31G sayısı yalnız
+6-31G'nin kendi `r_e`sinde çıkar, sevk edilen `r_e`de 275 cm⁻¹ başkadır.
 
 Etkileşimli TDSE penceresi:
 

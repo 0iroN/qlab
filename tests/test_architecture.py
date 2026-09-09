@@ -150,6 +150,28 @@ def test_import_contracts_hold():
             "Katmanlı mimari",
             id="engine-run",
         ),
+        # Modül 7 / Task 5 (03.09.2026): `bridge_map` saf tanım katmanıdır ve
+        # panel metninin TEK KAYNAĞIDIR; beyan ettiği şeye (observable'daki
+        # kenar tabanına) bağlanamaz. Ölçüldü: bu enjeksiyon rc=1, "Katmanlı
+        # mimari BROKEN". Task 1'de aynı satır `engine.hf.scf` ile ölçülmüştü;
+        # burada hedef bir katman YUKARI (observable) — sözleşme yalnız
+        # motoru değil gözlenebilir katmanını da kapsıyor.
+        pytest.param(
+            "src/qlab/bridge_map.py",
+            "import qlab.observable.bridge_obs",
+            "Katmanlı mimari",
+            id="bridge_map-observable",
+        ),
+        # `viz/bridge_frames.py` `Provenance`ı kuran katmandır ve tepe-seviye
+        # `run`a bağlanamaz. Ölçüldü: rc=1, "Katmanlı mimari BROKEN"; kontrol
+        # olarak dosyanın meşru import'ları (bridge_map, observable,
+        # provenance, scenario) temiz ağaçta rc=0.
+        pytest.param(
+            "src/qlab/viz/bridge_frames.py",
+            "import qlab.run",
+            "Katmanlı mimari",
+            id="viz-bridge-run",
+        ),
     ],
 )
 def test_import_sozlesmesi_gercekten_REDDEDIYOR(tmp_path, hedef, ihlal, sozlesme):

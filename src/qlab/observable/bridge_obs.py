@@ -419,8 +419,26 @@ def _boru_kur(*, tur: str, a_acik: float,
     return fn
 
 
-def edge_noise_floor(*, tur: str, a: float | None = None) -> EdgeFloor:
+#: `edge_noise_floor`un gecirdigi PENCERE anahtarlari -- `_boru_kur`un
+#: `PIPELINE_KEYS`iyle AYNI kume, ve bu bir tekrar degil bir kapidir:
+#: senaryo (Task 5) pencereyi buradan gecirir, tanimadigi bir anahtar
+#: `InvalidInputError` alir; `a` bu kumede DEGILDIR (A1'de cagirana kapali,
+#: A2'de adli parametre).
+PENCERE_ANAHTARLARI: tuple[str, ...] = ("n_bolme", "periyot_sayisi", "genlikler")
+
+
+def edge_noise_floor(
+    *, tur: str, a: float | None = None, **pencere: Any
+) -> EdgeFloor:
     """Kenarin tabanini olcer -- ve HANGI SORUYU cevapladigini soyler.
+
+    `pencere` (Task 5): `PENCERE_ANAHTARLARI`ndan `n_bolme`, `periyot_sayisi`,
+    `genlikler` -- YOL B'nin dugmeleri. Senaryo bunlari YAML'dan gecirir;
+    verilmezse `bridge_obs`un sevk edilen varsayilanlari (N = 200, 6 periyot,
+    (0.01, 0.02, 0.04)) kullanilir ve etiket onlari yine yazar. Sinyal AYNI
+    pencerede okunur (`newton_noise_floor` `fn(**kw)`yi ayni `kw` ile
+    cagirir), yani karisik pencere de yasaktir. Taban `dt`ye dorduncu
+    mertebeden baglidir (modul dokstringi): N = 200 -> 400 orani 14.89.
 
     `tur = "aritmetik"` (A1): fizik KAPATILIR. Prob demeti `A1_MERDIVENI`dir
     ve cagiran onu SECEMEZ -- `a` verilirse `InvalidInputError`. Bu, Modul
@@ -440,6 +458,12 @@ def edge_noise_floor(*, tur: str, a: float | None = None) -> EdgeFloor:
     """
     if tur not in TURLER:
         raise InvalidInputError(f"tur {TURLER} icinden olmali, verilen: {tur!r}")
+    yabanci = sorted(set(pencere) - set(PENCERE_ANAHTARLARI))
+    if yabanci:
+        raise InvalidInputError(
+            f"pencere anahtari taninmiyor: {yabanci}; gecerli anahtarlar "
+            f"{PENCERE_ANAHTARLARI}. `a` bir pencere anahtari DEGILDIR."
+        )
 
     if tur == "aritmetik":
         if a is not None:
@@ -466,7 +490,7 @@ def edge_noise_floor(*, tur: str, a: float | None = None) -> EdgeFloor:
         )
 
     fn = _boru_kur(tur=tur, a_acik=a_acik, probeler=probeler, etiket=etiket)
-    kayit = newton_noise_floor(fn)
+    kayit = newton_noise_floor(fn, **pencere)
     return EdgeFloor(
         taban=kayit.value,
         sinyal=kayit.signal,

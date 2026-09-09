@@ -229,7 +229,12 @@ _GRAV_GEREKCE = (
     "`engine/grav/factory.py` icindeki sevk edilmis YOKLUK BEYANINDAN "
     "birebir dogrulandi ve CODATA sabitlerinden bagimsiz olarak yeniden "
     "turetildi (ayni bitler). IKI PROTON BIR SECIMDIR: elektron-proton "
-    "icin ayni oran 4.407885560760525e-40'tir. TUR A -- DUZELTILEMEZ."
+    "icin ayni oran 4.407885560760525e-40'tir. Ikinci mertebe (Task 5, "
+    "CODATA 2018'den bu gorevde yeniden turetildi, ayni grav beyaniyla "
+    "birebir): protonun Schwarzschild yaricapi 2*G*m_p/c^2 = 2.484232e-54 m, "
+    "ona inmek icin kenari bir Bohr yaricapi olan bir kupte 9.665562e+129 "
+    "nokta gerekir; kenar 1 angstrom secilseydi 6.522644e+130 -- span bir "
+    "dugmedir, adlandirilmadan bu sayi yazilamaz. TUR A -- DUZELTILEMEZ."
 )
 
 _OLCULMEDI_GEREKCE = (
@@ -253,8 +258,11 @@ KOVA_TABLOSU: tuple[EdgeFact, ...] = (
             "bir not); yuzey SCF cozulerek uretilir. AMA BU BIR SEMA "
             "CIPASIDIR, FIZIK CIPASI DEGIL: iki tuketici de ayni HF "
             "cozumunun soyundan gelir, uyum dogayi degil IKI TUKETICI "
-            "UYGULAMASINI olcer. Kenarin TABANI Task 2'de olculur; bu "
-            "yuzden burada buyukluk None."
+            "UYGULAMASINI olcer. Kenarin TABANI `observable/bridge_obs.py`de "
+            "olculur ve IKI SAYIDIR (A1 aritmetik, A2 hata cubugu); tek bir "
+            "`buyukluk` alanina sigmaz ve burada literal tutulmaz -- panel "
+            "onu her kosumda CANLI okur (Task 5). Bu yuzden burada buyukluk "
+            "None: olculmedigi icin degil, iki sayi oldugu icin."
         ),
         buyukluk=None,
     ),
@@ -496,3 +504,442 @@ KOVA_SAYILARI: dict[str, int] = {
     Kova.BENZERLIK: 0,
     Kova.OLCULMEDI: 8,
 }
+
+
+# --- `qlab.units` ekseni (Task 5) ------------------------------------------
+
+
+def olculen_units_ekseni(kok: Path | str | None = None) -> dict[str, int]:
+    """Her motor paketinde `qlab.units`i GERCEKTEN import eden dosya sayisi.
+
+    Spec 2.2'nin tasiyici iddiasinin KOD TARAFI: bir merdiven tum basamaklarin
+    tek bir mutlak eksene dizilmesini ister, ve mutlak eksene dokunan motor
+    kumesi `{hf, md, tb}` -- yani iki capraz-motor kenarinin dugum kumesinin
+    AYNISI. Panel bu kumeyi elle yazmaz, buradan okur; `olculen_kenarlar()`
+    ile ayni `ast` makinesini kullanir ve `tests/bridge/test_kova_tablosu.py`
+    ayni kumeyi BAGIMSIZ bir tarayiciyla da olcer (iki tarayici ayni
+    makineye dayansaydi cipa dairesel olurdu).
+
+    OLCULDU (30.08.2026, b221a9c; Task 5'te yeniden): hf 1 (`analysis.py`),
+    md 3 (`factory.py`, `forcefields.py`, `thermostats.py`), tb 2
+    (`downfold.py`, `factory.py`), tdse/spin/em/grav 0. Duz metin taramasi
+    md icin 4 sayar (`engine/md/__init__.py:10` dokstringi adi yaziyor ama
+    import etmiyor); bu fonksiyon 3 sayar, cunku bir dokstring bir
+    `ImportFrom` dugumu degildir.
+    """
+    taban = Path(kok) if kok is not None else _MOTOR_KOKU
+    sayim: dict[str, int] = {}
+    for paket in _motor_paketleri(taban):
+        dosya_sayisi = 0
+        for dosya in sorted(paket.glob("*.py")):
+            adlar = _import_edilen_moduller(dosya, paket.name)
+            if any(ad.split(".")[:2] == ["qlab", "units"] for ad in adlar):
+                dosya_sayisi += 1
+        sayim[paket.name] = dosya_sayisi
+    return sayim
+
+
+def tablo_tutarsizliklari(
+    kenarlar: frozenset[tuple[str, str]] | set[tuple[str, str]],
+    eksen: dict[str, int],
+) -> tuple[str, ...]:
+    """Kova tablosunun KODLA CELISTIGI noktalar -- bos demet tutarlilik demek.
+
+    Panelin `converged` hukmu buna baglidir: bayat bir yokluk beyani bir
+    yalandir ve bir yalanin yaninda tik basilmaz. Dort kilit:
+
+      1. taranan her kod kenari tabloda olmali ve YAPISAL_YOK ya da
+         OLCULMEDI kovasinda OLAMAZ,
+      2. GERCEK_KOPRU kovasindaki her ciftin bir kod kenari OLMALI,
+      3. kova basina sayim `KOVA_SAYILARI` ile ayni olmali,
+      4. `qlab.units` ekseni (dosya sayisi > 0 olan motorlar) iki kenarin
+         dugum kumesiyle AYNI olmali (spec 2.2).
+
+    `tests/bridge/test_kova_tablosu.py` ilk iki kilidi kendi bagimsiz
+    kopyasiyla da kurar; bu fonksiyon panel icindir ve testin yerini tutmaz.
+    """
+    kova_of = {f.cift: f.kova for f in KOVA_TABLOSU}
+    sorunlar: list[str] = []
+    for kaynak, hedef in sorted(kenarlar):
+        cift = tuple(sorted((kaynak, hedef)))
+        if cift not in kova_of:
+            sorunlar.append(f"taranan kenar {cift} tabloda YOK")
+        elif kova_of[cift] in (Kova.YAPISAL_YOK, Kova.OLCULMEDI):
+            sorunlar.append(
+                f"taranan kenar {cift} tabloda {kova_of[cift]} kovasinda"
+            )
+    yonsuz = {tuple(sorted(k)) for k in kenarlar}
+    for f in KOVA_TABLOSU:
+        if f.kova == Kova.GERCEK_KOPRU and f.cift not in yonsuz:
+            sorunlar.append(f"GERCEK_KOPRU {f.cift} icin kod kenari YOK")
+    sayim: dict[str, int] = {k: 0 for k in KOVALAR}
+    for f in KOVA_TABLOSU:
+        sayim[f.kova] = sayim.get(f.kova, 0) + 1
+    if sayim != KOVA_SAYILARI:
+        sorunlar.append(f"kova sayimi {sayim} != {KOVA_SAYILARI}")
+    eksenli = {ad for ad, n in eksen.items() if n > 0}
+    dugumler = {m for kenar in kenarlar for m in kenar}
+    if eksenli != dugumler:
+        sorunlar.append(
+            f"units ekseni {sorted(eksenli)} != kenar dugumleri {sorted(dugumler)}"
+        )
+    return tuple(sorunlar)
+
+
+# --- PANEL BEYANLARI (Task 5) -- TEK KAYNAK BURASI ---------------------------
+#
+# `run.py::_run_bridge` ve `viz/bridge_frames.py` bu metinlerin HICBIRINI
+# yeniden yazmaz: `viz` sayilari toplar ve `panel_metinleri()`ni cagirir,
+# `run` yalnizca `Provenance.as_lines()` ciktisini ve bir SAYI tablosunu basar.
+# Gerekce Modul 6'nin `engine/grav/factory.py`sindekiyle aynidir ve bu depoda
+# OLCULEREK ogrenildi: ayni beyan blogu bir kez iki dosyada kopyalanmisti ve
+# biri duzeltilip oteki unutuldugunda panel iki farkli sey iddia ediyordu.
+# Kilit iki katmanlidir (tam cumle + PARCA) ve
+# `tests/bridge/test_bridge_senaryo.py`dedir; parca esigi orada YENIDEN
+# OLCULDU, Modul 6'dan devralinmadi.
+#
+# SAYILAR: bu blokta gecen her sayi ya bu kosumda CANLI uretilir
+# (`canli_satir`) ya da bir testte KILITLI bir literaldir; ucuncu bir kaynak
+# yoktur. Kenar tabanlari SEKIZ anlamli haneyle yazilir -- olculdu, taban
+# sekiz haneden fazlasina yazilamaz (`observable/bridge_obs.py`).
+
+_YONTEM = (
+    "Moduller arasi YOKLUK HARITASI ve tek gercek kenarin taban olcumu; "
+    "bu modul SIFIR YENI FIZIK sevk eder. Kova tablosu ELLE LISTELENMEZ, "
+    "KODDAN TURETILIR: `olculen_kenarlar()` `src/qlab/engine/*/` agacini "
+    "`ast` ile tarar, `olculen_units_ekseni()` ayni yontemle `qlab.units`e "
+    "dokunan motor kumesini olcer ve tablo HER KOSUMDA ikisine karsi sinanir "
+    "(`tablo_tutarsizliklari`); celisirse panel tik basmaz. Kenar tabani "
+    "`tests/md/test_aimd.py`nin YOL B borusu harfi harfine kosturularak "
+    "okunur: yalniz `ForceField` nesnesi degistirilir, `engine/md`nin tek "
+    "satiri degismez ve `hf.scf.solve` SIFIR kez cagrilir"
+)
+
+_YAKLASIMLAR: tuple[str, ...] = (
+    "KENAR = STATIK IMPORT KENARI: `ast` ile `Import`/`ImportFrom` dugumleri "
+    "sayilir; calisma zamani cagri grafigi, dinamik yukleme ve dizge icinde "
+    "anilan modul adlari SAYILMAZ -- dizgedeki ad sayilsaydi tablo bir yanlis "
+    "pozitifle bozulurdu (olculdu, sentetik agac) ve `md`nin `units` sayisi "
+    "3 yerine 4 cikardi (olculdu, gercek agac)",
+    "KENAR TABANI ICIN HF YUZEYI DONDURULDU: SCF cozumu yerine ayni `K` ve "
+    "`r_e`li bir Morse ikizi (A2) ya da onun `a -> 0` cebirsel limiti (A1) "
+    "kosturulur; boru `test_aimd.py`nin YOL B'sinin AYNISIDIR ve bu bir "
+    "iddia degil bir olcumdur (HF alaniyla cagrildiginda cipanin sayisini "
+    "bit bit veriyor, testte kilitli)",
+    "DUSEN IKI ADAYIN SAYILARI TASINIYOR, YENIDEN KOSTURULMUYOR: `hf -> tb` "
+    "ve `tb -> spin` sayilari `KOVA_TABLOSU` gerekcelerinde literal olarak "
+    "durur ve `tests/bridge/test_dusen_adaylar.py` onlari motoru kosturarak "
+    "dogrular; bu senaryo onlari yeniden OLCMEZ, yeniden OKUR",
+    "GERCEK HATA ve KUTLE KORLUGU sayilari HF borusundan gelir ve o boru bu "
+    "senaryoda KOSMAZ (olculdu: tek YOL B kosumu ~28 s, kutle testi ~78 s); "
+    "ikisi de `slow` testlerde canli uretilir, burada KAYITTIR",
+)
+
+_YONTEM_HEDEF_A = (
+    "YONTEM/HEDEF UYUSMAZLIGI TUR A -- BU BORUDA DUZELTILEMEZ, dugme yok: "
+    "(1) `grav` atom olcegine BAGLANMAZ, engel boyut degil ENERJIDIR "
+    "(iki proton icin F_g/F_e = 8.093550856608016e-37); (2) `spin` `J` "
+    "hakkinda YANILAMAZ, cunku `coupling` ciktiya yalniz "
+    "`coupling/temperature` orani olarak girer (`metropolis.py:164-166`) ve "
+    "`U`yu 1000 kat buyutmek de `z`yi uyusturmak da kenari acmaz. Ikisi de "
+    "bir tolerans ya da izgara ayariyla KAPANMAZ; A'yi B diye yazmak "
+    "'sonraki gorevde acilir' yalanini uretirdi"
+)
+
+_YONTEM_HEDEF_B = (
+    "YONTEM/HEDEF UYUSMAZLIGI TUR B -- ERTELENDI, engel yok, spec 8 kapsam "
+    "disi: (1) `hf -> tdse` icin 3B TDSE govdesi (O 1s icin 1600^3 = "
+    "4.096e+09 nokta, tek complex128 dizi 61.04 GiB = 65.536 GB; span ve "
+    "cozunurluk birer dugme); (2) `hf -> em` icin kirilma indisi ureteci. "
+    "B'yi A diye yazmak yapilabilir isi gereksiz yere gomerdi"
+)
+
+_IHMAL: tuple[str, ...] = (
+    "BENZERLIK (bicimsel analoji) kovasi BOS: bu turda olculen yok; bos "
+    "kalmasi bir ihmal degil bir OLCUM SONUCUDUR ve sayisi (0) testte "
+    "kilitlidir",
+    "KENARI GUCLENDIRECEK UCUNCU BIR TUKETICI YAZILMADI (spec 8): yeni "
+    "tuketici de ayni HF soyundan gelirdi, sema cipasi sema cipasi kalirdi -- "
+    "daireyi buyutur, kirmaz",
+    "IKINCI BIR BORU YOK: tek gercek kenarin tek borusu var; iki-ayarli "
+    "capraz kontrol (Modul 6) burada kurulamaz ve karisik boru yasagi bir "
+    "ikinci boruyu HF'in oteki tuketicisinden odunc almayi da yasaklar",
+    _YONTEM_HEDEF_A,
+    _YONTEM_HEDEF_B,
+)
+
+_YOKLUK_HARITASI_BEYANI = (
+    "YOKLUK HARITASI: yedi motorun 21 cifti BES kovada -- GERCEK_KOPRU / "
+    "TAUTOLOJI / YAPISAL_YOK / BENZERLIK / OLCULMEDI -- ve sayim bu kosumda "
+    "tablodan CANLI yapilip `KOVA_SAYILARI` ile karsilastirilir. Her "
+    "yapisal yoklugun MERTEBESI tablodadir: `grav` x 6 icin F_g/F_e = "
+    "8.093550856608016e-37 (iki proton; elektron-proton 4.407885560760525e-40) "
+    "ve protonun Schwarzschild yaricapina inmek icin a_0 kenarli kupte "
+    "9.665562e+129 nokta (kenar 1 angstrom olsaydi 6.522644e+130 -- span bir "
+    "dugmedir); `hf -> tdse` icin O 1s izgarasi 1600^3 = 4.096e+09 nokta = "
+    "61.04 GiB; `em -> tdse` icin yazilacak bir mertebe YOK, eksik olan sayi "
+    "degil KARSILIKTIR. OLCULMEDI AYRI BIR KOVADIR: sekiz cift (tdse-md, "
+    "tdse-tb, tdse-spin, hf-spin, md-tb, md-em, tb-em, spin-em) orada durur, "
+    "cunku 29.08.2026 on olcumunde o soruyu olcen ajan API baglantisi "
+    "kopunca oldu ve hicbir sayi gelmedi; 'olculdu, sifir cikti' ile ayni "
+    "hucreye YAZILAMAZ -- bu bir yokluk beyanidir, bir sonuc degil, ve spec "
+    "7.2 ACIK kalir"
+)
+
+_YAPI_BEYANI = (
+    "YAPININ SEKLI: bir MERDIVEN DEGIL, merkezi HF olan IKI CUBUKLU BIR "
+    "YILDIZ. Capraz-motor import kenari tam IKI -- `engine/md/forcefields.py:13` "
+    "-> `qlab.engine.hf.scf` ve `engine/tb/downfold.py:130-132` -> "
+    "`qlab.engine.hf.{basis, integrals, multistart}` -- 21 ciftin 19'unda "
+    "SIFIR bag, iki kenarin ikisi de ayni dugume gidiyor. Ve merdiven "
+    "fizikten ONCE TANIMDAN yok: `qlab.units`e dokunan motor kumesi `ast` "
+    "ile {hf, md, tb} (hf 1, md 3, tb 2 dosya; tdse/spin/em/grav 0) -- iki "
+    "kenarin dugum kumesinin AYNISI; kalan dort motor hem eksensiz hem "
+    "bagsiz. Iki kume de bu kosumda CANLI taranir ve canli satirda yazilidir"
+)
+
+_KENAR_TABANI_BEYANI = (
+    "KENAR TABANI IKI SAYIDIR VE IKISI AYRI ETIKET TASIR. A1, fizik-kapali "
+    "limit (`a -> 0` merdiveni; `a = 0.03` bir sinir degil bir TEPE, disinda "
+    "artik duser), ARITMETIGI olcer. A2, anharmoniklik-eslestirilmis prob "
+    "(`a = 0.9137`, borunun kendi olctugu A^2-egimine eslestirildi: HF "
+    "-0.0100248, ikiz -0.0100230), HATA CUBUGUNU olcer. Sevk edilen "
+    "pencerede olculdu (tests/bridge/test_kenar_tabani.py): A1 3.3986707e-05 "
+    "cm^-1, S/G 1.6128e+08, SAGLAM; A2 1.2025992e-02 cm^-1, S/G 4.5578e+05, "
+    "SAGLAM; gercek hata 1.4472809e-02 cm^-1 (HF borusu canli, `omega_ref` "
+    "Richardson `h` cifti (0.002, 0.004); cift bir dugmedir, dort haneye "
+    "yazilabilir) -> A1 gercegi 425.84 KAT IYIMSER gosterir, A2 gercegin "
+    "0.8309'udur. YALNIZ A1 YAZILSAYDI PANEL YALAN SOYLERDI. Ve iki sayi "
+    "iki AYRI dugmeye tepki verir (olculdu, Task 5): N = 200 -> 400'de A1 "
+    "15.18 kat duser, A2 1.0008 kat -- A1 `dt`nin aritmetigini, A2 yuzeyin "
+    "fizigini okur. Taban SEKIZ anlamli haneden fazlasina yazilamaz: "
+    "`ulp(TAM_CM)/taban = 2.68e-08`, ayni taban cm^-1'de mi a.u.'da mi "
+    "cikarildigina gore bagil 1.38e-08 oynar. Bu kosumun iki sayisi canli "
+    "satirdadir"
+)
+
+_DURUST_OLUMSUZLAR = (
+    "DURUST OLUMSUZLAR -- BEYAN EDILDI, DUZELTILMEDI, PANEL TASIR: (1) spec "
+    "7.2 ACIK: sekiz cift OLCULMEDI kovasinda, hicbir sayi yok; (2) `md -> "
+    "spin` ve `hf -> em` tautoloji hukumleri 29.08.2026 on olcumunden "
+    "DEVRALINDI ve bu gorevde yeniden olculmedi (damgalari tabloda "
+    "yazilidir); (3) makineler arasi tekrarlanabilirlik OLCULMEDI -- bit bit "
+    "sayilar (22 kabugun 10'u, 2.276e-15) bu makinenin ve numpy 2.5.1'in "
+    "kaydidir; (4) `omega_B`nin 6-31G degeri (spec 4: 4646.16252) bu depoda "
+    "suite ALINMADI (HF YOL B'nin 6-31G kosumu ~5.4 kat pahali), suit yalniz "
+    "statik `omega_A`(6-31G)'yi kilitler; (5) izotropik hicbir sey yok bu "
+    "modulde ama bir ikinci boru da yok -- tek kenarin capraz kontrolu "
+    "kurulamaz, hukum tek borunun tabanindan okunur"
+)
+
+_DUSEN_ADAYLAR_BEYANI = (
+    "DUSEN IKI ADAY, TAUTOLOJI OLARAK, PENCERESIYLE (Task 4, 7a26ed6; "
+    "sayilar `KOVA_TABLOSU` gerekcelerinde ve tests/bridge/"
+    "test_dusen_adaylar.py'de motor kosturularak dogrulanir): (1) `hf -> tb` "
+    "-- `t_m` halka kabugu uzerinde `np.mean` olarak TANIMLANIP `==` ile "
+    "geri okunuyor, 6/6 sistemde; ozdeslik 15 hane yalniz N = 6'da ((6, 2.6) "
+    "bagil 2.276e-15), N >= 8'de ~1e-8, yani SISTEME BAGLI; ayni elemanlar "
+    "ters sirayla toplaninca `==` 22 kabugun 10'unda dusuyor (1 ulp) -- 'on "
+    "alti hane' toplama sirasinin kaydiydi; `model_from_downfold` `src/`de 0 "
+    "cagri. Pencere: (N, d) altili, STO-3G, seeds = 12. (2) `tb -> spin` -- "
+    "bes `J`de (U/|t| = 2.033100 ... 13.630622) `m` serisi bit bit "
+    "ayni, `E == J * E(1)` bit bit, kabul orani `==` 0.187216796875 = "
+    "287565/1536000; kok neden `metropolis.py:164-166` oran sadelesmesi; `U` "
+    "1000 kat buyutulse de kenar ACILMIYOR, o yuzden TEK SATIR: `U/|t| = "
+    "2.033100` ve `z` (spin kodda 4, TB halkasi 2) o satirin ICINDE, bu "
+    "boruda olculemez. Pencere: Ising L = 32, h = 0, tohum 20260822, burn "
+    "500, sweep 1500. Ikisi de sessizce dusurulmedi"
+)
+
+_CIPA_SINIFI_BEYANI = (
+    "CIPA SINIFI: `hf -> md` kenari bir SEMA CIPASIDIR, fizik cipasi DEGIL. "
+    "Iki tuketici de (statik ikinci turev `omega_A` ve MD periyodu `omega_B`) "
+    "AYNI HF cozumunun soyundan gelir; uyum dogayi degil IKI UYGULAMAYI olcer "
+    "-- bu yazilmasaydi Modul 3/4/5/6'nin hatasi yedinci kez tekrarlanirdi. "
+    "`omega_A` SINAVDAN CIKARILDI: kuvvet x1.001 mutantinda `omega_A` BIT BIT "
+    "AYNI kalir (statik yol gradyani hic kullanmaz; testte `==`), `omega_B` "
+    "ise +4.955181e-04 kayar (5481.229456 -> 5483.969419 cm^-1; karekok "
+    "yasasi sqrt(1.001) - 1 = 4.99875e-04) -- sinav yalniz `omega_B` "
+    "uzerinden kosar. RAFTA: `omega_B/omega_A - 1` orani da bir cipa DEGIL, "
+    "`mu`ye yapisal olarak kordur (asagida)"
+)
+
+_MU_KORLUGU_BEYANI = (
+    "MEVCUT CIPANIN KUTLE KORLUGU (tests/md/test_aimd.py, Task 3, b36cdd6): "
+    "kilitlenen `omega_B/omega_A - 1` kutle x4'te -4.360844408468623e-06 -> "
+    "-4.360844408468623e-06, hex -0x1.24a6bc8940000p-18, BIT BIT ayni -- "
+    "`mu` pay ve paydada sadelesir. Tasiyici kanit oranin esitligi degil "
+    "MEKANIZMASI: `omega_A(4mu) == omega_A(mu)/2` ve `omega_B(4mu) == "
+    "omega_B(mu)/2`, ikisi de tam esitlikle. Cipanin 1e-4 esiginin marji "
+    "22.93 kat (= esik/|deger|; planin '600'u bir KATEGORI HATASIYDI, "
+    "esik/|oynama| hesaplanmisti). O cipa transferin SAYISALLIGINI dogrular, "
+    "kutle borusunu DEGIL; kutle borusu artik kendi MUTLAK sinavina sahiptir "
+    "(`AMU_TO_ELECTRON_MASS = 1.0` mutanti orada olur, oran assert'inde "
+    "degil)"
+)
+
+_KURAM_SECICI_BEYANI = (
+    "KURAM SECICI: dondurulan yuzeyin `K`si HF/STO-3G'den okunur ve baz seti "
+    "HF'in kuram duzeyini secer; kenar ona karsi YANILABILIR. 6-31G'de "
+    "`omega_A` 4646.19 cm^-1 (k = 0.411661 Ha/bohr^2) -- ama YALNIZ 6-31G'nin "
+    "KENDI `r_e`sinde (1.3794239789 bohr, Brent); sevk edilen pencerede "
+    "(`r_e` STO-3G'nin, 1.3459193602) ayni yuzey 4921.26 cm^-1 verir "
+    "(k = 0.461848). Spec 4'un 4646.18'i yanlis degildi, PENCERESI (`r_e`) "
+    "yazilmamisti: ayni sayi iki pencerede 275 cm^-1 ayrisiyor. Iki deger de "
+    "testte ucuz (statik, 3 SCF) kilitlidir; `omega_B`nin 6-31G kosumu "
+    "suite alinmadi"
+)
+
+_PENCERE_BEYANI = (
+    "BU MODULUN PENCERESI: HF/STO-3G `K = 0.5729363` Ha/bohr^2 (`h = 0.002`; "
+    "`h` bir dugmedir: 0.008 -> 0.57296588, 0.0005 -> 0.57293446), `r_e = "
+    "1.3459193602` bohr (on haneye yazilamaz, yontem penceresi ~5e-08), "
+    "`mu = m(1H)/2` boru hattindan; YOL B `dt = (2*pi/omega_A)/N`, uc genlikte "
+    "A^2'de dogrusal uydurma, velocity-Verlet dispersiyon tersi. A1 merdiveni "
+    "(0.03, 0.02, 0.01, 0.003, 0.001, 1e-4, 0.0) CAGIRANA KAPALI, A2 ikizi "
+    "senaryo dugmesidir. Taban `dt`ye DORDUNCU mertebeden bagli (N = 50 -> "
+    "1600: 4.159394e-03 -> 8.826032e-09 cm^-1, ardisik oranlar 9.41 / 13.72 / "
+    "14.89 / 15.45 / 15.86 -> 16; kapali form artik/omega = (omega*dt)^4/144, "
+    "olculen/ongoru 0.9750 @ N = 1600, N = 3200'de donuyor). Kutle x4 IKI "
+    "AYRI SAYIDIR: `dt` yeniden turetilirse carpan TAM 0.5, `dt` "
+    "dondurulursa taban 28.67 kat KUCULUR. Kuvvet x1.001'de taban 85095.49 "
+    "kat buyur. Pencere adlandirilmadan sayi yazilmaz"
+)
+
+
+def bridge_declaration() -> str:
+    """PANELIN ZORUNLU BEYANLARININ TEK KAYNAGI, tek metin halinde.
+
+    `panel_metinleri()` ayni sabitleri panelin AYRI satirlarina dagitir; bu
+    fonksiyon onlari tek bir dizge isteyen cagiranlar icin birlestirir. IKI
+    YOL DA AYNI SABITLERI OKUR, metnin ikinci bir kopyasi YOKTUR ve
+    `tests/bridge/test_bridge_senaryo.py` bunu hem tam cumle hem PARCA
+    duzeyinde kilitler. Canli sayilar burada YOKTUR; onlar `canli_satir()`da.
+    """
+    return " ".join(
+        (_YONTEM,)
+        + _YAKLASIMLAR
+        + _IHMAL
+        + (
+            _KENAR_TABANI_BEYANI,
+            _DURUST_OLUMSUZLAR,
+            _DUSEN_ADAYLAR_BEYANI,
+            _CIPA_SINIFI_BEYANI,
+            _MU_KORLUGU_BEYANI,
+            _KURAM_SECICI_BEYANI,
+            _PENCERE_BEYANI,
+            _YOKLUK_HARITASI_BEYANI,
+            _YAPI_BEYANI,
+        )
+    )
+
+
+def canli_satir(
+    *,
+    kova_sayim: dict[str, int],
+    kenarlar: frozenset[tuple[str, str]] | set[tuple[str, str]],
+    eksen: dict[str, int],
+    a1: tuple[float, float, float, str, str],
+    a2: tuple[float, float, float, str, str],
+    gercek_hata: float,
+    tutarsizliklar: tuple[str, ...],
+) -> str:
+    """Bu kosumun CANLI satiri -- yalniz sayi ve etiket, beyan cumlesi yok.
+
+    `a1`/`a2` `(taban, sinyal, oran, hukum, boru)` demetleridir: bu modul
+    `observable.bridge_obs.EdgeFloor`u goremez (katman sozlesmesi), ceviriyi
+    `viz/bridge_frames.py` yapar. Tabanlar SEKIZ anlamli haneyle basilir.
+    """
+    sayim = " / ".join(f"{k} {kova_sayim.get(k, 0)}" for k in KOVALAR)
+    kenar_metni = ", ".join(f"{a} -> {b}" for a, b in sorted(kenarlar)) or "YOK"
+    eksen_metni = " ".join(f"{ad}={n}" for ad, n in sorted(eksen.items()))
+    eksenli = ", ".join(sorted(ad for ad, n in eksen.items() if n > 0))
+
+    def taban(etiket: str, t: tuple[float, float, float, str, str]) -> str:
+        deger, sinyal, oran, hukum, boru = t
+        return (
+            f"{etiket}: taban {deger:.8g} cm^-1, sinyal {sinyal:.8g}, "
+            f"S/G {oran:.4e}, hukum {hukum} [{boru}]"
+        )
+
+    hukum = (
+        "TABLO KODLA TUTARLI"
+        if not tutarsizliklar
+        else "TABLO KODLA CELISIYOR: " + "; ".join(tutarsizliklar)
+    )
+    return (
+        f"[CANLI -- bu kosum] kova sayimi {sayim} (toplam "
+        f"{sum(kova_sayim.values())}); kod kenari {len(kenarlar)}: "
+        f"{kenar_metni}; `qlab.units` ekseni {eksen_metni} -> {{{eksenli}}}; "
+        f"KENAR TABANI IKI SAYI -- {taban('A1 (aritmetik)', a1)} | "
+        f"{taban('A2 (hata-cubugu)', a2)}; gercek hata {gercek_hata:.8g} cm^-1 "
+        f"-> gercek/A1 = {gercek_hata / a1[0]:.6g}, A2/gercek = "
+        f"{a2[0] / gercek_hata:.6g}; {hukum}."
+    )
+
+
+def panel_metinleri(
+    *,
+    ad: str,
+    a_ikiz: float,
+    n_bolme: int,
+    periyot_sayisi: int,
+    genlikler: tuple[float, ...],
+    kova_sayim: dict[str, int],
+    kenarlar: frozenset[tuple[str, str]] | set[tuple[str, str]],
+    eksen: dict[str, int],
+    a1: tuple[float, float, float, str, str],
+    a2: tuple[float, float, float, str, str],
+    gercek_hata: float,
+    tutarsizliklar: tuple[str, ...],
+) -> dict[str, object]:
+    """`Provenance` alanlarinin METNI -- bu modul `Provenance`i kuramaz.
+
+    Katman sozlesmesi `bridge_map`i `provenance`in ALTINA koyar; nesneyi
+    `viz/bridge_frames.py::provenance_for` kurar, metin burada kalir. Sayilar
+    disaridan gelir, hicbiri burada yeniden hesaplanmaz.
+
+    `converged` OLCULEBILIR bir seye baglidir ve bu modulde o sey su ikisidir:
+    (1) kova tablosu bu kosumda taranan kodla TUTARLI mi, (2) kenarin IKI
+    tabani da okunabildi mi (`SAGLAM`). Bayat bir yokluk beyani bir yalandir
+    ve yalanin yaninda tik basilmaz; `CURUK`/`DEJENERE` bir taban da tiki
+    dusurur.
+    """
+    tutarli = not tutarsizliklar
+    okunabildi = a1[3] == "SAGLAM" and a2[3] == "SAGLAM"
+    pencere = (
+        f"BU KOSUMUN PENCERESI: N = {n_bolme}, {periyot_sayisi} periyot, "
+        f"genlikler {tuple(genlikler)}, A2 ikizi a = {a_ikiz:g}, "
+        f"h = 0.002 (sabit), SCF = 0. " + _PENCERE_BEYANI
+    )
+    canli = canli_satir(
+        kova_sayim=kova_sayim, kenarlar=kenarlar, eksen=eksen, a1=a1, a2=a2,
+        gercek_hata=gercek_hata, tutarsizliklar=tutarsizliklar,
+    )
+    return dict(
+        method=f"Moduller arasi yokluk haritasi ({ad}); " + _YONTEM,
+        approximations=_YAKLASIMLAR
+        + (
+            f"sonlu pencere: bu kosum YOL B'yi N = {n_bolme}, "
+            f"{periyot_sayisi} periyot ve {len(genlikler)} genlikle kosar; "
+            "taban bu pencerenin tabanidir, sonsuz ince adimin degil",
+        ),
+        neglected=_IHMAL,
+        expected_error=_KENAR_TABANI_BEYANI + " " + _DURUST_OLUMSUZLAR,
+        converged=tutarli and okunabildi,
+        circularity=_DUSEN_ADAYLAR_BEYANI,
+        anchor_class=_CIPA_SINIFI_BEYANI + " " + _MU_KORLUGU_BEYANI,
+        theory_selector=_KURAM_SECICI_BEYANI,
+        window=pencere,
+        convergence_diagnosis=(
+            canli + " [BEYAN] " + _YOKLUK_HARITASI_BEYANI + " " + _YAPI_BEYANI
+        ),
+        diagnostics={
+            "kova": "/".join(str(kova_sayim.get(k, 0)) for k in KOVALAR),
+            "kenar": str(len(kenarlar)),
+            "eksen": ",".join(sorted(ad for ad, n in eksen.items() if n > 0)),
+            "A1": float(a1[0]),
+            "A2": float(a2[0]),
+            "scf": "0",
+        },
+    )
