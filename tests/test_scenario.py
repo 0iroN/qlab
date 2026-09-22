@@ -503,10 +503,10 @@ def test_shipped_scenario_loads_and_runs(scenario_path):
         yuk = build_bridge_payload(kisa)
         assert yuk.tutarsizliklar == ()
         assert yuk.kova_sayim == {
-            "GERCEK_KOPRU": 1, "TAUTOLOJI": 4, "YAPISAL_YOK": 8,
-            "BENZERLIK": 0, "OLCULMEDI": 8,
+            "GERCEK_KOPRU": 2, "TAUTOLOJI": 4, "YAPISAL_YOK": 8,
+            "BENZERLIK": 0, "OLCULMEDI": 7,
         }
-        assert len(yuk.kenarlar) == 2
+        assert len(yuk.kenarlar) == 3
         for taban in (yuk.a1, yuk.a2):
             assert math.isfinite(taban.taban) and taban.taban > 0.0, (
                 f"{scenario_path.name}: kenar tabanı sonlu/pozitif değil"

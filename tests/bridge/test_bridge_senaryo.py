@@ -155,7 +155,9 @@ _BEYAN_PARCASI_ESIGI = 16
 
 #: 30.08.2026'da (HEAD = b221a9c) ölçülen ve Task 5'te yeniden taranan
 #: çapraz-motor kenar kümesi ve `qlab.units` ekseni.
-BEKLENEN_KENARLAR = {("md", "hf"), ("tb", "hf")}
+#: 22.09.2026: ÜÇÜNCÜ kenar yazıldı (`engine/tdse/from_md.py` -> `engine/md`),
+#: yapı yıldızdan ZİNCİRE döndü: `tb - hf - md - tdse`.
+BEKLENEN_KENARLAR = {("md", "hf"), ("tb", "hf"), ("tdse", "md")}
 BEKLENEN_EKSEN = {"em": 0, "grav": 0, "hf": 1, "md": 3, "spin": 0, "tb": 2, "tdse": 0}
 
 #: PENCERE DÜĞMESİNİN ÖLÇÜLEN TEPKİSİ (03.09.2026, bu makine), N = 200 → 400.
@@ -359,7 +361,8 @@ def test_MODULUN_ETIK_CEKIRDEGI_metinde_YAZILI(sevk_panel):
         "Kova tablosu ELLE LISTELENMEZ, KODDAN TURETILIR",
         "YOKLUK HARITASI: yedi motorun 21 cifti BES kovada",
         "OLCULMEDI AYRI BIR KOVADIR",
-        "YAPININ SEKLI: bir MERDIVEN DEGIL, merkezi HF olan IKI CUBUKLU BIR YILDIZ",
+        "YAPININ SEKLI: bir MERDIVEN DEGIL, ama artik bir YILDIZ DA DEGIL -- "
+        "DORT DUGUMLU BIR ZINCIR: `tb - hf - md - tdse`",
         "KENAR TABANI IKI SAYIDIR VE IKISI AYRI ETIKET TASIR",
         "YALNIZ A1 YAZILSAYDI PANEL YALAN SOYLERDI",
         "CIPA SINIFI: `hf -> md` kenari bir SEMA CIPASIDIR, fizik cipasi DEGIL",
@@ -441,11 +444,11 @@ def test_6_1_YOKLUK_HARITASI_21_cift_bes_kova_MERTEBELERLE(sevk_yuk, sevk_panel)
     sayim = Counter(f.kova for f in KOVA_TABLOSU)
     assert {k: sayim.get(k, 0) for k in KOVALAR} == KOVA_SAYILARI == sevk_yuk.kova_sayim
     assert KOVA_SAYILARI == {
-        "GERCEK_KOPRU": 1, "TAUTOLOJI": 4, "YAPISAL_YOK": 8, "BENZERLIK": 0,
-        "OLCULMEDI": 8,
+        "GERCEK_KOPRU": 2, "TAUTOLOJI": 4, "YAPISAL_YOK": 8, "BENZERLIK": 0,
+        "OLCULMEDI": 7,
     }
-    assert "GERCEK_KOPRU 1 / TAUTOLOJI 4 / YAPISAL_YOK 8 / BENZERLIK 0 / OLCULMEDI 8 (toplam 21)" in tani
-    assert sevk_panel.diagnostics["kova"] == "1/4/8/0/8"
+    assert "GERCEK_KOPRU 2 / TAUTOLOJI 4 / YAPISAL_YOK 8 / BENZERLIK 0 / OLCULMEDI 7 (toplam 21)" in tani
+    assert sevk_panel.diagnostics["kova"] == "2/4/8/0/7"
 
     # Mertebeler: iki proton, elektron-proton, r_s kübü, O 1s ızgarası.
     G, m_p, m_e, e, eps0, c = (
@@ -485,7 +488,7 @@ def test_6_1_YOKLUK_HARITASI_21_cift_bes_kova_MERTEBELERLE(sevk_yuk, sevk_panel)
         assert cift in tani
 
 
-def test_6_2_YAPI_iki_cubuklu_yildiz_ve_units_ekseni_KODDAN(sevk_yuk, sevk_panel):
+def test_6_2_YAPI_dort_dugumlu_zincir_ve_units_ekseni_KODDAN(sevk_yuk, sevk_panel):
     """§6.2 — "merdiven değil iki çubuklu yıldız", ve {hf, md, tb} = bağlı küme.
 
     İki küme de PANELDE CANLI taranır (`olculen_kenarlar`,
@@ -495,13 +498,13 @@ def test_6_2_YAPI_iki_cubuklu_yildiz_ve_units_ekseni_KODDAN(sevk_yuk, sevk_panel
     `downfold.py:130-132` gerçekten üç `hf` modülünü import ediyor mu.
     """
     tani = dict(sevk_panel.as_lines())["Yakınsama tanısı"]
-    assert "IKI CUBUKLU BIR YILDIZ" in tani
+    assert "DORT DUGUMLU BIR ZINCIR: `tb - hf - md - tdse`" in tani
     assert sevk_yuk.kenarlar == BEKLENEN_KENARLAR == olculen_kenarlar()
     assert sevk_yuk.eksen == BEKLENEN_EKSEN == olculen_units_ekseni()
-    assert "kod kenari 2: md -> hf, tb -> hf" in tani
+    assert "kod kenari 3: md -> hf, tb -> hf, tdse -> md" in tani
     assert "ekseni em=0 grav=0 hf=1 md=3 spin=0 tb=2 tdse=0 -> {hf, md, tb}" in tani
     assert sevk_panel.diagnostics["eksen"] == "hf,md,tb"
-    assert sevk_panel.diagnostics["kenar"] == "2"
+    assert sevk_panel.diagnostics["kenar"] == "3"
 
     # Bağımsız tarayıcı (bridge_map'in yardımcıları KULLANILMIYOR).
     def importlar(dosya: Path) -> set[str]:
@@ -526,7 +529,11 @@ def test_6_2_YAPI_iki_cubuklu_yildiz_ve_units_ekseni_KODDAN(sevk_yuk, sevk_panel
             if any(m.split(".")[:2] == ["qlab", "units"] for m in adlar):
                 eksen[paket.name] += 1
     assert kenarlar == BEKLENEN_KENARLAR and eksen == BEKLENEN_EKSEN
-    assert {ad for ad, n in eksen.items() if n > 0} == {m for k in kenarlar for m in k}
+    # 22.09.2026: ozdeslik DUSTU, kapsama kaldi -- `tdse` bagli ama olceksiz.
+    eksenli = {ad for ad, n in eksen.items() if n > 0}
+    dugumler = {m for k in kenarlar for m in k}
+    assert eksenli <= dugumler
+    assert dugumler - eksenli == {"tdse"}
     assert set(MODULLER) - {"hf", "md", "tb"} == {"tdse", "spin", "em", "grav"}
 
     # Satır numaraları gerçek.
@@ -713,7 +720,8 @@ def test_DURUST_OLUMSUZLAR_BESI_DE_PANELDE(sevk_panel):
     süite alınmadı) ve panel onu da taşır."""
     hata = dict(sevk_panel.as_lines())["Beklenen hata"]
     for parca in (
-        "(1) spec 7.2 ACIK: sekiz cift OLCULMEDI kovasinda, hicbir sayi yok",
+        "(1) spec 7.2 HALA ACIK ama DARALDI: 22.09.2026'da sekiz ciftin sekizi "
+        "de olculdu ve `tdse-md` kenari yazildi",
         "(2) `md -> spin` ve `hf -> em` tautoloji hukumleri 29.08.2026 on olcumunden DEVRALINDI",
         "(3) makineler arasi tekrarlanabilirlik OLCULMEDI",
         "numpy 2.5.1",
@@ -801,7 +809,11 @@ def test_TABLO_BAYATLARSA_PANEL_TIK_BASMAZ_ve_CELISKIYI_YAZAR(sevk_senaryo, tmp_
     assert sorunlar == tablo_tutarsizliklari(yuk.kenarlar, yuk.eksen)
     assert any("OLCULMEDI" in s for s in sorunlar)
     assert any("GERCEK_KOPRU ('hf', 'md') icin kod kenari YOK" in s for s in sorunlar)
-    assert any("units ekseni" in s for s in sorunlar)
+    # İKİNCİ KİLİT 22.09.2026'da DARALDI: eskiden "eksen kümesi = düğüm
+    # kümesi" özdeşliğiydi; `tdse` bağlı ama ölçeksiz olduğu için artık
+    # (a) kapsama + (b) ölçeksiz düğüm kümesinin ADIYLA kilitlenmesi.
+    # Sentetik ağaçta düğümler {spin, em}, eksen boş -> (b) ateşlenir.
+    assert any("olceksiz kenar dugumleri" in s for s in sorunlar)
     p = provenance_for(yuk)
     assert p.converged is False
     tani = dict(p.as_lines())["Yakınsama tanısı"]
@@ -1054,7 +1066,7 @@ def test_CLI_UCTAN_UCA(tmp_path):
     assert "hf -> md    None" in sonuc.stdout
     assert "tb -> spin  0.000000e+00" in sonuc.stdout
     assert "hf -> tb    2.276006e-15" in sonuc.stdout
-    assert sonuc.stdout.count("None") == 12
+    assert sonuc.stdout.count("None") == 11  # tdse-md artik SAYI tasiyor
     assert "taban A1 aritmetik" in sonuc.stdout and "taban A2 hata-cubugu" in sonuc.stdout
     assert "TABLO ≠ KOD" not in sonuc.stdout
     assert "TABLO KODLA TUTARLI" in sonuc.stdout
@@ -1063,10 +1075,21 @@ def test_CLI_UCTAN_UCA(tmp_path):
 
     with np.load(cikti, allow_pickle=False) as veri:
         assert list(veri["kova"]) == [f.kova for f in KOVA_TABLOSU]
-        assert int(veri["magnitude_is_none"].sum()) == 12
-        assert int(np.isfinite(veri["magnitude"]).sum()) == 9
+        assert int(veri["magnitude_is_none"].sum()) == 11
+        assert int(np.isfinite(veri["magnitude"]).sum()) == 10
         assert np.all(np.isnan(veri["magnitude"][veri["magnitude_is_none"]]))
-        assert veri["magnitude"][list(veri["kova"]).index("TAUTOLOJI") + 1] == 0.0  # tb -> spin
+        # KONUMSAL DEGIL ADLA. `index("TAUTOLOJI") + 1` bugun tb -> spin'e denk
+        # geliyor ama bu bir RASTLANTIDIR. OLCULDU (22.09.2026): tabloda DORT
+        # TAUTOLOJI satiri var (hf-tb, spin-tb, md-spin, em-hf); araya eklenecek
+        # yeni bir TAUTOLOJI satiri bu assert'i sessizce BASKA bir satira
+        # kaydirirdi ve -- onerilen yeni girdiler de 0.0 tasidigi icin -- assert
+        # YESIL kalirdi. O anda yorum satirinin kendisi bir YALAN olurdu.
+        _i_tb_spin = [
+            i for i, (a, b) in enumerate(zip(veri["pair_a"], veri["pair_b"]))
+            if {str(a), str(b)} == {"tb", "spin"}
+        ]
+        assert len(_i_tb_spin) == 1, f"tb-spin satiri tek degil: {_i_tb_spin}"
+        assert veri["magnitude"][_i_tb_spin[0]] == 0.0
         assert [tuple(k) for k in veri["edges"]] == sorted(BEKLENEN_KENARLAR)
         assert dict(zip(veri["units_axis_names"], veri["units_axis_counts"].tolist())) == BEKLENEN_EKSEN
         assert list(veri["floor_turler"]) == ["aritmetik", "hata-cubugu"]
@@ -1082,7 +1105,7 @@ def test_CLI_UCTAN_UCA(tmp_path):
     assert kaynak["theory_selector"] == bm._KURAM_SECICI_BEYANI
     assert kaynak["convergence_diagnosis"].startswith("[CANLI")
     assert kaynak["converged"] is True
-    assert kaynak["diagnostics"]["kova"] == "1/4/8/0/8"
+    assert kaynak["diagnostics"]["kova"] == "2/4/8/0/7"
 
 
 # ---------------------------------------------------------------------------

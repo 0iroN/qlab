@@ -18,6 +18,7 @@ import pytest
 
 from qlab.scenario.loader import load_scenario
 from qlab.bridge_map import (
+    OLCEKSIZ_KENAR_DUGUMLERI,
     HICBIR_SAYI_GELMEDI,
     KOVA_SAYILARI,
     KOVA_TABLOSU,
@@ -33,7 +34,10 @@ KAYNAK = PROJE_KOKU / "src" / "qlab"
 MOTOR_KOKU = KAYNAK / "engine"
 
 #: 30.08.2026'da (HEAD = b221a9c) ölçülen çapraz-motor kenar kümesi.
-BEKLENEN_KENARLAR = {("md", "hf"), ("tb", "hf")}
+#: Kaynak ağacında ÖLÇÜLEN çapraz-motor kenarlar. Modül 7 kapandığında İKİ
+#: taneydi; ÜÇÜNCÜSÜ 22.09.2026'da `engine/tdse/from_md.py` ile YAZILDI ve
+#: `tdse-md` çifti `OLCULMEDI`den `GERCEK_KOPRU`ya geçti (spec 7.2 kapanışı).
+BEKLENEN_KENARLAR = {("md", "hf"), ("tb", "hf"), ("tdse", "md")}
 
 
 # --- Bağımsız tarayıcı -------------------------------------------------------
@@ -184,9 +188,21 @@ def test_KOVA_SAYILARI_1_4_8_0_8_ve_BENZERLIK_BOS_KALMASI_BIR_OLCUM():
     """ÖLÇÜLDÜ: GERÇEK KÖPRÜ 1 · TAUTOLOJİ 4 · YAPISAL YOK 8 ·
     BENZERLİK 0 · ÖLÇÜLMEDİ 8. Toplam 21 = C(7, 2).
 
-    BENZERLİK kovasının boş olması bir ihmal değil bir ÖLÇÜM SONUCUdur;
-    sayısı da bu yüzden kilitli — biri oraya "biçimsel analoji" diye bir
-    satır eklerse bu test kırmızı olur ve o satırın ölçümü sorulur.
+    BENZERLİK kovasının boş olması bir ihmal değil bir ÖLÇÜM SONUCUdur.
+    **AMA O SAYIYI KİLİTLEYEN ŞEY BU TEST DEĞİLDİR** ve bu dokstring bir
+    süre tersini vaat etti (ölçüldü 22.09.2026). Aşağıdaki döngü tabloyu
+    `KOVA_SAYILARI` SABİTİNE karşı sınar; ikisi BİRLİKTE değişirse yeşil
+    kalır. Kırma kanıtı: bir çift `OLCULMEDI`den `BENZERLIK`e taşınıp sabit
+    de güncellenseydi toplam 21'de kalırdı ve bu test KIRMIZI OLMAZDI —
+    yani vaat edilen koruma yoktu. Bu, bu depoda adlandırılmış körlük
+    mekanizmasının (6) örneğidir: *assert'in sınırladığı SABİTE karşı
+    yazılması*.
+
+    Sayıyı GERÇEKTEN kilitleyen iki LİTERAL başka yerdedir ve ikisi de
+    yukarıdaki senaryoda kırmızı olur:
+      - `tests/bridge/test_bridge_senaryo.py` — `KOVA_SAYILARI == {...}`
+      - `tests/test_scenario.py` — `yuk.kova_sayim == {...}`
+    Bu testin işi TABLO ile SABİTİN birbirini tutması; sayının kendisi değil.
     """
     sayim = Counter(f.kova for f in KOVA_TABLOSU)
     for kova in KOVALAR:
@@ -224,8 +240,9 @@ def test_OLCULMEDI_AYRI_BIR_KOVADIR_ve_HICBIR_SAYI_TASIMAZ():
     metnin kendisi de taşınmak zorunda kalır.
     """
     olculmedi = [f for f in KOVA_TABLOSU if f.kova == Kova.OLCULMEDI]
+    # ("md", "tdse") ARTIK BURADA DEĞİL: kenarı 22.09.2026'da yazıldı, çift
+    # `GERCEK_KOPRU`ya geçti. Sekiz -> YEDİ.
     assert {f.cift for f in olculmedi} == {
-        ("md", "tdse"),
         ("tb", "tdse"),
         ("spin", "tdse"),
         ("hf", "spin"),
@@ -234,7 +251,7 @@ def test_OLCULMEDI_AYRI_BIR_KOVADIR_ve_HICBIR_SAYI_TASIMAZ():
         ("em", "tb"),
         ("em", "spin"),
     }
-    assert len(olculmedi) == 8
+    assert len(olculmedi) == 7  # 22.09.2026: tdse-md ayrildi (kenarı yazıldı)
     # Beyan dizgesi HARFİ HARFİNE aranıyor, `HICBIR_SAYI_GELMEDI` sabiti
     # ÜZERİNDEN DEĞİL: gerekçeler o sabitten kuruluyor, dolayısıyla sabiti
     # "ölçüldü, sıfır çıktı" diye değiştiren bir mutant sabit üzerinden
@@ -355,14 +372,22 @@ def test_AST_YORUMDAKI_ve_DIZGEDEKI_IMPORTU_SAYMIYOR_REGEX_SAYIYOR(tmp_path):
 # --- 5. `units` ekseni -------------------------------------------------------
 
 
-def test_UNITS_EKSENI_IKI_KENARIN_DUGUM_KUMESIYLE_AYNI():
+def test_UNITS_EKSENI_KENAR_DUGUMLERININ_ALT_KUMESI_ve_TDSE_OLCEKSIZ():
     """Spec §2.2'nin TAŞIYICI İDDİASI — ve planın bir sayısının çürümesi.
 
     Bir merdiven tüm basamakların TEK BİR MUTLAK EKSENE dizilmesini ister.
     `qlab.units`e dokunan modül kümesi ölçüldü ve tam olarak `{hf, md, tb}`
-    çıktı — yani iki çapraz-motor kenarının kapsadığı düğüm kümesinin
-    AYNISI. Kalan dört modül (tdse, spin, em, grav) hem eksensiz hem
-    bağsız: merdiven fizikten ÖNCE TANIMDAN yok.
+    çıktı. Modül 7 kapandığında (30.08.2026) bu, İKİ çapraz-motor kenarının
+    düğüm kümesinin de AYNISIYDI ve kalan dört modül (tdse, spin, em, grav)
+    hem eksensiz hem bağsızdı: merdiven fizikten ÖNCE TANIMDAN yoktu.
+
+    **O ÖZDEŞLİK 22.09.2026'DA ÇÜRÜDÜ.** `md -> tdse` kenarı yazılınca
+    `tdse` bir kenar düğümü oldu ama `qlab.units`e hâlâ dokunmuyor. Yani
+    özdeşlik bir yasa değil, ESKİ TOPOLOJİNİN ÖLÇÜLMÜŞ BİR RASTLANTISIYMIŞ.
+    Merdivenin yokluğu hükmü DEĞİŞMEDİ -- gerekçesi daraldı: artık
+    "eksen kümesi = düğüm kümesi" değil, "bağlı olmak mutlak eksene
+    dokunmayı GEREKTİRMİYOR" (tdse bunun canlı örneği). Testin adı da bu
+    yüzden değişti; eski ad tutmayan bir söz veriyordu.
 
     ÇÜRÜYEN SAYI: plan ve spec `md` için **4** dosya yazıyor
     (`factory.py`, `forcefields.py`, `thermostats.py`, `__init__.py`).
@@ -374,6 +399,8 @@ def test_UNITS_EKSENI_IKI_KENARIN_DUGUM_KUMESIYLE_AYNI():
 
     YÜK TAŞIYAN İDDİA AYAKTA: küme iki yöntemde de `{hf, md, tb}`.
     Çürüyen şey modül başına SAYIDIR, kümenin kendisi değil.
+    (Bu, yukarıdaki topoloji çürümesinden AYRI bir olaydır ve onunla
+    karıştırılmamalıdır: biri ölçüm YÖNTEMİ, öteki deponun ŞEKLİ hakkında.)
     """
     ast_sayim: dict[str, int] = {}
     metin_sayim: dict[str, int] = {}
@@ -409,10 +436,24 @@ def test_UNITS_EKSENI_IKI_KENARIN_DUGUM_KUMESIYLE_AYNI():
     eksenli = {k for k, v in ast_sayim.items() if v > 0}
     assert eksenli == {"hf", "md", "tb"}
     dugumler = {m for kenar in olculen_kenarlar() for m in kenar}
-    assert eksenli == dugumler, (
-        "spec §2.2'nin taşıyıcı iddiası: eksen kümesi = kenarların düğüm kümesi"
+
+    # SPEC §2.2'NİN ÖZDEŞLİĞİ 22.09.2026'DA ÇÜRÜDÜ -- ve çürüten şey bu
+    # depodaki bir ölçümdür, bir yorum değil. `md -> tdse` kenarı yazılınca
+    # `tdse` bir kenar düğümü oldu ama `qlab.units`e HÂLÂ dokunmuyor
+    # (`ast_sayim["tdse"] == 0`, yukarıda kilitli). Özdeşlik bir YASA değil,
+    # ESKİ TOPOLOJİNİN ÖLÇÜLMÜŞ BİR RASTLANTISIYMIŞ.
+    #
+    # Kilit gevşetilmedi, DARALTILDI:
+    #   (a) eksenli kümesi hâlâ kenar düğümlerinin ALT KÜMESİ olmalı --
+    #       `units`e dokunup bağsız kalan bir motor çıkarsa KIRMIZI;
+    #   (b) eksensiz kalan kenar düğümleri ADIYLA kilitli, sessizce büyüyemez.
+    assert eksenli <= dugumler, (
+        f"units'e dokunup bağsız kalan motor(lar): {sorted(eksenli - dugumler)}"
     )
-    assert {"tdse", "spin", "em", "grav"} == set(MODULLER) - eksenli
+    assert dugumler - eksenli == OLCEKSIZ_KENAR_DUGUMLERI == {"tdse"}
+
+    # Eksensiz VE bağsız kalanlar artık ÜÇ (tdse ayrıldı: bağlı ama ölçeksiz).
+    assert set(MODULLER) - eksenli - dugumler == {"spin", "em", "grav"}
 
 
 # --- 6. `observable/` bağlaşım eklemiyor -------------------------------------

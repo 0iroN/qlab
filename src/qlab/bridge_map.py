@@ -60,11 +60,20 @@ class Kova:
 
     OLCULMEDI AYRI BIR KOVADIR -- spec 7.2.
     "OLCULDU, SIFIR CIKTI" ile "HIC OLCULMEDI" AYNI HUCREYE YAZILAMAZ.
-    Sekiz sifir-kod-kenarli cift (tdse-md, tdse-tb, tdse-spin, hf-spin,
-    md-tb, md-em, tb-em, spin-em) IKINCIDEDIR: o soruyu olcen ajan API
-    baglantisi kopunca oldu ve HICBIR SAYI GELMEDI. Bu bir YOKLUK
-    BEYANIDIR, bir sonuc DEGIL. Onlari YAPISAL_YOK'a katlamak, olculmemis
-    bir seyi olculmus gibi gostermek olurdu.
+    29.08.2026'da SEKIZ sifir-kod-kenarli cift (tdse-md, tdse-tb, tdse-spin,
+    hf-spin, md-tb, md-em, tb-em, spin-em) IKINCIDEYDI: o soruyu olcen ajan
+    API baglantisi kopunca oldu ve HICBIR SAYI GELMEDI.
+
+    22.09.2026'DA DURUM DEGISTI VE KOVA YEDIYE DUSTU. spec 7.2'nin on
+    olcumu kosuldu (34 ajan: 8 olcum + her hukme uc mercekli curutme) ve
+    SEKIZININ SEKIZINDE DE SAYI GELDI. Ikisi ayrildi:
+      - `tdse-md` GERCEK_KOPRU'ya gecti, cunku kenari YAZILDI
+        (`engine/tdse/from_md.py`, 22.09.2026).
+      - Kalan YEDI hala burada, ama ARTIK BASKA BIR SEBEPLE: sayi geldi,
+        HUKUM verilemedi. Gerekceleri bunu adiyla yazar.
+    "OLCULDU, SIFIR CIKTI" ile "HIC OLCULMEDI" hala AYRI KOVADIR ve bu
+    yedisini YAPISAL_YOK'a katlamak, hukum verilmemis bir seyi verilmis
+    gibi gostermek olurdu.
     """
 
     GERCEK_KOPRU = "GERCEK_KOPRU"
@@ -87,6 +96,13 @@ KOVALAR: tuple[str, ...] = (
 #: OLCULMEDI kovasinin her girdisinin gerekcesinde ARANAN dizge. Bu bir
 #: susleme degil bir KILIT: bir girdi bu kovaya konup da "olculdu" diye
 #: yazilamaz, ve baska hicbir kovanin girdisi bu dizgeyi tasiyamaz.
+#:
+#: 22.09.2026 NOTU -- DIZGE AYNI KALDI, ANLAMI TARIHE CIPALANDI. Bu kilit
+#: OLCULMEDI icin TEK bir mesru gerekce taniyacak sekilde yazilmisti; spec
+#: 7.2'nin on olcumu ikinci bir tane uretti ("sayi geldi, HUKUM verilemedi").
+#: Dizgeyi silmek ya da gevsetmek yerine, gerekce metni onu 29.08.2026
+#: hakkinda bir TARIHSEL cumle olarak tasir ve yeni durumu ayrica yazar --
+#: boylece kilit ayakta kalir ve hicbir cumle bayatlamaz.
 HICBIR_SAYI_GELMEDI = "HICBIR SAYI GELMEDI"
 
 #: Bir hukmu 29.08.2026 on olcumunden DEVRALIP burada yeniden olcmeyen
@@ -175,10 +191,23 @@ def olculen_kenarlar(kok: Path | str | None = None) -> frozenset[tuple[str, str]
 
     OLCULDU (30.08.2026, b221a9c): tam IKI kenar --
     `md -> hf` (`engine/md/forcefields.py:13`) ve
-    `tb -> hf` (`engine/tb/downfold.py:130-132`).
-    21 ciftin 19'unda SIFIR bag; iki kenarin ikisi de ayni dugume (hf)
-    gidiyor. Yapi bir MERDIVEN degil, merkezi HF olan IKI CUBUKLU BIR
-    YILDIZDIR.
+    `tb -> hf` (`engine/tb/downfold.py:130-132`). O gun 21 ciftin 19'unda
+    SIFIR bag vardi ve iki kenarin ikisi de ayni dugume (hf) gittigi icin
+    yapi merkezi HF olan IKI CUBUKLU BIR YILDIZDI.
+
+    YENIDEN OLCULDU (22.09.2026): UCUNCU KENAR YAZILDI --
+    `tdse -> md` (`engine/tdse/from_md.py`). Dereceler artik
+    hf 2, md 2, tb 1, tdse 1; yani yapi bir YILDIZ DEGIL, DORT DUGUMLU BIR
+    ZINCIR: `tb - hf - md - tdse`. 21 ciftin 18'inde sifir bag.
+
+    VE BU, MERDIVEN SORUSUNU YENIDEN ACAR GIBI GORUNUR -- ACMAZ, AMA
+    GEREKCE DARALIR. Bir zincir topolojik olarak bir yildizdan daha cok
+    merdivene benzer. Yine de bu bir OLCEK MERDIVENI DEGILDIR, cunku
+    zincirin ucu OLCEKSIZDIR: `olculen_units_ekseni()["tdse"] == 0`, yani
+    TDSE mutlak olcek eksenine hic dokunmuyor (bkz.
+    `OLCEKSIZ_KENAR_DUGUMLERI`). Merdiven hukmu ayakta; DAYANAGI degisti --
+    artik "yapi yildiz" degil "bagli olmak mutlak eksene dokunmayi
+    GEREKTIRMIYOR".
     """
     taban = Path(kok) if kok is not None else _MOTOR_KOKU
     kenarlar: set[tuple[str, str]] = set()
@@ -237,15 +266,77 @@ _GRAV_GEREKCE = (
     "dugmedir, adlandirilmadan bu sayi yazilamaz. TUR A -- DUZELTILEMEZ."
 )
 
+#: `md -> tdse` kenarinin sayisi (22.09.2026, spec 7.2 on olcumunun kapanisi):
+#: PLATODA iki-motor Ehrenfest artigi EKSI DONDURULMUS-MD tabani, bohr.
+#: Bu iki sayi bir motor kosturularak uretildi ama BURAYA LITERAL yazildi --
+#: bu modul hicbir motoru import etmez. `tests/tdse/test_from_md.py` motoru
+#: kosturup bu literali canli olcume karsi sinar.
+#: SEKIZ ANLAMLI HANE SINIRI: on olcumde iki bagimsiz harness ayni buyuklugu
+#: 7 hanede tutturup 8.'de ayristi, o yuzden test `rtol=1e-8` tasir.
+_TDSE_MD_KENAR_SAYISI = 0.13167174221268158
+
+#: Gomme katlanmasinin DINAMIGE bedeli (ayni pencere), bohr. Sifir DEGIL.
+_TDSE_MD_KATLANMA_BEDELI = 2.4982917457005982e-08
+
+_TDSE_MD_GEREKCE = (
+    "KOD KENARI VAR ve tarandi: `engine/tdse/from_md.py` -> "
+    "`qlab.engine.md.state.ForceField`. KENAR 22.09.2026'DA YAZILDI; o "
+    "tarihe kadar bu cift OLCULMEDI kovasindaydi ve gerekcesi 'hicbir sayi "
+    "gelmedi'ydi. spec 7.2 on olcumu (34 ajan) o gerekceyi BAYATLATTI: sayilar "
+    "geldi. Ve ortaya KOVA SOZLUGUNDE BIR DELIK cikti -- ciftin olculen "
+    "durumu 'karsilik var + veri akabilir + cikti kipirdar + kod kenari "
+    "YOK' idi ve bes kovanin hicbiri bunu tasiyamiyordu. Delik kovayi "
+    "degistirerek degil KENARI KURARAK kapatildi. "
+    "KARSILIK BIT BITTIR: MD'nin `Harmonic(k)` alani ile "
+    "`tdse.potentials.harmonic(omega, mass)` ayni izgarada AYNI diziyi "
+    "veriyor -- 11 (omega, mass) cifti x 4 izgarada `np.array_equal` True; "
+    "cebirsel sebebi 0.5 ile carpmanin ikilik kayan noktada TAM olmasi. "
+    "Iki motor bir ANALOJI degil bir NESNE paylasiyor. "
+    "BUYUKLUK NEDIR: platoda iki-motor Ehrenfest artigi EKSI dondurulmus-MD "
+    "tabani. TABAN CIKARILMAK ZORUNDADIR -- ham artigin %31.9'u TEK "
+    "MOTORLUKTUR (kuantum paketinin Morse minimumundaki sifir-nokta "
+    "bag-uzama salinimi) ve kenar hakkinda HICBIR SEY soylemez. "
+    "PENCERE: Morse(d_e = K_HF/(2a^2), r_e = R_E_BOHR, a = A_ESLESEN), "
+    "L = 4.0 n = 512, A = 0.1, sigma = uyumlu, N_BOLME = 200; periyot 18 ve "
+    "24'te BIT BIT ayni. Periyot 30'da 0.13164903'e KAYAR cunku "
+    "DONDURULMUS-MD TABANI kendi platosunda surukleniyor -- sayinin periyot "
+    "ekseni bir dugmedir ve pencereye yazilmadan tasinamaz. "
+    "KUSUR BEYANI, GOMME KATLANMASI: `ForceField` sozlesmesi KONUM alir ve "
+    "ayrim iceride `r = |r_2 - r_1|`, yani bir NORM'dur ve negatif olamaz; "
+    "izgara ise isaretlidir. L = 4.0'da 84 nokta (x < -r_e) KATLANIR ve "
+    "potansiyel duvarin tepesinden geri asagi doner. Elle yazilmis bir V "
+    "satirinin YAPAMAYACAGI bir hatadir; kenar onu sozlesmeye saygi "
+    "duydugu icin MIRAS ALIR. Bedeli OLCULDU: "
+    + repr(_TDSE_MD_KATLANMA_BEDELI) + " bohr. Gizlenmiyor, SAYILIYOR "
+    "(`MdTdsePotansiyeli.katlanan_nokta`). "
+    "NE SEMA CIPASI NE FIZIK CIPASI: `hf -> md`den farki, iki tuketicinin "
+    "ayni cozumun soyundan gelmemesi; olculen sey TEK bir yuzeyin IKI ayri "
+    "motorda kosulmasinin AYRISMASIDIR."
+)
+
 _OLCULMEDI_GEREKCE = (
     "SIFIR KOD KENARI, AMA HUKUM YOK. Bu cifti olcen ajan 29.08.2026'da "
-    "API baglantisi kopunca oldu ve " + HICBIR_SAYI_GELMEDI + ". "
-    "'OLCULDU, SIFIR CIKTI' ile 'HIC OLCULMEDI' AYNI HUCREYE YAZILAMAZ: "
-    "bu bir YOKLUK BEYANIDIR, bir sonuc DEGIL. Bu yuzden buyukluk None."
+    "API baglantisi kopunca oldu ve o gun " + HICBIR_SAYI_GELMEDI + ". "
+    "22.09.2026'DA SAYI GELDI AMA HUKUM GELMEDI: spec 7.2'nin on olcumu "
+    "(34 ajan; 8 olcum, her hukme uc mercekli curutme) bu cifti olctu ve "
+    "sekiz hukmun sekizi de 3/3 oyla CURUTULDU -- curuyen sey cogunlukla "
+    "KOVA degil SAYI ve PENCERE oldu. Yani bugun eldeki sey bir SONUC "
+    "degil, birbirini curuten adaylardir; sevk edilebilir tek bir buyukluk "
+    "ayakta kalmadi. 'OLCULDU, SIFIR CIKTI' ile 'HIC OLCULMEDI' AYNI "
+    "HUCREYE YAZILAMAZ -- ve 22.09'dan sonra UCUNCU bir hucre daha ayrilir: "
+    "'OLCULDU AMA HUKUM VERILEMEDI'. Bu yuzden buyukluk None. Tam rapor: "
+    "`.superpowers/sdd/modul7-72-on-olcum-2026-09-22.md`."
 )
 
 KOVA_TABLOSU: tuple[EdgeFact, ...] = (
-    # --- GERCEK KOPRU (1) ---------------------------------------------------
+    # --- GERCEK KOPRU (2) ---------------------------------------------------
+    EdgeFact(
+        kaynak="md",
+        hedef="tdse",
+        kova=Kova.GERCEK_KOPRU,
+        gerekce=_TDSE_MD_GEREKCE,
+        buyukluk=_TDSE_MD_KENAR_SAYISI,
+    ),
     EdgeFact(
         kaynak="hf",
         hedef="md",
@@ -435,14 +526,7 @@ KOVA_TABLOSU: tuple[EdgeFact, ...] = (
     # --- BENZERLIK (0) ------------------------------------------------------
     # Bicimsel analoji kovasi BOS: bu turda olculen yok. Bos kalmasi bir
     # ihmal degil bir OLCUM SONUCUDUR ve sayisi (0) testte kilitlidir.
-    # --- OLCULMEDI (8) ------------------------------------------------------
-    EdgeFact(
-        kaynak="tdse",
-        hedef="md",
-        kova=Kova.OLCULMEDI,
-        gerekce=_OLCULMEDI_GEREKCE,
-        buyukluk=None,
-    ),
+    # --- OLCULMEDI (7) ------------------------------------------------------
     EdgeFact(
         kaynak="tdse",
         hedef="tb",
@@ -494,16 +578,38 @@ KOVA_TABLOSU: tuple[EdgeFact, ...] = (
     ),
 )
 
-#: Kova basina beklenen girdi sayisi. OLCULDU (30.08.2026): 1 / 4 / 8 / 0 / 8,
-#: toplam 21 = C(7, 2). Bu esleme bir testle hem tabloya hem `MODULLER`in
-#: kombinasyonlarina karsi sinanir.
+#: Kova basina beklenen girdi sayisi. OLCULDU (30.08.2026): 1 / 4 / 8 / 0 / 8.
+#: 22.09.2026'DA DEGISTI -> 2 / 4 / 8 / 0 / 7: `md -> tdse` kenari YAZILDI ve
+#: cift OLCULMEDI'den GERCEK_KOPRU'ya gecti. Toplam 21 = C(7, 2) KORUNUR.
+#: Bu esleme bir testle hem tabloya hem `MODULLER`in kombinasyonlarina karsi
+#: sinanir.
 KOVA_SAYILARI: dict[str, int] = {
-    Kova.GERCEK_KOPRU: 1,
+    Kova.GERCEK_KOPRU: 2,
     Kova.TAUTOLOJI: 4,
     Kova.YAPISAL_YOK: 8,
     Kova.BENZERLIK: 0,
-    Kova.OLCULMEDI: 8,
+    Kova.OLCULMEDI: 7,
 }
+
+
+#: KENAR DUGUMU OLUP MUTLAK OLCEK EKSENINE DOKUNMAYAN MOTORLER.
+#:
+#: Modul 7 (30.08.2026) bir OZDESLIK olctu: "`units.py`ye dokunan kume
+#: {hf, md, tb} = bagli kume" -- yani mutlak olcege dokunanlarla koprulerle
+#: bagli olanlar AYNI kumeydi, ve kalan dort motor hem eksensiz hem bagsizdi.
+#:
+#: O OZDESLIK 22.09.2026'DA COTU, ve curuten sey bu depodaki bir olcumdur:
+#: `md -> tdse` kenari yazilinca `tdse` bir kenar dugumu oldu ama
+#: `olculen_units_ekseni()["tdse"]` hala 0 -- TDSE motoru `qlab.units`e hic
+#: dokunmuyor. Yani ozdeslik bir YASA DEGIL, eski topolojinin OLCULMUS BIR
+#: RASTLANTISIYMIS.
+#:
+#: Kilit GEVSETILMEDI, DARALTILDI: "eksenli kume kenar dugumlerinin ALT
+#: KUMESIDIR" hala zorlanir (eksene dokunup bagsiz kalan bir motor cikarsa
+#: KIRMIZI), ve eksensiz kalan kenar dugumleri ADIYLA burada sayilir. Yeni
+#: bir olceksiz dugum eklenirse bu kume guncellenmek ZORUNDA kalir --
+#: sessizce buyuyemez.
+OLCEKSIZ_KENAR_DUGUMLERI: frozenset[str] = frozenset({"tdse"})
 
 
 # --- `qlab.units` ekseni (Task 5) ------------------------------------------
@@ -579,9 +685,16 @@ def tablo_tutarsizliklari(
         sorunlar.append(f"kova sayimi {sayim} != {KOVA_SAYILARI}")
     eksenli = {ad for ad, n in eksen.items() if n > 0}
     dugumler = {m for kenar in kenarlar for m in kenar}
-    if eksenli != dugumler:
+    if not eksenli <= dugumler:
         sorunlar.append(
-            f"units ekseni {sorted(eksenli)} != kenar dugumleri {sorted(dugumler)}"
+            f"units eksenli {sorted(eksenli - dugumler)} kenar dugumu DEGIL"
+        )
+    olceksiz = dugumler - eksenli
+    if olceksiz != OLCEKSIZ_KENAR_DUGUMLERI:
+        sorunlar.append(
+            f"olceksiz kenar dugumleri {sorted(olceksiz)} != "
+            f"{sorted(OLCEKSIZ_KENAR_DUGUMLERI)} -- bir kenar dugumu mutlak "
+            "olcek eksenine sessizce girdi ya da cikti"
         )
     return tuple(sorunlar)
 
@@ -604,7 +717,8 @@ def tablo_tutarsizliklari(
 # sekiz haneden fazlasina yazilamaz (`observable/bridge_obs.py`).
 
 _YONTEM = (
-    "Moduller arasi YOKLUK HARITASI ve tek gercek kenarin taban olcumu; "
+    "Moduller arasi YOKLUK HARITASI ve TABANI OLCULEN kenarin (`hf -> md`) "
+    "taban olcumu; "
     "bu modul SIFIR YENI FIZIK sevk eder. Kova tablosu ELLE LISTELENMEZ, "
     "KODDAN TURETILIR: `olculen_kenarlar()` `src/qlab/engine/*/` agacini "
     "`ast` ile tarar, `olculen_units_ekseni()` ayni yontemle `qlab.units`e "
@@ -661,7 +775,9 @@ _IHMAL: tuple[str, ...] = (
     "KENARI GUCLENDIRECEK UCUNCU BIR TUKETICI YAZILMADI (spec 8): yeni "
     "tuketici de ayni HF soyundan gelirdi, sema cipasi sema cipasi kalirdi -- "
     "daireyi buyutur, kirmaz",
-    "IKINCI BIR BORU YOK: tek gercek kenarin tek borusu var; iki-ayarli "
+    "IKINCI BIR BORU YOK: tabani olculen kenarin (`hf -> md`) tek borusu "
+    "var -- 22.09.2026'da ikinci bir GERCEK_KOPRU (`md -> tdse`) yazildi ama "
+    "o AYRI bir kenardir, bu kenarin ikinci borusu DEGILDIR; iki-ayarli "
     "capraz kontrol (Modul 6) burada kurulamaz ve karisik boru yasagi bir "
     "ikinci boruyu HF'in oteki tuketicisinden odunc almayi da yasaklar",
     _YONTEM_HEDEF_A,
@@ -678,24 +794,35 @@ _YOKLUK_HARITASI_BEYANI = (
     "9.665562e+129 nokta (kenar 1 angstrom olsaydi 6.522644e+130 -- span bir "
     "dugmedir); `hf -> tdse` icin O 1s izgarasi 1600^3 = 4.096e+09 nokta = "
     "61.04 GiB; `em -> tdse` icin yazilacak bir mertebe YOK, eksik olan sayi "
-    "degil KARSILIKTIR. OLCULMEDI AYRI BIR KOVADIR: sekiz cift (tdse-md, "
-    "tdse-tb, tdse-spin, hf-spin, md-tb, md-em, tb-em, spin-em) orada durur, "
-    "cunku 29.08.2026 on olcumunde o soruyu olcen ajan API baglantisi "
-    "kopunca oldu ve hicbir sayi gelmedi; 'olculdu, sifir cikti' ile ayni "
+    "degil KARSILIKTIR. OLCULMEDI AYRI BIR KOVADIR: YEDI cift (tdse-tb, "
+    "tdse-spin, hf-spin, md-tb, md-em, tb-em, spin-em) orada durur. "
+    "29.08.2026'da SEKIZDILER ve sebep 'hicbir sayi gelmedi'ydi; "
+    "22.09.2026'da spec 7.2'nin on olcumu kosuldu, sekizinin sekizinde de "
+    "sayi GELDI ve `tdse-md` kenari YAZILARAK GERCEK_KOPRU'ya gecti. Kalan "
+    "yedinin sebebi ARTIK BASKA: sayi var, HUKUM yok -- sekiz hukmun sekizi "
+    "de uc mercekli curutmede 3/3 dustu. 'olculdu, sifir cikti' ile ayni "
     "hucreye YAZILAMAZ -- bu bir yokluk beyanidir, bir sonuc degil, ve spec "
     "7.2 ACIK kalir"
 )
 
 _YAPI_BEYANI = (
-    "YAPININ SEKLI: bir MERDIVEN DEGIL, merkezi HF olan IKI CUBUKLU BIR "
-    "YILDIZ. Capraz-motor import kenari tam IKI -- `engine/md/forcefields.py:13` "
-    "-> `qlab.engine.hf.scf` ve `engine/tb/downfold.py:130-132` -> "
-    "`qlab.engine.hf.{basis, integrals, multistart}` -- 21 ciftin 19'unda "
-    "SIFIR bag, iki kenarin ikisi de ayni dugume gidiyor. Ve merdiven "
-    "fizikten ONCE TANIMDAN yok: `qlab.units`e dokunan motor kumesi `ast` "
-    "ile {hf, md, tb} (hf 1, md 3, tb 2 dosya; tdse/spin/em/grav 0) -- iki "
-    "kenarin dugum kumesinin AYNISI; kalan dort motor hem eksensiz hem "
-    "bagsiz. Iki kume de bu kosumda CANLI taranir ve canli satirda yazilidir"
+    "YAPININ SEKLI: bir MERDIVEN DEGIL, ama artik bir YILDIZ DA DEGIL -- "
+    "DORT DUGUMLU BIR ZINCIR: `tb - hf - md - tdse`. Capraz-motor import "
+    "kenari tam UC -- `engine/md/forcefields.py:13` -> `qlab.engine.hf.scf`, "
+    "`engine/tb/downfold.py:130-132` -> "
+    "`qlab.engine.hf.{basis, integrals, multistart}`, ve 22.09.2026'da "
+    "YAZILAN `engine/tdse/from_md.py` -> `qlab.engine.md.state`. Dereceler "
+    "hf 2, md 2, tb 1, tdse 1; 21 ciftin 18'inde SIFIR bag. Modul 7 "
+    "kapandiginda kenar IKIYDI ve ikisi de ayni dugume gittigi icin yapi "
+    "merkezi HF olan iki cubuklu bir yildizdi; ucuncu kenar o sekli BOZDU. "
+    "MERDIVEN HUKMU YINE DE AYAKTA, AMA DAYANAGI DARALDI: bir zincir "
+    "topolojik olarak yildizdan daha cok merdivene benzer, oysa bu bir "
+    "OLCEK merdiveni degildir cunku ZINCIRIN UCU OLCEKSIZDIR. `qlab.units`e "
+    "dokunan motor kumesi `ast` ile hala {hf, md, tb} (hf 1, md 3, tb 2 "
+    "dosya; tdse/spin/em/grav 0) ama artik kenar dugumlerinin AYNISI DEGIL, "
+    "ALT KUMESI: `tdse` bagli ama olceksiz. Modul 7'nin olctugu o ozdeslik "
+    "bir yasa degil, eski topolojinin bir RASTLANTISIYMIS. Iki kume de bu "
+    "kosumda CANLI taranir ve canli satirda yazilidir"
 )
 
 _KENAR_TABANI_BEYANI = (
@@ -720,7 +847,10 @@ _KENAR_TABANI_BEYANI = (
 
 _DURUST_OLUMSUZLAR = (
     "DURUST OLUMSUZLAR -- BEYAN EDILDI, DUZELTILMEDI, PANEL TASIR: (1) spec "
-    "7.2 ACIK: sekiz cift OLCULMEDI kovasinda, hicbir sayi yok; (2) `md -> "
+    "7.2 HALA ACIK ama DARALDI: 22.09.2026'da sekiz ciftin sekizi de "
+    "olculdu ve `tdse-md` kenari yazildi; kalan YEDI cift OLCULMEDI "
+    "kovasinda kalir cunku sayi geldi HUKUM gelmedi (sekiz hukmun sekizi "
+    "de uc mercekli curutmede 3/3 dustu); (2) `md -> "
     "spin` ve `hf -> em` tautoloji hukumleri 29.08.2026 on olcumunden "
     "DEVRALINDI ve bu gorevde yeniden olculmedi (damgalari tabloda "
     "yazilidir); (3) makineler arasi tekrarlanabilirlik OLCULMEDI -- bit bit "
