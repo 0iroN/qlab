@@ -154,8 +154,9 @@ def test_zincir_analitik_dispersiyon_KABA_kontrol():
 
 
 def test_uniform_model_kesme_yaricapindan_komsu_kuruyor():
-    """`neighbour_shells`in tek tuketicisi -- Task 1'in muhafazasi
-    GERCEKTEN kullanilan bir yolda kalsin diye.
+    """`neighbour_shells`in iki tuketicisinden biri (digeri `distance_model`,
+    sayim `test_distance_model.py`de `ast` ile kilitli) -- Task 1'in
+    muhafazasi GERCEKTEN kullanilan bir yolda kalsin diye.
     """
     kubik = Lattice(
         vectors=np.array([[2.5, 0.0, 0.0], [0.0, 2.5, 0.0], [0.0, 0.0, 2.5]]),

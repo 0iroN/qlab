@@ -14,7 +14,8 @@ Bilinmeyen bir "kind" değeri ScenarioError üretir ve geçerli türleri sayar.
 
 ALT TÜRLER de aynı kuralla denetlenir, tüketiciye ham hata sızmadan:
 "potential.kind" → POTENTIAL_KINDS, "model"/"algorithm" → SPIN_*_KINDS,
-ve "force_field.kind"/"thermostat.kind" → MD_*_KINDS.
+ve "force_field.kind"/"thermostat.kind" → MD_*_KINDS; `tb_ss_sigma` türünün
+parametre anahtarları → TB_SS_SIGMA_* ve RADIAL_LAW_FIELDS.
 """
 
 from __future__ import annotations
@@ -33,6 +34,10 @@ from qlab.scenario.schema import (
     MD_FORCE_FIELD_KINDS,
     MD_THERMOSTAT_KINDS,
     POTENTIAL_KINDS,
+    RADIAL_LAW_FIELDS,
+    TB_SS_SIGMA_LAWS,
+    TB_SS_SIGMA_PARAMS,
+    TB_SS_SIGMA_REQUIRED,
     SPIN_ALGORITHM_KINDS,
     SPIN_MODEL_KINDS,
     BridgeScenario,
@@ -303,6 +308,49 @@ def _load_hf_scan_scenario(raw: dict, file_path: Path) -> HFScanScenario:
         raise ScenarioError(f"Senaryo alanları hatalı ({file_path}): {exc}") from exc
 
 
+def _tb_ss_sigma_parametre_kapisi(params: object) -> None:
+    """`tb_ss_sigma` parametrelerinin ANAHTAR kapısı (değerleri motor denetler).
+
+    Öteki MD türlerinin parametreleri `**p` ile sınıfa gider ve yazım
+    hatası orada ham `TypeError` verirdi; bu tür iki iç içe yasa ve bir
+    birim dönüşümü taşıdığı için anahtarlar burada, YAML okunurken ve
+    geçerli adlar SAYILARAK reddedilir. Değer kapıları (sonluluk,
+    `r_on < r_cut`, kT > 0, L/2) motordadır ve `InvalidInputError` fırlatır;
+    iki denetim ayrı türdür.
+    """
+    if not isinstance(params, dict):
+        raise ScenarioError(
+            "'force_field.params' tb_ss_sigma için bir sözlük olmalı, verilen: "
+            f"{type(params).__name__}"
+        )
+    bilinmeyen = set(params) - set(TB_SS_SIGMA_PARAMS)
+    if bilinmeyen:
+        raise ScenarioError(
+            f"tb_ss_sigma: bilinmeyen parametre(ler) {sorted(bilinmeyen)}. "
+            f"Geçerli parametreler: {list(TB_SS_SIGMA_PARAMS)}"
+        )
+    eksik = set(TB_SS_SIGMA_REQUIRED) - set(params)
+    if eksik:
+        raise ScenarioError(
+            f"tb_ss_sigma: eksik parametre(ler) {sorted(eksik)} "
+            f"(zorunlu: {list(TB_SS_SIGMA_REQUIRED)})"
+        )
+    for rol in TB_SS_SIGMA_LAWS:
+        yasa = params[rol]
+        if not isinstance(yasa, dict):
+            raise ScenarioError(
+                f"tb_ss_sigma: '{rol}' bir sözlük olmalı "
+                f"({list(RADIAL_LAW_FIELDS)}), verilen: {type(yasa).__name__}"
+            )
+        if set(yasa) != set(RADIAL_LAW_FIELDS):
+            raise ScenarioError(
+                f"tb_ss_sigma: '{rol}' yasasının anahtarları "
+                f"{sorted(yasa)}; beklenen tam olarak {list(RADIAL_LAW_FIELDS)} "
+                f"(bilinmeyen {sorted(set(yasa) - set(RADIAL_LAW_FIELDS))}, "
+                f"eksik {sorted(set(RADIAL_LAW_FIELDS) - set(yasa))})"
+            )
+
+
 def _load_md_scenario(raw: dict, file_path: Path) -> MDScenario:
     unknown = set(raw) - _MD_TOP_LEVEL
     if unknown:
@@ -332,6 +380,8 @@ def _load_md_scenario(raw: dict, file_path: Path) -> MDScenario:
             f"Bilinmeyen kuvvet alanı: {ff_kind!r}. "
             f"Geçerli kuvvet alanları: {list(MD_FORCE_FIELD_KINDS)}"
         )
+    if ff_kind == "tb_ss_sigma":
+        _tb_ss_sigma_parametre_kapisi(force_field.get("params"))
 
     # Termostat türü de BURADA denetlenir -- yukarıdaki kapıyla aynı gerekçe.
     # FARK ÖLÇÜLDÜ (30.08.2026): `MD_THERMOSTAT_KINDS` ÖLÜydü ama BAYAT

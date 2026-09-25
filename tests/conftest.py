@@ -140,6 +140,11 @@ def sevk_tarayici():
 
     Ölçüt yapısaldır: verilen işlevin gövdesindeki, solu `degisken` adı ve
     tek işleci `==` olan karşılaştırmaların dizge sabitleri.
+
+    KÖR NOKTASI (ölçüldü, 23.09.2026): solu bir `Name` OLMAYAN dal --
+    `x["kind"] == "..."`, `"..." == tur`, `tur in (...)` -- bu tarayıcıya
+    GÖRÜNMEZ. Kapatan eşi `dize_karsilastirma_tarayici`dir: "her dizge
+    karşılaştırmasının solu sevk değişkeni mi" sorusu onunla sorulur.
     """
 
     def tara(modul, islev: str, degisken: str) -> set[str]:
@@ -161,5 +166,52 @@ def sevk_tarayici():
             if isinstance(sag, ast.Constant) and isinstance(sag.value, str):
                 turler.add(sag.value)
         return turler
+
+    return tara
+
+
+@pytest.fixture(scope="session")
+def dize_karsilastirma_tarayici():
+    """Bir işlevdeki TÜM dizge karşılaştırmaları: `{(sol, dizge), ...}`.
+
+    `sevk_tarayici`nin ÖLÇÜLMÜŞ KÖR NOKTASINI kapatır (md-tb spec
+    eleştirmeni P0-1, 23.09.2026): o tarayıcı yalnız solu bir `Name` olan
+    `==` karşılaştırmalarını görür. `md/factory.py::provenance_for` kuvvet
+    alanı dallarını `scenario.force_field["kind"] == "..."` diye yazıyordu --
+    solu bir `Subscript` -- ve bu dalların sevkle eşleştiğini HİÇBİR kilit
+    denetlemiyordu. Bu tarayıcı solun biçimine bakmadan, `==`/`!=` ile
+    bir dizge sabitine karşılaştırılan HER ifadeyi (sabit hangi tarafta
+    olursa olsun) ve `in`/`not in` ile bir dizge demetine/listesine/kümesine
+    karşılaştırılan her ifadeyi `(ast.unparse(ifade), dizge)` olarak döndürür.
+    Kilit bunun üstüne kurulur: "işlevdeki her dizge karşılaştırmasının solu
+    BİLİNEN sevk değişkenidir" -- saklı bir dal (başka bir sol biçimi) o an
+    kırmızı olur.
+    """
+
+    def tara(modul, islev: str) -> set[tuple[str, str]]:
+        kaynak = Path(modul.__file__).read_text(encoding="utf-8")
+        govde = next(
+            d
+            for d in ast.walk(ast.parse(kaynak))
+            if isinstance(d, ast.FunctionDef) and d.name == islev
+        )
+        bulunan: set[tuple[str, str]] = set()
+        for dugum in ast.walk(govde):
+            if not isinstance(dugum, ast.Compare):
+                continue
+            ifadeler = [dugum.left, *dugum.comparators]
+            for k, islec in enumerate(dugum.ops):
+                sol, sag = ifadeler[k], ifadeler[k + 1]
+                if isinstance(islec, (ast.Eq, ast.NotEq)):
+                    for a, b in ((sol, sag), (sag, sol)):
+                        if isinstance(b, ast.Constant) and isinstance(b.value, str):
+                            bulunan.add((ast.unparse(a), b.value))
+                elif isinstance(islec, (ast.In, ast.NotIn)) and isinstance(
+                    sag, (ast.Tuple, ast.List, ast.Set)
+                ):
+                    for oge in sag.elts:
+                        if isinstance(oge, ast.Constant) and isinstance(oge.value, str):
+                            bulunan.add((ast.unparse(sol), oge.value))
+        return bulunan
 
     return tara

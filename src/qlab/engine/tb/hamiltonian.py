@@ -23,7 +23,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from qlab.engine.tb.lattice import Lattice, neighbour_shells
+from qlab.engine.tb.lattice import Lattice, max_cell_for_cutoff, neighbour_shells
+from qlab.engine.tb.radyal import UsselRadyalYasa
 from qlab.errors import InvalidInputError
 
 
@@ -107,15 +108,23 @@ def uniform_model(
 ) -> TBModel:
     """Kesme yaricapindan hoplama listesi kuran kisayol -- TEKBICIM `t` ile.
 
-    `neighbour_shells`in TEK tuketicisi budur ve bilinclidir: kesme
-    yaricapindaki kayan nokta tuzagi (11 fcc orgu sabitinin 5'inde 12 yerine
-    0 komsu) ancak gercekten kullanilan bir yolda korunur. Elle `Hopping`
-    listesi yazmak da mesrudur ve testlerde oyle yapilir; bu kisayol
-    yuksek koordinasyonlu kafesler (fcc'de 12 komsu) icin vardir.
+    `neighbour_shells`in IKI tuketicisinden biridir; digeri
+    `distance_model`dir (`tests/tb/test_distance_model.py` bu sayimi `ast`
+    ile kilitler). Kesme yaricapindaki kayan nokta tuzagi (11 fcc orgu
+    sabitinin 5'inde 12 yerine 0 komsu) ancak gercekten kullanilan bir yolda
+    korunur. Elle `Hopping` listesi yazmak da mesrudur ve testlerde oyle
+    yapilir; bu kisayol yuksek koordinasyonlu kafesler (fcc'de 12 komsu)
+    icin vardir.
 
-    `t` TEKBICIMDIR: her komsu ciftine ayni deger konur. Mesafeye ya da yone
-    bagli hoplama (Slater-Koster) bu fonksiyonun isi DEGILDIR -- o Plan G'nin
-    konusudur ve burada sessizce yaklasilmaz.
+    `t` TEKBICIMDIR: her komsu ciftine ayni deger konur. Mesafeye bagli
+    hoplama bu fonksiyonun isi DEGILDIR; ss-sigma satiri `distance_model`dedir.
+    Yone bagli Slater-Koster (p/d orbitalleri, yon kosinusleri) depoda YOKTUR.
+
+    `max_cell` = 2 SABITTIR ve bu bir ACIK KALANDIR (ayri is, spec md-tb 6):
+    kesme iki hucre otesine uzaninca kabuk SESSIZCE kaybolur (olculdu: 1B'de
+    kesme 3|a|'da, 15 derece egik 2B orguda 0.79|a|'da); cakisik atom kapisi
+    da yalniz bu hucreler icinde gorur. `distance_model` max_cell'i
+    `max_cell_for_cutoff` ile turetir ve bu kaybi yasamaz.
     """
     return TBModel(
         lattice=lattice,
@@ -123,6 +132,79 @@ def uniform_model(
         hoppings=tuple(
             Hopping(i=c.i, j=c.j, cell=c.cell, t=t)
             for c in neighbour_shells(lattice, cutoff_bohr)
+        ),
+    )
+
+
+def distance_model(
+    lattice: Lattice,
+    onsite: np.ndarray,
+    ss_sigma: UsselRadyalYasa,
+    max_cell: int | None = None,
+) -> TBModel:
+    """Mesafeye bagli hoplama: her komsu cifti icin t = ss_sigma(d), HARTREE.
+
+    Slater-Koster tablosunun YALNIZ ss-sigma satiri. Tek s orbitali/atom:
+    aci carpani OZDES 1, bu bir SK modeli DEGILDIR. p/d yok (V_sp-sigma,
+    V_pp-sigma, V_pp-pi kapsam disi). Isaret: H'nin kosegen disi elemani
+    dogrudan t'dir (`Hopping`); '-t' konvansiyonu kullanilmaz.
+
+    KESME YASADAN TURETILIR (`ss_sigma.r_cut_bohr`); ayri ve daha kucuk bir
+    kesme verilemez, cunku o zaman sert kesmenin merdiveni geri gelirdi
+    (spec md-tb B3: `uniform_model` dimerde 2|t| = 0.2000 sicrar, bu yasa
+    kuyrukta C^1 ile sifira iner). r_cut'ta ya da hemen otesinde (bagil
+    tolerans bandinda) kalan bir komsu listeye t = 0.0 ile girer.
+
+    `NeighbourPair.distance` src'de ILK kez burada okunur. Bu yol ile MD yolu
+    (`qlab.engine.tb.mermin.tek_orbital_mermin`) AYNI yasa nesnesini
+    kullanabilir ve Gamma'daki supercell'de ayni Omega ve kuvveti verir
+    (`tests/tb/test_distance_model.py` M6).
+
+    `max_cell` verilmezse `max_cell_for_cutoff`tan (ters orgu) turetilir.
+    Verilirse ondan KUCUK olamaz (`InvalidInputError`): daha kucuk bir
+    max_cell kabugu SESSIZCE kaybedebilir (olculdu, `max_cell_for_cutoff`).
+    Cakisik taban atomlari ya da goruntuleri `neighbour_shells`te
+    `InvalidInputError`dir.
+
+    `onsite` modele aynen gecer (M6'nin onsite kolu kilitler: tekbicim c ile
+    Omega + n_e c ve ayni kuvvet, yuvarlama duzeyinde ve |c| ile olcekli
+    toleransla). Tekbicim c ozdegerleri c kadar kaydirir;
+    `mermin_dolum`un kT = 0 dejenerelik toleransi max|eps| ile olceklendigi
+    icin sahte-dejenerelik bandi |c| ile buyur (beyanli, `mermin.py`).
+
+    MALIYET (olculdu, 24.09.2026, bu makine; x'te N atomlu supercell, a = 2,
+    5 tekrarin en kucugu): distance_model + H(Gamma) N = 16/32/64/128'de
+    2.2/8.6/33.7/133 ms -- `neighbour_shells`in Python dongusu, ~N^2. Omega
+    ve kuvvetle birlikte kafes yolu MD yolundan 9.5/20/44/51 kat yavas. MD
+    bu yuzden kafes yolundan GECMEZ (spec 2.3); iki yolun esitligi M6'da
+    kilitli (N = 128'de de |dOmega| 3.6e-15, max|dF| 2.5e-15).
+
+    PARAMETRELER SECIMDIR (spec B4): yasa turetilmedi, secildi; bu kenarda
+    DOGA CIPASI YOKTUR.
+    """
+    if not isinstance(ss_sigma, UsselRadyalYasa):
+        raise InvalidInputError(
+            f"ss_sigma bir UsselRadyalYasa olmali: {type(ss_sigma).__name__}"
+        )
+    kesme = ss_sigma.r_cut_bohr
+    gereken = max_cell_for_cutoff(lattice, kesme)
+    if max_cell is None:
+        max_cell = gereken
+    elif isinstance(max_cell, bool) or not isinstance(max_cell, (int, np.integer)):
+        raise InvalidInputError(f"max_cell bir tamsayi olmali: {max_cell!r}")
+    elif max_cell < gereken:
+        raise InvalidInputError(
+            f"max_cell = {max_cell} kesme {kesme} bohr icin yetmez: ters orgu "
+            f"siniri {gereken} (daha kucugu kabuk kaybedebilir)"
+        )
+    ciftler = neighbour_shells(lattice, kesme, max_cell=int(max_cell))
+    t, _ = ss_sigma.deger_ve_turev(np.array([c.distance for c in ciftler], dtype=float))
+    return TBModel(
+        lattice=lattice,
+        onsite=onsite,
+        hoppings=tuple(
+            Hopping(i=c.i, j=c.j, cell=c.cell, t=float(t_c))
+            for c, t_c in zip(ciftler, t)
         ),
     )
 

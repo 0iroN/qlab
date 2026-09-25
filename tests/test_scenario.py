@@ -502,11 +502,12 @@ def test_shipped_scenario_loads_and_runs(scenario_path):
         kisa = dataclasses.replace(scenario, n_bolme=50, periyot_sayisi=2)
         yuk = build_bridge_payload(kisa)
         assert yuk.tutarsizliklar == ()
+        # 24.09.2026: `md-tb` kenarı yazıldı (OLCULMEDI -> GERCEK_KOPRU).
         assert yuk.kova_sayim == {
-            "GERCEK_KOPRU": 2, "TAUTOLOJI": 4, "YAPISAL_YOK": 8,
-            "BENZERLIK": 0, "OLCULMEDI": 7,
+            "GERCEK_KOPRU": 3, "TAUTOLOJI": 4, "YAPISAL_YOK": 8,
+            "BENZERLIK": 0, "OLCULMEDI": 6,
         }
-        assert len(yuk.kenarlar) == 3
+        assert len(yuk.kenarlar) == 4
         for taban in (yuk.a1, yuk.a2):
             assert math.isfinite(taban.taban) and taban.taban > 0.0, (
                 f"{scenario_path.name}: kenar tabanı sonlu/pozitif değil"

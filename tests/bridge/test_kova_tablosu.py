@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+import qlab
 from qlab.scenario.loader import load_scenario
 from qlab.bridge_map import (
     OLCEKSIZ_KENAR_DUGUMLERI,
@@ -37,7 +38,9 @@ MOTOR_KOKU = KAYNAK / "engine"
 #: Kaynak ağacında ÖLÇÜLEN çapraz-motor kenarlar. Modül 7 kapandığında İKİ
 #: taneydi; ÜÇÜNCÜSÜ 22.09.2026'da `engine/tdse/from_md.py` ile YAZILDI ve
 #: `tdse-md` çifti `OLCULMEDI`den `GERCEK_KOPRU`ya geçti (spec 7.2 kapanışı).
-BEKLENEN_KENARLAR = {("md", "hf"), ("tb", "hf"), ("tdse", "md")}
+#: DÖRDÜNCÜSÜ 24.09.2026'da `engine/md/tb_kuvvet.py` (ve `md/factory.py`nin
+#: yasa importu) ile YAZILDI; `md-tb` aynı yolu izledi (spec md-tb 5.4).
+BEKLENEN_KENARLAR = {("md", "hf"), ("md", "tb"), ("tb", "hf"), ("tdse", "md")}
 
 
 # --- Bağımsız tarayıcı -------------------------------------------------------
@@ -124,7 +127,11 @@ BU TUZAĞIN BİR ÖRNEĞİ DEPODA ÖLÇÜLDÜ (`test_MD_FORCE_FIELD_KINDS_...`
     `md → hf` (`engine/md/forcefields.py:13`) ve
     `tb → hf` (`engine/tb/downfold.py:130-132`). 21 çiftin 19'unda sıfır
     bağ, ve iki kenarın ikisi de aynı düğüme gidiyor — yapı bir merdiven
-    değil, merkezi HF olan İKİ ÇUBUKLU BİR YILDIZ.
+    değil, merkezi HF olan İKİ ÇUBUKLU BİR YILDIZ. (O günün kaydı ve
+    yukarıdaki "2'dir" örneği varsayımsal kalmadı: 22.09.2026'da üçüncü kenar
+    `tdse → md` yapıyı dört düğümlü bir zincire, 24.09.2026'da dördüncü kenar
+    `md → tb` `hf - md - tb` üçgeni + `md - tdse` kuyruğuna çevirdi. Bugünkü
+    küme `BEKLENEN_KENARLAR`dadır ve bu test ona karşı kilitler.)
 
     PLANIN "tablo = `SIFIR_KENAR` olmayan girdiler" FİLTRESİ ÇÜRÜDÜ, iki
     kez: (a) beş kovanın hiçbirinin adı `SIFIR_KENAR` değil — plan Step 1
@@ -184,9 +191,17 @@ def test_YIRMI_BIR_CIFTIN_TAMAMI_BIR_KOVADA():
     assert set(kapsanan) == ciftler
 
 
-def test_KOVA_SAYILARI_1_4_8_0_8_ve_BENZERLIK_BOS_KALMASI_BIR_OLCUM():
-    """ÖLÇÜLDÜ: GERÇEK KÖPRÜ 1 · TAUTOLOJİ 4 · YAPISAL YOK 8 ·
-    BENZERLİK 0 · ÖLÇÜLMEDİ 8. Toplam 21 = C(7, 2).
+def test_KOVA_TABLOSU_SAYIMI_SABITI_TUTUYOR_ve_TOPLAM_21():
+    """Modül 7 kapanışında (30.08.2026) ÖLÇÜLDÜ: GERÇEK KÖPRÜ 1 · TAUTOLOJİ 4
+    · YAPISAL YOK 8 · BENZERLİK 0 · ÖLÇÜLMEDİ 8; 22.09.2026'da 2/4/8/0/7
+    (tdse-md), 24.09.2026'da 3/4/8/0/6 (md-tb). Toplam 21 = C(7, 2) korunur.
+
+    Testin adı 24.09.2026'da değişti (eski ad
+    `test_KOVA_SAYILARI_1_4_8_0_8_ve_BENZERLIK_BOS_KALMASI_BIR_OLCUM`): hem
+    22.09'dan beri tutmayan sayıları hem de aşağıda bu testin
+    KİLİTLEMEDİĞİ ölçülen bir sözü ("BENZERLİK boş") taşıyordu -- aynı
+    dosyadaki units ekseni testinin emsali gibi, eski ad tutmayan bir söz
+    veriyordu. Gövde değişmedi.
 
     BENZERLİK kovasının boş olması bir ihmal değil bir ÖLÇÜM SONUCUdur.
     **AMA O SAYIYI KİLİTLEYEN ŞEY BU TEST DEĞİLDİR** ve bu dokstring bir
@@ -229,29 +244,32 @@ def test_OLCULMEDI_AYRI_BIR_KOVADIR_ve_HICBIR_SAYI_TASIMAZ():
     """Spec §7.2: "ÖLÇÜLDÜ, SIFIR ÇIKTI" ile "HİÇ ÖLÇÜLMEDİ" AYNI HÜCREYE
     YAZILAMAZ.
 
-    Sekiz çift (tdse-md, tdse-tb, tdse-spin, hf-spin, md-tb, md-em, tb-em,
-    spin-em) ikincidedir: o soruyu ölçen ajan API bağlantısı kopunca öldü
-    ve hiçbir sayı gelmedi. Bu bir YOKLUK BEYANIDIR, bir sonuç DEĞİL.
+    29.08.2026'da sekiz çift (tdse-md, tdse-tb, tdse-spin, hf-spin, md-tb,
+    md-em, tb-em, spin-em) ikincideydi: o soruyu ölçen ajan API bağlantısı
+    kopunca öldü ve hiçbir sayı gelmedi. Bu bir YOKLUK BEYANIDIR, bir sonuç
+    DEĞİL. İkisi kenarları yazılarak ayrıldı (tdse-md 22.09, md-tb 24.09);
+    bugün ALTI çift burada — sayı var, hüküm yok (22.09).
 
-    Kilit üç parçalı: (a) çiftler tam olarak o sekiz, (b) hepsinin
-    `buyukluk`u `None` — çünkü hiçbir sayı gelmedi, (c) beyan dizgesi
-    YALNIZCA bu kovada geçiyor. (c) olmadan bu kovayı `YAPISAL_YOK`a
+    Kilit üç parçalı: (a) çiftler tam olarak o altı, (b) hepsinin
+    `buyukluk`u `None` — çünkü 22.09.2026'da sayı geldi ama HÜKÜM gelmedi
+    (sekiz hükmün sekizi 3/3 çürütüldü; 29.08'de hiç sayı gelmemişti), (c)
+    beyan dizgesi YALNIZCA bu kovada geçiyor. (c) olmadan bu kovayı `YAPISAL_YOK`a
     katlayan bir mutant sadece bir sayaç değiştirir; (c) ile birlikte
     metnin kendisi de taşınmak zorunda kalır.
     """
     olculmedi = [f for f in KOVA_TABLOSU if f.kova == Kova.OLCULMEDI]
     # ("md", "tdse") ARTIK BURADA DEĞİL: kenarı 22.09.2026'da yazıldı, çift
-    # `GERCEK_KOPRU`ya geçti. Sekiz -> YEDİ.
+    # `GERCEK_KOPRU`ya geçti. Sekiz -> YEDİ. ("md", "tb") de 24.09.2026'da
+    # aynı yolu izledi (kenarı `engine/md/tb_kuvvet.py`). Yedi -> ALTI.
     assert {f.cift for f in olculmedi} == {
         ("tb", "tdse"),
         ("spin", "tdse"),
         ("hf", "spin"),
-        ("md", "tb"),
         ("em", "md"),
         ("em", "tb"),
         ("em", "spin"),
     }
-    assert len(olculmedi) == 7  # 22.09.2026: tdse-md ayrildi (kenarı yazıldı)
+    assert len(olculmedi) == 6  # 24.09.2026: md-tb de ayrildi (kenarı yazıldı)
     # Beyan dizgesi HARFİ HARFİNE aranıyor, `HICBIR_SAYI_GELMEDI` sabiti
     # ÜZERİNDEN DEĞİL: gerekçeler o sabitten kuruluyor, dolayısıyla sabiti
     # "ölçüldü, sıfır çıktı" diye değiştiren bir mutant sabit üzerinden
@@ -268,6 +286,57 @@ def test_OLCULMEDI_AYRI_BIR_KOVADIR_ve_HICBIR_SAYI_TASIMAZ():
         assert "HICBIR SAYI GELMEDI" not in f.gerekce, (
             f"{f.cift} ÖLÇÜLMEDİ kovasında değil ama o kovanın beyanını taşıyor"
         )
+
+
+def test_MD_TB_GERCEK_KOPRU_BUYUKLUK_YOK_MODEL_CIPASI_DOGA_CIPASI_YOK():
+    """`md-tb` (24.09.2026) — kova sözlüğü BÜKÜLMEDİ, kenar KURULDU.
+
+    Kod kenarı yazılınca çift `OLCULMEDI`de kalamaz (`tablo_tutarsizliklari`
+    birinci kilidi) ve `YAPISAL_YOK` da aynı kilitle yasak; seçenekler
+    GERCEK_KOPRU / TAUTOLOJI / BENZERLIK'ti (spec md-tb 0.2). Kova
+    GERCEK_KOPRU, `buyukluk` None — ve None'un sebebi `hf -> md`ninkinden
+    FARKLI: orada taban iki sayıdır, burada kenar tabanı HİÇ ÖLÇÜLMEDİ.
+    Gerekçe bunu, model çıpası / doğa çıpası ayrımını ve M10 bağımsızlığını
+    ADIYLA yazmak zorunda.
+
+    Gerekçenin kod iddiası da KAYNAĞA karşı sınanır (bağımsız tarayıcı):
+    md paketinden tb'ye giden import'lar TAM olarak üç (dosya, modül)
+    çiftidir. Dördüncü bir import eklenirse gerekçe bayatlar ve bu test
+    kırmızı olur.
+    """
+    (girdi,) = [f for f in KOVA_TABLOSU if f.cift == ("md", "tb")]
+    assert girdi.kova == Kova.GERCEK_KOPRU
+    assert girdi.buyukluk is None
+    # Kavramsal yön: kuvveti ÜRETEN tb, TÜKETEN md (`hf -> md` kalıbı).
+    assert (girdi.kaynak, girdi.hedef) == ("tb", "md")
+    for parca in (
+        "BU BIR MODEL CIPASIDIR, DOGA CIPASI YOK",
+        "kenar tabani OLCULMEDI",
+        "BAGIMSIZLIK (spec M10)",
+        "`hf.scf.solve` SIFIR kez",
+        "KOD KENARI YUK TASIR",
+        "`engine/md/tb_kuvvet.py` -> `qlab.engine.tb.mermin` ve `qlab.engine.tb.radyal`",
+        "`engine/md/factory.py` -> `qlab.engine.tb.radyal`",
+    ):
+        assert parca in girdi.gerekce, f"md-tb gerekçesinde eksik: {parca!r}"
+    # Gerekçenin kod iddiası: md -> tb import'ları TAM olarak bunlar. Ağaç
+    # KOŞAN paketten okunur (`qlab.__file__`), sabit depo yolundan değil:
+    # PYTHONPATH kopyasındaki mutantlar ancak böyle görünür (G1'de ölçüldü).
+    kosan_md = Path(qlab.__file__).resolve().parent / "engine" / "md"
+    md_tb = {
+        (dosya.name, m)
+        for dosya in sorted(kosan_md.glob("*.py"))
+        for m in _import_edilen(dosya)
+        if m.split(".")[:3] == ["qlab", "engine", "tb"]
+    }
+    assert md_tb == {
+        ("factory.py", "qlab.engine.tb.radyal"),
+        ("tb_kuvvet.py", "qlab.engine.tb.mermin"),
+        ("tb_kuvvet.py", "qlab.engine.tb.radyal"),
+    }
+    # Taban ölçülmemiş GERÇEK KÖPRÜ yalnız bu; `hf -> md` None ama İKİ sayı.
+    bos = {f.cift for f in KOVA_TABLOSU if f.kova == Kova.GERCEK_KOPRU and f.buyukluk is None}
+    assert bos == {("hf", "md"), ("md", "tb")}
 
 
 def test_YAPISAL_YOK_MERTEBELERI_DEPODAKI_BEYANLA_ve_CODATA_ILE_AYNI():
@@ -391,7 +460,8 @@ def test_UNITS_EKSENI_KENAR_DUGUMLERININ_ALT_KUMESI_ve_TDSE_OLCEKSIZ():
 
     ÇÜRÜYEN SAYI: plan ve spec `md` için **4** dosya yazıyor
     (`factory.py`, `forcefields.py`, `thermostats.py`, `__init__.py`).
-    `ast` ile ölçüm **3** diyor. Sebep `engine/md/__init__.py:10`: o
+    `ast` ile ölçüm **3** diyor. Sebep `engine/md/__init__.py` (satır
+    numarası bilerek yazılmaz: 24.09.2026'da `:10` sessizce `:13`e kaydı): o
     dokstring `qlab.units.amu_to_electron_mass` ADINI yazıyor ama modülü
     import ETMİYOR. Düz metin taraması 4, `ast` taraması 3 sayar — yani
     planın sayısı bir METİN TARAMASI ARTIFAKTIDIR ve bu, `ast` seçiminin
@@ -545,7 +615,8 @@ def test_MD_FORCE_FIELD_KINDS_TUZAGI_KAPANDI_VE_KILITLENDI():
     schema_metni = (KAYNAK / "scenario" / "schema.py").read_text(encoding="utf-8")
 
     # (a) ARTIK BAYAT DEĞİL: `hartree_fock` demette.
-    assert 'MD_FORCE_FIELD_KINDS = ("harmonic", "morse", "lennard_jones", "hartree_fock")' in schema_metni
+    # 24.09.2026: beşinci tür `tb_ss_sigma` (md<->tb kenarı) eklendi.
+    assert 'MD_FORCE_FIELD_KINDS = ("harmonic", "morse", "lennard_jones", "hartree_fock", "tb_ss_sigma")' in schema_metni
 
     # (b) ARTIK ÖLÜ DEĞİL. Ölçüt yine `ast` ile okunuyor, düz metinle değil:
     # bu dosya ve `bridge_map.py` adı DOKSTRINGDE anıyor, ve düz metin

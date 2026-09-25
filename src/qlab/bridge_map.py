@@ -10,13 +10,17 @@ BU MODULUN TASIYICI FIKRI: KOVA TABLOSU KODDAN TURETILIR, ELLE
 LISTELENMEZ. Bir yokluk beyani BAYATLARSA BIR YALANDIR. "Capraz-motor
 import sayisi 2'dir" iddiasi elle yazilirsa ilk degisiklikte sessizce
 yanlis olur; burada `olculen_kenarlar()` kaynak agacini TARAR ve tablo ona
-karsi sinanir.
+karsi sinanir. (Ornek varsayimsal kalmadi: 30.08.2026'da sayi 2'ydi,
+22.09.2026'da 3, 24.09.2026'da 4 oldu -- elle yazilmis olsaydi iki kez
+bayatlardi.)
 
 BU TUZAGIN BIR ORNEGI DEPODA OLCULDU VE KAPATILDI (30.08.2026):
 `scenario/schema.py`nin `MD_FORCE_FIELD_KINDS` demeti hem OLUydu (`src/` ve
 `tests/` icinde YALNIZ tanimi bulunuyordu, hicbir yerde okunmuyordu) hem
 BAYATti (`hartree_fock` listede YOKtu, oysa `scenarios/h2_aimd.yaml:10` tam
-olarak onu kullaniyor ve `engine/md/factory.py:126` onu sevk ediyor). Biri o
+olarak onu kullaniyor ve `engine/md/factory.py`nin `hartree_fock` dali --
+30.08.2026'da `:126`; satir numarasi o gunden beri kaydi -- onu sevk
+ediyor). Biri o
 demeti bir dogrulama kapisi olarak baglasaydi, depo KENDI senaryosunu
 reddederdi.
 
@@ -31,8 +35,10 @@ TEKRARLANMAYACAK.
 
 TARAMA `ast` ILE YAPILIR, REGEX ILE DEGIL. Yorum satirindaki ya da dizge
 icindeki bir import METNI tabloyu kirletir. Bunun bedeli bu depoda
-OLCULDU ve bu planin bir sayisini curuttu: `engine/md/__init__.py:10`
-dokstringi `qlab.units.amu_to_electron_mass` ADINI yaziyor ama `units`i
+OLCULDU ve bu planin bir sayisini curuttu: `engine/md/__init__.py`
+dokstringi (satir numarasi BILEREK yazilmaz: 24.09.2026'da dokstringe
+satir eklenince eski `:10` sessizce `:13`e kaydi)
+`qlab.units.amu_to_electron_mass` ADINI yaziyor ama `units`i
 IMPORT ETMIYOR. Duz metin taramasi bu yuzden md icin 4 dosya sayar
 (planin/spec'in sayisi), `ast` taramasi 3 sayar. Yuk tasiyan iddia --
 `units`e dokunan kumenin `{hf, md, tb}` olmasi -- iki yontemde de ayni
@@ -56,7 +62,8 @@ class Kova:
     kullanilmiyor -- olculdu 30.08.2026: bu dosya disinda `src/` agacinda
     "enum" gecen 13 satirin 13'u de `enumerate`, `import enum` /
     `from enum import` sayisi SIFIR. Ve `scenario/schema.py`nin kalibi duz
-    dizge sabitleridir (`POTENTIAL_KINDS:18`, `MD_THERMOSTAT_KINDS:79`).
+    dizge sabitleridir (`POTENTIAL_KINDS`, `MD_THERMOSTAT_KINDS`; satir
+    numarasi BILEREK yazilmaz -- 24.09.2026'da ikincisi kaymisti).
 
     OLCULMEDI AYRI BIR KOVADIR -- spec 7.2.
     "OLCULDU, SIFIR CIKTI" ile "HIC OLCULMEDI" AYNI HUCREYE YAZILAMAZ.
@@ -71,8 +78,15 @@ class Kova:
         (`engine/tdse/from_md.py`, 22.09.2026).
       - Kalan YEDI hala burada, ama ARTIK BASKA BIR SEBEPLE: sayi geldi,
         HUKUM verilemedi. Gerekceleri bunu adiyla yazar.
+    (Bu paragraf 22.09.2026'nin TARIHSEL kaydidir.)
+
+    24.09.2026'DA KOVA ALTIYA DUSTU: `md-tb` GERCEK_KOPRU'ya gecti, cunku
+    kenari YAZILDI (`engine/md/tb_kuvvet.py`, ss-sigma TB kuvvet alani).
+    Kod kenari yazilinca cift OLCULMEDI'de KALAMAZ -- `tablo_tutarsizliklari`
+    birinci kilidi buna izin vermez. Kalan ALTI hala burada, 22.09'un
+    sebebiyle: sayi geldi, HUKUM verilemedi.
     "OLCULDU, SIFIR CIKTI" ile "HIC OLCULMEDI" hala AYRI KOVADIR ve bu
-    yedisini YAPISAL_YOK'a katlamak, hukum verilmemis bir seyi verilmis
+    altisini YAPISAL_YOK'a katlamak, hukum verilmemis bir seyi verilmis
     gibi gostermek olurdu.
     """
 
@@ -207,7 +221,19 @@ def olculen_kenarlar(kok: Path | str | None = None) -> frozenset[tuple[str, str]
     TDSE mutlak olcek eksenine hic dokunmuyor (bkz.
     `OLCEKSIZ_KENAR_DUGUMLERI`). Merdiven hukmu ayakta; DAYANAGI degisti --
     artik "yapi yildiz" degil "bagli olmak mutlak eksene dokunmayi
-    GEREKTIRMIYOR".
+    GEREKTIRMIYOR". (Yukaridaki iki paragraf 22.09.2026'nin TARIHSEL
+    kaydidir.)
+
+    YENIDEN OLCULDU (24.09.2026): DORDUNCU KENAR YAZILDI -- `md -> tb`
+    (`engine/md/tb_kuvvet.py` -> `qlab.engine.tb.{mermin, radyal}` ve
+    `engine/md/factory.py` -> `qlab.engine.tb.radyal`). Dereceler hf 2,
+    md 3, tb 2, tdse 1; yapi artik bir zincir de DEGIL: `hf - md - tb`
+    UCGENI arti `md - tdse` KUYRUGU. 21 ciftin 17'sinde sifir bag.
+    UCGEN IMPORT GRAFIGINDE BIR DONGUDUR, VERI AKISINDA DEGIL: `tb -> hf`
+    kenarinda veri akmaz (`model_from_downfold` src'de 0 cagri), yeni kenar
+    SECILMIS bir yasa tasir ve downfold'dan gelen yasa yasaktir. Uc dugum de
+    ayni mutlak eksende (hartree/bohr); tek olcekteki bir ucgen bir OLCEK
+    merdiveni degildir ve merdiven hukmu ayakta kalir.
     """
     taban = Path(kok) if kok is not None else _MOTOR_KOKU
     kenarlar: set[tuple[str, str]] = set()
@@ -314,6 +340,37 @@ _TDSE_MD_GEREKCE = (
     "motorda kosulmasinin AYRISMASIDIR."
 )
 
+#: `tb -> md` kenarinin gerekcesi (24.09.2026, spec md-tb ss-sigma 5.1).
+#: BUYUKLUK YOK ve sebebi `hf -> md`ninkinden FARKLIDIR: orada taban iki
+#: sayidir ve panel onu canli okur; burada kenar tabani HIC OLCULMEDI.
+_TB_MD_GEREKCE = (
+    "KOD KENARI VAR ve tarandi: `engine/md/tb_kuvvet.py` -> "
+    "`qlab.engine.tb.mermin` ve `qlab.engine.tb.radyal`; `engine/md/factory.py` "
+    "-> `qlab.engine.tb.radyal` (yasa nesnesini senaryodan kurar). KENAR "
+    "24.09.2026'DA YAZILDI; o tarihe kadar bu cift OLCULMEDI kovasindaydi ve "
+    "kod kenari yazilinca orada KALAMAZ (`tablo_tutarsizliklari` birinci "
+    "kilidi). GERCEK_KOPRU OLCUTUNUN DORT PARCASI (`tdse -> md`de konan olcut) "
+    "burada da saglanir: KARSILIK -- `SsSigmaTBKuvveti` `ForceField` "
+    "sozlesmesini (N,3) -> (Omega, F) doldurur; VERI AKAR -- konum -> H -> "
+    "Omega, F -> integrator; CIKTI KIPIRDAR -- bant kuvvetinin TAMAMI yazilan "
+    "yasanin turevinden gelir (`us = 0` ve kuyrukta cift yokken bant kuvveti "
+    "48/48 bilesende bit bit 0.0, tests/tb/test_mermin.py M10); KOD KENARI "
+    "YUK TASIR -- `tb_kuvvet.py`deki mermin importu silinince cagri NameError "
+    "verir (olculdu, mutasyonla). BU BIR MODEL CIPASIDIR, DOGA CIPASI YOK: "
+    "radyal yasa SECILDI, turetilmedi; testlerdeki cipalar (Kohn argmin, "
+    "parcacik-bosluk simetrisi, Huckel esikleri) modelin KENDI kuramina "
+    "karsi sinanir, dogaya karsi degil, ve yasadan geri okunan bag, genlik "
+    "ve esikler fizik iddiasi olarak sevk edilemez. kenar tabani OLCULMEDI: "
+    "`hf -> md`nin A1/A2 tabaninin karsiligi (ornegin dimer optik modunun "
+    "iki bagimsiz yoldan frekansi) bu kenar icin KURULMADI; bu yuzden "
+    "buyukluk bos -- iki sayi oldugu icin degil, taban hic olculmedigi icin. "
+    "BAGIMSIZLIK (spec M10): kenar HF'e cagri duzeyinde dokunmaz -- "
+    "`tb_kuvvet.py`nin importu tek basina SIFIR hf modulu yukler, TB MD "
+    "kosusunda `hf.scf.solve` SIFIR kez cagrilir ve `tb.downfold`dan yasa "
+    "almak `ast` ile yasaktir (on olcumde o yasayla TB payi %0.000 cikti: "
+    "totoloji; o sayi G4'te tekrar kosturulmadi)."
+)
+
 _OLCULMEDI_GEREKCE = (
     "SIFIR KOD KENARI, AMA HUKUM YOK. Bu cifti olcen ajan 29.08.2026'da "
     "API baglantisi kopunca oldu ve o gun " + HICBIR_SAYI_GELMEDI + ". "
@@ -329,7 +386,7 @@ _OLCULMEDI_GEREKCE = (
 )
 
 KOVA_TABLOSU: tuple[EdgeFact, ...] = (
-    # --- GERCEK KOPRU (2) ---------------------------------------------------
+    # --- GERCEK KOPRU (3) ---------------------------------------------------
     EdgeFact(
         kaynak="md",
         hedef="tdse",
@@ -355,6 +412,13 @@ KOVA_TABLOSU: tuple[EdgeFact, ...] = (
             "onu her kosumda CANLI okur (Task 5). Bu yuzden burada buyukluk "
             "None: olculmedigi icin degil, iki sayi oldugu icin."
         ),
+        buyukluk=None,
+    ),
+    EdgeFact(
+        kaynak="tb",
+        hedef="md",
+        kova=Kova.GERCEK_KOPRU,
+        gerekce=_TB_MD_GEREKCE,
         buyukluk=None,
     ),
     # --- TAUTOLOJI (4) ------------------------------------------------------
@@ -526,7 +590,8 @@ KOVA_TABLOSU: tuple[EdgeFact, ...] = (
     # --- BENZERLIK (0) ------------------------------------------------------
     # Bicimsel analoji kovasi BOS: bu turda olculen yok. Bos kalmasi bir
     # ihmal degil bir OLCUM SONUCUDUR ve sayisi (0) testte kilitlidir.
-    # --- OLCULMEDI (7) ------------------------------------------------------
+    # --- OLCULMEDI (6) ------------------------------------------------------
+    # `md-tb` 24.09.2026'da buradan GERCEK_KOPRU'ya gecti (kenari yazildi).
     EdgeFact(
         kaynak="tdse",
         hedef="tb",
@@ -544,13 +609,6 @@ KOVA_TABLOSU: tuple[EdgeFact, ...] = (
     EdgeFact(
         kaynak="hf",
         hedef="spin",
-        kova=Kova.OLCULMEDI,
-        gerekce=_OLCULMEDI_GEREKCE,
-        buyukluk=None,
-    ),
-    EdgeFact(
-        kaynak="md",
-        hedef="tb",
         kova=Kova.OLCULMEDI,
         gerekce=_OLCULMEDI_GEREKCE,
         buyukluk=None,
@@ -581,14 +639,18 @@ KOVA_TABLOSU: tuple[EdgeFact, ...] = (
 #: Kova basina beklenen girdi sayisi. OLCULDU (30.08.2026): 1 / 4 / 8 / 0 / 8.
 #: 22.09.2026'DA DEGISTI -> 2 / 4 / 8 / 0 / 7: `md -> tdse` kenari YAZILDI ve
 #: cift OLCULMEDI'den GERCEK_KOPRU'ya gecti. Toplam 21 = C(7, 2) KORUNUR.
+#: 24.09.2026'DA YINE DEGISTI -> 3 / 4 / 8 / 0 / 6: `tb -> md` kenari
+#: YAZILDI (`engine/md/tb_kuvvet.py`) ve cift ayni yolu izledi. Kova
+#: sozlugu BUKULMEDI: yeni bir kova acilmadi, cift var olan GERCEK_KOPRU
+#: olcutunun dort parcasini sagladigi icin oraya gecti.
 #: Bu esleme bir testle hem tabloya hem `MODULLER`in kombinasyonlarina karsi
 #: sinanir.
 KOVA_SAYILARI: dict[str, int] = {
-    Kova.GERCEK_KOPRU: 2,
+    Kova.GERCEK_KOPRU: 3,
     Kova.TAUTOLOJI: 4,
     Kova.YAPISAL_YOK: 8,
     Kova.BENZERLIK: 0,
-    Kova.OLCULMEDI: 7,
+    Kova.OLCULMEDI: 6,
 }
 
 
@@ -609,6 +671,12 @@ KOVA_SAYILARI: dict[str, int] = {
 #: KIRMIZI), ve eksensiz kalan kenar dugumleri ADIYLA burada sayilir. Yeni
 #: bir olceksiz dugum eklenirse bu kume guncellenmek ZORUNDA kalir --
 #: sessizce buyuyemez.
+#:
+#: 24.09.2026: `tb -> md` kenari eklendi ve kume DEGISMEDI -- iki ucu da
+#: zaten eksenliydi (md 3, tb 2 dosya). Bu bir SART olarak korunuyor:
+#: Kelvin -> hartree donusumu `md/factory.py`de kalir ve kenarin yeni
+#: dosyalari birim modulunu import etmez (on olcumde olculdu, spec 5.2: md
+#: dosyasi import edince md 4 oluyor, tb dosyasi import edince tb 3).
 OLCEKSIZ_KENAR_DUGUMLERI: frozenset[str] = frozenset({"tdse"})
 
 
@@ -620,8 +688,11 @@ def olculen_units_ekseni(kok: Path | str | None = None) -> dict[str, int]:
 
     Spec 2.2'nin tasiyici iddiasinin KOD TARAFI: bir merdiven tum basamaklarin
     tek bir mutlak eksene dizilmesini ister, ve mutlak eksene dokunan motor
-    kumesi `{hf, md, tb}` -- yani iki capraz-motor kenarinin dugum kumesinin
-    AYNISI. Panel bu kumeyi elle yazmaz, buradan okur; `olculen_kenarlar()`
+    kumesi `{hf, md, tb}`. Bu kume 30.08.2026'da iki capraz-motor kenarinin
+    dugum kumesinin AYNISIYDI; 22.09.2026'dan beri kenar dugumlerinin ALT
+    KUMESIDIR (`tdse` bagli ama olceksiz, bkz. `OLCEKSIZ_KENAR_DUGUMLERI`) ve
+    24.09.2026'daki `tb -> md` kenari bunu degistirmedi. Panel bu kumeyi elle
+    yazmaz, buradan okur; `olculen_kenarlar()`
     ile ayni `ast` makinesini kullanir ve `tests/bridge/test_kova_tablosu.py`
     ayni kumeyi BAGIMSIZ bir tarayiciyla da olcer (iki tarayici ayni
     makineye dayansaydi cipa dairesel olurdu).
@@ -629,7 +700,7 @@ def olculen_units_ekseni(kok: Path | str | None = None) -> dict[str, int]:
     OLCULDU (30.08.2026, b221a9c; Task 5'te yeniden): hf 1 (`analysis.py`),
     md 3 (`factory.py`, `forcefields.py`, `thermostats.py`), tb 2
     (`downfold.py`, `factory.py`), tdse/spin/em/grav 0. Duz metin taramasi
-    md icin 4 sayar (`engine/md/__init__.py:10` dokstringi adi yaziyor ama
+    md icin 4 sayar (`engine/md/__init__.py` dokstringi adi yaziyor ama
     import etmiyor); bu fonksiyon 3 sayar, cunku bir dokstring bir
     `ImportFrom` dugumu degildir.
     """
@@ -658,8 +729,10 @@ def tablo_tutarsizliklari(
          OLCULMEDI kovasinda OLAMAZ,
       2. GERCEK_KOPRU kovasindaki her ciftin bir kod kenari OLMALI,
       3. kova basina sayim `KOVA_SAYILARI` ile ayni olmali,
-      4. `qlab.units` ekseni (dosya sayisi > 0 olan motorlar) iki kenarin
-         dugum kumesiyle AYNI olmali (spec 2.2).
+      4. `qlab.units` ekseni (dosya sayisi > 0 olan motorlar) kenar
+         dugumlerinin ALT KUMESI olmali ve eksensiz kalan kenar dugumleri
+         tam olarak `OLCEKSIZ_KENAR_DUGUMLERI` olmali (spec 2.2'nin
+         ozdesligi 22.09.2026'da DARALTILDI; kod bunu uyguluyor).
 
     `tests/bridge/test_kova_tablosu.py` ilk iki kilidi kendi bagimsiz
     kopyasiyla da kurar; bu fonksiyon panel icindir ve testin yerini tutmaz.
@@ -776,8 +849,9 @@ _IHMAL: tuple[str, ...] = (
     "tuketici de ayni HF soyundan gelirdi, sema cipasi sema cipasi kalirdi -- "
     "daireyi buyutur, kirmaz",
     "IKINCI BIR BORU YOK: tabani olculen kenarin (`hf -> md`) tek borusu "
-    "var -- 22.09.2026'da ikinci bir GERCEK_KOPRU (`md -> tdse`) yazildi ama "
-    "o AYRI bir kenardir, bu kenarin ikinci borusu DEGILDIR; iki-ayarli "
+    "var -- 22.09.2026'da ikinci bir GERCEK_KOPRU (`md -> tdse`), "
+    "24.09.2026'da ucuncusu (`tb -> md`, tabani olculmedi) yazildi ama "
+    "ikisi de AYRI birer kenardir, bu kenarin ikinci borusu DEGILDIR; iki-ayarli "
     "capraz kontrol (Modul 6) burada kurulamaz ve karisik boru yasagi bir "
     "ikinci boruyu HF'in oteki tuketicisinden odunc almayi da yasaklar",
     _YONTEM_HEDEF_A,
@@ -794,35 +868,52 @@ _YOKLUK_HARITASI_BEYANI = (
     "9.665562e+129 nokta (kenar 1 angstrom olsaydi 6.522644e+130 -- span bir "
     "dugmedir); `hf -> tdse` icin O 1s izgarasi 1600^3 = 4.096e+09 nokta = "
     "61.04 GiB; `em -> tdse` icin yazilacak bir mertebe YOK, eksik olan sayi "
-    "degil KARSILIKTIR. OLCULMEDI AYRI BIR KOVADIR: YEDI cift (tdse-tb, "
-    "tdse-spin, hf-spin, md-tb, md-em, tb-em, spin-em) orada durur. "
+    "degil KARSILIKTIR. OLCULMEDI AYRI BIR KOVADIR: ALTI cift (tdse-tb, "
+    "tdse-spin, hf-spin, md-em, tb-em, spin-em) orada durur. "
     "29.08.2026'da SEKIZDILER ve sebep 'hicbir sayi gelmedi'ydi; "
     "22.09.2026'da spec 7.2'nin on olcumu kosuldu, sekizinin sekizinde de "
-    "sayi GELDI ve `tdse-md` kenari YAZILARAK GERCEK_KOPRU'ya gecti. Kalan "
-    "yedinin sebebi ARTIK BASKA: sayi var, HUKUM yok -- sekiz hukmun sekizi "
-    "de uc mercekli curutmede 3/3 dustu. 'olculdu, sifir cikti' ile ayni "
+    "sayi GELDI ve `tdse-md` kenari YAZILARAK GERCEK_KOPRU'ya gecti; "
+    "24.09.2026'da `md-tb` kenari da YAZILDI ve ayni yolu izledi (tabani "
+    "olculmedi). Kalan altinin sebebi 22.09'dakidir: sayi var, HUKUM yok -- "
+    "sekiz hukmun sekizi de uc mercekli curutmede 3/3 dustu. 'olculdu, sifir cikti' ile ayni "
     "hucreye YAZILAMAZ -- bu bir yokluk beyanidir, bir sonuc degil, ve spec "
     "7.2 ACIK kalir"
 )
 
+#: SEKLIN ADI (`hf - md - tb` UCGENI arti `md - tdse` KUYRUGU) bir testle
+#: `olculen_kenarlar()`dan TURETILEN sekle karsi sinanir
+#: (`tests/bridge/test_bridge_senaryo.py`); kenar sayisi, dereceler ve sifir
+#: bagli cift sayisi bu metinde YAZILMAZ, `canli_satir` onlari her kosumda
+#: taramadan basar. Gerekce olculdu (spec md-tb 5.3): 13 literal duzeltilince
+#: testler yesil oluyordu ama bu beyanin sayilari BAYAT kaliyordu, cunku
+#: testler cumleyi yalniz metin olarak kilitliyordu.
 _YAPI_BEYANI = (
-    "YAPININ SEKLI: bir MERDIVEN DEGIL, ama artik bir YILDIZ DA DEGIL -- "
-    "DORT DUGUMLU BIR ZINCIR: `tb - hf - md - tdse`. Capraz-motor import "
-    "kenari tam UC -- `engine/md/forcefields.py:13` -> `qlab.engine.hf.scf`, "
+    "YAPININ SEKLI: bir MERDIVEN DEGIL -- `hf - md - tb` UCGENI arti "
+    "`md - tdse` KUYRUGU. Capraz-motor import kenarlari: "
+    "`engine/md/forcefields.py:13` -> `qlab.engine.hf.scf`, "
     "`engine/tb/downfold.py:130-132` -> "
-    "`qlab.engine.hf.{basis, integrals, multistart}`, ve 22.09.2026'da "
-    "YAZILAN `engine/tdse/from_md.py` -> `qlab.engine.md.state`. Dereceler "
-    "hf 2, md 2, tb 1, tdse 1; 21 ciftin 18'inde SIFIR bag. Modul 7 "
-    "kapandiginda kenar IKIYDI ve ikisi de ayni dugume gittigi icin yapi "
-    "merkezi HF olan iki cubuklu bir yildizdi; ucuncu kenar o sekli BOZDU. "
-    "MERDIVEN HUKMU YINE DE AYAKTA, AMA DAYANAGI DARALDI: bir zincir "
-    "topolojik olarak yildizdan daha cok merdivene benzer, oysa bu bir "
-    "OLCEK merdiveni degildir cunku ZINCIRIN UCU OLCEKSIZDIR. `qlab.units`e "
-    "dokunan motor kumesi `ast` ile hala {hf, md, tb} (hf 1, md 3, tb 2 "
-    "dosya; tdse/spin/em/grav 0) ama artik kenar dugumlerinin AYNISI DEGIL, "
-    "ALT KUMESI: `tdse` bagli ama olceksiz. Modul 7'nin olctugu o ozdeslik "
-    "bir yasa degil, eski topolojinin bir RASTLANTISIYMIS. Iki kume de bu "
-    "kosumda CANLI taranir ve canli satirda yazilidir"
+    "`qlab.engine.hf.{basis, integrals, multistart}`, 22.09.2026'da YAZILAN "
+    "`engine/tdse/from_md.py` -> `qlab.engine.md.state` ve 24.09.2026'da "
+    "YAZILAN `engine/md/tb_kuvvet.py` -> `qlab.engine.tb.{mermin, radyal}` ile "
+    "`engine/md/factory.py` -> `qlab.engine.tb.radyal` (yasa nesnesini "
+    "senaryodan kurar); "
+    "kenar sayisi, dereceler ve sifir bagli cift sayisi bu kosumda taranir ve "
+    "CANLI satirdadir. Modul 7 kapandiginda yapi merkezi HF olan iki cubuklu "
+    "bir YILDIZDI, 22.09.2026'da DORT DUGUMLU BIR ZINCIR oldu (`tb - hf - md "
+    "- tdse`), 24.09.2026'da zincirin `tb` ve `md` dugumleri baglandi ve "
+    "UCGEN kapandi. MERDIVEN HUKMU YINE DE AYAKTA, DAYANAGI YINE DEGISTI: "
+    "ucgen IMPORT grafiginde bir dongudur, VERI AKISINDA degil -- `tb -> hf` "
+    "kenarinda veri akmaz (`model_from_downfold` src'de hic cagrilmiyor), "
+    "yeni kenar SECILMIS bir yasa tasir ve downfold'dan yasa almak yasaktir; "
+    "yani hf -> tb -> md diye bir veri yolu YOKTUR. Uc dugum de ayni mutlak "
+    "eksende (hartree/bohr) ve tek olcekteki bir ucgen bir OLCEK merdiveni "
+    "degildir; kuyrugun ucu `tdse` hala OLCEKSIZDIR. `qlab.units`e dokunan "
+    "motor kumesi `ast` ile hala {hf, md, tb} ve kenar dugumlerinin AYNISI "
+    "DEGIL, ALT KUMESI: `tdse` bagli ama olceksiz; Modul 7'nin olctugu "
+    "ozdeslik bir yasa degil, eski topolojinin bir RASTLANTISIYMIS. DURUST "
+    "KAYIT: biri ileride downfold'u MD yoluna baglarsa ortaya cikan sey "
+    "merdiven degil TOTOLOJI olur (on olcumde TB payi %0.000); kenarin M10 kilitleri "
+    "(`tests/md/test_tb_kuvvet.py`, `tests/tb/test_mermin.py`) o ani yakalar"
 )
 
 _KENAR_TABANI_BEYANI = (
@@ -848,9 +939,10 @@ _KENAR_TABANI_BEYANI = (
 _DURUST_OLUMSUZLAR = (
     "DURUST OLUMSUZLAR -- BEYAN EDILDI, DUZELTILMEDI, PANEL TASIR: (1) spec "
     "7.2 HALA ACIK ama DARALDI: 22.09.2026'da sekiz ciftin sekizi de "
-    "olculdu ve `tdse-md` kenari yazildi; kalan YEDI cift OLCULMEDI "
-    "kovasinda kalir cunku sayi geldi HUKUM gelmedi (sekiz hukmun sekizi "
-    "de uc mercekli curutmede 3/3 dustu); (2) `md -> "
+    "olculdu ve `tdse-md` kenari yazildi, 24.09.2026'da `md-tb` kenari da "
+    "yazildi (kenar tabani OLCULMEDI, DOGA CIPASI YOK); kalan ALTI cift "
+    "OLCULMEDI kovasinda kalir cunku sayi geldi HUKUM gelmedi (sekiz hukmun "
+    "sekizi de uc mercekli curutmede 3/3 dustu); (2) `md -> "
     "spin` ve `hf -> em` tautoloji hukumleri 29.08.2026 on olcumunden "
     "DEVRALINDI ve bu gorevde yeniden olculmedi (damgalari tabloda "
     "yazilidir); (3) makineler arasi tekrarlanabilirlik OLCULMEDI -- bit bit "
@@ -858,7 +950,8 @@ _DURUST_OLUMSUZLAR = (
     "kaydidir; (4) `omega_B`nin 6-31G degeri (spec 4: 4646.16252) bu depoda "
     "suite ALINMADI (HF YOL B'nin 6-31G kosumu ~5.4 kat pahali), suit yalniz "
     "statik `omega_A`(6-31G)'yi kilitler; (5) izotropik hicbir sey yok bu "
-    "modulde ama bir ikinci boru da yok -- tek kenarin capraz kontrolu "
+    "modulde ama bir ikinci boru da yok -- tabani olculen tek kenarin "
+    "(`hf -> md`) capraz kontrolu "
     "kurulamaz, hukum tek borunun tabanindan okunur"
 )
 
@@ -982,6 +1075,16 @@ def canli_satir(
     """
     sayim = " / ".join(f"{k} {kova_sayim.get(k, 0)}" for k in KOVALAR)
     kenar_metni = ", ".join(f"{a} -> {b}" for a, b in sorted(kenarlar)) or "YOK"
+    # YAPININ SAYILARI BURADA, `_YAPI_BEYANI`nda DEGIL: taramadan her kosumda
+    # turetilir ve bayatlayamaz (spec md-tb 5.3).
+    yonsuz = {tuple(sorted(k)) for k in kenarlar}
+    derece: dict[str, int] = {}
+    for cift in yonsuz:
+        for m in cift:
+            derece[m] = derece.get(m, 0) + 1
+    derece_metni = " ".join(f"{m}={n}" for m, n in sorted(derece.items())) or "YOK"
+    toplam_cift = len(MODULLER) * (len(MODULLER) - 1) // 2
+    sifir_bag = toplam_cift - len(yonsuz)
     eksen_metni = " ".join(f"{ad}={n}" for ad, n in sorted(eksen.items()))
     eksenli = ", ".join(sorted(ad for ad, n in eksen.items() if n > 0))
 
@@ -1000,7 +1103,8 @@ def canli_satir(
     return (
         f"[CANLI -- bu kosum] kova sayimi {sayim} (toplam "
         f"{sum(kova_sayim.values())}); kod kenari {len(kenarlar)}: "
-        f"{kenar_metni}; `qlab.units` ekseni {eksen_metni} -> {{{eksenli}}}; "
+        f"{kenar_metni}; dereceler {derece_metni}, sifir bagli cift "
+        f"{sifir_bag}/{toplam_cift}; `qlab.units` ekseni {eksen_metni} -> {{{eksenli}}}; "
         f"KENAR TABANI IKI SAYI -- {taban('A1 (aritmetik)', a1)} | "
         f"{taban('A2 (hata-cubugu)', a2)}; gercek hata {gercek_hata:.8g} cm^-1 "
         f"-> gercek/A1 = {gercek_hata / a1[0]:.6g}, A2/gercek = "

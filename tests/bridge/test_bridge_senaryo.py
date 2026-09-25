@@ -61,6 +61,14 @@ a = 0.9137, h = 0.002, r_e = 1.3459193602, K = 0.5729363, SCF = 0.
 Toplam koşum ≈ 0.7 s (A1 0.50 s + A2 0.12 s + tarama 0.05 s); HF hiç
 çözülmez.
 
+(Yukarıdaki blok 03.09.2026'nın KAYDIDIR. İki satırı artık geçerli DEĞİL:
+22.09.2026'da `tdse → md`, 24.09.2026'da `md → tb` kenarları yazıldı —
+bugün kova sayımı 3 / 4 / 8 / 0 / 6, kod kenarı dört (md -> hf, md -> tb,
+tb -> hf, tdse -> md) ve yapı `hf - md - tb` üçgeni + `md - tdse` kuyruğu;
+ikisi de `test_6_1`/`test_6_2`de canlı panele karşı kilitli. Units ekseni,
+A1/A2 ve gerçek hata satırları değişmedi — `test_6_2`/`test_6_3` onları
+bugün de aynı sayılarla sınıyor.)
+
 SPEC §4'ÜN BİR SAYISI DAHA ÇÜRÜDÜ — YANLIŞ DEĞİL, PENCERESİZ: "6-31G'de
 k = 0.411660 → ω = 4646.18 cm⁻¹" sevk edilen `r_e`de (STO-3G'nin
 1.3459193602'si) ÜRETİLEMİYOR: ölçülen 4921.2588 cm⁻¹ (k = 0.461848).
@@ -157,7 +165,9 @@ _BEYAN_PARCASI_ESIGI = 16
 #: çapraz-motor kenar kümesi ve `qlab.units` ekseni.
 #: 22.09.2026: ÜÇÜNCÜ kenar yazıldı (`engine/tdse/from_md.py` -> `engine/md`),
 #: yapı yıldızdan ZİNCİRE döndü: `tb - hf - md - tdse`.
-BEKLENEN_KENARLAR = {("md", "hf"), ("tb", "hf"), ("tdse", "md")}
+#: 24.09.2026: DÖRDÜNCÜ kenar yazıldı (`engine/md/tb_kuvvet.py` -> `engine/tb`),
+#: zincirin `tb` ve `md` düğümleri bağlandı: `hf - md - tb` ÜÇGENİ + `md - tdse`.
+BEKLENEN_KENARLAR = {("md", "hf"), ("md", "tb"), ("tb", "hf"), ("tdse", "md")}
 BEKLENEN_EKSEN = {"em": 0, "grav": 0, "hf": 1, "md": 3, "spin": 0, "tb": 2, "tdse": 0}
 
 #: PENCERE DÜĞMESİNİN ÖLÇÜLEN TEPKİSİ (03.09.2026, bu makine), N = 200 → 400.
@@ -361,8 +371,8 @@ def test_MODULUN_ETIK_CEKIRDEGI_metinde_YAZILI(sevk_panel):
         "Kova tablosu ELLE LISTELENMEZ, KODDAN TURETILIR",
         "YOKLUK HARITASI: yedi motorun 21 cifti BES kovada",
         "OLCULMEDI AYRI BIR KOVADIR",
-        "YAPININ SEKLI: bir MERDIVEN DEGIL, ama artik bir YILDIZ DA DEGIL -- "
-        "DORT DUGUMLU BIR ZINCIR: `tb - hf - md - tdse`",
+        "YAPININ SEKLI: bir MERDIVEN DEGIL -- `hf - md - tb` UCGENI arti "
+        "`md - tdse` KUYRUGU",
         "KENAR TABANI IKI SAYIDIR VE IKISI AYRI ETIKET TASIR",
         "YALNIZ A1 YAZILSAYDI PANEL YALAN SOYLERDI",
         "CIPA SINIFI: `hf -> md` kenari bir SEMA CIPASIDIR, fizik cipasi DEGIL",
@@ -430,7 +440,8 @@ def test_YAKLASIMLAR_IHMAL_DAIRESELLIK_SINIF_KURAM_PENCERE_KARISMIYOR(sevk_panel
 
 
 def test_6_1_YOKLUK_HARITASI_21_cift_bes_kova_MERTEBELERLE(sevk_yuk, sevk_panel):
-    """§6.1 — 21 çift, beş kova (1/4/8/0/8), her yapısal yokluk için mertebe.
+    """§6.1 — 21 çift, beş kova (bugün 3/4/8/0/6; Modül 7 kapanışında
+    1/4/8/0/8), her yapısal yokluk için mertebe.
 
     Sayım PANELDE CANLI: tablodan `Counter` ile sayılır ve `KOVA_SAYILARI`
     ile karşılaştırılır; ikisi de burada bağımsız üçüncü bir sayımla
@@ -444,11 +455,11 @@ def test_6_1_YOKLUK_HARITASI_21_cift_bes_kova_MERTEBELERLE(sevk_yuk, sevk_panel)
     sayim = Counter(f.kova for f in KOVA_TABLOSU)
     assert {k: sayim.get(k, 0) for k in KOVALAR} == KOVA_SAYILARI == sevk_yuk.kova_sayim
     assert KOVA_SAYILARI == {
-        "GERCEK_KOPRU": 2, "TAUTOLOJI": 4, "YAPISAL_YOK": 8, "BENZERLIK": 0,
-        "OLCULMEDI": 7,
+        "GERCEK_KOPRU": 3, "TAUTOLOJI": 4, "YAPISAL_YOK": 8, "BENZERLIK": 0,
+        "OLCULMEDI": 6,
     }
-    assert "GERCEK_KOPRU 2 / TAUTOLOJI 4 / YAPISAL_YOK 8 / BENZERLIK 0 / OLCULMEDI 7 (toplam 21)" in tani
-    assert sevk_panel.diagnostics["kova"] == "2/4/8/0/7"
+    assert "GERCEK_KOPRU 3 / TAUTOLOJI 4 / YAPISAL_YOK 8 / BENZERLIK 0 / OLCULMEDI 6 (toplam 21)" in tani
+    assert sevk_panel.diagnostics["kova"] == "3/4/8/0/6"
 
     # Mertebeler: iki proton, elektron-proton, r_s kübü, O 1s ızgarası.
     G, m_p, m_e, e, eps0, c = (
@@ -479,7 +490,9 @@ def test_6_1_YOKLUK_HARITASI_21_cift_bes_kova_MERTEBELERLE(sevk_yuk, sevk_panel)
     assert 1600**3 * 16 / 2**30 == pytest.approx(61.04, abs=0.005)
     assert _girdi("hf", "tdse").buyukluk == 1600**3
     assert _girdi("em", "tdse").buyukluk is None
-    # ÖLÇÜLMEDİ AYRI KOVA: sekiz çift adıyla, ve "hiçbir sayı gelmedi".
+    # ÖLÇÜLMEDİ AYRI KOVA: bugün ALTI çift; beyan 29.08'in sekiz çiftini de
+    # adıyla anar (ikisi -- tdse-md 22.09, md-tb 24.09 -- kenarı yazılarak
+    # ayrıldı), ve "hiçbir sayı gelmedi" tarihsel cümlesini taşır.
     assert "OLCULMEDI AYRI BIR KOVADIR" in tani
     assert "hicbir sayi gelmedi" in tani
     assert "spec 7.2 ACIK" in tani
@@ -488,8 +501,25 @@ def test_6_1_YOKLUK_HARITASI_21_cift_bes_kova_MERTEBELERLE(sevk_yuk, sevk_panel)
         assert cift in tani
 
 
-def test_6_2_YAPI_dort_dugumlu_zincir_ve_units_ekseni_KODDAN(sevk_yuk, sevk_panel):
-    """§6.2 — "merdiven değil iki çubuklu yıldız", ve {hf, md, tb} = bağlı küme.
+def test_6_2_YAPI_ve_units_ekseni_KODDAN(sevk_yuk, sevk_panel):
+    """§6.2 — yapı bir merdiven değil, ve units ekseni {hf, md, tb} kenar
+    düğümlerinin ALT KÜMESİ (`tdse` bağlı ama ölçeksiz). Modül 7
+    kapandığında spec bunu "iki çubuklu yıldız" ve "{hf, md, tb} = bağlı
+    küme" diye yazıyordu; ikisi de 22.09.2026'da çürüdü.
+
+    Testin adı 22.09.2026'da yıldız -> zincir, 24.09.2026'da şekilden
+    bağımsız hâle getirildi; şeklin adı, eski adlar gibi tutmayan bir söz
+    vermesin diye, `test_YAPI_BEYANI_SEKLIN_ADI_TARAMADAN_TURETILEN_SEKIL`
+    ile taramadan türetilen şekle karşı ayrı testte sınanır.
+
+    24.09.2026 (bulgu düzeltme turu): beyanın md -> tb import listesi
+    EKSİKTİ -- `engine/md/factory.py` -> `qlab.engine.tb.radyal` (yasa
+    nesnesini senaryodan kurar) yazılmamıştı, oysa `test_kova_tablosu`
+    md -> tb importlarını tam üç (dosya, modül) çifti diye kilitliyordu.
+    Aşağıdaki TAMLIK kilidi md/*.py'den qlab.engine.tb'ye giden her
+    (dosya, modül) çiftini bağımsız toplar ve beyanda arar. KIRMA
+    (ölçüldü, sk/duz/mut_bridge.log): beyandan factory parçasını silen
+    mutant kırmızı.
 
     İki küme de PANELDE CANLI taranır (`olculen_kenarlar`,
     `olculen_units_ekseni`); burada üçüncü, bağımsız bir `ast` tarayıcı aynı
@@ -498,13 +528,15 @@ def test_6_2_YAPI_dort_dugumlu_zincir_ve_units_ekseni_KODDAN(sevk_yuk, sevk_pane
     `downfold.py:130-132` gerçekten üç `hf` modülünü import ediyor mu.
     """
     tani = dict(sevk_panel.as_lines())["Yakınsama tanısı"]
-    assert "DORT DUGUMLU BIR ZINCIR: `tb - hf - md - tdse`" in tani
+    assert "`hf - md - tb` UCGENI arti `md - tdse` KUYRUGU" in tani
     assert sevk_yuk.kenarlar == BEKLENEN_KENARLAR == olculen_kenarlar()
     assert sevk_yuk.eksen == BEKLENEN_EKSEN == olculen_units_ekseni()
-    assert "kod kenari 3: md -> hf, tb -> hf, tdse -> md" in tani
+    assert "kod kenari 4: md -> hf, md -> tb, tb -> hf, tdse -> md" in tani
+    # Yapının SAYILARI beyanda değil canlı satırda (spec md-tb 5.3).
+    assert "dereceler hf=2 md=3 tb=2 tdse=1, sifir bagli cift 17/21" in tani
     assert "ekseni em=0 grav=0 hf=1 md=3 spin=0 tb=2 tdse=0 -> {hf, md, tb}" in tani
     assert sevk_panel.diagnostics["eksen"] == "hf,md,tb"
-    assert sevk_panel.diagnostics["kenar"] == "3"
+    assert sevk_panel.diagnostics["kenar"] == "4"
 
     # Bağımsız tarayıcı (bridge_map'in yardımcıları KULLANILMIYOR).
     def importlar(dosya: Path) -> set[str]:
@@ -548,6 +580,85 @@ def test_6_2_YAPI_dort_dugumlu_zincir_ve_units_ekseni_KODDAN(sevk_yuk, sevk_pane
     assert {d.module.split(".")[-1] for d in hf_import} == {"basis", "integrals", "multistart"}
     assert min(d.lineno for d in hf_import) == 130 and max(d.lineno for d in hf_import) == 132
     assert "`engine/md/forcefields.py:13`" in tani and "`engine/tb/downfold.py:130-132`" in tani
+    # 24.09.2026'nın kenarı: beyanın `tb_kuvvet.py` iddiası da kaynağa karşı.
+    tk = ast.parse((motor / "md" / "tb_kuvvet.py").read_text(encoding="utf-8"))
+    tb_import = {
+        d.module for d in ast.walk(tk)
+        if isinstance(d, ast.ImportFrom) and d.module and d.module.startswith("qlab.engine.tb")
+    }
+    assert tb_import == {"qlab.engine.tb.mermin", "qlab.engine.tb.radyal"}
+    assert "`engine/md/tb_kuvvet.py` -> `qlab.engine.tb.{mermin, radyal}`" in tani
+    # TAMLIK: md -> tb kenarini ureten HER (dosya, modul) cifti beyanda.
+    md_tb = set()
+    for dosya in sorted((motor / "md").glob("*.py")):
+        for m in importlar(dosya):
+            if m.startswith("qlab.engine.tb"):
+                md_tb.add((dosya.name, m))
+    assert md_tb == {
+        ("factory.py", "qlab.engine.tb.radyal"),
+        ("tb_kuvvet.py", "qlab.engine.tb.mermin"),
+        ("tb_kuvvet.py", "qlab.engine.tb.radyal"),
+    }, md_tb
+    assert "`engine/md/factory.py` -> `qlab.engine.tb.radyal`" in tani
+
+
+def _taramadan_sekil(kenarlar) -> str:
+    """Kenar kümesinden şeklin ADI -- `bridge_map`ten BAĞIMSIZ türetilir.
+
+    Tanınan TEK biçim bugünkü: bağlı, tek döngülü (kenar sayısı = düğüm
+    sayısı), döngüsü bir ÜÇGEN ve üçgene asılı KUYRUK(lar). Başka bir biçim
+    (dünkü zincir, Modül 7'nin yıldızı, ikinci bir döngü) ad üretmez ve
+    test kırmızı olur: şekil değiştiyse beyan da elle değişmek ZORUNDA.
+    """
+    yonsuz = {tuple(sorted(k)) for k in kenarlar}
+    dugum = sorted({m for k in yonsuz for m in k})
+    komsu = {m: {b if a == m else a for a, b in yonsuz if m in (a, b)} for m in dugum}
+    ucgenler = sorted(
+        (a, b, c)
+        for i, a in enumerate(dugum)
+        for j, b in enumerate(dugum[i + 1:], i + 1)
+        for c in dugum[j + 1:]
+        if b in komsu[a] and c in komsu[a] and c in komsu[b]
+    )
+    if len(ucgenler) == 1 and len(yonsuz) == len(dugum):
+        ucgen = ucgenler[0]
+        kuyruklar = sorted(k for k in yonsuz if not set(k) <= set(ucgen))
+        assert kuyruklar, "üçgen var ama kuyruk yok"
+        parcalar = []
+        for a, b in kuyruklar:
+            ic, dis = (a, b) if a in ucgen else (b, a)
+            assert ic in ucgen and dis not in ucgen, "kuyruk üçgene asılı değil"
+            parcalar.append(f"`{ic} - {dis}`")
+        return f"`{' - '.join(ucgen)}` UCGENI arti {', '.join(parcalar)} KUYRUGU"
+    raise AssertionError(f"tanınmayan şekil: {sorted(yonsuz)}")
+
+
+def test_YAPI_BEYANI_SEKLIN_ADI_TARAMADAN_TURETILEN_SEKIL():
+    """Beyanın şekil adı TARAMADAN TÜRETİLEN şekle karşı (spec md-tb 5.3).
+
+    ÖLÇÜLDÜ (spec md-tb 5.3): 13 literal düzeltilince testler yeşil oluyordu
+    ama beyanın sayıları BAYAT kalıyordu, çünkü testler cümleyi yalnız
+    METİN olarak kilitliyordu. Bu yüzden (a) `_YAPI_BEYANI` topoloji
+    sayılarını (kenar sayısı, dereceler, sıfır bağ) YAZMAZ -- onlar canlı
+    satırdadır -- ve (b) şeklin adı, `olculen_kenarlar()`dan burada
+    bağımsız türetilen adı içermek zorundadır. Beşinci bir kenar şekli
+    değiştirirse bu test kırmızı olur ve beyan elle güncellenmek zorunda
+    kalır.
+    """
+    beklenen = _taramadan_sekil(olculen_kenarlar())
+    assert beklenen == "`hf - md - tb` UCGENI arti `md - tdse` KUYRUGU"
+    assert beklenen in bm._YAPI_BEYANI
+    # Sayılar beyanda YOK (canlı satırda var, test_6_2).
+    for bayatlayan in ("Dereceler", "dereceler hf", "ciftin 17", "ciftin 18", "tam UC", "tam DORT"):
+        assert bayatlayan not in bm._YAPI_BEYANI, bayatlayan
+    # Türetici kör değil: dünkü (22.09) zincir ve Modül 7'nin yıldızı AYNI
+    # adı üretmez (üçgenleri yok -> tanınmayan şekil).
+    for eski in (
+        {("md", "hf"), ("tb", "hf"), ("tdse", "md")},
+        {("md", "hf"), ("tb", "hf")},
+    ):
+        with pytest.raises(AssertionError, match="tanınmayan şekil"):
+            _taramadan_sekil(eski)
 
 
 def test_6_3_KENAR_TABANI_IKI_SAYI_AYRI_ETIKET_ve_SEKIZ_HANE(sevk_yuk, sevk_panel):
@@ -1105,7 +1216,7 @@ def test_CLI_UCTAN_UCA(tmp_path):
     assert kaynak["theory_selector"] == bm._KURAM_SECICI_BEYANI
     assert kaynak["convergence_diagnosis"].startswith("[CANLI")
     assert kaynak["converged"] is True
-    assert kaynak["diagnostics"]["kova"] == "2/4/8/0/7"
+    assert kaynak["diagnostics"]["kova"] == "3/4/8/0/6"
 
 
 # ---------------------------------------------------------------------------

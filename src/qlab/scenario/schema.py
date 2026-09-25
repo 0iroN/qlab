@@ -67,10 +67,37 @@ class HFScanScenario:
 #: kilidi factory'nin sevk dallarını `ast` ile tarayıp bu demete karşı
 #: sınar. Kilit, demetin ÖLÜ ve BAYAT olduğu dönemde (`hartree_fock`
 #: eksikti, oysa `scenarios/h2_aimd.yaml:10` tam olarak onu kullanıyor)
-#: yokluğu ölçülerek eklendi -- 30.08.2026.
-MD_FORCE_FIELD_KINDS = ("harmonic", "morse", "lennard_jones", "hartree_fock")
-#: `engine/md/factory.py`nin SEVK ETTİĞİ termostatlar. Yukarıdaki demetle
-#: aynı gerekçe ve aynı türetme kilidi. TEK FARK ÖLÇÜLDÜ (30.08.2026): bu
+#: yokluğu ölçülerek eklendi -- 30.08.2026. 24.09.2026: beşinci tür
+#: `tb_ss_sigma` (md<->tb ss-sigma kenarı, `engine/md/tb_kuvvet.py`)
+#: eklendi; kilit onu da factory'nin sevkinden türetir.
+MD_FORCE_FIELD_KINDS = ("harmonic", "morse", "lennard_jones", "hartree_fock", "tb_ss_sigma")
+
+#: `tb_ss_sigma` kuvvet alanının PARAMETRE ŞEMASI. Öteki MD türlerinin
+#: parametreleri `**p` ile doğrudan sınıfa gider; bu türünkiler iki iç içe
+#: yasa taşıdığı ve biri BİRİM DÖNÜŞÜMÜ gerektirdiği için (Kelvin -> hartree,
+#: `engine/md/factory.py`) YAML tarafında adıyla denetlenir: bilinmeyen ya da
+#: eksik anahtar sessizce yutulmaz (`loader.py`nin genel kuralı).
+#:
+#: `electron_temperature_kelvin` KELVİNDİR ve sınıf HARTREE alır
+#: (`kT_hartree`); iki adın ayrı olması tuzağın kendisini adlandırır:
+#: Kelvin sayısı hartree sanılıp verilirse kuvvet sessizce küçülür (spec
+#: B7). `n_electron` toplam elektron sayısıdır (spin dahil). `box_x_bohr`
+#: İSTEĞE BAĞLIDIR: yoksa kutusuz, varsa YALNIZ x ekseni periyodiktir.
+TB_SS_SIGMA_PARAMS = (
+    "ss_sigma", "itme", "n_electron", "electron_temperature_kelvin", "box_x_bohr",
+)
+TB_SS_SIGMA_REQUIRED = ("ss_sigma", "itme", "n_electron", "electron_temperature_kelvin")
+#: İki yasa rolü. Hoplama rolündeki yasanın adı `ss_sigma`, çift itmesi
+#: rolündekinin adı `itme` (spec 1: rol çağrı yerinde adlandırılır).
+TB_SS_SIGMA_LAWS = ("ss_sigma", "itme")
+#: Her yasanın alanları. `engine/tb/radyal.py::UsselRadyalYasa`nın dataclass
+#: alanlarıyla AYNI olmak ZORUNDADIR (factory yasayı `**alanlar` ile kurar);
+#: katman sözleşmesi yüzünden elle yazılır ve `tests/md/test_md_scenario.py`
+#: onu sınıfın alanlarına karşı sınar -- MD_FORCE_FIELD_KINDS'in türetme
+#: kilidiyle aynı desen.
+RADIAL_LAW_FIELDS = ("genlik_hartree", "d0_bohr", "us", "r_on_bohr", "r_cut_bohr")
+#: `engine/md/factory.py`nin SEVK ETTİĞİ termostatlar. `MD_FORCE_FIELD_KINDS`
+#: demetiyle aynı gerekçe ve aynı türetme kilidi. TEK FARK ÖLÇÜLDÜ (30.08.2026): bu
 #: demet ÖLÜydü ama BAYAT DEĞİLDİ -- factory tam olarak `langevin` +
 #: `nose_hoover` sevk ediyor. Yani burada kapatılan şey mevcut bir kusur
 #: değil, aynı tuzağın İKİNCİ KOPYASI: bir üçüncü termostat eklendiğinde
@@ -353,7 +380,11 @@ class GravScenario:
 
 @dataclass(frozen=True)
 class BridgeScenario:
-    """Modüller arası yokluk haritası + tek gerçek kenarın tabanı (Modül 7).
+    """Modüller arası yokluk haritası + tabanı ölçülen tek kenarın (`hf -> md`) tabanı (Modül 7).
+
+    (Modül 7 kapandığında `hf -> md` TEK gerçek köprüydü; 22.09.2026'dan beri
+    `md -> tdse`, 24.09.2026'dan beri `tb -> md` de GERCEK_KOPRU'dur. Tabanı
+    ölçülen kenar yine yalnız `hf -> md`dir ve bu senaryonun penceresi onundur.)
 
     PYDANTIC DEĞİL — `GravScenario` ile aynı gerekçe: bu depoda `pydantic`
     kurulu değildir (ölçüldü, Task 5'te yeniden: `import pydantic` →

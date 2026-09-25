@@ -1,4 +1,9 @@
-"""Modül 7 / Task 2 — tek gerçek kenarın tabanı, ve o tabanın İKİ SAYI oluşu.
+"""Modül 7 / Task 2 — tabanı ölçülen tek kenarın (`hf → md`) tabanı, ve o tabanın İKİ SAYI oluşu.
+
+(Task 2 günü `hf → md` tablonun TEK gerçek köprüsüydü; 22.09.2026'dan beri
+`md → tdse`, 24.09.2026'dan beri `tb → md` de GERCEK_KOPRU'dur. Bu dosyanın
+ölçtüğü taban yine yalnız `hf → md`nindir; `tb → md`nin kenar tabanı hiç
+ölçülmedi.)
 
 Bu dosyanın taşıyıcı iddiası tek cümledir: **fiziği kapatmak _tabanı_
 ölçer; fiziği analitik bir ikizle değiştirmek _hata çubuğunu_ ölçer.**

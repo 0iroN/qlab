@@ -659,7 +659,8 @@ def test_TABLODA_IKI_GIRDI_DOLDU_TEK_SATIR_DAMGA_KALKTI_ETIKET_ICERIDE():
     """Task 4'ün `bridge_map` üzerindeki izi TAM OLARAK şudur:
 
       * `hf → tb` ve `tb → spin` hâlâ TAUTOLOJİ kovasında, hâlâ birer
-        satır (kova sayıları 1/4/8/0/8 DEĞİŞMEDİ)
+        satır (Task 4'te kova sayıları 1/4/8/0/8'di ve DEĞİŞMEDİ; bugünkü
+        sayım 3/4/8/0/6 -- TAUTOLOJİ yine 4 ve bu test yalnız onu kilitler)
       * ikisinin `buyukluk`u artık `None` değil — biri 2.276e-15 (bağıl
         özdeşlik artığı), öteki 0.0 (bit bit ölüm) — ve ikisi de `float`
       * ikisinden `YENIDEN_URETILMEDI` damgası KALKTI; damga TAUTOLOJİ

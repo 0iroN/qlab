@@ -1,4 +1,11 @@
-"""Tek gercek kenarin (`hf -> md`) TABANI -- ve o taban IKI SAYIDIR.
+"""Tabani OLCULEN tek kenarin (`hf -> md`) TABANI -- ve o taban IKI SAYIDIR.
+
+(Bu dosya yazildiginda `hf -> md` tablonun TEK gercek koprusuydu. Artik
+degil: 22.09.2026'da `md -> tdse`, 24.09.2026'da `tb -> md` da
+GERCEK_KOPRU oldu. Ama bu dosyanin olctugu taban yalniz `hf -> md`nindir:
+`md -> tdse`nin sayisi `tests/tdse/test_from_md.py`de canli olculur,
+`tb -> md`nin kenar tabani ise HIC OLCULMEDI -- `bridge_map`teki gerekcesi
+bunu yazar.)
 
 Modul 6 bir KUSUR BEYAN ETMISTI: taban yalnizca aritmetigi olcer, cunku
 kesme hatasi fizikle birlikte kapanir ve sinav onu yapisal olarak goremez.

@@ -174,24 +174,44 @@ Tasarım belgesi: `../docs/superpowers/specs/2026-08-05-qlab-kuantum-cekirdegi-d
   `bridge_map.py` (saf tanım katmanı: 21 çiftin kova tablosu **koddan
   türetilir** — `olculen_kenarlar()` ve `olculen_units_ekseni()` `engine/`
   ağacını `ast` ile tarar, tablo her koşumda ona karşı sınanır ve çelişirse
-  panel tik basmaz), `observable/bridge_obs.py` (tek gerçek kenar `hf → md`'nin
-  tabanı — **iki sayı**), `viz/bridge_frames.py` ve `kind: bridge` senaryosu.
-  **Sıfır yeni fizik.** Kova tablosu **1 / 4 / 8 / 0 / 8** (gerçek köprü /
-  tautoloji / yapısal yokluk / benzerlik / **ölçülmedi** — ayrı kova, §7.2 açık);
-  çapraz-motor import **tam iki kenar**, ikisi de HF'e (merdiven değil **iki
-  çubuklu yıldız**); `qlab.units`e dokunan küme `{hf, md, tb}` = bağlı küme.
-  Kenar tabanı **A1** fizik-kapalı limit **3.3986707e-05 cm⁻¹** (*aritmetiği*
+  panel tik basmaz), `observable/bridge_obs.py` (tabanı ölçülen tek kenar
+  `hf → md`'nin tabanı — **iki sayı**), `viz/bridge_frames.py` ve `kind: bridge`
+  senaryosu. **Sıfır yeni fizik.** Kova tablosu bugün **3 / 4 / 8 / 0 / 6**
+  (gerçek köprü / tautoloji / yapısal yokluk / benzerlik / **ölçülmedi** — ayrı
+  kova, §7.2 açık). Modül 7 kapandığında **1 / 4 / 8 / 0 / 8**'di; iki çift
+  sonradan `OLCULMEDI`den `GERCEK_KOPRU`ya geçti ve ikisinde de **kova
+  sözlüğü bükülmedi, kod kenarı kuruldu**: 22.09.2026'da `md → tdse`
+  (`engine/tdse/from_md.py`; kenar sayısı **0.13167174 bohr**, pencere
+  L = 4.0 / n = 512 / A = 0.1 / N_BOLME = 200, periyot 18 ve 24'te bit bit
+  aynı) ve 24.09.2026'da `tb → md` (`engine/md/tb_kuvvet.py`, ss-σ sıkı-bağ kuvvet
+  alanı — **kenar tabanı ölçülmedi, doğa çıpası yok**; aşağıda Modül 2 ve
+  3F bölümleri). Çapraz-motor import bugün **dört kenar** — `md → hf`,
+  `md → tb`, `tb → hf`, `tdse → md` — ve yapı bir merdiven değil:
+  `hf - md - tb` **üçgeni** artı `md - tdse` **kuyruğu** (Modül 7
+  kapandığında iki çubuklu bir yıldızdı, 22.09'da dört düğümlü bir zincir
+  oldu). Üçgen import grafiğinde bir döngüdür, **veri akışında değil**:
+  `tb → hf` kenarında veri akmaz (`model_from_downfold` `src/`de hiç
+  çağrılmıyor), yani hf → tb → md diye bir veri yolu yoktur. `qlab.units`e
+  dokunan küme hâlâ `{hf, md, tb}`, ama artık kenar düğümlerinin **alt
+  kümesidir**: `tdse` bağlı ama ölçeksiz — Modül 7'nin ölçtüğü "units kümesi =
+  bağlı küme" özdeşliği bir yasa değil eski topolojinin rastlantısıymış.
+  Kenar sayısı, dereceler ve sıfır bağlı çift sayısı beyanda yazılmaz, panelin
+  canlı satırı onları her koşumda taramadan basar.
+  `hf → md`'nin kenar tabanı **A1** fizik-kapalı limit **3.3986707e-05 cm⁻¹** (*aritmetiği*
   ölçer, S/G 1.61e+08) ve **A2** anharmoniklik-eşleştirilmiş prob
   **1.2025992e-02 cm⁻¹** (*hata çubuğunu* ölçer, S/G 4.56e+05); gerçek hata
   1.4472809e-02 → **A1 425.84 kat iyimser, A2/gerçek 0.8309** — Modül 6'nın
   "taban yalnız aritmetiği ölçer" kusur beyanı burada ikinci probla **kapandı**,
   ve iki sayı iki ayrı düğmeye tepki veriyor (N = 200 → 400: A1 15.18 kat,
-  A2 1.0008 kat). Kenar bir **şema çıpasıdır** (iki tüketici de aynı HF
+  A2 1.0008 kat). `hf → md` bir **şema çıpasıdır** (iki tüketici de aynı HF
   çözümünün soyundan); mevcut `ω_B/ω_A` çıpası kütleye **bit bit kör** ve kütle
   borusu kendi mutlak sınavını aldı; düşen iki aday (`hf → tb`, `tb → spin`)
   **tautoloji olarak, penceresiyle** sevk edildi. Planın/spec'in **yirmi beş**
   sayısı ölçümle düzeltildi (Task 5'te bir: 6-31G'nin `ω_A`sı **penceresizdi**).
-  Ölçülen sayılar ve dürüst olumsuzlar aşağıdaki Doğrulama bölümündedir.
+  Modül 7'nin Doğrulama bölümünde ayrı bir başlığı YOKTUR (bu satır eskiden
+  öyle bir bölüme gönderme yapıyordu): ölçülen sayılar ve dürüst olumsuzlar
+  panelde ve `tests/bridge/`in dosya dokstringlerindedir; ss-σ kenarının
+  sayıları Doğrulama'nın Modül 2 ve Modül 3F bölümlerindedir.
 
 ## Ne iddia etmiyor
 
@@ -293,18 +313,22 @@ denge-dışı süreçler (histerezis, tavlama) yazılmadı. Korelasyon uzunluğu
 sevk edilen senaryoda **raporlanmaz** — gerekçesi ölçüldü ve panelde yazılı.
 
 **Modül 7 hiçbir modüller arası fiziksel bağ kurmaz ve bir "ölçek merdiveni"
-olduğunu iddia etmez — ölçüldü, yok.** Yedi motorun 21 çiftinde tek gerçek kod
-kenarı `hf → md`dir ve o da bir **fizik çıpası değil şema çıpasıdır**: iki
-tüketici (statik ikinci türev ve MD periyodu) aynı HF çözümünün soyundan gelir,
-uyum doğayı değil iki uygulamayı ölçer. `hf → tb` ve `tb → spin` birer
-tautolojidir (ilki `np.mean` tanımının `==` ile geri okunması, ikincisi `J`'nin
-yalnız `J/T` oranı olarak girmesi); `grav` atom ölçeğine **bağlanmaz**
-(`F_g/F_e = 8.09e-37`); sekiz çift ise **hiç ölçülmedi** ve panel bunu "ölçüldü,
-sıfır çıktı" ile aynı hücreye yazmaz. Kenarın tabanı **iki sayıdır** ve yalnız
-birincisi (fizik-kapalı, 3.40e-05 cm⁻¹) yazılsaydı panel gerçek hatayı **425.84
-kat iyimser** gösterirdi — ikincisi (analitik ikiz, 1.20e-02 cm⁻¹) gerçek
-hatanın 0.83'ü. Kova tablosu elle listelenmez, koddan türetilir; bayat bir
-yokluk beyanı bir yalandır ve yalanın yanında tik basılmaz.
+olduğunu iddia etmez — ölçüldü, yok.** Yedi motorun 21 çiftinde bugün üç
+gerçek köprü var ve **hiçbiri bir doğa çıpası değildir**: `hf → md` bir
+**şema çıpasıdır** (iki tüketici — statik ikinci türev ve MD periyodu — aynı
+HF çözümünün soyundan gelir, uyum doğayı değil iki uygulamayı ölçer),
+`md → tdse` tek bir yüzeyin iki ayrı motorda koşulmasının **ayrışmasını**
+ölçer, `tb → md` ise **seçilmiş** bir radyal yasayı taşır (çıpaları modelin
+kendi kuramına karşıdır; kenar tabanı ölçülmedi). `hf → tb` ve `tb → spin`
+birer tautolojidir (ilki `np.mean` tanımının `==` ile geri okunması, ikincisi
+`J`'nin yalnız `J/T` oranı olarak girmesi); `grav` atom ölçeğine **bağlanmaz**
+(`F_g/F_e = 8.09e-37`); altı çift ise **hükümsüz** kalır — sayı geldi, hüküm
+gelmedi — ve panel bunu "ölçüldü, sıfır çıktı" ile aynı hücreye yazmaz.
+`hf → md`nin tabanı **iki sayıdır** ve yalnız birincisi (fizik-kapalı,
+3.40e-05 cm⁻¹) yazılsaydı panel gerçek hatayı **425.84 kat iyimser**
+gösterirdi — ikincisi (analitik ikiz, 1.20e-02 cm⁻¹) gerçek hatanın 0.83'ü.
+Kova tablosu elle listelenmez, koddan türetilir; bayat bir yokluk beyanı bir
+yalandır ve yalanın yanında tik basılmaz.
 
 Qt penceresi bu depoda **bir kez** gerçek ekranda açılıp gözle doğrulandı:
 orbital penceresi (su/STO-3G HOMO), Windows platformunda, kabul kriteri 3
@@ -354,6 +378,22 @@ her adımda SCF ile yeniden çözülüyor (adım başına 7 SCF, ~8.5 ms):
 ```bash
 python -m qlab.run scenarios/h2_aimd.yaml -o h2aimd.npz
 ```
+
+Sıkı-bağ MD (md ↔ tb ss-σ kenarı, 24.09.2026) — 16 atomlu yarı dolu bir
+zincirde (kütle ¹H; atomlar bir element DEĞİL, yasası seçilmiş bir modelin
+siteleridir) kısa NVE; kuvvet, tek orbitalli ss-σ modelinin Mermin serbest
+enerjisinin gradyanıdır (ölçüldü, 24.09.2026, bu makine: CLI 0.72 s,
+`energy_drift` 4.513e-04, eşik 1e-02; pencere senaryonun kendisi — a = 2
+bohr zincir + 0.05 bohr bozulma, 631.6 K, L = 32 bohr, dt = 10, 400 adım):
+
+```bash
+python -m qlab.run scenarios/tb_zincir_md.yaml -o tbmd.npz
+```
+
+Elektron sıcaklığı senaryoda **Kelvin** (`electron_temperature_kelvin`),
+kuvvet sınıfında hartree'dir; dönüşüm fabrikada yapılır ve panel ikisini de
+basar. Senaryonun iki radyal yasası (`ss_sigma`, `itme`) **seçimdir**: bu
+kenarda doğa çıpası yoktur.
 
 UHF indirgemesi (Modül 3H) — H₈ halkasının tight-binding parametreleri beş
 mesafede qlab'ın kendi UHF'inden türetiliyor (ölçüldü, 5.5 s):
@@ -409,8 +449,8 @@ hangisi fizik, hangisi çeviri denetimi), `Pencere` (ızgara/`Δx`/`S`/adım/`λ
 basılmaz.
 
 Modüller arası yokluk haritası (Modül 7) — 21 çiftin kova tablosu koddan
-türetilir ve tek gerçek kenarın tabanı iki sayı olarak okunur (ölçüldü,
-0.7 s; HF hiç çözülmez):
+türetilir ve tabanı ölçülen tek kenarın (`hf → md`) tabanı iki sayı olarak
+okunur (ölçüldü, 0.7 s; HF hiç çözülmez):
 
 ```bash
 python -m qlab.run scenarios/kopru_haritasi.yaml -o kopru.npz
@@ -1018,6 +1058,47 @@ küçülüyor (ideal √20 = 4.472).
 - Termostat kütlesi Q → 2Q hatası fiziksel gözlemlerin hiçbirinde eşiği
   aşmıyor; onu yalnızca `thermostat_mass`ın literal testi kırıyor.
 
+#### Beşinci kuvvet alanı: ss-σ sıkı-bağ (md ↔ tb kenarı, 24.09.2026)
+
+`engine/md/tb_kuvvet.py::SsSigmaTBKuvveti` `ForceField` sözleşmesinin beşinci
+uygulamasıdır ve integratöre de termostatlara da dokunmadan eklendi; senaryo
+türü `kind: tb_ss_sigma` (`scenarios/tb_zincir_md.yaml`). TB tarafı (yasa,
+Mermin dolumu, model çıpaları) Modül 3F bölümündedir. Döndürdüğü enerji
+**Mermin serbest enerjisi Ω = E_band − kT·S + E_rep**'dir ve kuvvet −∇Ω'dır,
+E'nin gradyanı değil: integratör KE + Ω'yı korur, **KE + E'yi korumaz**
+(fark kT·dS, bir hata değil tanım). **MD'de kT > 0 zorunludur** — kT = 0'da
+Fermi seviyesindeki dejenere noktada gradyan yoktur. Sınıf **hartree** alır,
+senaryo **Kelvin** taşır; dönüşüm fabrikadadır. **Doğa çıpası yoktur**:
+yasalar seçildi, yasadan geri okunan bağ, genlik ve eşik fizik iddiası değildir.
+
+| Test | Pencere | Ölçülen |
+|---|---|---|
+| KE + Ω salınımı O(dt²) | N = 16, a = 2, L = 32, n_e = 16, kT = 0.002, x'te gevşetilmiş Peierls minimumu + 100 K x-hızları (tohum 7), ω_max·dt ∈ {0.2, 0.1, 0.05}, 1.5 T_min | oranlar **4.016312** ve **4.000702**, tolerans 4 ± 0.1 |
+| KE + E korunmuyor, kT·ΔS'de doyuyor | aynı zincir düzgün, **metalik kT = 0.02** (M11 penceresinde kT·ptp(S) yalnız 2.6e-08 ve E ile Ω ayırt edilemiyor) | tt(KE+Ω) oranları **4.0178 / 4.0044**, tt(KE+E) oranları **1.0881 / 1.0215**; ω_max·dt = 0.05'te tt(KE+E)/(kT·ptp S) = **1.0072** |
+| Kelvin tuzağı | zincir(16, 2, 0.05, 3), n_e = 16, L = 32, yalnız bant | max\|F\| kT = 0.002'de **1.054e-01**, kT = 300 "hartree"de **2.803e-05** (3759 kat, sessizce) — sınıf kT ≥ 1 hartree'yi reddeder; 1 K altındaki bir Kelvin sayısı ve ters tuzak yakalanmaz (beyanlı) |
+| HF'e dokunmuyor | alt süreçte yalnız `import qlab.engine.md.tb_kuvvet`; fabrikadan kurulan TB alanında 20 adım NVE | yüklenen hf modülü **0**; `hf.scf.solve` çağrısı **0** (pozitif kontrol: aynı sayaçla HF alanında 1 adım **14**) |
+| Sürüklenme hükmü enerjinin sıfırından bağımsız | zincir(16, 2, 0.05, 3), 631.6 K, L = 32, dt = 20, 200 adım; Ω + c | eski ölçüt (\|blok[0]\|'a bölen) c = 0'da **3.26e-05** ✓, c = −Ω₀'da **9.13e-02** ✗; TB ölçütü (max KE'ye bölen) c boyunca bağıl **≤ 8.5e-11** aynı |
+| Eşik TB'ye özgü sürüklenmeyi yakalıyor | aynı zincir, n_e = 15, v₀ = 0, dt = 10, 400 adım | T_e = 3.16 K'de **5.48e-02** ✗ (Fermi seviyesindeki geçiş adımda çözülmüyor), 631.6 K'de **5.97e-04** ✓; eşik **1e-02** |
+
+Çağrı maliyeti (bu makine, 1B zincir a = 2, kT = 2e-3, L = 2N, 5 tekrarın en
+küçüğü): N = 16'da **0.62 ms**, 128'de **4.31 ms**. `energy_drift` eşiği
+iri dt'nin **salınımını yargılamaz**: ✓, dt'nin yeterince küçük olduğu anlamına
+gelmez (ω_max·dt ≥ 0.93 olan 33 hücrenin 8'i eşiğin altında kaldı); dt
+kararlılık denetimi TB dalında yoktur, dt'yi kullanıcı seçer.
+
+**Dürüst olumsuzlar:** termostatlı TB koşusu hiç koşulmadı (panel yalnız NVT'de
+eşiğin `None` olduğunu söyler; korunum cümlesi — KE + Ω korunur, KE + E
+korunmaz — yalnız NVE'nin beklenen hatasında basılır, NVT panelinde basılmaz);
+enine (y, z) kararsızlık ölçülmedi — 1B pencereler y = z = 0 alt-uzayında
+kalır; termal bir MD koşusunun Fermi geçişine varıp varmadığı **ölçülmedi**
+(G5'in n_e = 15 penceresi v₀ = 0'dan başlar; ön ölçümün yörüngesi tek bir
+moda 1.5·ENGEL veriyordu, ≈26600 K eşdeğeri — kurgulanmış bir pencere); N ≥ 48
+zincirde birinci derece polaron ön ölçümde görüldü (N = 48/64, r_on = 2.6 /
+r_cut = 3.3, N_e ∈ {2, 4}'te 8/114 hücrede q = 1), bu depoda sınanmadı;
+kenarın tabanı (`hf → md`'nin A1/A2'sinin karşılığı)
+**ölçülmedi** ve kova girdisinin `buyukluk`u bu yüzden `None`dur; makineler
+arası tekrarlanabilirlik ölçülmedi.
+
 ### Modül 2D — ab initio moleküler dinamik (Plan D)
 
 Modülün asıl kazancı burada: **çıpa artık dairesel değil.** Plan C'nin Morse
@@ -1349,6 +1430,73 @@ enerjetiği hesaplanmıyor; sıcaklık/Fermi-Dirac doluluğu yok. Ve en önemlis
 **parametreler türetilmiyor**, dışarıdan giriyor. Onları qlab'ın kendi
 Hartree-Fock'undan türetmek — daireselliği kırma hamlesinin TB karşılığı —
 Plan G'ye bırakıldı ve ön ölçümü "KISMEN" dedi.
+*(Plan F kapanışının kaydı. O günden bu yana üç madde değişti: (1) parametre
+türetimi Modül 3H'de geldi — H halkalarında UHF indirgemesi (`downfold_uhf`,
+`model_from_downfold`, `fit_distance_laws`); Plan F'nin kendi malzemeleri için
+türetim yok; ss-σ kenarı ise BİLEREK seçilmiş bir yasa taşır ve downfold yasası
+orada yasaktır (M10 `ast` kilidi). (2)–(3) 24.09.2026 itibarıyla: Fermi-Dirac
+doluluğu `tb/mermin.py`de var ve 1B zincirde Peierls/Kohn enerjetiği model
+çıpası olarak sınanıyor — aşağıdaki ss-σ bölümü. Spin ve silisyum/bakır hâlâ
+yok.)*
+
+#### md ↔ tb ss-σ kenarı: mesafeye bağlı hoplama ve Mermin dolumu (24.09.2026)
+
+Modül 7'nin `OLCULMEDI` kovasındaki `md-tb` çifti **kenarı kurularak**
+`GERCEK_KOPRU`ya geçti (spec `.superpowers/sdd/md-tb-ss-sigma-spec-2026-09-23.md`;
+MD tarafı Modül 2 bölümünde). TB tarafında üç parça: `tb/radyal.py` (üstel
+radyal yasa + iptalsiz sin² kuyruğu; aynı biçim hoplama rolünde `ss_sigma`,
+itme rolünde `itme` adını taşır), `tb/mermin.py` (Mermin dolumu, g_s = 2;
+enerji Ω = E_band − kT·S + E_rep, kuvvet −∇Ω) ve `hamiltonian.distance_model`
+(kafes yolu; kesme yasadan, `max_cell` ters örgüden türetilir). **Atom başına
+tek s orbitali: Slater-Koster tablosunun yalnız ss-σ satırıdır, açı çarpanı
+özdeş 1 — bu bir SK modeli değildir**; p/d orbitalleri yok. Parametreler
+**seçimdir ve bu kenarda doğa çıpası yoktur**: aşağıdaki MODEL ÇIPALARI modelin
+kendi kuramına karşı sınanır, doğaya karşı değil. Ortak pencere: hoplama yasası
+−0.1 / d0 = 2 / üs 2, itme 0.05 / 2 / 6, r_on = 3.0, r_cut = 3.8 bohr.
+
+| Test | Pencere | Ölçülen |
+|---|---|---|
+| F = −∇Ω, 3N bileşenin hepsi (makine) | 3B küme N = 8 kutusuz / bozulmuş periyodik zincir N = 16, L = 32; kT = 1e-3, merkezi h = 1e-5, her çift dikişten ≥ 1e-3 uzak | max\|F + ∇Ω\| **1.32e-09 / 7.78e-11**, tolerans 1e-8 |
+| Kesme merdiveni kapanıyor | dimer, n_e = 2, kT = 1e-3; ΔE(ε) = Ω(r_cut − ε) − Ω(r_cut + ε) | ΔE(1e-3)/ΔE(1e-4) = **100.0389** (basamak ε² ile kapanıyor); sert kesmeli `uniform_model` aynı dimerde (40 bohr kutu, Γ, kT = 0) sabit **0.2** sıçrar — 2\|t\|, girdiden geri okuma |
+| Ω−E farkının işareti | zincir(16, 2, 0.05, 3), n_e = 16, L = 32, x = gap/kT ∈ {0.2, 1, 3.09, 10, 20} | (F − F_FD(E)) / (−P(x)·∇gap) = 1, en kötü sapma **6.1e-07**: smearing boşluğu **kapatan** yöne iter |
+| Kafes yolu ≡ MD yolu, aynı yasa nesnesi | zincir(16, 1.8, 0.05, {3, 5}), L = 28.8, kT = 2e-3 | \|ΔΩ\| ≤ **2.2e-16**, max\|ΔF\| ≤ **2.6e-16**, tolerans 1e-14 |
+| `max_cell` ters örgüden | 15° eğik 2B örgü, kesme 0.79 | naif formül **4** komşu, ters örgü **6**, bağımsız referans **6** |
+| Parçacık-boşluk simetrisi (model çıpası) | iki parçalı zincir(16, a, …), N_e = 8 ↔ 24, kT = 2e-3, dört geometri | \|ΔΩ\| ≤ **8.9e-16**, max\|ΔF\| ≤ **9.2e-16** |
+| Kohn argmin = q_F (model çıpası) | düzgün N = 16, 15 çift N_e, kT ∈ {1e-4, 2e-3}, yalnız en yakın komşu | **30/30**, en dar marj 5.5221e-02 |
+| Hückel 4n+2 eşiği Λ_c·S(N) = 1 (model çıpası) | yarı dolu halka N ∈ {10, 14, 18, 22}, a = 2 ≤ r_on, kT = 0 | Λ_c·S − 1 = **+1.95e-07 … +5.21e-07**, tolerans 2e-6 |
+
+Maliyet (bu makine, x'te N atomlu süperhücre, a = 2): kafes yolu N = 16 … 128
+boyunca MD yolundan **9.5 – 51 kat** yavaş; MD bu yüzden kafes yolundan
+geçmez ve iki yolun eşitliği yukarıdaki satırla kilitlidir. Çakışık atom artık
+sessizce atılmıyor: `neighbour_shells` d ≤ 1e-9 bohr çiftinde
+`InvalidInputError` verir (eskiden çifti atıyordu).
+
+**Açık kalanlar (beyanlı, ayrı iş):** tek N_e ve tek N'de Kohn seçim kuralı
+farklıdır ve pencere dışıdır; `uniform_model`in `max_cell = 2` kabuk kaybı (1B'de
+kesme 3\|a\|'da) düzeltilmedi; enine (y, z) hareket ve 3B periyodik kristal
+sınanmadı; p orbitalleri ve açıya bağlı Slater-Koster tablosu yok; kenar
+tarayıcısının kör noktaları (alt paket, `importlib`, `TYPE_CHECKING`) açık.
+Ayrıca (24.09.2026, bulgu düzeltme turu):
+
+- Ω−E farkının P(x) = x/(4cosh²(x/4)) yasası yalnız Fermi çiftinde **2
+  elektron** varken geçerli (çift N_e). Tek N_e'de (çiftte 1 ya da 3
+  elektron) yasa başka: P₁(x), iki seviyeli kuramda P_max 0.2397, x ≈ 2.087'de.
+  zincir(16, 2, 0.05, 3)'te n_e = 15 ve 17 için P_ölçülen/P₁ = 1.000000
+  ölçüldü (x = 1 / 2.087 / 3.087) — **testi yok** (`tb/mermin.py` dokstringi).
+- Hückel C3 (4n+2) ve C4 (4n) eşikleri yalnız çift N'de tanımlı; tek N'de yarı
+  dolu halka bir soliton verir (eleştirmen E2). Eşik tek N'de **hiç ölçülmedi**.
+- Kuyruk genişliği r_cut − r_on bütün dinamik pencerelerde 0.8 bohr'a sabit
+  kaldı (yalnız C3'ün negatif testleri r_on'u statik olarak oynatır); konuma
+  bağlı onsite (düzensizlik) sınıf onsite almadığı için denenemez.
+- `observable/tb_obs.py` üzerinden hiçbir md-tb ölçümü yapılmadı; ön ölçümdeki
+  P6'nın üç mercekli yeniden koşusu ayrı iş (kova artık kilitle belirlendiği
+  için büyük ölçüde eskidi).
+- kT > 0'da raporlanan μ kayan-nokta platosunun ortasıdır: kuyruklar yuvarlamanın
+  altındayken (boşluk/kT ≳ 70) fiziksel kanonik kökten kT'nin bir kesri kadar
+  sapar (ölçüldü: en çok 0.394 kT; Ω, F ve n etkilenmez). Log uzayında kök adımı
+  yazılmadı.
+- `mermin_dolum` çok büyük kT'de nan döner (kT = 1e308 ölçüldü; fizik penceresi
+  dışı, kapı yok).
 
 ### Modül 3H — UHF indirgemesi / downfolding (Plan H)
 

@@ -1,4 +1,4 @@
-# Moduller arasi YOKLUK HARITASI ve tek gercek kenarin tabani -- Modul 7.
+# Moduller arasi YOKLUK HARITASI ve tabani olculen tek kenarin (hf -> md) tabani -- Modul 7.
 #
 # BU SENARYO BIR CIPA KURMAZ VE BIR TABLO TASIMAZ. Kova tablosu (21 cift,
 # bes kova) YAML'dan gelmez, KODDAN TURETILIR: `qlab.bridge_map` her kosumda

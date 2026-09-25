@@ -1,0 +1,48 @@
+# 16 atomlu yarı dolu zincirde kısa NVE: tek s orbitalli ss-sigma TB kuvveti
+# (md<->tb kenarı, `engine/md/tb_kuvvet.py`). Çekirdekler klasik; elektronlar
+# her adımda çözülür ve T_e'de Fermi-Dirac ile doldurulur; potansiyel Mermin
+# serbest enerjisi Omega'dır (KE + Omega korunur, KE + E DEĞİL).
+#
+# PARAMETRELER SEÇİMDİR, DOĞA ÇIPASI YOK (spec md-tb B4): yasalar deponun
+# ortak penceresi (ss_sigma -0.1/2/2, itme 0.05/2/6, r_on 3.0, r_cut 3.8).
+# Başlangıç: a = 2 bohr düzgün zincir + 0.05 bohr gauss bozulma
+# (numpy default_rng(3)), hızlar sıfır; yarı dolu zincir Peierls'e
+# kararsız olduğu için bozulma büyür ve zincir dimerleşerek salınır.
+# Kütle 1H (M_H). Kutu yalnız x'te periyodik, L = 32 = 2N (max r_cut < L/2).
+#
+# dt = 10 a.u.: M11 penceresinin omega_max = 0.02315'iyle omega_max*dt ~ 0.23.
+# TB dalında dt kararlılık denetimi YOKTUR (spec B10). Sürüklenme ölçütü
+# |blok[-1] - blok[0]| / max(KE) (enerjinin sıfırı keyfi, spec B8); bu koşuda
+# ölçüldü (G5, 24.09.2026): bkz. `tests/md/test_tb_kuvvet.py`.
+kind: md
+name: TB ss-sigma zincir NVE
+force_field:
+  kind: tb_ss_sigma
+  params:
+    ss_sigma: {genlik_hartree: -0.1, d0_bohr: 2.0, us: 2.0, r_on_bohr: 3.0, r_cut_bohr: 3.8}
+    itme: {genlik_hartree: 0.05, d0_bohr: 2.0, us: 6.0, r_on_bohr: 3.0, r_cut_bohr: 3.8}
+    n_electron: 16
+    electron_temperature_kelvin: 631.6
+    box_x_bohr: 32.0
+initial:
+  positions_bohr:
+    - [0.10204595606925913, 0.0, 0.0]
+    - [1.8722167484342909, 0.0, 0.0]
+    - [4.020904942336289, 0.0, 0.0]
+    - [5.971611519693604, 0.0, 0.0]
+    - [7.977367535394477, 0.0, 0.0]
+    - [9.98922014184551, 0.0, 0.0]
+    - [11.899000693542638, 0.0, 0.0]
+    - [13.98840338111779, 0.0, 0.0]
+    - [15.956739346186254, 0.0, 0.0]
+    - [18.166149975832244, 0.0, 0.0]
+    - [20.011289330661395, 0.0, 0.0]
+    - [21.98236846028292, 0.0, 0.0]
+    - [23.98593562909243, 0.0, 0.0]
+    - [25.96659768269455, 0.0, 0.0]
+    - [27.947242472439743, 0.0, 0.0]
+    - [29.98045995113827, 0.0, 0.0]
+  masses_amu: [1.00782503207]
+dt: 10.0
+n_steps: 400
+save_every: 2

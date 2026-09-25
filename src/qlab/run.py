@@ -28,11 +28,11 @@ from qlab.engine.hf.factory import ScanResult, run_scan
 from qlab.engine.tdse import factory
 from qlab.engine.tdse.grid import Grid1D
 from qlab.engine.tdse.propagator import evolve
-# `InvalidInputError` de gerekli: `_run_md` surukleme olcumunde onu
-# firlatiyor ama import edilmemisti ve o dal yakalanmayan bir
-# `NameError` veriyordu -- yani "en az 2 kayit gerekir" mesaji
-# kullaniciya HIC ulasmiyordu. Modul 3H incelemesinde bulundu.
-from qlab.errors import InvalidInputError, QLabError
+# `_run_md`in surukleme kapisi ("en az 2 kayit gerekir", `InvalidInputError`)
+# G5'ten beri `md/factory.py::energy_drift`te firlatilir; Modul 3H'de burada
+# import EDILMEMIS oldugu icin yakalanmayan bir `NameError` veriyordu ve
+# mesaj kullaniciya HIC ulasmiyordu (`tests/test_run.py` o dali tetikler).
+from qlab.errors import QLabError
 from qlab.provenance import Provenance
 from qlab.scenario.loader import load_scenario
 from qlab.scenario.schema import (
@@ -681,7 +681,7 @@ def _run_bridge(scenario: BridgeScenario, output: str | None) -> int:
 
 def _run_md(scenario: MDScenario, output: str | None) -> int:
     """MD senaryosunu koşturur ve şeffaflık panelini basar."""
-    from qlab.engine.md.factory import build, provenance_for
+    from qlab.engine.md.factory import build, energy_drift, provenance_for
     from qlab.engine.md.integrator import Trajectory, run
 
     durum, alan, termostat = build(scenario)
@@ -711,19 +711,11 @@ def _run_md(scenario: MDScenario, output: str | None) -> int:
             potential=np.array(potansiyel),
         )
 
-    toplam = yorunge.kinetic + yorunge.potential
-    # SÜRÜKLENME, salınım DEĞİL: blok ortalamalarının baş-son farkı.
-    # BLOK SAYISI VERİYE GÖRE: ÖLÇÜLDÜ -- 10 sabit blokla M < 10 kayıtta
-    # `reshape` boş dilim üretiyor, sürüklenme `nan` çıkıyor ve panel onun
-    # YANINDA ✓ basıyordu (M=3 ve M=9'da görüldü; ilk sağlam değer M=10).
-    if len(toplam) < 2:
-        raise InvalidInputError(
-            f"sürüklenme ölçmek için en az 2 kayıt gerekir, {len(toplam)} var; "
-            "n_steps/save_every oranını büyütün"
-        )
-    n_blok = min(10, len(toplam))
-    blok = toplam[: (len(toplam) // n_blok) * n_blok].reshape(n_blok, -1).mean(axis=1)
-    suruklenme = float(abs(blok[-1] - blok[0]) / abs(blok[0]))
+    # SÜRÜKLENME, salınım DEĞİL: blok ortalamalarının baş-son farkı. Hesap
+    # (blok sayısı, "en az 2 kayıt" kapısı, TÜRE BAĞLI payda) G5'ten beri
+    # `md/factory.py::energy_drift`te: TB'de enerjinin sıfırı keyfidir ve
+    # |blok[0]|'a bölmek hükmü o sıfıra bağlıyordu (spec B8; ölçüm orada).
+    suruklenme = energy_drift(scenario, yorunge.kinetic, yorunge.potential)
 
     # KISIT SAYISI TERMOSTATA BAĞLIDIR: ÖLÇÜLDÜ -- Langevin kütle merkezini
     # YENİDEN ISITIYOR (<KE_COM>/(1.5kT) = 1.098, çıkarılmış kalsaydı 0.000),
