@@ -9,6 +9,7 @@ ona karşı sınanır.
 from __future__ import annotations
 
 import ast
+import importlib.util
 import re
 from collections import Counter
 from itertools import combinations
@@ -49,16 +50,32 @@ BEKLENEN_KENARLAR = {("md", "hf"), ("md", "tb"), ("tb", "hf"), ("tdse", "md")}
 # iki ölçümü de aynı yöne kaydırır ve çıpa dairesel olur.
 
 
-def _import_edilen(dosya: Path) -> set[str]:
-    """Bir dosyanın GERÇEKTEN import ettiği mutlak modül adları."""
+def _import_edilen(dosya: Path, paket: str | None = None) -> set[str]:
+    """Bir dosyanın GERÇEKTEN import ettiği mutlak modül adları.
+
+    26.09.2026 (yalın tarayıcı): `paket` verilirse göreli importlar STDLIB'in
+    kendi çözücüsüyle (`importlib.util.resolve_name`) çözülür ve `from qlab
+    import X` / `from qlab.engine import X`in adları alt modül sayılır —
+    `bridge_map`in çözücüsü KULLANILMAZ (ikisi aynı makineye dayanırsa çıpa
+    dairesel olur)."""
     agac = ast.parse(dosya.read_text(encoding="utf-8"), filename=str(dosya))
     adlar: set[str] = set()
     for dugum in ast.walk(agac):
         if isinstance(dugum, ast.Import):
             adlar.update(ad.name for ad in dugum.names)
-        elif isinstance(dugum, ast.ImportFrom) and dugum.level == 0 and dugum.module:
-            adlar.add(dugum.module)
+        elif isinstance(dugum, ast.ImportFrom) and (dugum.level == 0 or paket):
+            taban = importlib.util.resolve_name(
+                "." * dugum.level + (dugum.module or ""), paket or ""
+            )
+            adlar.add(taban)
+            if taban in ("qlab", "qlab.engine"):
+                adlar.update(f"{taban}.{ad.name}" for ad in dugum.names)
     return adlar
+
+
+def _paket(dosya: Path, qlab_koku: Path = KAYNAK) -> str:
+    """Dosyanın `__package__`ı: `.../qlab/engine/md/alt/x.py` -> `qlab.engine.md.alt`."""
+    return ".".join(dosya.relative_to(qlab_koku.parent).parent.parts)
 
 
 def _motor_paketleri() -> list[Path]:
@@ -315,6 +332,11 @@ def test_MD_TB_GERCEK_KOPRU_BUYUKLUK_YOK_MODEL_CIPASI_DOGA_CIPASI_YOK():
         "BAGIMSIZLIK (spec M10)",
         "`hf.scf.solve` SIFIR kez",
         "KOD KENARI YUK TASIR",
+        # 26.09.2026: ölçüt DÖRT parçasıyla ve kaymadan yazılır; "veri akar" ve
+        # "yük taşır" ölçütün parçası DEĞİL, bu kenarda ölçülen güçlü olgular.
+        "(`tdse -> md`de konan olcut, DORT PARCA): karsilik var + veri AKABILIR "
+        "+ cikti kipirdar + kod kenari VAR. Dordu de burada saglanir",
+        "BU KENARDA OLCUTTEN GUCLU IKI OLGU DA OLCULDU ve ikisi olcutun PARCASI DEGILDIR",
         "`engine/md/tb_kuvvet.py` -> `qlab.engine.tb.mermin` ve `qlab.engine.tb.radyal`",
         "`engine/md/factory.py` -> `qlab.engine.tb.radyal`",
     ):
@@ -325,8 +347,8 @@ def test_MD_TB_GERCEK_KOPRU_BUYUKLUK_YOK_MODEL_CIPASI_DOGA_CIPASI_YOK():
     kosan_md = Path(qlab.__file__).resolve().parent / "engine" / "md"
     md_tb = {
         (dosya.name, m)
-        for dosya in sorted(kosan_md.glob("*.py"))
-        for m in _import_edilen(dosya)
+        for dosya in sorted(kosan_md.rglob("*.py"))
+        for m in _import_edilen(dosya, _paket(dosya, kosan_md.parents[1]))
         if m.split(".")[:3] == ["qlab", "engine", "tb"]
     }
     assert md_tb == {
@@ -477,8 +499,8 @@ def test_UNITS_EKSENI_KENAR_DUGUMLERININ_ALT_KUMESI_ve_TDSE_OLCEKSIZ():
     for paket in _motor_paketleri():
         ast_hit = 0
         metin_hit = 0
-        for dosya in sorted(paket.glob("*.py")):
-            if any(m.split(".")[:2] == ["qlab", "units"] for m in _import_edilen(dosya)):
+        for dosya in sorted(paket.rglob("*.py")):
+            if any(m.split(".")[:2] == ["qlab", "units"] for m in _import_edilen(dosya, _paket(dosya))):
                 ast_hit += 1
             if "qlab.units" in dosya.read_text(encoding="utf-8"):
                 metin_hit += 1

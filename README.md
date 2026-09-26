@@ -197,6 +197,50 @@ Tasarım belgesi: `../docs/superpowers/specs/2026-08-05-qlab-kuantum-cekirdegi-d
   bağlı küme" özdeşliği bir yasa değil eski topolojinin rastlantısıymış.
   Kenar sayısı, dereceler ve sıfır bağlı çift sayısı beyanda yazılmaz, panelin
   canlı satırı onları her koşumda taramadan basar.
+  **Kenar tarayıcısı — yalın sürüm (26.09.2026).** Tarayıcı yalnız **düz**
+  import biçimlerini çözer: `import qlab.engine.X…`, `from qlab.engine.X…
+  import …`, `from qlab.engine import X`, göreli importlar (alt pakette de),
+  `qlab.engine.X` zinciri ve alt paketler (dosya üst düzey motora atfedilir).
+  **Adı sayılan** yükleme ve erişim biçimleri motor ağacında (`engine/`
+  kökündeki dosyalar dahil) **yasaktır** (`importlib`/`runpy`/`pkgutil`/
+  `pydoc`/`imp`/`zipimport`/`builtins`/`sys` importu; `__import__`, `exec`,
+  `eval`, `compile`, `vars`, `globals`, `locals`, `__builtins__`;
+  `TYPE_CHECKING`; çıplak `import qlab`, `from qlab import engine`,
+  `from qlab.engine import *`; bir zincirin başı olmayan `qlab` adı ve
+  zincirsiz `qlab.engine` — takma ad, `getattr(qlab…)`; tam liste
+  `taranamayanlar()` dokstringinde): `taranamayanlar()` her geçişi
+  `dosya:satır biçim` diye adıyla raporlar ve panel tik basmaz. Bu bir analiz
+  değil bir **yasaklama politikasıdır** ve liste **sonludur**: izinli bir kenar
+  üzerinden yeniden aktarım (aklama: tdse, hf'yi md'nin bir özniteliğiyle
+  kullanır, `tdse → hf` kenarı çıkmaz), `os.sys.modules`, `mock.patch` dizgesi,
+  `.pth` ve C uzantısı görünmez. Gerçek ağaçta yasakların sayısı sıfır, tablo
+  değişmedi (648f03b'nin tarayıcısıyla aynı kenar ve eksen, testte kilitli).
+  Canlı satır ayrıca `taranamayan N` (sıfırken de basılır: ölçülmüş bir sıfır)
+  ve `kenar sınıfları` parçalarını basar. Her kenar ayrıca **çalışma zamanı**
+  ya da **yalnız tip** diye
+  sınıflanır (`olculen_kenar_siniflari()`): `md → hf`, `md → tb`, `tb → hf`
+  çalışma zamanı; `tdse → md` **yalnız tip** — `ForceField` from_md.py'de yalnız
+  bir argüman annotasyonu, veri akışı ördek tiplemeyle, import satırı silinince
+  modül **bit bit aynı** çalışıyor (ölçüldü, testte kilitli). GERÇEK_KÖPRÜ
+  kenarlarının sınıfı `GERCEK_KOPRU_KENAR_SINIFLARI`nda beyanlıdır ve kilit 5
+  onu ölçüme karşı sınar. Hüküm koşulludur: annotasyonu **değerlendiren** bir
+  tüketici (`get_type_hints`, `get_annotations`, `eval_str`, `singledispatch`
+  ve benzerleri; tam liste `tests/bridge/test_kenar_tarayici.py` `TUKETICILER`)
+  `src/qlab` çapında yasak ve sıfır (testle kilitli). Kilit 2 yalnız tip
+  kenarını da kod kenarı sayar; kilit 2'nin çalışma zamanı kenarı isteyip
+  istemeyeceği Osman'ın kararı, varsayılan **hayır**. Evet denirse `tdse → md`
+  bugünkü kaynakla GERÇEK_KÖPRÜ'de **kalamaz**: kova sayımı değişir ve 22.09'un
+  "delik kenar kurularak kapatıldı" hükmü yeniden açılır. Sınıfın anlamı **tek
+  yönlüdür**: `yalnız tip` yükün yokluğunu iddia eder ve yük taşıma çıpasıyla
+  kilitlidir; `çalışma zamanı` muhafazakâr bir statik sınıftır, yükü garanti
+  etmez — annotasyonu dizge yazmak, future importunu silmek ya da adı modül
+  düzeyinde bir yuvaya koymak (`_ = ForceField`) sınıfı veri akışını
+  değiştirmeden çevirir (ölçüldü, sentetik ağaç); sonuncusu import silme
+  ölçüsünü de çevirir. "Evet" kalıcı bir şart olacaksa bu kaçışları kapatan
+  bir ölçüte bağlanmalıdır. `md → tb` gerekçesindeki
+  ölçüt kayması da düzeltildi: GERÇEK_KÖPRÜ ölçütü "karşılık var + veri
+  **akabilir** + çıktı kıpırdar + kod kenarı **var**"dır; "veri akar" ve "yük
+  taşır" o kenarda ölçülen daha güçlü olgulardır, ölçütün parçası değil.
   `hf → md`'nin kenar tabanı **A1** fizik-kapalı limit **3.3986707e-05 cm⁻¹** (*aritmetiği*
   ölçer, S/G 1.61e+08) ve **A2** anharmoniklik-eşleştirilmiş prob
   **1.2025992e-02 cm⁻¹** (*hata çubuğunu* ölçer, S/G 4.56e+05); gerçek hata
@@ -450,7 +494,9 @@ basılmaz.
 
 Modüller arası yokluk haritası (Modül 7) — 21 çiftin kova tablosu koddan
 türetilir ve tabanı ölçülen tek kenarın (`hf → md`) tabanı iki sayı olarak
-okunur (ölçüldü, 0.7 s; HF hiç çözülmez):
+okunur (03.09.2026'da ölçüldü, 0.7 s; 26.09.2026'dan beri tarama dört kez
+koşuyor — kenar, eksen, taranamayan, sınıf — ve bütün yük bu makinede ~1.0 s;
+HF hiç çözülmez):
 
 ```bash
 python -m qlab.run scenarios/kopru_haritasi.yaml -o kopru.npz
@@ -1475,7 +1521,12 @@ sessizce atılmıyor: `neighbour_shells` d ≤ 1e-9 bohr çiftinde
 farklıdır ve pencere dışıdır; `uniform_model`in `max_cell = 2` kabuk kaybı (1B'de
 kesme 3\|a\|'da) düzeltilmedi; enine (y, z) hareket ve 3B periyodik kristal
 sınanmadı; p orbitalleri ve açıya bağlı Slater-Koster tablosu yok; kenar
-tarayıcısının kör noktaları (alt paket, `importlib`, `TYPE_CHECKING`) açık.
+tarayıcısının kör noktaları (alt paket, `importlib`, `TYPE_CHECKING`) açık
+*(26.09.2026: kapandı — alt paket ve göreli import çözülüyor, `importlib` ve
+`TYPE_CHECKING` motor ağacında yasak ve adıyla kırmızı; Modül 7 özetindeki
+"yalın sürüm" notu. Yasak listesi sonlu; açık kalan artık yollar: izinli bir
+kenar üzerinden yeniden aktarım (aklama), `os.sys.modules`, `mock.patch`
+dizgesi, `.pth`, C uzantısı)*.
 Ayrıca (24.09.2026, bulgu düzeltme turu):
 
 - Ω−E farkının P(x) = x/(4cosh²(x/4)) yasası yalnız Fermi çiftinde **2

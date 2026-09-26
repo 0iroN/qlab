@@ -67,7 +67,9 @@ bugün kova sayımı 3 / 4 / 8 / 0 / 6, kod kenarı dört (md -> hf, md -> tb,
 tb -> hf, tdse -> md) ve yapı `hf - md - tb` üçgeni + `md - tdse` kuyruğu;
 ikisi de `test_6_1`/`test_6_2`de canlı panele karşı kilitli. Units ekseni,
 A1/A2 ve gerçek hata satırları değişmedi — `test_6_2`/`test_6_3` onları
-bugün de aynı sayılarla sınıyor.)
+bugün de aynı sayılarla sınıyor. Maliyet satırı da bayat: 26.09.2026'dan
+beri tarama dört kez koşuyor — kenar, eksen, taranamayan, sınıf; tarama
+başına ~0.09 s — ve yük bu makinede ~1.0 s.)
 
 SPEC §4'ÜN BİR SAYISI DAHA ÇÜRÜDÜ — YANLIŞ DEĞİL, PENCERESİZ: "6-31G'de
 k = 0.411660 → ω = 4646.18 cm⁻¹" sevk edilen `r_e`de (STO-3G'nin
@@ -110,9 +112,11 @@ from qlab.bridge_map import (
     _HF_TB_OZDESLIK_BAGIL,
     _TB_SPIN_M_FARKI,
     bridge_declaration,
+    olculen_kenar_siniflari,
     olculen_kenarlar,
     olculen_units_ekseni,
     tablo_tutarsizliklari,
+    taranamayanlar,
 )
 from qlab.engine.md.forcefields import HartreeFockGradient
 from qlab.engine.md.state import ForceField
@@ -537,22 +541,35 @@ def test_6_2_YAPI_ve_units_ekseni_KODDAN(sevk_yuk, sevk_panel):
     assert "ekseni em=0 grav=0 hf=1 md=3 spin=0 tb=2 tdse=0 -> {hf, md, tb}" in tani
     assert sevk_panel.diagnostics["eksen"] == "hf,md,tb"
     assert sevk_panel.diagnostics["kenar"] == "4"
+    # 26.09.2026 (yalın tarayıcı): taranamayan yol ölçülmüş bir SIFIR ve her
+    # kenarın sınıfı canlı satırda (taramadan; bkz. test_kenar_tarayici.py).
+    assert (
+        "taranamayan 0; kenar siniflari md -> hf calisma_zamani, md -> tb "
+        "calisma_zamani, tb -> hf calisma_zamani, tdse -> md yalniz_tip;" in tani
+    )
+    assert sevk_panel.diagnostics["taranamayan"] == "0"
 
-    # Bağımsız tarayıcı (bridge_map'in yardımcıları KULLANILMIYOR).
+    # Bağımsız tarayıcı (bridge_map'in yardımcıları KULLANILMIYOR). 26.09.2026:
+    # alt paketler (`rglob`), göreli importlar (stdlib `resolve_name`) ve
+    # `from qlab.engine import X` de görülür.
     def importlar(dosya: Path) -> set[str]:
+        paket = ".".join(dosya.relative_to(KAYNAK.parent).parent.parts)
         adlar = set()
         for d in ast.walk(ast.parse(dosya.read_text(encoding="utf-8"))):
             if isinstance(d, ast.Import):
                 adlar.update(a.name for a in d.names)
-            elif isinstance(d, ast.ImportFrom) and d.level == 0 and d.module:
-                adlar.add(d.module)
+            elif isinstance(d, ast.ImportFrom):
+                taban = importlib.util.resolve_name("." * d.level + (d.module or ""), paket)
+                adlar.add(taban)
+                if taban in ("qlab", "qlab.engine"):
+                    adlar.update(f"{taban}.{a.name}" for a in d.names)
         return adlar
 
     motor = KAYNAK / "engine"
     kenarlar, eksen = set(), {}
     for paket in sorted(p for p in motor.iterdir() if p.is_dir() and not p.name.startswith("__")):
         eksen[paket.name] = 0
-        for dosya in sorted(paket.glob("*.py")):
+        for dosya in sorted(paket.rglob("*.py")):
             adlar = importlar(dosya)
             for m in adlar:
                 p = m.split(".")
@@ -590,7 +607,7 @@ def test_6_2_YAPI_ve_units_ekseni_KODDAN(sevk_yuk, sevk_panel):
     assert "`engine/md/tb_kuvvet.py` -> `qlab.engine.tb.{mermin, radyal}`" in tani
     # TAMLIK: md -> tb kenarini ureten HER (dosya, modul) cifti beyanda.
     md_tb = set()
-    for dosya in sorted((motor / "md").glob("*.py")):
+    for dosya in sorted((motor / "md").rglob("*.py")):
         for m in importlar(dosya):
             if m.startswith("qlab.engine.tb"):
                 md_tb.add((dosya.name, m))
@@ -912,12 +929,18 @@ def test_TABLO_BAYATLARSA_PANEL_TIK_BASMAZ_ve_CELISKIYI_YAZAR(sevk_senaryo, tmp_
     )
     (kok / "em").mkdir()
     (kok / "em" / "__init__.py").write_text("", encoding="utf-8")
+    # 26.09.2026: bir YASAK biçim de (taranamayan yol) tiki düşürür, adıyla.
+    (kok / "spin" / "gizli.py").write_text("import importlib\n", encoding="utf-8")
 
     yuk = build_bridge_payload(sevk_senaryo, motor_koku=kok)
     assert yuk.kenarlar == {("spin", "em")}
     assert yuk.eksen == {"em": 0, "spin": 0}
+    assert yuk.taranamayan == ("spin/gizli.py:1 `import importlib`",)
     sorunlar = yuk.tutarsizliklar
-    assert sorunlar == tablo_tutarsizliklari(yuk.kenarlar, yuk.eksen)
+    assert sorunlar == tablo_tutarsizliklari(
+        yuk.kenarlar, yuk.eksen, taranamayan=yuk.taranamayan, siniflar=yuk.siniflar
+    )
+    assert "TARANAMAYAN: spin/gizli.py:1 `import importlib`" in sorunlar
     assert any("OLCULMEDI" in s for s in sorunlar)
     assert any("GERCEK_KOPRU ('hf', 'md') icin kod kenari YOK" in s for s in sorunlar)
     # İKİNCİ KİLİT 22.09.2026'da DARALDI: eskiden "eksen kümesi = düğüm
@@ -929,9 +952,13 @@ def test_TABLO_BAYATLARSA_PANEL_TIK_BASMAZ_ve_CELISKIYI_YAZAR(sevk_senaryo, tmp_
     assert p.converged is False
     tani = dict(p.as_lines())["Yakınsama tanısı"]
     assert "TABLO KODLA CELISIYOR" in tani and "TABLO KODLA TUTARLI" not in tani
+    assert "taranamayan 1; kenar siniflari spin -> em calisma_zamani;" in tani
     assert dict(p.as_lines())["Yakınsama"].startswith("✗")
     # Gerçek ağaçta tutarlı.
-    assert tablo_tutarsizliklari(olculen_kenarlar(), olculen_units_ekseni()) == ()
+    assert tablo_tutarsizliklari(
+        olculen_kenarlar(), olculen_units_ekseni(),
+        taranamayan=taranamayanlar(), siniflar=olculen_kenar_siniflari(),
+    ) == ()
 
 
 def test_TABAN_CURURSE_PANEL_TIK_BASMAZ(sevk_yuk):
@@ -986,7 +1013,8 @@ def test_PENCERE_DUGMESI_n_bolme_BAGLI_ve_IKI_SAYI_IKI_AYRI_DUGMEYE_TEPKI_VERIYO
 def test_PENCERE_DUGMESI_a_ikiz_BAGLI_ve_A1_IKIZDEN_BAGIMSIZ(sevk_senaryo, sevk_yuk):
     """`a_ikiz` A2'nin ikizini seçer ve YALNIZ A2'yi oynatır: `a = 0.5`te A2
     tabanı sevk edilenin 0.16684'ü (`test_kenar_tabani.py` ile aynı sayı), A1
-    bit bit aynı — A1'in merdiveni çağırana kapalıdır. MALİYET: 0.7 s."""
+    bit bit aynı — A1'in merdiveni çağırana kapalıdır. MALİYET: 0.7 s
+    (03.09.2026; 26.09.2026'da ~1.0 s)."""
     y05 = build_bridge_payload(dataclasses.replace(sevk_senaryo, a_ikiz=0.5))
     assert "a = 0.5" in y05.a2.boru and y05.a1.boru == sevk_yuk.a1.boru
     assert y05.a1.taban == sevk_yuk.a1.taban  # A1 ikizden BAĞIMSIZ
@@ -1140,7 +1168,8 @@ def test_bridge_map_HALA_HICBIR_QLAB_MODULUNU_IMPORT_ETMIYOR_ve_YENI_FONKSIYONLA
         for d in ast.walk(agac)
     )
     for ad in ("olculen_units_ekseni", "tablo_tutarsizliklari", "canli_satir",
-               "panel_metinleri", "bridge_declaration"):
+               "panel_metinleri", "bridge_declaration", "taranamayanlar",
+               "olculen_kenar_siniflari"):
         assert callable(getattr(bm, ad))
 
 
@@ -1157,7 +1186,8 @@ def test_CLI_UCTAN_UCA(tmp_path):
     eşiğinin ALTINDA, yani Modül 5/6'nın "eşiğin üstünde ama bilerek
     işaretlenmedi" sapmasına burada gerek kalmadı; test ölçüldüğü için
     işaretsiz, tahmin edildiği için değil. (İlk tahminim ≈ 3 s idi ve
-    yanlıştı; sayı ölçümdür.)
+    yanlıştı; sayı ölçümdür.) 26.09.2026 (yalın tarayıcı): alt süreç
+    ~1.6 s, 2 s eşiğinin hâlâ ALTINDA; `slow` işareti gerekmiyor.
 
     ON panel satırının ONU, ON DOKUZ beyanın ON DOKUZU da ekranda aranır;
     metinler bu dosyada TEKRARLANMAZ, `bridge_map`ten okunur.

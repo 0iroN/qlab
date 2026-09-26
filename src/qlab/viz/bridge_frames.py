@@ -26,7 +26,9 @@ duruyor.
 
 MALIYET OLCULDU (bu makine, 03.09.2026): A1 tabani 0.495 s (8 YOL B kosumu,
 Morse/harmonik), A2 tabani 0.123 s (2 kosum), kenar taramasi 0.047 s
-(48 dosya, `ast`); toplam ~0.7 s. HF hic cozulmez.
+(48 dosya, `ast`); toplam ~0.7 s. HF hic cozulmez. (26.09.2026 KAYDI:
+tarama artik DORT kez cagrilir -- kenar, eksen, taranamayan, sinif -- ve
+bu makinede tarama basina ~0.09 s, butun yuk ~1.0 s.)
 """
 
 from __future__ import annotations
@@ -38,10 +40,12 @@ from pathlib import Path
 from qlab.bridge_map import (
     KOVA_TABLOSU,
     KOVALAR,
+    olculen_kenar_siniflari,
     olculen_kenarlar,
     olculen_units_ekseni,
     panel_metinleri,
     tablo_tutarsizliklari,
+    taranamayanlar,
 )
 from qlab.observable.bridge_obs import GERCEK_HATA_CM, EdgeFloor, edge_noise_floor
 from qlab.provenance import Provenance
@@ -52,9 +56,12 @@ from qlab.scenario.schema import BridgeScenario
 class BridgePayload:
     """Bir kopru-haritasi kosumunun yazilabilir hali -- HICBIRI YUVARLANMAMIS.
 
-    `kenarlar` ve `eksen` bu kosumda `ast` ile TARANIR (elle yazilmaz),
-    `kova_sayim` tablodan SAYILIR, `tutarsizliklar` ikisinin tabloyla
-    celistigi noktalardir ve bos olmasi panelin tik kosuludur. `a1`/`a2`
+    `kenarlar` ve `eksen` bu kosumda `ast` ile TARANIR (elle yazilmaz);
+    ayni taramadan `taranamayan` (motor agacindaki YASAK bicimler, bos olmasi
+    olculmus bir sifirdir) ve `siniflar` (her kenarin calisma zamani / yalniz
+    tip sinifi, 26.09.2026) gelir. `kova_sayim` tablodan SAYILIR,
+    `tutarsizliklar` taramanin tabloyla celistigi noktalardir ve bos olmasi
+    panelin tik kosuludur. `a1`/`a2`
     kenarin iki tabanidir ve iki ayri `EdgeFloor`dur: tek alana
     dusurulmezler. `gercek_hata` `bridge_obs.GERCEK_HATA_CM`nin kaydidir;
     HF borusu burada KOSMAZ (slow testte canli uretilir).
@@ -63,6 +70,8 @@ class BridgePayload:
     scenario: BridgeScenario
     kenarlar: frozenset[tuple[str, str]]
     eksen: dict[str, int]
+    taranamayan: tuple[str, ...]
+    siniflar: dict[tuple[str, str], str]
     kova_sayim: dict[str, int]
     tutarsizliklar: tuple[str, ...]
     a1: EdgeFloor
@@ -86,6 +95,8 @@ def build_bridge_payload(
     """
     kenarlar = olculen_kenarlar(motor_koku)
     eksen = olculen_units_ekseni(motor_koku)
+    taranamayan = taranamayanlar(motor_koku)
+    siniflar = olculen_kenar_siniflari(motor_koku)
     sayim = Counter(f.kova for f in KOVA_TABLOSU)
     kova_sayim = {k: int(sayim.get(k, 0)) for k in KOVALAR}
     pencere = dict(
@@ -97,8 +108,12 @@ def build_bridge_payload(
         scenario=scenario,
         kenarlar=kenarlar,
         eksen=eksen,
+        taranamayan=taranamayan,
+        siniflar=siniflar,
         kova_sayim=kova_sayim,
-        tutarsizliklar=tablo_tutarsizliklari(kenarlar, eksen),
+        tutarsizliklar=tablo_tutarsizliklari(
+            kenarlar, eksen, taranamayan=taranamayan, siniflar=siniflar
+        ),
         a1=edge_noise_floor(tur="aritmetik", **pencere),
         a2=edge_noise_floor(tur="hata-cubugu", a=scenario.a_ikiz, **pencere),
         gercek_hata=GERCEK_HATA_CM,
@@ -136,5 +151,7 @@ def provenance_for(yuk: BridgePayload) -> Provenance:
         a2=_demet(yuk.a2),
         gercek_hata=yuk.gercek_hata,
         tutarsizliklar=yuk.tutarsizliklar,
+        taranamayan=yuk.taranamayan,
+        siniflar=yuk.siniflar,
     )
     return Provenance(**metin)  # type: ignore[arg-type]

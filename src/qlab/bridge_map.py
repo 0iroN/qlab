@@ -160,6 +160,44 @@ class EdgeFact:
 
 _MOTOR_KOKU = Path(__file__).resolve().parent / "engine"
 
+#: KENAR SINIFLARI (26.09.2026). Bir kod kenari ya CALISMA ZAMANI ya YALNIZ
+#: TIP kenaridir; kural `olculen_kenar_siniflari()` dokstringindedir.
+KENAR_CALISMA_ZAMANI = "calisma_zamani"
+KENAR_YALNIZ_TIP = "yalniz_tip"
+
+#: MOTOR AGACINDA YASAK BICIMLER (26.09.2026) -- bir ANALIZ degil bir
+#: POLITIKA. Tarayici yalniz DUZ import bicimlerini cozer; ADI SAYILAN
+#: yukleme ve erisim bicimleri (`_YASAK_*`, ciplak `qlab` adi, zincirsiz
+#: `qlab.engine`) motor agacinda YASAKTIR ve `taranamayanlar()` onlari
+#: adiyla raporlar (fail-closed: `tablo_tutarsizliklari` tiki dusurur).
+#: Liste SONLUDUR; bilinen artik yollar `taranamayanlar()` dokstringinde.
+#: Gercek agacta hepsinin sayisi 0'dir (olculdu). Yeni bir yukleme bicimi
+#: gerekirse once tarayici onu cozecek sekilde genisletilir, sonra yasak
+#: kalkar. `getattr` SERBESTTIR: modul yukleyemez ve motor agacinda mesru
+#: kullanimlari var (`qlab`/`qlab.engine` uzerinde ise ad kuralina takilir).
+_YASAK_MODULLER = frozenset(
+    {"importlib", "runpy", "pkgutil", "pydoc", "imp", "zipimport", "builtins", "sys"}
+)
+_YASAK_ADLAR = frozenset(
+    {"__import__", "exec", "eval", "compile", "vars", "globals", "locals",
+     "__builtins__", "TYPE_CHECKING"}
+)
+#: `from M import ad` biciminde yasak (M, ad) ciftleri; M COZULMUS addir,
+#: yani `from .. import *` de `from qlab.engine import *` sayilir.
+_YASAK_CIFTLER = frozenset(
+    {("qlab", "engine"), ("qlab", "*"), ("qlab.engine", "*")}
+)
+
+
+@dataclass(frozen=True)
+class _Tarama:
+    """Motor agacinin TEK bir taramasinin sonucu (ic yapi)."""
+
+    kenarlar: frozenset[tuple[str, str]]
+    siniflar: dict[tuple[str, str], str]
+    eksen: dict[str, int]
+    taranamayan: tuple[str, ...]
+
 
 def _motor_paketleri(kok: Path) -> list[Path]:
     return sorted(
@@ -167,30 +205,153 @@ def _motor_paketleri(kok: Path) -> list[Path]:
     )
 
 
-def _import_edilen_moduller(dosya: Path, paket_adi: str) -> list[str]:
-    """Bir kaynak dosyanin GERCEKTEN import ettigi modul adlari.
+def _tip_dugumleri(agac: ast.AST) -> set[int]:
+    """Annotasyon baglamindaki butun dugumlerin kimlikleri: arguman
+    annotasyonu, fonksiyon donus annotasyonu, `AnnAssign` annotasyonu."""
+    kimlikler: set[int] = set()
+    for d in ast.walk(agac):
+        ann = None
+        if isinstance(d, ast.arg):
+            ann = d.annotation
+        elif isinstance(d, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            ann = d.returns
+        elif isinstance(d, ast.AnnAssign):
+            ann = d.annotation
+        if ann is not None:
+            kimlikler.update(id(n) for n in ast.walk(ann))
+    return kimlikler
 
-    `ast` ile ayristirilir. Yorum satirlari, dokstringler ve dizge
-    sabitleri agacta bir `Import`/`ImportFrom` dugumu URETMEZ, bu yuzden
-    sayilmazlar -- regex tabanli bir tarama onlari sayardi.
+
+def _agaci_tara(kok: Path | str | None) -> _Tarama:
+    """Motor agacini BIR KEZ tarar: kenarlar, siniflar, eksen, yasaklar.
+
+    Dosyalar `rglob` ile toplanir (alt paketler DAHIL) ve her dosya UST
+    DUZEY motor paketine atfedilir. `ast` ile ayristirilir: yorum ve dizge
+    icindeki import METNI bir dugum uretmez, sayilmaz. Cozulen bicimler:
+    `import qlab.engine.X...`, `from qlab.engine.X... import ...`,
+    `from qlab.engine import X` (adlar alt modul/paket olarak cozulur),
+    goreli importlar (taban dosyanin `__package__`idir; alt pakette de
+    dogru) ve `qlab.engine.X` oznitelik zinciri (`import qlab.units` de
+    `qlab` adini baglar; bu yuzden `qlab` adi YALNIZ `qlab.engine.X` ya da
+    `qlab.units` zincirinin basi olabilir). ADI SAYILAN yukleme bicimleri
+    YASAKTIR (liste sonlu, `taranamayanlar()`). `engine/` KOKUNDEKI
+    dosyalar (`__init__.py` dahil) yalniz yasaklar ve (iii) disari-cikis
+    icin taranir; kenar ve eksen uretmez.
     """
-    agac = ast.parse(dosya.read_text(encoding="utf-8"), filename=str(dosya))
-    adlar: list[str] = []
-    for dugum in ast.walk(agac):
-        if isinstance(dugum, ast.Import):
-            adlar.extend(ad.name for ad in dugum.names)
-        elif isinstance(dugum, ast.ImportFrom):
-            if dugum.level == 0:
-                if dugum.module:
-                    adlar.append(dugum.module)
+    taban = Path(kok) if kok is not None else _MOTOR_KOKU
+    paketler = _motor_paketleri(taban)
+    eksen: dict[str, int] = {p.name: 0 for p in paketler}
+    yasak: list[tuple[str, int, str]] = []
+    site_siniflari: dict[tuple[str, str], set[str]] = {}
+    adaylar: list[tuple[tuple[str, str], str, str]] = []
+    alinan: set[tuple[str, str]] = set()
+    anilan: set[str] = set()
+    dosyalar = [(None, d) for d in sorted(taban.glob("*.py"))]  # kok: motor YOK
+    dosyalar += [(p.name, d) for p in paketler for d in sorted(p.rglob("*.py"))]
+    for motor, dosya in dosyalar:
+        yer = dosya.relative_to(taban).as_posix()
+        ic = list(dosya.relative_to(taban).with_suffix("").parts)
+        paket_adi = ["qlab", "engine", *ic[:-1]]
+        modul_adi = ".".join(paket_adi if ic[-1] == "__init__" else ["qlab", "engine", *ic])
+        try:
+            agac = ast.parse(dosya.read_bytes(), filename=str(dosya))
+        except (SyntaxError, ValueError):
+            yasak.append((yer, 0, "ayristirilamadi"))
+            continue
+        gelecek = any(
+            isinstance(d, ast.ImportFrom) and d.module == "__future__"
+            and any(a.name == "annotations" for a in d.names)
+            for d in agac.body
+        )
+        tipte_id = _tip_dugumleri(agac)
+        calisan: set[str] = set()
+        tipte: set[str] = set()
+        # (tam modul adi, baglanan ad) -- ad None ise site CALISMA ZAMANI.
+        hedefler: list[tuple[str, str | None]] = []
+        units_var = False
+        # id(Attribute.value) -> attr. `ast.walk` genislik-once yurur: bir
+        # oznitelik dugumu, degeri olan cocuktan ONCE ziyaret edilir.
+        zincir: dict[int, str] = {}
+        for d in ast.walk(agac):
+            if isinstance(d, ast.Name):
+                if d.id in _YASAK_ADLAR:
+                    yasak.append((yer, d.lineno, f"`{d.id}`"))
+                if d.id == "qlab" and zincir.get(id(d)) not in ("engine", "units"):
+                    yasak.append((yer, d.lineno, "ciplak `qlab` adi"))
+                if not isinstance(d.ctx, ast.Store):  # Load ve Del adi OKUR
+                    (tipte if id(d) in tipte_id else calisan).add(d.id)
+            elif isinstance(d, ast.AugAssign) and isinstance(d.target, ast.Name):
+                calisan.add(d.target.id)  # `ad += ...` de adi okur
+            elif isinstance(d, ast.Attribute):
+                zincir[id(d.value)] = d.attr
+                anilan.add(d.attr)
+                if d.attr == "TYPE_CHECKING":
+                    yasak.append((yer, d.lineno, "`TYPE_CHECKING`"))
+                u = d.value
+                if isinstance(u, ast.Name) and u.id == "qlab" and d.attr == "units":
+                    units_var = True
+                if d.attr == "engine" and isinstance(u, ast.Name) and u.id == "qlab" and id(d) not in zincir:
+                    yasak.append((yer, d.lineno, "zincirsiz `qlab.engine`"))
+                if (isinstance(u, ast.Attribute) and u.attr == "engine"
+                        and isinstance(u.value, ast.Name) and u.value.id == "qlab"):
+                    hedefler.append((f"qlab.engine.{d.attr}", None))
+            elif isinstance(d, ast.Constant) and isinstance(d.value, str):
+                anilan.add(d.value)
+            elif isinstance(d, ast.Import):
+                for a in d.names:
+                    if a.name.split(".")[0] in _YASAK_MODULLER or a.name in ("qlab", "qlab.engine"):
+                        yasak.append((yer, d.lineno, f"`import {a.name}`"))
+                    hedefler.append((a.name, None))
+            elif isinstance(d, ast.ImportFrom):
+                if d.level:
+                    kes = d.level - 1
+                    if kes >= len(paket_adi):
+                        yasak.append((yer, d.lineno, "goreli import ust paketin disina tasiyor"))
+                        continue
+                    m = ".".join(paket_adi[: len(paket_adi) - kes] + ([d.module] if d.module else []))
+                else:
+                    m = d.module or ""
+                if m.split(".")[0] in _YASAK_MODULLER:
+                    yasak.append((yer, d.lineno, f"`from {m} import`"))
+                for a in d.names:
+                    alinan.add((m, a.name))
+                    if (m, a.name) in _YASAK_CIFTLER or a.name == "TYPE_CHECKING":
+                        yasak.append((yer, d.lineno, f"`from {m} import {a.name}`"))
+                    if a.name == "*":
+                        hedefler.append((m, None))
+                    else:
+                        hedefler.append((f"{m}.{a.name}", a.asname or a.name))
+        if motor is None:
+            continue
+        for tam, ad in hedefler:
+            p = tam.split(".")
+            units_var = units_var or p[:2] == ["qlab", "units"]
+            if p[:2] != ["qlab", "engine"] or len(p) < 3 or p[2] == motor:
                 continue
-            # Goreli import: taban, dosyayi ICEREN pakettir (`__package__`).
-            taban = ["qlab", "engine", paket_adi]
-            for _ in range(dugum.level - 1):
-                if taban:
-                    taban.pop()
-            adlar.append(".".join(taban + ([dugum.module] if dugum.module else [])))
-    return adlar
+            kenar = (motor, p[2])
+            site_siniflari.setdefault(kenar, set())
+            if ad is not None and gelecek and ad in tipte and ad not in calisan:
+                adaylar.append((kenar, modul_adi, ad))
+            else:
+                site_siniflari[kenar].add(KENAR_CALISMA_ZAMANI)
+        eksen[motor] += int(units_var)
+    # YALNIZ TIP ADI DOSYADAN CIKMAMALI: motor agacinda baska bir dosya onu o
+    # modulden adiyla / yildizla aliyorsa, ya ad bir oznitelik ya da tam bir
+    # dizge sabiti olarak geciyorsa (`getattr(M, "ad")`, `__all__`) site
+    # CALISMA ZAMANI sayilir -- muhafazakar yon.
+    for kenar, modul, ad in adaylar:
+        disari = (modul, ad) in alinan or (modul, "*") in alinan or ad in anilan
+        site_siniflari[kenar].add(KENAR_CALISMA_ZAMANI if disari else KENAR_YALNIZ_TIP)
+    siniflar = {
+        k: KENAR_CALISMA_ZAMANI if KENAR_CALISMA_ZAMANI in s else KENAR_YALNIZ_TIP
+        for k, s in site_siniflari.items()
+    }
+    return _Tarama(
+        kenarlar=frozenset(siniflar),
+        siniflar=siniflar,
+        eksen=eksen,
+        taranamayan=tuple(f"{y}:{n} {b}" for y, n, b in sorted(yasak)),
+    )
 
 
 def olculen_kenarlar(kok: Path | str | None = None) -> frozenset[tuple[str, str]]:
@@ -234,21 +395,74 @@ def olculen_kenarlar(kok: Path | str | None = None) -> frozenset[tuple[str, str]
     SECILMIS bir yasa tasir ve downfold'dan gelen yasa yasaktir. Uc dugum de
     ayni mutlak eksende (hartree/bohr); tek olcekteki bir ucgen bir OLCEK
     merdiveni degildir ve merdiven hukmu ayakta kalir.
+
+    TARAMA GENISLEDI (26.09.2026, yalin surum): alt paketler, `from
+    qlab.engine import X`, capraz goreli import ve `qlab.engine.X` zinciri
+    artik cozulur; ADI SAYILAN yukleme bicimleri motor agacinda YASAKTIR
+    (liste sonlu) ve `taranamayanlar()` onlari adiyla raporlar. Gercek
+    agacta sonuc AYNI: ayni dort kenar, taranamayan 0 (olculdu; gercek
+    agacta 648f03b tarayicisiyla karsilastirma
+    `tests/bridge/test_kenar_tarayici.py::test_c_GERCEK_AGAC_648f03b_ile_AYNI`).
     """
-    taban = Path(kok) if kok is not None else _MOTOR_KOKU
-    kenarlar: set[tuple[str, str]] = set()
-    for paket in _motor_paketleri(taban):
-        for dosya in sorted(paket.glob("*.py")):
-            for modul in _import_edilen_moduller(dosya, paket.name):
-                parcalar = modul.split(".")
-                if len(parcalar) < 3:
-                    continue
-                if parcalar[0] != "qlab" or parcalar[1] != "engine":
-                    continue
-                hedef = parcalar[2]
-                if hedef != paket.name:
-                    kenarlar.add((paket.name, hedef))
-    return frozenset(kenarlar)
+    return _agaci_tara(kok).kenarlar
+
+
+def olculen_kenar_siniflari(
+    kok: Path | str | None = None,
+) -> dict[tuple[str, str], str]:
+    """Her kod kenarinin SINIFI: `calisma_zamani` ya da `yalniz_tip`.
+
+    KURAL (ad duzeyinde): capraz-motor bir `from ... import ad` sitesi
+    YALNIZ TIPtir ancak (i) dosyada `from __future__ import annotations`
+    varsa (yoksa annotasyon 3.12'de tanim aninda degerlendirilir), (ii) ad en
+    az bir kez ve YALNIZ annotasyon baglaminda (arguman annotasyonu, donus
+    annotasyonu, `AnnAssign` annotasyonu) yukleniyorsa (`del ad` ve
+    `ad += ...` de calisma zamani kullanimidir) ve (iii) ad dosyadan
+    CIKMIYORSA (motor agacinda o modulden adiyla ya da yildizla alinmiyor,
+    oznitelik ya da tam dizge sabiti olarak gecmiyor). Modul importu
+    (`import qlab.engine.x as m`), yildiz ve `qlab.engine.X` zinciri her
+    zaman CALISMA ZAMANIdir. Kenar, sitelerinden BIRI calisma zamaniysa
+    calisma zamanidir.
+
+    OLCULDU (26.09.2026): `md -> hf`, `md -> tb`, `tb -> hf` CALISMA ZAMANI;
+    `tdse -> md` YALNIZ TIP (`ForceField` from_md.py'de yalniz bir arguman
+    annotasyonu; import satiri silinince modul bit bit ayni calisiyor --
+    `tests/bridge/test_kenar_tarayici.py` yuk tasima cipasi).
+
+    HUKUM KOSULLUDUR: annotasyonu DEGERLENDIREN bir tuketici
+    (`get_type_hints`, `get_annotations`, `eval_str`, `singledispatch` ve
+    benzerleri; tam liste `tests/bridge/test_kenar_tarayici.py` TUKETICILER)
+    yalniz tip bir adi calisma zamanina tasir; `src/qlab` capinda sayilari 0
+    ve bu bir testle kilitlidir. Sinifin anlami `GERCEK_KOPRU_KENAR_SINIFLARI`
+    yorumunda (tek yonludur).
+    """
+    return dict(_agaci_tara(kok).siniflar)
+
+
+def taranamayanlar(kok: Path | str | None = None) -> tuple[str, ...]:
+    """Motor agacindaki YASAK bicimlerin her gecisi, `dosya:satir bicim`.
+
+    Yasaklar (`_YASAK_*` ve iki ad kurali): yukleyici modul importu
+    (importlib, runpy, pkgutil, pydoc, imp, zipimport, builtins, sys);
+    `__import__`, `exec`, `eval`, `compile`, `vars`, `globals`, `locals`,
+    `__builtins__` adlari; `TYPE_CHECKING`; ciplak `import qlab` /
+    `import qlab.engine`, `from qlab import engine|*`, `from qlab.engine
+    import *`; `qlab.engine.X` / `qlab.units` zincirinin basi OLMAYAN `qlab`
+    adi (takma ad, `getattr(qlab, ...)`) ve zincirsiz `qlab.engine`
+    (`E = qlab.engine`, `getattr(qlab.engine, 'tb')`); ust paketin disina
+    tasan goreli import; ayristirilamayan dosya. `engine/` kokundeki
+    dosyalar (`__init__.py` dahil) yalniz yasaklar icin taranir, kenar
+    uretmez. Bos demet OLCULMUS bir sifirdir (26.09.2026: gercek agacta 0).
+
+    LISTE SONLUDUR -- bu bir analiz degil bir yasaklama politikasidir.
+    Bilinen ARTIK YOLLAR burada gorunmez: izinli bir kenar uzerinden yeniden
+    aktarim (AKLAMA: tdse, hf'yi md modulunun ozniteligiyle ya da md'nin
+    disa aktardigi bir adla kullanir -- `getattr` dizgesi literal de olsa
+    hesaplanmis da olsa -- ve `tdse -> hf` kenari cikmaz); adi sayilmamis
+    cozucu/yukleyiciler (`os.sys.modules`, `unittest.mock.patch` dizgesi);
+    `.pth`, C uzantisi, `.pyw`.
+    """
+    return _agaci_tara(kok).taranamayan
 
 
 # --- Kova tablosu ------------------------------------------------------------
@@ -337,7 +551,19 @@ _TDSE_MD_GEREKCE = (
     "(`MdTdsePotansiyeli.katlanan_nokta`). "
     "NE SEMA CIPASI NE FIZIK CIPASI: `hf -> md`den farki, iki tuketicinin "
     "ayni cozumun soyundan gelmemesi; olculen sey TEK bir yuzeyin IKI ayri "
-    "motorda kosulmasinin AYRISMASIDIR."
+    "motorda kosulmasinin AYRISMASIDIR. "
+    "KENAR SINIFI (26.09.2026, olculdu): YALNIZ TIP KENARI -- `ForceField` "
+    "from_md.py'de yalniz bir arguman annotasyonunda gecer (dosyada `from "
+    "__future__ import annotations` var); veri akisi ORDEK TIPLEMEYLE yurur "
+    "(`(konum) -> (enerji, kuvvet)` donduren her cagrilabilir kabul edilir); "
+    "import satiri silinince modul BIT BIT ayni calisiyor -- olculdu "
+    "(tests/bridge/test_kenar_tarayici.py, yuk tasima cipasi). Import "
+    "ifadesi yine calisir ve kenari TASIYAN odur: kilit 2 yalniz tip kenarini "
+    "da kod kenari sayar. Kilit 2'nin calisma zamani kenari isteyip "
+    "istemeyecegi Osman'in karari; varsayilan HAYIR. Evet denirse bu cift "
+    "bugunku kaynakla GERCEK_KOPRU'da KALAMAZ; `calisma_zamani` muhafazakar "
+    "statik bir siniftir ve yuku garanti etmez (dizge annotasyon, future "
+    "silme ya da `_ = ForceField` sinifi veri akisi olmadan cevirir)."
 )
 
 #: `tb -> md` kenarinin gerekcesi (24.09.2026, spec md-tb ss-sigma 5.1).
@@ -349,14 +575,23 @@ _TB_MD_GEREKCE = (
     "-> `qlab.engine.tb.radyal` (yasa nesnesini senaryodan kurar). KENAR "
     "24.09.2026'DA YAZILDI; o tarihe kadar bu cift OLCULMEDI kovasindaydi ve "
     "kod kenari yazilinca orada KALAMAZ (`tablo_tutarsizliklari` birinci "
-    "kilidi). GERCEK_KOPRU OLCUTUNUN DORT PARCASI (`tdse -> md`de konan olcut) "
-    "burada da saglanir: KARSILIK -- `SsSigmaTBKuvveti` `ForceField` "
-    "sozlesmesini (N,3) -> (Omega, F) doldurur; VERI AKAR -- konum -> H -> "
-    "Omega, F -> integrator; CIKTI KIPIRDAR -- bant kuvvetinin TAMAMI yazilan "
-    "yasanin turevinden gelir (`us = 0` ve kuyrukta cift yokken bant kuvveti "
-    "48/48 bilesende bit bit 0.0, tests/tb/test_mermin.py M10); KOD KENARI "
-    "YUK TASIR -- `tb_kuvvet.py`deki mermin importu silinince cagri NameError "
-    "verir (olculdu, mutasyonla). BU BIR MODEL CIPASIDIR, DOGA CIPASI YOK: "
+    "kilidi). GERCEK_KOPRU OLCUTU (`tdse -> md`de konan olcut, DORT PARCA): "
+    "karsilik var + veri AKABILIR + cikti kipirdar + kod kenari VAR. Dordu de "
+    "burada saglanir: KARSILIK -- `SsSigmaTBKuvveti` `ForceField` "
+    "sozlesmesini (N,3) -> (Omega, F) doldurur; veri AKABILIR -- nesne bir MD "
+    "kuvvet alanidir ve fabrika onu senaryodan kurar; CIKTI KIPIRDAR -- bant "
+    "kuvvetinin TAMAMI yazilan yasanin turevinden gelir (`us = 0` ve kuyrukta "
+    "cift yokken bant kuvveti 48/48 bilesende bit bit 0.0, "
+    "tests/tb/test_mermin.py M10); kod kenari VAR -- yukaridaki uc import. "
+    "BU KENARDA OLCUTTEN GUCLU IKI OLGU DA OLCULDU ve ikisi olcutun PARCASI "
+    "DEGILDIR (24.09.2026 metni onlari olcut diye yazmisti -- 'veri akabilir' "
+    "'VERI AKAR', 'kod kenari var' 'YUK TASIR' diye kaymisti ve kaymis "
+    "olcutu `tdse -> md` gecemezdi; 26.09.2026 duzeltmesi): VERI AKAR -- "
+    "konum -> H -> Omega, F -> integrator; KOD KENARI YUK TASIR -- "
+    "`tb_kuvvet.py`deki mermin importu silinince cagri NameError verir "
+    "(olculdu, mutasyonla). KENAR SINIFI CALISMA ZAMANI: `tek_orbital_mermin` "
+    "bir cagri yuvasinda yuklenir; `TekOrbitalSonuc` adi yalniz bir donus "
+    "annotasyonudur. BU BIR MODEL CIPASIDIR, DOGA CIPASI YOK: "
     "radyal yasa SECILDI, turetilmedi; testlerdeki cipalar (Kohn argmin, "
     "parcacik-bosluk simetrisi, Huckel esikleri) modelin KENDI kuramina "
     "karsi sinanir, dogaya karsi degil, ve yasadan geri okunan bag, genlik "
@@ -679,6 +914,29 @@ KOVA_SAYILARI: dict[str, int] = {
 #: dosyasi import edince md 4 oluyor, tb dosyasi import edince tb 3).
 OLCEKSIZ_KENAR_DUGUMLERI: frozenset[str] = frozenset({"tdse"})
 
+#: GERCEK_KOPRU KOD KENARLARININ BEYANLI SINIFI (26.09.2026). Anahtar YONLU
+#: kod kenaridir (import eden -> import edilen), `EdgeFact`in kavramsal yonu
+#: DEGIL: `hf -> md` girdisinin kod kenari `md -> hf`dir. Kilit 5
+#: (`tablo_tutarsizliklari`) GERCEK_KOPRU ciftlerinin OLCULEN kenar
+#: siniflarini bu sozlukle karsilastirir; bir sinif sessizce degisemez.
+#: `tb -> hf` TAUTOLOJI kovasinda, bu beyanin disinda; sinifi yalniz canli
+#: satirda gorunur. `tdse -> md` YALNIZ TIP ve kilit 2 onu yine kod kenari
+#: sayar: kilit 2'nin calisma zamani kenari isteyip istemeyecegi Osman'in
+#: karari; varsayilan HAYIR. EVET denirse bu cift bugunku kaynakla
+#: GERCEK_KOPRU'da KALAMAZ (kova sayimi degisir, 22.09'un "delik kenari
+#: kurarak kapatildi" hukmu yeniden acilir). SINIFIN ANLAMI TEK YONLUDUR:
+#: `yalniz_tip` yukun YOKLUGUNU iddia eder ve yuk tasima cipasiyla kilitlidir;
+#: `calisma_zamani` muhafazakar bir STATIK sinif, yuku garanti etmez -- dizge
+#: annotasyon, future importunu silmek ya da modul duzeyinde `_ = ForceField`
+#: sinifi veri akisini degistirmeden cevirir (olculdu, sentetik agac; sonuncusu
+#: import silme olcusunu de cevirir). "Evet" kalici bir sart olacaksa bu
+#: kacislari kapatan bir olcute baglanmalidir.
+GERCEK_KOPRU_KENAR_SINIFLARI: dict[tuple[str, str], str] = {
+    ("md", "hf"): KENAR_CALISMA_ZAMANI,
+    ("md", "tb"): KENAR_CALISMA_ZAMANI,
+    ("tdse", "md"): KENAR_YALNIZ_TIP,
+}
+
 
 # --- `qlab.units` ekseni (Task 5) ------------------------------------------
 
@@ -702,37 +960,44 @@ def olculen_units_ekseni(kok: Path | str | None = None) -> dict[str, int]:
     (`downfold.py`, `factory.py`), tdse/spin/em/grav 0. Duz metin taramasi
     md icin 4 sayar (`engine/md/__init__.py` dokstringi adi yaziyor ama
     import etmiyor); bu fonksiyon 3 sayar, cunku bir dokstring bir
-    `ImportFrom` dugumu degildir.
+    `ImportFrom` dugumu degildir. 26.09.2026'dan beri alt paket dosyalari
+    da sayilir ve ust duzey motora atfedilir (gercek agacta alt paket yok;
+    sayilar ayni).
     """
-    taban = Path(kok) if kok is not None else _MOTOR_KOKU
-    sayim: dict[str, int] = {}
-    for paket in _motor_paketleri(taban):
-        dosya_sayisi = 0
-        for dosya in sorted(paket.glob("*.py")):
-            adlar = _import_edilen_moduller(dosya, paket.name)
-            if any(ad.split(".")[:2] == ["qlab", "units"] for ad in adlar):
-                dosya_sayisi += 1
-        sayim[paket.name] = dosya_sayisi
-    return sayim
+    return dict(_agaci_tara(kok).eksen)
 
 
 def tablo_tutarsizliklari(
     kenarlar: frozenset[tuple[str, str]] | set[tuple[str, str]],
     eksen: dict[str, int],
+    *,
+    taranamayan: tuple[str, ...],
+    siniflar: dict[tuple[str, str], str],
 ) -> tuple[str, ...]:
     """Kova tablosunun KODLA CELISTIGI noktalar -- bos demet tutarlilik demek.
 
     Panelin `converged` hukmu buna baglidir: bayat bir yokluk beyani bir
-    yalandir ve bir yalanin yaninda tik basilmaz. Dort kilit:
+    yalandir ve bir yalanin yaninda tik basilmaz. Bes kilit:
 
       1. taranan her kod kenari tabloda olmali ve YAPISAL_YOK ya da
          OLCULMEDI kovasinda OLAMAZ,
-      2. GERCEK_KOPRU kovasindaki her ciftin bir kod kenari OLMALI,
+      2. GERCEK_KOPRU kovasindaki her ciftin bir kod kenari OLMALI (yalniz
+         tip kenari da kod kenari SAYILIR; kilit 2'nin calisma zamani
+         kenari isteyip istemeyecegi Osman'in karari, varsayilan hayir),
       3. kova basina sayim `KOVA_SAYILARI` ile ayni olmali,
       4. `qlab.units` ekseni (dosya sayisi > 0 olan motorlar) kenar
          dugumlerinin ALT KUMESI olmali ve eksensiz kalan kenar dugumleri
          tam olarak `OLCEKSIZ_KENAR_DUGUMLERI` olmali (spec 2.2'nin
-         ozdesligi 22.09.2026'da DARALTILDI; kod bunu uyguluyor).
+         ozdesligi 22.09.2026'da DARALTILDI; kod bunu uyguluyor),
+      5. (26.09.2026) `siniflar`in anahtarlari `kenarlar` olmali ve
+         GERCEK_KOPRU ciftlerinin olculen kenar siniflari
+         `GERCEK_KOPRU_KENAR_SINIFLARI` ile AYNI olmali.
+
+    FAIL-CLOSED: `taranamayan`daki her yasak bicim `TARANAMAYAN: ...` diye
+    ADIYLA raporlanir -- goremedigi bir yolu olan tarama tabloyu dogrulayamaz.
+    `taranamayan` ve `siniflar` keyword-only ve ZORUNLUDUR: varsayilan
+    olsaydi onlari unutan bir cagiran "olculmedi"yi "olculdu, sifir" diye
+    okurdu.
 
     `tests/bridge/test_kova_tablosu.py` ilk iki kilidi kendi bagimsiz
     kopyasiyla da kurar; bu fonksiyon panel icindir ve testin yerini tutmaz.
@@ -769,6 +1034,18 @@ def tablo_tutarsizliklari(
             f"{sorted(OLCEKSIZ_KENAR_DUGUMLERI)} -- bir kenar dugumu mutlak "
             "olcek eksenine sessizce girdi ya da cikti"
         )
+    if set(siniflar) != set(kenarlar):
+        sorunlar.append("KENAR SINIFI: sinif sozlugu kenar kumesiyle ayni degil")
+    gk = {f.cift for f in KOVA_TABLOSU if f.kova == Kova.GERCEK_KOPRU}
+    olculen = {k: s for k, s in siniflar.items() if tuple(sorted(k)) in gk}
+    for a, b in sorted(set(olculen) | set(GERCEK_KOPRU_KENAR_SINIFLARI)):
+        beyan = GERCEK_KOPRU_KENAR_SINIFLARI.get((a, b), "YOK")
+        if olculen.get((a, b), "YOK") != beyan:
+            sorunlar.append(
+                f"KENAR SINIFI: {a} -> {b} beyan {beyan}, olculen "
+                f"{olculen.get((a, b), 'YOK')}"
+            )
+    sorunlar.extend(f"TARANAMAYAN: {t}" for t in taranamayan)
     return tuple(sorunlar)
 
 
@@ -804,8 +1081,11 @@ _YONTEM = (
 
 _YAKLASIMLAR: tuple[str, ...] = (
     "KENAR = STATIK IMPORT KENARI: `ast` ile `Import`/`ImportFrom` dugumleri "
-    "sayilir; calisma zamani cagri grafigi, dinamik yukleme ve dizge icinde "
-    "anilan modul adlari SAYILMAZ -- dizgedeki ad sayilsaydi tablo bir yanlis "
+    "sayilir (alt paketler ve goreli importlar dahil); calisma zamani cagri "
+    "grafigi ve dizge icinde anilan modul adlari SAYILMAZ, ADI SAYILAN "
+    "yukleme bicimleri motor agacinda YASAKTIR (liste sonlu; aklama, "
+    "`os.sys`, `.pth` gorunmez) ve taranamayan yol olarak ADIYLA "
+    "raporlanir -- dizgedeki ad sayilsaydi tablo bir yanlis "
     "pozitifle bozulurdu (olculdu, sentetik agac) ve `md`nin `units` sayisi "
     "3 yerine 4 cikardi (olculdu, gercek agac)",
     "KENAR TABANI ICIN HF YUZEYI DONDURULDU: SCF cozumu yerine ayni `K` ve "
@@ -913,7 +1193,15 @@ _YAPI_BEYANI = (
     "ozdeslik bir yasa degil, eski topolojinin bir RASTLANTISIYMIS. DURUST "
     "KAYIT: biri ileride downfold'u MD yoluna baglarsa ortaya cikan sey "
     "merdiven degil TOTOLOJI olur (on olcumde TB payi %0.000); kenarin M10 kilitleri "
-    "(`tests/md/test_tb_kuvvet.py`, `tests/tb/test_mermin.py`) o ani yakalar"
+    "(`tests/md/test_tb_kuvvet.py`, `tests/tb/test_mermin.py`) o ani yakalar. "
+    "KENAR SINIFI (26.09.2026): tarayici her kenari CALISMA ZAMANI ya da "
+    "YALNIZ TIP diye olcer ve canli satira basar; `tdse -> md` YALNIZ TIPtir "
+    "(veri akisi ordek tiplemeyle, import satiri silinince modul bit bit ayni "
+    "calisiyor -- olculdu) ve kilit 2 onu yine kod kenari sayar. GERCEK_KOPRU "
+    "kenarlarinin sinifi beyanlidir ve kilit 5 onu olcume karsi sinar; kilit "
+    "2'nin calisma zamani kenari isteyip istemeyecegi Osman'in karari, "
+    "varsayilan hayir (evet denirse `tdse -> md` bugunku kaynakla "
+    "GERCEK_KOPRU'da kalamaz)"
 )
 
 _KENAR_TABANI_BEYANI = (
@@ -1066,15 +1354,21 @@ def canli_satir(
     a2: tuple[float, float, float, str, str],
     gercek_hata: float,
     tutarsizliklar: tuple[str, ...],
+    taranamayan: tuple[str, ...],
+    siniflar: dict[tuple[str, str], str],
 ) -> str:
     """Bu kosumun CANLI satiri -- yalniz sayi ve etiket, beyan cumlesi yok.
 
     `a1`/`a2` `(taban, sinyal, oran, hukum, boru)` demetleridir: bu modul
     `observable.bridge_obs.EdgeFloor`u goremez (katman sozlesmesi), ceviriyi
     `viz/bridge_frames.py` yapar. Tabanlar SEKIZ anlamli haneyle basilir.
+    `taranamayan N` sifirken de basilir (olculmus sifir); yollarin adlari
+    `tutarsizliklar`da `TARANAMAYAN: ...` olarak gelir. `kenar siniflari`
+    butun kenarlari (TAUTOLOJI'deki `tb -> hf` dahil) taramadan basar.
     """
     sayim = " / ".join(f"{k} {kova_sayim.get(k, 0)}" for k in KOVALAR)
     kenar_metni = ", ".join(f"{a} -> {b}" for a, b in sorted(kenarlar)) or "YOK"
+    sinif_metni = ", ".join(f"{a} -> {b} {s}" for (a, b), s in sorted(siniflar.items())) or "YOK"
     # YAPININ SAYILARI BURADA, `_YAPI_BEYANI`nda DEGIL: taramadan her kosumda
     # turetilir ve bayatlayamaz (spec md-tb 5.3).
     yonsuz = {tuple(sorted(k)) for k in kenarlar}
@@ -1105,6 +1399,7 @@ def canli_satir(
         f"{sum(kova_sayim.values())}); kod kenari {len(kenarlar)}: "
         f"{kenar_metni}; dereceler {derece_metni}, sifir bagli cift "
         f"{sifir_bag}/{toplam_cift}; `qlab.units` ekseni {eksen_metni} -> {{{eksenli}}}; "
+        f"taranamayan {len(taranamayan)}; kenar siniflari {sinif_metni}; "
         f"KENAR TABANI IKI SAYI -- {taban('A1 (aritmetik)', a1)} | "
         f"{taban('A2 (hata-cubugu)', a2)}; gercek hata {gercek_hata:.8g} cm^-1 "
         f"-> gercek/A1 = {gercek_hata / a1[0]:.6g}, A2/gercek = "
@@ -1126,6 +1421,8 @@ def panel_metinleri(
     a2: tuple[float, float, float, str, str],
     gercek_hata: float,
     tutarsizliklar: tuple[str, ...],
+    taranamayan: tuple[str, ...],
+    siniflar: dict[tuple[str, str], str],
 ) -> dict[str, object]:
     """`Provenance` alanlarinin METNI -- bu modul `Provenance`i kuramaz.
 
@@ -1149,6 +1446,7 @@ def panel_metinleri(
     canli = canli_satir(
         kova_sayim=kova_sayim, kenarlar=kenarlar, eksen=eksen, a1=a1, a2=a2,
         gercek_hata=gercek_hata, tutarsizliklar=tutarsizliklar,
+        taranamayan=taranamayan, siniflar=siniflar,
     )
     return dict(
         method=f"Moduller arasi yokluk haritasi ({ad}); " + _YONTEM,
@@ -1172,6 +1470,7 @@ def panel_metinleri(
             "kova": "/".join(str(kova_sayim.get(k, 0)) for k in KOVALAR),
             "kenar": str(len(kenarlar)),
             "eksen": ",".join(sorted(ad for ad, n in eksen.items() if n > 0)),
+            "taranamayan": str(len(taranamayan)),
             "A1": float(a1[0]),
             "A2": float(a2[0]),
             "scf": "0",
