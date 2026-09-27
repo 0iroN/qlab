@@ -104,7 +104,7 @@ class FieldState:
     de zaten odedi; ayni gerekce.
 
     BIRIM SECIMI -- BEYAN: c = eps0 = mu0 = 1. Bu bir BIRIM SECIMIDIR, FIZIK
-    DEGIL, ve Modul 4'un J = k_B = 1'iyle ayni statudedir: bu modulun hicbir
+    DEGIL, ve Modul 4'un k_B = 1'iyle ayni statudedir: bu modulun hicbir
     ciktisi metre, saniye ya da volt tasimaz. Uzunluk HUCRE cinsindendir ve
     zaman da uzunluk cinsindendir (c = 1); yani `dx = 1` ve `dt = S`.
 

@@ -11,8 +11,8 @@ Ayri bir 2B dizi kullanmak, iki modelin kod yollarini ayirirdi.
 BEYAN EDILEN YAKLASIMLAR (spec §6):
 - Klasik spin; kuantum dalgalanmasi YOK.
 - Kare kafes, periyodik sinir.
-- `J` ve `h` bu modulde BIRIM TASIMAZ; sicaklik `kT/J` cinsindendir ve bu
-  bir birim secimidir, fizik degil.
+- `k_B = 1` bir birim secimidir, fizik degil: sicaklik `J` ve `h` ile AYNI
+  enerji birimindedir; `J` bir GIRDIDIR ve kT/J = T/J'dir.
 - KENAR DURUMU L = 2: karsit komsular ayni siteye denk gelir
   (`np.roll(+1)` ile `np.roll(-1)` cakisir), yani her bag CIFT katsayiyla
   sayilir. Olculdu: L=2 tekbicim Ising'de bu modul E = -8.0 verir, oysa

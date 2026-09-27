@@ -176,9 +176,14 @@ Tasarım belgesi: `../docs/superpowers/specs/2026-08-05-qlab-kuantum-cekirdegi-d
   ağacını `ast` ile tarar, tablo her koşumda ona karşı sınanır ve çelişirse
   panel tik basmaz), `observable/bridge_obs.py` (tabanı ölçülen tek kenar
   `hf → md`'nin tabanı — **iki sayı**), `viz/bridge_frames.py` ve `kind: bridge`
-  senaryosu. **Sıfır yeni fizik.** Kova tablosu bugün **3 / 4 / 8 / 0 / 6**
+  senaryosu. **Sıfır yeni fizik.** Kova tablosu bugün **3 / 5 / 8 / 0 / 5**
   (gerçek köprü / tautoloji / yapısal yokluk / benzerlik / **ölçülmedi** — ayrı
-  kova, §7.2 açık). Modül 7 kapandığında **1 / 4 / 8 / 0 / 8**'di; iki çift
+  kova, §7.2 açık). 27.09.2026'da `hf → spin` **kenar yazılmadan, hüküm
+  verilerek** `OLCULMEDI`den `TAUTOLOJI`ye geçti: H2 Yamaguchi `J`sinin
+  büyüklüğü oran protokolünde bit bit sadeleşir, işareti `h = 0` çift L'de bir
+  **ayar etiketidir** (AFM kademeli seri FM tekbiçim seriyle bit bit aynı) ve
+  şartlıdır (`search_uhf(seeds=1)` kırık simetriyi bulamaz, sessizce +J verir);
+  yeni kova açılmadı. Modül 7 kapandığında **1 / 4 / 8 / 0 / 8**'di; iki çift
   sonradan `OLCULMEDI`den `GERCEK_KOPRU`ya geçti ve ikisinde de **kova
   sözlüğü bükülmedi, kod kenarı kuruldu**: 22.09.2026'da `md → tdse`
   (`engine/tdse/from_md.py`; kenar sayısı **0.13167174 bohr**, pencere
@@ -250,7 +255,8 @@ Tasarım belgesi: `../docs/superpowers/specs/2026-08-05-qlab-kuantum-cekirdegi-d
   A2 1.0008 kat). `hf → md` bir **şema çıpasıdır** (iki tüketici de aynı HF
   çözümünün soyundan); mevcut `ω_B/ω_A` çıpası kütleye **bit bit kör** ve kütle
   borusu kendi mutlak sınavını aldı; düşen iki aday (`hf → tb`, `tb → spin`)
-  **tautoloji olarak, penceresiyle** sevk edildi. Planın/spec'in **yirmi beş**
+  **tautoloji olarak, penceresiyle** sevk edildi (27.09.2026'dan beri üç: +
+  `hf → spin`, kenarsız hükümle). Planın/spec'in **yirmi beş**
   sayısı ölçümle düzeltildi (Task 5'te bir: 6-31G'nin `ω_A`sı **penceresizdi**).
   Modül 7'nin Doğrulama bölümünde ayrı bir başlığı YOKTUR (bu satır eskiden
   öyle bir bölüme gönderme yapıyordu): ölçülen sayılar ve dürüst olumsuzlar
@@ -363,10 +369,15 @@ gerçek köprü var ve **hiçbiri bir doğa çıpası değildir**: `hf → md` b
 HF çözümünün soyundan gelir, uyum doğayı değil iki uygulamayı ölçer),
 `md → tdse` tek bir yüzeyin iki ayrı motorda koşulmasının **ayrışmasını**
 ölçer, `tb → md` ise **seçilmiş** bir radyal yasayı taşır (çıpaları modelin
-kendi kuramına karşıdır; kenar tabanı ölçülmedi). `hf → tb` ve `tb → spin`
-birer tautolojidir (ilki `np.mean` tanımının `==` ile geri okunması, ikincisi
-`J`'nin yalnız `J/T` oranı olarak girmesi); `grav` atom ölçeğine **bağlanmaz**
-(`F_g/F_e = 8.09e-37`); altı çift ise **hükümsüz** kalır — sayı geldi, hüküm
+kendi kuramına karşıdır; kenar tabanı ölçülmedi). `hf → tb`, `tb → spin` ve
+(27.09.2026'dan beri) `hf → spin` birer tautolojidir (ilki `np.mean` tanımının
+`==` ile geri okunması, öteki ikisi `J`'nin yalnız `J/T` oranı olarak girmesi —
+`hf → spin`de işaret de `h = 0`'da bir ayar etiketi; `tb → spin`in `+J`si
+bir ayar seçimidir — kaynak antiferromanyetiktir ve bu işaret dönmesi
+27.09.2026'ya kadar hiçbir yerde yazılmamıştı; beyan o gün eklendi, işaret
+çevrilmedi, çünkü çevrilse kilitli 0.687930 bozulurdu); `grav`
+atom ölçeğine **bağlanmaz** (`F_g/F_e = 8.09e-37`); beş çift ise **hükümsüz**
+kalır — sayı geldi, hüküm
 gelmedi — ve panel bunu "ölçüldü, sıfır çıktı" ile aynı hücreye yazmaz.
 `hf → md`nin tabanı **iki sayıdır** ve yalnız birincisi (fizik-kapalı,
 3.40e-05 cm⁻¹) yazılsaydı panel gerçek hatayı **425.84 kat iyimser**
@@ -459,9 +470,16 @@ python -m qlab.run scenarios/spin_tarama.yaml -o spin.npz
 ```
 
 Çıktı `.npz`'si `temperatures`, `magnetisation`, `magnetisation_error`,
-`plateau_reached`, `tau_int`, `binder`, `susceptibility`, `heat_capacity` ve
-`provenance_json` taşır. **Sıcaklıklar `kT/J` cinsindendir, kelvin değil** —
-`J = k_B = 1` bir birim seçimidir. Panel iki ek satır basar: `Dairesellik`
+`plateau_reached`, `tau_int`, `binder`, `susceptibility`, `heat_capacity`,
+`coupling` ve `provenance_json` taşır (`susceptibility` enerji⁻¹ birimindedir:
+coupling'ler arası karşılaştırılacak sayı `coupling · susceptibility`'dir). **Sıcaklıklar enerji birimindedir, kelvin değil** —
+`k_B = 1` bir birim seçimidir; `coupling` (J) bir girdidir ve Onsager'le
+karşılaştırılacak sayı `kT/J = T/coupling`'dir (`Yöntem` satırı onu basar;
+27.09.2026'ya kadar "`J = k_B = 1`, sıcaklık `kT/J`" yazıyordu ve coupling ≠ 1'de
+yanlıştı). `coupling` sonlu ve pozitif olmalı (YAML'da da Python yolunda da);
+Ising checkerboard Metropolis `T/J → ∞`'da donar (ölçülen pencerelerde
+`T/J ≳ 1e3`) ve panel o zaman ✗ basar.
+Panel iki ek satır basar: `Dairesellik`
 (SI'daki `T_c` bir tahmin değildir) ve `Örnekleme` (kaç sweep, kaç ölçüm,
 hangi algoritma, `τ_int`, ve binning platosunun oluşup oluşmadığı). Plato
 oluşmamış sıcaklıklarda hata çubuğu **"ALT SINIR" diye işaretlenir** ve

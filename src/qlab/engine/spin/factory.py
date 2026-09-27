@@ -41,6 +41,7 @@ from qlab.engine.spin.lattice import SpinState
 from qlab.engine.spin.metropolis import SamplingResult, run_metropolis
 from qlab.engine.spin.models import HeisenbergModel, IsingModel, SpinModel
 from qlab.engine.spin.wolff import run_wolff
+from qlab.errors import InvalidInputError
 from qlab.provenance import Provenance
 from qlab.scenario.schema import SpinScenario
 
@@ -54,10 +55,22 @@ _SPIN_YAKLASIMLAR: tuple[str, ...] = (
     "klasik spin: her site bir vektordur, kuantum operatoru DEGIL; "
     "sifir noktasi dalgalanmasi ve komutasyon bagintilari YOKTUR",
     "kare kafes, periyodik sinir kosulu",
-    "J = k_B = 1 BIR BIRIM SECIMIDIR, FIZIK DEGIL: sicaklik kT/J "
-    "cinsindendir ve bu modulun hicbir ciktisi kelvin tasimaz",
+    "k_B = 1 BIR BIRIM SECIMIDIR, FIZIK DEGIL: sicaklik ENERJI birimindedir "
+    "ve bu modulun hicbir ciktisi kelvin tasimaz. J (coupling) bir GIRDIDIR, "
+    "1'e kilitli DEGILDIR: Onsager'in kT_c/J'siyle karsilastirilacak sayi T "
+    "degil kT/J = T/coupling'dir ve Yontem satirinda basilir; chi = L^2 "
+    "var(|m|)/T ENERJI^-1 birimindedir: (J, T) -> (lJ, lT) altinda <|m|>, "
+    "Binder U ve C degismez (l ikinin kuvvetiyken bit bit), chi 1/l ile "
+    "olceklenir, coupling'ler arasi karsilastirilacak sayi J*chi'dir",
     "denge ornekleme: raporlanan her sayi bir DENGE ortalamasidir; "
     "histerezis, tavlama ve butun denge-disi surecler kapsam disindadir",
+    "Ising checkerboard Metropolis T/J -> sonsuzda DONAR, iliskisiz tabana "
+    "gitmez: kabul ~1 olunca her yari-adim bir alt-orguyu butunuyle cevirir, "
+    "<|m|> baslangici okur ve karisma suresi T/J ile buyur. O rejimde binning "
+    "platosu OLUSMAZ ve panel 'yakinsadi' DEMEZ -- olculdu (27.09.2026, "
+    "L = 8/16/32, T/J = 33 ... 2e9, 1000-16000 olcum): tabanin 1.5 katini "
+    "asan 128 satirin 128'inde plato yok. Heisenberg donmuyor (T/J >= 1e3'te "
+    "tabanda, plato var)",
 )
 
 _SPIN_IHMAL: tuple[str, ...] = (
@@ -86,7 +99,7 @@ _SPIN_BEKLENEN_HATA = (
     "L alt kumeleri ayri ayri uydurulunca 0.121346 / 0.129350 / 0.123540 "
     "cikiyor, yani log-log dogrusu TAM DOGRU DEGILDIR. Binder kesisiminde "
     "de ayni yonde bir sonlu-boyut kaymasi var: uc tohum blogu havuzlaninca "
-    "2.266504 +- 0.000642, Onsager'den -4.18 sigma."
+    "kT/J = 2.266504 +- 0.000642, Onsager'den -4.18 sigma."
 )
 
 _DAIRESELLIK_BEYANI = (
@@ -127,13 +140,30 @@ def _model_kur(scenario: SpinScenario) -> SpinModel:
     return IsingModel()
 
 
+def _coupling_kapisi(scenario: SpinScenario) -> None:
+    if not (np.isfinite(scenario.coupling) and scenario.coupling > 0.0):
+        raise InvalidInputError(
+            f"spin senaryosu sonlu ve pozitif coupling ister, verilen: "
+            f"{scenario.coupling}. J <= 0 bu modulun KAPSAM DISIDIR (dort cipanin "
+            "dordu de ferromanyetik); motor J < 0'i kosar ama DOGRULANMAMISTIR."
+        )
+
+
 def build_spin(scenario: SpinScenario) -> SpinScanResult:
     """Her sicaklikta bir zincir kosar. TOHUM AKISLARI BAGIMSIZDIR.
 
     BIRIM DONUSUMU YOKTUR ve bu bir eksiklik degil bir OLCUM sonucudur:
     `TBScenario` eV -> hartree cevirir cunku TB literaturu eV'de yayinlanir;
-    burada cevrilecek bir sey yoktur, cunku `J = k_B = 1` bir birim secimidir
-    ve olculen buyuklukler (kT/J, kritik usler) zaten boyutsuzdur.
+    burada cevrilecek bir sey yoktur, cunku `k_B = 1` bir birim secimidir
+    (sicaklik ENERJI birimindedir; `coupling` bir GIRDIDIR, kT/J = T/coupling)
+    ve olculen buyuklukler (kT_c/J, kritik usler) zaten boyutsuzdur.
+
+    KAPSAM KAPISI PYTHON YOLUNDA DA: yukleyicinin `J <= 0` kapsam karari
+    (`loader.py::_load_spin_scenario`) `build_spin` ve `provenance_for`
+    girislerinde de uygulanir (`_coupling_kapisi`), sonluluk dahil;
+    `SpinScenario(coupling=-1)` eskiden panele kadar kosuyor ve tekbicim
+    m'den AFM icin anlamsiz bir Binder basiyordu. Motor (`run_metropolis`)
+    `J < 0`i BILEREK kabul etmeye devam eder.
 
     HER SICAKLIK AYRI BIR AKIS ALIR. Tek bir `default_rng(seed)` butun
     sicakliklarda yeniden kullanilsaydi tarama noktalari AYNI rastgele diziyi
@@ -142,6 +172,7 @@ def build_spin(scenario: SpinScenario) -> SpinScanResult:
     tek bir tohumdan bagimsiz akislar uretir ve tekrarlanabilirligi bozmaz --
     ayni `seed` her zaman ayni akis listesini verir.
     """
+    _coupling_kapisi(scenario)
     model = _model_kur(scenario)
     akislar = np.random.SeedSequence(scenario.seed).spawn(
         len(scenario.temperatures)
@@ -206,6 +237,7 @@ def provenance_for(
     L = 32 / 8000'de 0/24. "Metropolis plato yapmaz" bir ALGORITMA cumlesi
     olarak YANLIStir.
     """
+    _coupling_kapisi(scenario)  # Yontem satiri T/coupling boler (0'a, eksiye)
     plato = np.asarray(plateau_reached, dtype=bool)
     tau = np.asarray(tau_int, dtype=float)
     n_t = len(scenario.temperatures)
@@ -241,7 +273,9 @@ def provenance_for(
         method=(
             f"spin Monte Carlo ({scenario.name}); {scenario.model} modeli, "
             f"{scenario.algorithm}, L = {scenario.lattice_size}, "
-            f"{n_t} sicaklik, J = {scenario.coupling:g}, h = {scenario.field:g}"
+            f"{n_t} sicaklik, J = {scenario.coupling:g} (girdi), "
+            f"h = {scenario.field:g}; kT/J = T/J: "
+            + ", ".join(f"{t / scenario.coupling:.6g}" for t in scenario.temperatures)
         ),
         approximations=_SPIN_YAKLASIMLAR
         + (

@@ -1,4 +1,4 @@
-"""Modül 7 / Task 4 — düşen iki aday SESSİZCE DÜŞÜRÜLMEZ; tautoloji olarak,
+"""Modül 7 / Task 4 — düşen adaylar (27.09.2026'dan beri üç) SESSİZCE DÜŞÜRÜLMEZ; tautoloji olarak,
 SAYILARIYLA sevk edilir.
 
 `bridge_map.py`de `hf → tb` ve `tb → spin` girdileri Task 1'den beri
@@ -7,7 +7,7 @@ Bu dosya o alanları dolduran sayıları MOTORU KOŞTURARAK üretir ve
 `bridge_map.py`deki literallere karşı sınar — `bridge_map` hiçbir motoru
 import edemez, o yüzden sayılar orada literal, doğrulama burada canlı.
 
-İKİ TAUTOLOJİ, İKİ AYRI MEKANİZMA:
+ÜÇ TAUTOLOJİ (Task 4'ün ikisi + 27.09.2026 `hf → spin`), İKİ MEKANİZMA + BİR AYAR ETİKETİ:
 
   `hf → tb`   `t_m` bir `np.mean` olarak TANIMLANIYOR (`downfold.py:256-268`)
               ve aynı ortalama `==` ile geri okunuyor. Uyum değil, tanımın
@@ -20,12 +20,18 @@ import edemez, o yüzden sayılar orada literal, doğrulama burada canlı.
 
   `tb → spin` `J = 4t²/U` köprüsü BİT BİT ölü: `coupling` çıktıya YALNIZ
               `coupling/temperature` oranı olarak giriyor
-              (`metropolis.py:164-166`), `h = 0`'da başka enerji ölçeği yok.
+              (`metropolis.py:189-191`), `h = 0`'da başka enerji ölçeği yok.
               Beş `J` (6.70 kat aralık) → max|m farkı| = 0.0. `U`'yu
               1016 kat büyütmek de, `z`'yi uyuşturmak da kenarı AÇMIYOR,
               çünkü engel oran-sadeleşmesidir. Kontrol: `h = 0.1`'de aynı
               iki `J` 9.961e-02 ayrışıyor — motor ikinci bir ölçek varsa
               `J`'yi görür; TB o ölçeği üretmez.
+
+  `hf → spin` (27.09.2026, ÜÇÜNCÜ aday, kenarsız): H2 Yamaguchi `J`sinin
+              büyüklüğü aynı oranda sadeleşir; İŞARETİ `h = 0` çift L'de bir
+              AYAR ETİKETİDİR — AFM kademeli seri FM tekbiçim seriyle bit
+              bit aynı. İşaret ŞARTLIDIR: `seeds = 1` kırık simetriyi
+              bulamaz ve formül sessizce +J verir.
 
 PENCERELER (her sayı bunların içindedir, dışına taşınamaz):
   hf → tb   altı sistem (N, d) = (6, 2.6) (6, 3.0) (6, 3.6) (8, 2.0) (8, 2.6)
@@ -37,6 +43,9 @@ PENCERELER (her sayı bunların içindedir, dışına taşınamaz):
             DEĞİL (0.187216796875) ve 288 pencerelik taramada da bulunamadı
             (L ∈ {8, 16, 32} × 4 burn × 5 sweep × 10 tohum): planın sayısı
             penceresiz yazılmıştı ve taşınamaz.
+  hf → spin H2 R = 5/6/7 bohr (`%.10g`, unit="bohr"), STO-3G, `search_uhf(seeds
+            = 12)` varsayılan eşikler; Ising L = 32, h = 0, tohum 20260822,
+            T = 2.269185 · |J|, 2000 sweep `n_burn = 0` (burn-in DAHİL), Néel.
 """
 
 from __future__ import annotations
@@ -56,11 +65,12 @@ from qlab.bridge_map import (
     KOVA_TABLOSU,
     YENIDEN_URETILMEDI,
     Kova,
+    _HF_SPIN_M_FARKI,
     _HF_TB_OZDESLIK_BAGIL,
     _TB_SPIN_M_FARKI,
 )
 from qlab.engine.hf.multistart import search_uhf
-from qlab.engine.spin.lattice import SpinState, neighbour_sum
+from qlab.engine.spin.lattice import SpinState, magnetisation, neighbour_sum
 from qlab.engine.spin.metropolis import run_metropolis
 from qlab.engine.spin.models import IsingModel
 from qlab.engine.tb.downfold import (
@@ -187,6 +197,16 @@ def _atama(govde: ast.AST, ad: str) -> ast.Assign:
 
 
 def _kos(J: float, *, alan: float = 0.0):
+    """`coupling = +J`: motorun konvansiyonunda (E = −c Σ s·s) FERROMANYETİK.
+
+    İŞARET BEYANI (27.09.2026): kaynak ANTİFERROMANYETİKTİR (`downfold.py:19-20`,
+    `tb/factory.py:134` ve `:174-178`); +J bir AYAR SEÇİMİDİR — `h = 0` çift
+    L'de AFM(−J) Néel başlangıçlı koşum bununla bit bit aynı, kilitli 0.687930
+    doğru işaretli AFM'nin KADEMELİ ortalamasıdır (tekbiçimde 0.009724).
+    İŞARETİ ÇEVİRME: kilit bozulur, hiçbir şey kazanılmaz. `h ≠ 0` penceresi
+    işarete VE çarpana bağlıdır (9.961e-02 FM'nin; doğru işaretle, çarpansız
+    c = −J: 5.078e-02 / 8.809e-01; c = −J/4'te 6.250e-02 / 7.812e-01).
+    """
     return run_metropolis(
         SpinState.uniform(L=L, n_component=1),
         IsingModel(),
@@ -484,10 +504,16 @@ def test_TB_SPIN_BES_J_BIT_BIT_OLU_ve_E_esittir_J_carpi_E1():
     s ∈ {0, ±4, ±8} (ikinin kuvvetleri → çarpım TAM), üstel argümanı
     `(-J·s)/fl(2.269185·J)`. Bu, `(-s)/2.269185` ile 20 çiftin 12'sinde
     bit bit aynı, 8'inde TAM 1 ulp farklı (J = 0.801032362 ve 0.750154440,
-    dört s'de). 1 ulp, 53 bitlik `rng.random()` karşılaştırmasını
-    2⁻⁵² olasılıkla döndürür; 1 536 000 karşılaştırmada beklenen dönüş
-    3.4e-10 — ve ölçülen 0. "Bit bit" bir ÖLÇÜM sonucudur; oranın
-    sadeleşmesi ise cebirsel bir KESİNLİKtir.
+    dört s'de). DÜZELTİLDİ (27.09.2026, hf-spin eleştirmeni E1/E1b; eski
+    metin "2⁻⁵², 1 536 000 karar, 3.4e-10" idi — burn-in sayılmamıştı ve
+    olasılık iki kat yazılmıştı): `rng.random()` 2⁻⁵³ ızgarasında, karar
+    eşiği `ceil(üstel·2⁵³)`. Burn-in DAHİL 2 048 000 aktif karar, bunların
+    1 346 053'ü y = −8 sınıfında; eşik YALNIZ o sınıfta ve YALNIZ o iki J'de
+    1 birim farklı. Karar başına dönüş olasılığı tam 2⁻⁵³, beklenen dönüş
+    2/5 J'de 1 346 053 · 2⁻⁵³ = 1.494e-10, öteki 3/5 J'de TAM 0 — ve
+    ölçülen 0. "Bit bit" bir ÖLÇÜM sonucudur; oranın sadeleşmesi ise
+    cebirsel bir KESİNLİKtir. Bu sayılar KOŞTURULUR ve dokstringe bağlıdır — ÖZEL YOL:
+    yarı-adım REPLİKASI (seri motora `==`); eşik tablosu bu makinenin `np.exp`ine bağlı.
 
     `bridge_map`in `buyukluk = 0.0`ı burada canlı ölçümle eşitlenir.
     """
@@ -519,6 +545,23 @@ def test_TB_SPIN_BES_J_BIT_BIT_OLU_ve_E_esittir_J_carpi_E1():
             esitsiz += int(a != b)
     assert esitsiz == 8
 
+    # Karar sayımı ve eşik sınıfı (ÖZEL YOL, dokstring): replika seri motora `==`.
+    rng, s, m, y8 = np.random.default_rng(TOHUM), SpinState.uniform(L=L, n_component=1).spins, [], 0
+    for _ in range(N_BURN + N_SWEEP):
+        for maske in (ETA[..., 0] > 0, ETA[..., 0] < 0):
+            y = np.sum(-2.0 * s * neighbour_sum(s), axis=2)
+            y8 += int(np.count_nonzero(y[maske] == -8.0))
+            s = np.where(((rng.random((L, L)) < np.exp(y / TC_BOLU_J)) & maske)[..., None], -s, s)
+        m.append(abs(float(s.mean())))
+    assert np.array_equal(np.array(m[N_BURN:]), ref.magnetisation_series), "replika ayrıştı"
+    assert ((N_BURN + N_SWEEP) * L * L, y8, f"{y8 * 2.0**-53:.3e}") == (2_048_000, 1_346_053, "1.494e-10")
+    esik = {(J, y) for J in BES_J for y in (-8.0, -4.0)  # dizi np.exp: motorun yolu
+            if np.ceil(np.exp(np.full((L, L), J * y) / (TC_BOLU_J * J)) * 2.0**53)[0, 0]
+            != np.ceil(np.exp(np.full((L, L), y) / TC_BOLU_J) * 2.0**53)[0, 0]}
+    assert esik == {(0.801032362, -8.0), (0.750154440, -8.0)}
+    assert all(p in test_TB_SPIN_BES_J_BIT_BIT_OLU_ve_E_esittir_J_carpi_E1.__doc__
+               for p in ("2 048 000 aktif karar", "1 346 053'ü y = −8", "1.494e-10")), "dokstring bayat"
+
     gerekce = _girdi("tb", "spin").gerekce
     for parca in (
         repr(ref.acceptance_rate), "287565/1536000", "L = 32", "tohum 20260822",
@@ -529,18 +572,21 @@ def test_TB_SPIN_BES_J_BIT_BIT_OLU_ve_E_esittir_J_carpi_E1():
 
 
 def test_TB_SPIN_KOK_NEDEN_ORAN_SADELESMESI_ast_ile_KILITLI():
-    """KÖK NEDEN `metropolis.py:164-166` — `coupling` çıktıya YALNIZ
+    """KÖK NEDEN `metropolis.py:189-191` — `coupling` çıktıya YALNIZ
     `coupling/temperature` oranı olarak girer. `ast` ile:
 
-      `metropolis_sweep` içinde
+      `metropolis_sweep` içinde, `_dogrula(...)` çağrısı DIŞINDA (o yalnız
+      doğrular; 27.09.2026'dan beri `coupling`/`field`in skalerliğini de):
         * `coupling` TAM BİR kez yüklenir, o da `delta = ...` atamasında
-        * `temperature` — `_dogrula(...)` çağrısı dışında — TAM BİR kez,
+        * `temperature` TAM BİR kez,
           `ustel` atamasındaki TEK bölmenin paydası olarak, payı `delta`
         * `field` TAM BİR kez, yine `delta` atamasında (h = 0'da 0 · x)
-        * satırlar: `delta` 164, `ustel` 165, bölme 166 — gerekçenin
-          `metropolis.py:164-166`sından AYRIŞTIRILIR, elle yazılmaz
-      `run_metropolis` içinde `coupling` iki kez: sweep'e ve `total_energy`ye
-      geçirilir, başka hiçbir yerde okunmaz.
+        * satırlar (`delta`, `ustel`, bölme) ardışıktır ve gerekçedeki
+          `metropolis.py:A-B` atfından AYRIŞTIRILIR; numara burada BİLEREK yazılmaz
+      `_dogrula` gövdesi izin listesiyle: `state` yalnız `.L`/`.n_component`, `coupling`/`field`
+      yalnız skalerlik döngüsünde, `temperature` yalnız sonluluk/işarette — yan etkiyle J SOKULAMAZ.
+      `run_metropolis` içinde `coupling` (`_dogrula` dışında) iki kez: sweep'e
+      ve `total_energy`ye geçirilir, başka hiçbir yerde okunmaz.
       `lattice.total_energy` içinde `coupling` TAM BİR kez, çarpan olarak.
 
     Yani `(J, T) → (λJ, λT)` altında kabul olasılığı `exp(-delta/T)`
@@ -552,17 +598,16 @@ def test_TB_SPIN_KOK_NEDEN_ORAN_SADELESMESI_ast_ile_KILITLI():
     delta = _atama(sweep, "delta")
     ustel = _atama(sweep, "ustel")
 
-    coupling = _yukler(sweep, "coupling")
-    assert len(coupling) == 1 and coupling[0] in list(ast.walk(delta.value))
-    field = _yukler(sweep, "field")
-    assert len(field) == 1 and field[0] in list(ast.walk(delta.value))
+    def _dogrula_disi(govde, ad):
+        args = [n for d in ast.walk(govde) if isinstance(d, ast.Call) and isinstance(d.func, ast.Name)
+                and d.func.id == "_dogrula" for n in ast.walk(d)]
+        return [n for n in _yukler(govde, ad) if n not in args]
 
-    dogrula_args = [
-        n for d in ast.walk(sweep)
-        if isinstance(d, ast.Call) and isinstance(d.func, ast.Name) and d.func.id == "_dogrula"
-        for n in ast.walk(d)
-    ]
-    temperature = [n for n in _yukler(sweep, "temperature") if n not in dogrula_args]
+    coupling = _dogrula_disi(sweep, "coupling")
+    assert len(coupling) == 1 and coupling[0] in list(ast.walk(delta.value))
+    field = _dogrula_disi(sweep, "field")
+    assert len(field) == 1 and field[0] in list(ast.walk(delta.value))
+    temperature = _dogrula_disi(sweep, "temperature")
     assert len(temperature) == 1
     bolmeler = [
         d for d in ast.walk(ustel.value) if isinstance(d, ast.BinOp) and isinstance(d.op, ast.Div)
@@ -578,7 +623,18 @@ def test_TB_SPIN_KOK_NEDEN_ORAN_SADELESMESI_ast_ile_KILITLI():
     assert (delta.lineno, ustel.lineno, bolme.lineno) == (bas, bas + 1, son)
 
     kosum = _fonksiyon(agac, "run_metropolis")
-    assert len(_yukler(kosum, "coupling")) == 2
+    assert len(_dogrula_disi(kosum, "coupling")) == 2
+
+    dog = _fonksiyon(agac, "_dogrula")
+    ebeveyn = {c: p for p in ast.walk(dog) for c in ast.iter_child_nodes(p)}
+    dongu = next(d for d in ast.walk(dog) if isinstance(d, ast.For))
+    assert not any(isinstance(d, (ast.Global, ast.Nonlocal)) for d in ast.walk(dog))
+    assert all(getattr(ebeveyn[n], "attr", None) in ("L", "n_component") for n in _yukler(dog, "state"))
+    for ad in ("coupling", "field"):
+        assert [n in list(ast.walk(dongu.iter)) for n in _yukler(dog, ad)] == [True], ad
+    assert all(ast.unparse(ebeveyn[n]) in ("np.ndim(deger)", "np.shape(deger)") for n in _yukler(dog, "deger"))
+    assert all(isinstance(ebeveyn[n], (ast.Compare, ast.FormattedValue)) or ast.unparse(ebeveyn[n])
+               == "np.isfinite(temperature)" for n in _yukler(dog, "temperature"))
 
     kafes = ast.parse(Path(lattice_mod.__file__).read_text(encoding="utf-8"))
     enerji = _fonksiyon(kafes, "total_energy")
@@ -651,6 +707,163 @@ def test_TB_SPIN_U_BUYUTULSE_DE_z_UYUSTURULSA_DA_KENAR_ACILMIYOR_ve_KONTROL():
 
 
 # =============================================================================
+# hf -> spin (27.09.2026) — üçüncü düşen aday, KENARSIZ
+# =============================================================================
+
+HF_R = (5.0, 6.0, 7.0)
+#: `search_uhf(seeds = 12)` varsayılan eşikler, STO-3G, `%.10g` + `unit="bohr"`
+#: (Ångström gidiş-dönüşü R = 5 − 1 ulp üretir, J bağıl 1.22e-9 kayar). 17
+#: hane bu pencerenin kaydıdır; fiziksel olarak ~7 anlamlı hane.
+HF_J = (-0.001308824217584225, -0.00017495439344641936, -1.9411358087445856e-05)
+#: `seeds = 1` kırık simetriyi bulamaz; formül SESSİZCE +J (FM) verir.
+HF_J_SEEDS1 = (0.12292785673387831, 0.14398775927612392, 0.15520099760670322)
+#: "S2_BS > 0" LİTERAL yazılamaz: seeds = 1'in RHF-benzeri çözümü 2.2e-16 /
+#: 2.2e-16 / 1.1e-15 taşıyor ve `> 0`'ı GEÇİYOR. Kapı sayısal sıfırın üstünde.
+S2_BS_KAPISI = 1e-8
+ETA = np.where(np.indices((L, L)).sum(axis=0) % 2 == 0, 1.0, -1.0)[..., None]
+NEEL = ETA * SpinState.uniform(L=L, n_component=1).spins
+
+
+def _yamaguchi(R: float, seeds: int) -> tuple[float, float]:
+    """J = (E_BS − E_T)/(S2_T − S2_BS) — formül `src/`de YOK, burada elle."""
+    mol = Molecule.from_string("H 0 0 0; H 0 0 %.10g" % R, unit="bohr")
+    bs = search_uhf(mol, BAZ, seeds=seeds)
+    uc = search_uhf(mol, BAZ, seeds=SEEDS, n_alpha=2)
+    s2 = bs.result.s_squared
+    return (bs.energy - uc.energy) / (uc.result.s_squared - s2), s2
+
+
+def _bs_kapisi(s2_bs: float) -> bool:
+    return s2_bs > S2_BS_KAPISI
+
+
+def _tam(J: float, s0: np.ndarray, *, alan: float = 0.0):
+    """Burn-in DAHİL 2000 sweep'in hepsi ölçülür (`n_burn = 0`): özdeşlik
+    sweep 1'den sınanır. Burn-in'den sonra bakmak yetmez — ortak rastgele
+    sayılarla zincirler birleşir ve DÖNÜŞTÜRÜLMEMİŞ başlangıç da aynı seriyi
+    verir (ölçüldü 27.09.2026: o mutant 500/1500 penceresinde HAYATTA kaldı)."""
+    return run_metropolis(SpinState(s0), IsingModel(), temperature=TC_BOLU_J * abs(J), coupling=J,
+                          field=alan, rng=np.random.default_rng(TOHUM), n_sweep=N_BURN + N_SWEEP, n_burn=0)
+
+
+def _zincir(J: float, s0: np.ndarray, *, alan: float = 0.0):
+    """`run_metropolis(n_sweep=1, n_burn=0)` ZİNCİRİ (aynı rng) — sweep başına
+    durum için public yol. Dönüş: (tekbiçim, kademeli) seri, burn-in DAHİL;
+    tekbiçim seri TEK çağrıyla bit bit karşılaştırılır (aracın kendisi sınanır)."""
+    rng, st, uni, kad = np.random.default_rng(TOHUM), SpinState(s0), [], []
+    for _ in range(N_BURN + N_SWEEP):
+        r = run_metropolis(st, IsingModel(), temperature=TC_BOLU_J * abs(J), coupling=J,
+                           field=alan, rng=rng, n_sweep=1, n_burn=0)
+        st = r.final_state
+        uni.append(r.magnetisation_series[0])
+        kad.append(float(np.linalg.norm(magnetisation(SpinState(ETA * st.spins)))))
+    assert np.array_equal(np.array(uni), _tam(J, s0, alan=alan).magnetisation_series), "zincir ayrıştı"
+    return np.array(uni), np.array(kad)
+
+
+def test_HF_SPIN_J_UC_R_DE_BIT_BIT_BS_KAPISI_ve_seeds1_ISARETI_SESSIZCE_CEVIRIR():
+    """İŞARET ŞARTLI. `seeds = 12`de üç J literal ile `==` ve NEGATİF (AFM);
+    `seeds = 1` BS'yi bulamaz, S2_BS sayısal sıfırdır ama `> 0`'ı GEÇER ve
+    formül +J verir. Kapı `S2_BS > 1e-8` o çözümü reddeder. KIRMA: kapı
+    eşiği 0.0 yapılınca bu test kırmızı (seeds = 1 kapıdan geçer); eşik
+    gerekçedeki sayıdan AYRIŞTIRILIR, yani ikisi ayrı kayamaz (1e-10 / 0.5 düşer)."""
+    gerekce = _girdi("hf", "spin").gerekce
+    for R, J_lit, J1_lit in zip(HF_R, HF_J, HF_J_SEEDS1):
+        J, s2 = _yamaguchi(R, SEEDS)
+        assert _bs_kapisi(s2) and 0.99 < s2 < 1.0, (R, s2)
+        assert J == J_lit and J < 0.0, (R, J)
+        assert repr(J_lit) in gerekce
+        J1, s21 = _yamaguchi(R, 1)
+        assert 0.0 < s21 < 1e-14, "seeds = 1 artık '> 0'ı geçmiyor — kapı gerekçesi bayat"
+        assert not _bs_kapisi(s21), f"R={R}: kırık simetrisiz çözüm kapıdan geçti"
+        assert J1 > 0.0 and J1 == pytest.approx(J1_lit, rel=1e-9, abs=0.0)
+        assert f"+{J1_lit:.4f}" in gerekce
+    for parca in ("seeds = 12", "%.10g", 'unit="bohr"', "~7 anlamli hane"):
+        assert parca in gerekce, parca
+    esik = re.search(r"S2_BS > (\S+) olmali", gerekce)
+    assert esik and float(esik.group(1)) == S2_BS_KAPISI, "gerekçe eşiği != test kapısı"
+
+
+def test_HF_SPIN_BUYUKLUK_PROTOKOL_A_BIT_BIT_SADELESIR():
+    """Üç HF J'si, T = 2.269185·|J|, Néel başlangıç: `m` serisi J = −1'inkiyle
+    BİT BİT, E == |J|·E(−1) bit bit, kabul oranı `==`. `buyukluk = 0.0` burada
+    canlı ölçümle eşitlenir. R = 6/7'de karar eşiği 1 birim farklı (eleştirmen
+    E1c) — eşitlik bir ÖLÇÜM sonucudur."""
+    ref = _tam(-1.0, NEEL)
+    fark = 0.0
+    for J in HF_J:
+        r = _tam(J, NEEL)
+        assert np.array_equal(r.magnetisation_series, ref.magnetisation_series), J
+        assert np.array_equal(r.energy_series, abs(J) * ref.energy_series), J
+        assert r.acceptance_rate == ref.acceptance_rate
+        fark = max(fark, float(np.abs(r.magnetisation_series - ref.magnetisation_series).max()))
+    assert fark == 0.0 == _HF_SPIN_M_FARKI == _girdi("hf", "spin").buyukluk
+    assert isinstance(_girdi("hf", "spin").buyukluk, float)
+    assert _girdi("hf", "spin").kova == Kova.TAUTOLOJI
+    gerekce = _girdi("hf", "spin").gerekce  # sayılar YALNIZ bu pencereyle taşınır
+    for parca in (f"T = {TC_BOLU_J} * |J|", f"Ising L = {L}, h = 0", f"tohum {TOHUM}",
+                  f"{N_BURN + N_SWEEP} sweep burn-in DAHIL", "Neel baslangic"):
+        assert parca in gerekce, f"gerekçe {parca!r} taşımıyor"
+
+
+def test_HF_SPIN_ISARET_AYAR_ETIKETI_AFM_KADEMELI_eq_FM_TEKBICIM_ve_h01_BOZAR():
+    """h = 0 çift L: AFM(−1) Néel başlangıçlı koşumun KADEMELİ serisi, sevk
+    edilmiş FM(+1) koşumunun (`_kos`) TEKBİÇİM serisiyle BİT BİT aynı —
+    tekbiçim çıktı işaretle değişir (0.009724) ama değişim FM koşumunun
+    ayar-imgesidir. `tb → spin`in kilitli 0.687930'u bu yüzden doğru işaretli
+    AFM'nin kademeli ortalamasıdır. KONTROL: h = 0.1'de (iki tarafta aynı
+    tekbiçim alan) özdeşlik BOZULUR — test kör değil."""
+    uni = SpinState.uniform(L=L, n_component=1).spins
+    fm = _tam(1.0, uni)
+    afm_uni, afm_kad = _zincir(-1.0, NEEL)
+    assert np.array_equal(afm_kad, fm.magnetisation_series)  # sweep 1'den
+    assert np.array_equal(fm.magnetisation_series[N_BURN:], _kos(1.0).magnetisation_series)
+    assert float(afm_kad[N_BURN:].mean()) == pytest.approx(0.687930, rel=1e-5, abs=0.0)
+    assert float(afm_uni[N_BURN:].mean()) == pytest.approx(0.009724, rel=1e-4, abs=0.0)
+    for g in (_girdi("hf", "spin").gerekce, _girdi("tb", "spin").gerekce):
+        assert "0.687930" in g
+    assert "tekbicim cikti isaretle degisir ama degisim FM kosumunun bit bit ayar-imgesidir" in _girdi("hf", "spin").gerekce
+    assert "0.009724" in _girdi("hf", "spin").gerekce
+
+    _, kad_h = _zincir(-1.0, NEEL, alan=0.1)
+    fm_h = _kos(1.0, alan=0.1)
+    bozulma = float(np.abs(kad_h[N_BURN:] - fm_h.magnetisation_series).max())
+    assert bozulma > 1e-2, "h ≠ 0'da da özdeş — kontrol kör"
+    assert bozulma == 0.82421875
+    assert f"max|fark| {bozulma!r}" in _girdi("hf", "spin").gerekce
+
+
+def test_TB_SPIN_ISARET_BEYANI_KAYNAK_AFM_ve_KONTROL_DOGRU_ISARETLE():
+    """`tb → spin` gerekçesinin işaret beyanı: atıflanan satırlar gerçekten
+    antiferromanyetikliği yazıyor (bayatlarsa kırmızı) ve `h = 0.1`
+    kontrolü DOĞRU işaretle (tekbiçim başlangıç) çarpansız c = −J'de
+    5.078e-02 / 8.809e-01, c = −J/4'te 6.250e-02 / 7.812e-01: `h ≠ 0`'da
+    çarpan SADELEŞMEZ ("sadeleşir" diye −J yazan mutant düşer)."""
+    gerekce = _girdi("tb", "spin").gerekce
+    atif = re.search(r"`engine/tb/downfold\.py:(\d+)-(\d+)`", gerekce)
+    fab = re.search(r"`engine/tb/factory\.py:(\d+)` ve `:(\d+)-(\d+)`", gerekce)
+    kaynak = (KAYNAK / "engine" / "tb" / "downfold.py").read_text(encoding="utf-8").splitlines()
+    fabrika = (KAYNAK / "engine" / "tb" / "factory.py").read_text(encoding="utf-8").splitlines()
+    bas, son = map(int, atif.groups())
+    assert "antiferromanyetik" in " ".join(kaynak[bas - 1:son]).lower()
+    t, b2, s2 = map(int, fab.groups())
+    assert "antiferromanyetik" in fabrika[t - 1].lower()
+    assert "antiferromanyetik" in " ".join(fabrika[b2 - 1:s2]).lower()
+
+    uni = SpinState.uniform(L=L, n_component=1).spins
+    a_uni, a_kad = _zincir(-1.0, uni, alan=0.1)
+    b_uni, b_kad = _zincir(-BES_J[0], uni, alan=0.1)
+    tek = float(np.abs(a_uni - b_uni)[N_BURN:].max())
+    kad = float(np.abs(a_kad - b_kad)[N_BURN:].max())
+    assert (f"{tek:.3e}", f"{kad:.3e}") == ("5.078e-02", "8.809e-01")
+    assert f"tekbicimde {tek:.3e}, kademelide {kad:.3e}" in gerekce
+    c_uni, c_kad = _zincir(-0.25, uni, alan=0.1)
+    d_uni, d_kad = _zincir(-BES_J[0] / 4, uni, alan=0.1)
+    ceyrek = (f"{np.abs(c_uni - d_uni)[N_BURN:].max():.3e}", f"{np.abs(c_kad - d_kad)[N_BURN:].max():.3e}")
+    assert ceyrek == ("6.250e-02", "7.812e-01") and "c = -J/4'te %s / %s" % ceyrek in gerekce
+
+
+# =============================================================================
 # tablo: tek satır, damga kalktı, etiket içeride
 # =============================================================================
 
@@ -659,20 +872,22 @@ def test_TABLODA_IKI_GIRDI_DOLDU_TEK_SATIR_DAMGA_KALKTI_ETIKET_ICERIDE():
     """Task 4'ün `bridge_map` üzerindeki izi TAM OLARAK şudur:
 
       * `hf → tb` ve `tb → spin` hâlâ TAUTOLOJİ kovasında, hâlâ birer
-        satır (Task 4'te kova sayıları 1/4/8/0/8'di ve DEĞİŞMEDİ; bugünkü
-        sayım 3/4/8/0/6 -- TAUTOLOJİ yine 4 ve bu test yalnız onu kilitler)
+        satır (Task 4'te kova sayıları 1/4/8/0/8'di ve DEĞİŞMEDİ; 27.09.2026
+        sayımı 3/5/8/0/5 -- TAUTOLOJİ 5, çünkü `hf → spin` kenarsız hükümle
+        eklendi; bu test yalnız TAUTOLOJİ sayısını kilitler)
       * ikisinin `buyukluk`u artık `None` değil — biri 2.276e-15 (bağıl
         özdeşlik artığı), öteki 0.0 (bit bit ölüm) — ve ikisi de `float`
       * ikisinden `YENIDEN_URETILMEDI` damgası KALKTI; damga TAUTOLOJİ
-        kovasının öteki iki girdisinde (`md → spin`, `hf → em`) DURUYOR
+        kovasının öteki üç girdisinden ikisinde (`md → spin`, `hf → em`)
+        DURUYOR; `hf → spin` damgasız (27.09.2026'da ölçüldü)
       * "BU BORUDA OLCULEMEZ" etiketi, `U/|t|` ve `z` sayıları TEK bir
         girdinin içindedir — tabloda başka hiçbir girdi `z = 4` ya da
         `U/|t|` yazmaz. Ayrı satır YOK.
     """
     hf_tb, tb_spin = _girdi("hf", "tb"), _girdi("tb", "spin")
     assert hf_tb.kova == tb_spin.kova == Kova.TAUTOLOJI
-    assert KOVA_SAYILARI[Kova.TAUTOLOJI] == 4
-    assert sum(1 for f in KOVA_TABLOSU if f.kova == Kova.TAUTOLOJI) == 4
+    assert KOVA_SAYILARI[Kova.TAUTOLOJI] == 5
+    assert sum(1 for f in KOVA_TABLOSU if f.kova == Kova.TAUTOLOJI) == 5
 
     assert isinstance(hf_tb.buyukluk, float) and hf_tb.buyukluk == _HF_TB_OZDESLIK_BAGIL
     assert isinstance(tb_spin.buyukluk, float) and tb_spin.buyukluk == _TB_SPIN_M_FARKI == 0.0
@@ -706,6 +921,9 @@ def test_TABLODA_IKI_GIRDI_DOLDU_TEK_SATIR_DAMGA_KALKTI_ETIKET_ICERIDE():
 #     N8_d2.0   1.49 / 1.39 / 1.22 s                          -> DEĞİL
 #     N6_*      0.50 ... 0.70 s                               -> DEĞİL
 #     tb->spin  1.39 / 1.38 / 0.74 s  (L = 32, 2000 sweep)     -> DEĞİL
+#     27.09.2026 izole: tb-işaret (−J/4 dahil) 1.64, hf-ayar 1.40, BES_J (replika dahil) 1.26,
+#               hf-protokol A 0.79, hf-J 0.17 s -> DEĞİL; kalabalık koşuda en ağırı 1.96 s.
+#               Görevin eşiği 3 s, bu dosyanınki 2 s: ikisinin de altında (sınıra YAKIN).
 #     ast/tablo < 0.5 s                                       -> DEĞİL
 #
 # Eşik sınırın iki yanında iki komşu var (N8_d2.0 1.49 s, N8_d2.6 2.38 s);

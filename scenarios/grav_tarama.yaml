@@ -9,7 +9,7 @@
 # gerekce ayni: bu depoda bir hukmun kendi penceresinin disina tasinmasi ON
 # BIRDEN FAZLA kez olculdu.
 #
-# BIRIMLER: `G = c = 1` bir BIRIM SECIMIDIR (Modul 4'un `J = k_B = 1`i ve
+# BIRIMLER: `G = c = 1` bir BIRIM SECIMIDIR (Modul 4'un `k_B = 1`i ve
 # Modul 5'in `c = eps_0 = mu_0 = 1`i ile ayni statude). `mass` kilogram
 # DEGILDIR, `richardson` basamaklari metre DEGILDIR ve bu senaryonun hicbir
 # ciktisi yay saniyesi tasimaz. Olculen dort buyuklugun dordu de boyutsuzdur.

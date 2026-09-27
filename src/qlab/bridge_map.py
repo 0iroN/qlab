@@ -87,7 +87,13 @@ class Kova:
     sebebiyle: sayi geldi, HUKUM verilemedi.
     "OLCULDU, SIFIR CIKTI" ile "HIC OLCULMEDI" hala AYRI KOVADIR ve bu
     altisini YAPISAL_YOK'a katlamak, hukum verilmemis bir seyi verilmis
-    gibi gostermek olurdu.
+    gibi gostermek olurdu. (Bu paragraf 24.09.2026'nin TARIHSEL kaydidir.)
+
+    27.09.2026'DA KOVA BESE DUSTU: `hf-spin` TAUTOLOJI'ye gecti -- kenar
+    YAZILMADAN, HUKUM VERILEREK (hf-spin on olcumu, 10 ajan). Ilk kez bir
+    cift OLCULMEDI'den kod kenari olmadan cikti; kova sozlugu BUKULMEDI,
+    yeni kova acilmadi (gerekce satirin kendisinde). Kalan BES hala
+    22.09'un sebebiyle burada: sayi geldi, HUKUM verilemedi.
     """
 
     GERCEK_KOPRU = "GERCEK_KOPRU"
@@ -470,8 +476,8 @@ def taranamayanlar(kok: Path | str | None = None) -> tuple[str, ...]:
 _GRAV_ORANI = 8.093550856608016e-37
 _HF_TDSE_NOKTA = 4.096e09
 
-# --- Dusen iki adayin OLCULMUS buyuklukleri (Task 4, 02.09.2026) -----------
-# Bu iki sayi bir motor kosturularak uretildi ama BURAYA LITERAL yazildi:
+# --- Dusen adaylarin OLCULMUS buyuklukleri (Task 4 02.09.2026: iki; 27.09.2026: hf -> spin, uc) ---
+# Bu sayilar bir motor kosturularak uretildi ama BURAYA LITERAL yazildi:
 # bu modul hicbir motoru import etmez. Testler (`tests/bridge/
 # test_dusen_adaylar.py`) motoru kosturup bu literalleri canli olcume karsi
 # sinar. Pencereleri asagidaki gerekcelerde yazilidir; pencere olmadan
@@ -491,6 +497,59 @@ _HF_TB_OZDESLIK_BAGIL = 2.276006188306662e-15
 #: SONUCUDUR, "olculmedi" DEGIL -- OLCULMEDI kovasi `None` tasir, bu girdi
 #: `0.0` tasir ve ikisi ayni sey degildir.
 _TB_SPIN_M_FARKI = 0.0
+
+#: `hf -> spin` (27.09.2026): uc HF `J`sinin (H2, R = 5/6/7 bohr) protokol
+#: A'da `m` serisini `J = -1`inkinden ne kadar ayirdigi: 0.0, BIT BIT --
+#: bir OLCUM sonucu, `tests/bridge/test_dusen_adaylar.py` canli sinar.
+_HF_SPIN_M_FARKI = 0.0
+
+_HF_SPIN_GEREKCE = (
+    "SIFIR kod kenari, ama HUKUM VAR (27.09.2026 on olcumu, 10 ajan; "
+    "`.superpowers/sdd/hf-spin-on-olcum-2026-09-27.md`). 29.08.2026'dan beri "
+    "OLCULMEDI'deydi, 22.09'dan beri sebep: sayi geldi, hukum yok; kenar "
+    "YAZILMADI, hukum verildi. "
+    "KAYNAK: H2 Yamaguchi J = (E_BS - E_T)/(S2_T - S2_BS), public `search_uhf` "
+    "ve testte elle yazilmis formul (`src/`de Yamaguchi YOK). PENCERE: STO-3G, "
+    "`search_uhf(seeds = 12)` varsayilan esikler, `Molecule.from_string(\"H 0 0 "
+    "0; H 0 0 %.10g\", unit=\"bohr\")`; J(R = 5/6/7) = -0.001308824217584225 / "
+    "-0.00017495439344641936 / -1.9411358087445856e-05 Ha. 17 hane bu pencerenin "
+    "kaydidir, fiziksel olarak ~7 anlamli hane (bu uc J'de esik oynatilinca "
+    "bagil <= 1.89e-9, DIIS kapali 2.73e-9, tohum yayilimi <= 4.95e-9; eksenin "
+    "en kotusu 7.35e-8, 6-31G R = 3). "
+    "BUYUKLUK SADELESIYOR: protokol A (T = 2.269185 * |J|, Ising L = 32, h = 0, "
+    "tohum 20260822, 2000 sweep burn-in DAHIL olculur, Neel baslangic) uc J'de `m` serisi "
+    "J = -1'inkiyle bit bit ayni ve E == |J| * E(-1) bit bit (bu pencerede 3/3, "
+    "testte canli; on olcumun 1080/1080'i AYRI pencereden: L = 16, tekbicim "
+    "baslangic, tohum 11/12/13, 200 + 1000 sweep, c = 1.5 / Tc / 3.5, "
+    "[1e-9, 1e9]'de 60 rastgele K, E bit bit sinanmadi); "
+    "protokol B'de (300 K) HF basamagi tb basamagiyla ve HF icerigi sifir "
+    "sentetik bir merdivenle yorunge duzeyinde bit bit ayni (on olcum, sha256 "
+    "6/6; testte kosturulmaz). Bit bit bir OLCUM sonucudur, ozdeslik degil "
+    "(R = 6/7'de karar esigi 1 birim farkli, elestirmen E1c). ISARET "
+    "BIR AYAR ETIKETIDIR: h = 0 ve cift L'de (J, s0) ile (-J, eta * s0) "
+    "kosumlari her sweep'te s(-J) == eta * s(J), eta = (-1)^(i+j) -- AFM(-J) "
+    "kosumunun kademeli serisi FM(+J) kosumunun tekbicim serisiyle bit bit ayni, "
+    "SWEEP 1'DEN (yalniz burn-in sonrasina bakmak yetmez: ortak rastgele "
+    "sayilarla zincirler birlesir, donusturulmemis baslangic da ayni seriyi verir). "
+    "TAUTOLOJI 'cikti kipirdamiyor' diye okunursa isaret onu zorlar; bu yuzden: "
+    "tekbicim cikti isaretle degisir ama degisim FM kosumunun bit bit "
+    "ayar-imgesidir (AFM tekbicim ortalamasi 0.009724, kademeli 0.687930). "
+    "Motorun ciktisi 'FM kosumu + girdinin tek biti'dir ve o bit girdiden geri "
+    "okunur. ISARET SARTLI: `search_uhf(seeds = 1)` kirik simetriyi BULAMAZ "
+    "(S2_BS sayisal sifir, 2.2e-16 / 2.2e-16 / 1.1e-15 -- '> 0' kapisini "
+    "GECER) ve formul sessizce "
+    "+J verir (R = 5/6/7: +0.1229 / +0.1440 / +0.1552, FM); kapi S2_BS > 1e-8 "
+    "olmali (testte kilitli; hf -> spin kodu YOK, yazilirsa bu kapi SART). "
+    "HF h URETMEZ: `core_hamiltonian`da manyetik terim yok; UHF'in "
+    "tek spin alani kademelidir. KONTROL: h = 0.1'de ozdeslik bozulur (AFM "
+    "kademeli ile FM tekbicim max|fark| 0.82421875) -- motor ikinci bir olcek "
+    "varsa isareti gorur, HF o olcegi uretmez. ARGUMAN (olcum degil): iki "
+    "elektronlu spin-bagimsiz bir sistemin taban hali singlettir, yani J < 0 "
+    "bir teoremdir, HF bilgisi degil. tb-spin'deki 'duzeltirsen kenar acilir' "
+    "cumlesinin esi: AFM'yi YAML'a acmak ya da kademeli gozlemlenebilir yazmak "
+    "da kenari ACMAZ; cikan seri FM ciktisinin ayar-imgesidir. TUR A -- "
+    "DUZELTILEMEZ (h = 0 motorunda)."
+)
 
 _GRAV_GEREKCE = (
     "Yercekimi atom olcegine BAGLANMAZ ve engel BOYUT DEGIL ENERJIDIR: "
@@ -656,7 +715,7 @@ KOVA_TABLOSU: tuple[EdgeFact, ...] = (
         gerekce=_TB_MD_GEREKCE,
         buyukluk=None,
     ),
-    # --- TAUTOLOJI (4) ------------------------------------------------------
+    # --- TAUTOLOJI (5) ------------------------------------------------------
     EdgeFact(
         kaynak="hf",
         hedef="tb",
@@ -710,7 +769,7 @@ KOVA_TABLOSU: tuple[EdgeFact, ...] = (
             "max|m farki| = 0.0 (bit bit), E == J * E(J=1) (bit bit), kabul "
             "orani 0.187216796875 = 287565/1536000 besinde `==`. J 6.70 kat "
             "degisti, cikti SIFIR kipirdadi. KOK NEDEN "
-            "`engine/spin/metropolis.py:164-166` (`ast` ile kilitli): "
+            "`engine/spin/metropolis.py:189-191` (`ast` ile kilitli): "
             "`coupling` yalniz `delta`yi carpiyor ve kabul olcutune "
             "`delta / temperature` olarak giriyor, yani ciktiya SADECE "
             "`coupling/temperature` ORANI olarak giriyor; `h = 0`'da baska "
@@ -723,9 +782,31 @@ KOVA_TABLOSU: tuple[EdgeFact, ...] = (
             "`lattice.py::neighbour_sum` dort `np.roll`) da ACMAZ (J * 2/4 "
             "ile de bit bit ayni) -- BU BORUDA OLCULEMEZ, cunku engel ORAN "
             "SADELESMESIDIR. Ayri satir 'duzeltirsen kenar acilir' diye "
-            "okunur ve ACILMIYOR. TUR A -- DUZELTILEMEZ (bu boruda)."
+            "okunur ve ACILMIYOR. TUR A -- DUZELTILEMEZ (bu boruda). "
+            "ISARET BEYANI (27.09.2026): kaynak ANTIFERROMANYETIKTIR "
+            "(`engine/tb/downfold.py:19-20`; TB paneli `converged` tikini "
+            "iki-siteli antiferromanyetik yapinin bulunmasina baglar, "
+            "`engine/tb/factory.py:134` ve `:174-178`), motor ise c = +J ile "
+            "FM kosar (E = -c * sum s s). +J bir AYAR SECIMIDIR: h = 0 cift L'de "
+            "AFM(-J) Neel baslangicli kosum her sweep'te bununla bit bit ayni "
+            "(s(-J) == eta * s(J)); kilitli 0.687930 dogru isaretli AFM'nin "
+            "KADEMELI ortalamasidir. Carpan (-J/4 ya da -J/2, esleme olcutune "
+            "gore) h = 0 oran protokolunde sadelesir. Yukaridaki 9.961e-02 KONTROLU FM "
+            "penceresine aittir: dogru isaretle ayni iki J h = 0.1'de tekbicimde "
+            "5.078e-02, kademelide 8.809e-01 ayrisiyor (tekbicim baslangic; "
+            "carpansiz c = -J penceresi -- h != 0'da carpan SADELESMEZ: "
+            "c = -J/4'te 6.250e-02 / 7.812e-01) -- "
+            "hukum ayakta, sayi isarete ve carpana bagli. Isaret CEVRILMEDI: cevrilseydi "
+            "kilitli 0.687930 bozulurdu ve hicbir sey kazanilmazdi."
         ),
         buyukluk=_TB_SPIN_M_FARKI,
+    ),
+    EdgeFact(
+        kaynak="hf",
+        hedef="spin",
+        kova=Kova.TAUTOLOJI,
+        gerekce=_HF_SPIN_GEREKCE,
+        buyukluk=_HF_SPIN_M_FARKI,
     ),
     EdgeFact(
         kaynak="md",
@@ -825,8 +906,9 @@ KOVA_TABLOSU: tuple[EdgeFact, ...] = (
     # --- BENZERLIK (0) ------------------------------------------------------
     # Bicimsel analoji kovasi BOS: bu turda olculen yok. Bos kalmasi bir
     # ihmal degil bir OLCUM SONUCUDUR ve sayisi (0) testte kilitlidir.
-    # --- OLCULMEDI (6) ------------------------------------------------------
-    # `md-tb` 24.09.2026'da buradan GERCEK_KOPRU'ya gecti (kenari yazildi).
+    # --- OLCULMEDI (5) ------------------------------------------------------
+    # `md-tb` 24.09.2026'da buradan GERCEK_KOPRU'ya gecti (kenari yazildi);
+    # `hf-spin` 27.09.2026'da TAUTOLOJI'ye (kenar yok, HUKUM verildi).
     EdgeFact(
         kaynak="tdse",
         hedef="tb",
@@ -836,13 +918,6 @@ KOVA_TABLOSU: tuple[EdgeFact, ...] = (
     ),
     EdgeFact(
         kaynak="tdse",
-        hedef="spin",
-        kova=Kova.OLCULMEDI,
-        gerekce=_OLCULMEDI_GEREKCE,
-        buyukluk=None,
-    ),
-    EdgeFact(
-        kaynak="hf",
         hedef="spin",
         kova=Kova.OLCULMEDI,
         gerekce=_OLCULMEDI_GEREKCE,
@@ -878,14 +953,18 @@ KOVA_TABLOSU: tuple[EdgeFact, ...] = (
 #: YAZILDI (`engine/md/tb_kuvvet.py`) ve cift ayni yolu izledi. Kova
 #: sozlugu BUKULMEDI: yeni bir kova acilmadi, cift var olan GERCEK_KOPRU
 #: olcutunun dort parcasini sagladigi icin oraya gecti.
+#: 27.09.2026'DA YINE DEGISTI -> 3 / 5 / 8 / 0 / 5: `hf -> spin` KENARSIZ
+#: gecti -- HUKUM verildi (buyukluk sadelesir, isaret h = 0'da bir ayar
+#: etiketi). Yine yeni kova ACILMADI: "yalniz isaret" kovasi bir girdi geri
+#: okumasini kova duzeyinde odullendirirdi.
 #: Bu esleme bir testle hem tabloya hem `MODULLER`in kombinasyonlarina karsi
 #: sinanir.
 KOVA_SAYILARI: dict[str, int] = {
     Kova.GERCEK_KOPRU: 3,
-    Kova.TAUTOLOJI: 4,
+    Kova.TAUTOLOJI: 5,
     Kova.YAPISAL_YOK: 8,
     Kova.BENZERLIK: 0,
-    Kova.OLCULMEDI: 6,
+    Kova.OLCULMEDI: 5,
 }
 
 
@@ -1093,8 +1172,9 @@ _YAKLASIMLAR: tuple[str, ...] = (
     "kosturulur; boru `test_aimd.py`nin YOL B'sinin AYNISIDIR ve bu bir "
     "iddia degil bir olcumdur (HF alaniyla cagrildiginda cipanin sayisini "
     "bit bit veriyor, testte kilitli)",
-    "DUSEN IKI ADAYIN SAYILARI TASINIYOR, YENIDEN KOSTURULMUYOR: `hf -> tb` "
-    "ve `tb -> spin` sayilari `KOVA_TABLOSU` gerekcelerinde literal olarak "
+    "DUSEN ADAYLARIN SAYILARI TASINIYOR, YENIDEN KOSTURULMUYOR: `hf -> tb`, "
+    "`tb -> spin` ve (27.09.2026'dan beri) `hf -> spin` sayilari "
+    "`KOVA_TABLOSU` gerekcelerinde literal olarak "
     "durur ve `tests/bridge/test_dusen_adaylar.py` onlari motoru kosturarak "
     "dogrular; bu senaryo onlari yeniden OLCMEZ, yeniden OKUR",
     "GERCEK HATA ve KUTLE KORLUGU sayilari HF borusundan gelir ve o boru bu "
@@ -1107,7 +1187,7 @@ _YONTEM_HEDEF_A = (
     "(1) `grav` atom olcegine BAGLANMAZ, engel boyut degil ENERJIDIR "
     "(iki proton icin F_g/F_e = 8.093550856608016e-37); (2) `spin` `J` "
     "hakkinda YANILAMAZ, cunku `coupling` ciktiya yalniz "
-    "`coupling/temperature` orani olarak girer (`metropolis.py:164-166`) ve "
+    "`coupling/temperature` orani olarak girer (`metropolis.py:189-191`) ve "
     "`U`yu 1000 kat buyutmek de `z`yi uyusturmak da kenari acmaz. Ikisi de "
     "bir tolerans ya da izgara ayariyla KAPANMAZ; A'yi B diye yazmak "
     "'sonraki gorevde acilir' yalanini uretirdi"
@@ -1148,13 +1228,15 @@ _YOKLUK_HARITASI_BEYANI = (
     "9.665562e+129 nokta (kenar 1 angstrom olsaydi 6.522644e+130 -- span bir "
     "dugmedir); `hf -> tdse` icin O 1s izgarasi 1600^3 = 4.096e+09 nokta = "
     "61.04 GiB; `em -> tdse` icin yazilacak bir mertebe YOK, eksik olan sayi "
-    "degil KARSILIKTIR. OLCULMEDI AYRI BIR KOVADIR: ALTI cift (tdse-tb, "
-    "tdse-spin, hf-spin, md-em, tb-em, spin-em) orada durur. "
+    "degil KARSILIKTIR. OLCULMEDI AYRI BIR KOVADIR: BES cift (tdse-tb, "
+    "tdse-spin, md-em, tb-em, spin-em) orada durur. "
     "29.08.2026'da SEKIZDILER ve sebep 'hicbir sayi gelmedi'ydi; "
     "22.09.2026'da spec 7.2'nin on olcumu kosuldu, sekizinin sekizinde de "
     "sayi GELDI ve `tdse-md` kenari YAZILARAK GERCEK_KOPRU'ya gecti; "
     "24.09.2026'da `md-tb` kenari da YAZILDI ve ayni yolu izledi (tabani "
-    "olculmedi). Kalan altinin sebebi 22.09'dakidir: sayi var, HUKUM yok -- "
+    "olculmedi); 27.09.2026'da `hf-spin` kenar YAZILMADAN, HUKUM verilerek "
+    "TAUTOLOJI'ye gecti (buyukluk sadelesir, isaret h = 0'da bir ayar "
+    "etiketi). Kalan besin sebebi 22.09'dakidir: sayi var, HUKUM yok -- "
     "sekiz hukmun sekizi de uc mercekli curutmede 3/3 dustu. 'olculdu, sifir cikti' ile ayni "
     "hucreye YAZILAMAZ -- bu bir yokluk beyanidir, bir sonuc degil, ve spec "
     "7.2 ACIK kalir"
@@ -1228,7 +1310,8 @@ _DURUST_OLUMSUZLAR = (
     "DURUST OLUMSUZLAR -- BEYAN EDILDI, DUZELTILMEDI, PANEL TASIR: (1) spec "
     "7.2 HALA ACIK ama DARALDI: 22.09.2026'da sekiz ciftin sekizi de "
     "olculdu ve `tdse-md` kenari yazildi, 24.09.2026'da `md-tb` kenari da "
-    "yazildi (kenar tabani OLCULMEDI, DOGA CIPASI YOK); kalan ALTI cift "
+    "yazildi (kenar tabani OLCULMEDI, DOGA CIPASI YOK), 27.09.2026'da "
+    "`hf-spin` kenarsiz, hukumle TAUTOLOJI'ye gecti; kalan BES cift "
     "OLCULMEDI kovasinda kalir cunku sayi geldi HUKUM gelmedi (sekiz hukmun "
     "sekizi de uc mercekli curutmede 3/3 dustu); (2) `md -> "
     "spin` ve `hf -> em` tautoloji hukumleri 29.08.2026 on olcumunden "
@@ -1244,7 +1327,7 @@ _DURUST_OLUMSUZLAR = (
 )
 
 _DUSEN_ADAYLAR_BEYANI = (
-    "DUSEN IKI ADAY, TAUTOLOJI OLARAK, PENCERESIYLE (Task 4, 7a26ed6; "
+    "DUSEN ADAYLAR, TAUTOLOJI OLARAK, PENCERESIYLE (Task 4'te iki, 7a26ed6; "
     "sayilar `KOVA_TABLOSU` gerekcelerinde ve tests/bridge/"
     "test_dusen_adaylar.py'de motor kosturularak dogrulanir): (1) `hf -> tb` "
     "-- `t_m` halka kabugu uzerinde `np.mean` olarak TANIMLANIP `==` ile "
@@ -1255,11 +1338,18 @@ _DUSEN_ADAYLAR_BEYANI = (
     "cagri. Pencere: (N, d) altili, STO-3G, seeds = 12. (2) `tb -> spin` -- "
     "bes `J`de (U/|t| = 2.033100 ... 13.630622) `m` serisi bit bit "
     "ayni, `E == J * E(1)` bit bit, kabul orani `==` 0.187216796875 = "
-    "287565/1536000; kok neden `metropolis.py:164-166` oran sadelesmesi; `U` "
+    "287565/1536000; kok neden `metropolis.py:189-191` oran sadelesmesi; `U` "
     "1000 kat buyutulse de kenar ACILMIYOR, o yuzden TEK SATIR: `U/|t| = "
     "2.033100` ve `z` (spin kodda 4, TB halkasi 2) o satirin ICINDE, bu "
     "boruda olculemez. Pencere: Ising L = 32, h = 0, tohum 20260822, burn "
-    "500, sweep 1500. Ikisi de sessizce dusurulmedi"
+    "500, sweep 1500. Ikisi de sessizce dusurulmedi. 27.09.2026'DA UCUNCU "
+    "ADAY ayni dosyada: (3) `hf -> spin` -- H2 J(R = 5/6/7) protokol A'da "
+    "`J = -1` ile bit bit ayni (buyukluk sadelesir; bit bit bir OLCUM sonucu, "
+    "ozdeslik degil. Pencere: STO-3G, `search_uhf` seeds = 12, Ising L = 32, "
+    "h = 0, tohum 20260822, T = 2.269185 * |J|, 2000 sweep burn-in DAHIL, Neel "
+    "baslangic), isaret h = 0 cift L'de "
+    "bir AYAR ETIKETI (AFM kademeli seri == FM tekbicim seri, bit bit); o da "
+    "TAUTOLOJI, sessizce dusurulmedi"
 )
 
 _CIPA_SINIFI_BEYANI = (

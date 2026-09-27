@@ -57,7 +57,7 @@ _GRAV_YAKLASIMLAR: tuple[str, ...] = (
     "Izotropik ayar ayni fizigin baska bir KOORDINAT yazilisidir, baska bir "
     "kaynak degil -- ve tam da bu yuzden iki ayarin ayni sayiyi vermesi bir "
     "ayar-bagimsizligi olcumudur",
-    "G = c = 1 BIR BIRIM SECIMIDIR, FIZIK DEGIL (Modul 4'un J = k_B = 1'i ve "
+    "G = c = 1 BIR BIRIM SECIMIDIR, FIZIK DEGIL (Modul 4'un k_B = 1'i ve "
     "Modul 5'in c = eps_0 = mu_0 = 1'i ile AYNI STATUDE): bu modulun hicbir "
     "ciktisi metre, saniye, kilogram ya da yay saniyesi tasimaz",
     "ISIMA SONUMU YOKTUR: yorunge korunumludur, gravitasyonel dalga kaybi "

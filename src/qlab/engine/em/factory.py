@@ -62,7 +62,7 @@ _EM_YAKLASIMLAR: tuple[str, ...] = (
     "DEGIL; guncelleme denklemlerinde ne foton ne hbar gecer",
     "c = eps_0 = mu_0 = 1 BIR BIRIM SECIMIDIR, FIZIK DEGIL: uzunluk hucre, "
     "zaman S*dx cinsindendir ve bu modulun hicbir ciktisi metre, saniye ya "
-    "da hertz tasimaz (Modul 4'un J = k_B = 1'iyle AYNI STATUDE)",
+    "da hertz tasimaz (Modul 4'un k_B = 1'iyle AYNI STATUDE)",
     "dogrusal, dispersif olmayan, izotropik ortam: eps gercek, yalniz "
     "konuma bagli ve frekanstan BAGIMSIZDIR",
     "sonlu izgara ve sonlu kosum: her sayi bir ayriklastirmanin ve sonlu "

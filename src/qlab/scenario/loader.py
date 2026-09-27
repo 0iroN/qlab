@@ -566,7 +566,15 @@ def _load_spin_scenario(raw: dict, file_path: Path) -> SpinScenario:
     hiçbir doğrulama taşımaz, dolayısıyla YAML'dan ulaşılabilir olması
     doğrulanmamış bir yolu sevk etmek olurdu. Wolff'ta ise sınır fiziksel:
     `p = 1 - exp(-2J/T)` negatife düşer ve algoritma sessizce SONSUZ
-    SICAKLIĞI örnekler.
+    SICAKLIĞI örnekler. Aynı karar `build_spin`de Python yolu için de
+    uygulanır. `coupling: .inf` 27.09.2026'ya kadar bu kapıdan GEÇİYORDU
+    (`not coupling > 0` +inf'i kabul eder) ve hata ancak enerji serisinde,
+    coupling adını anmadan geliyordu; artık `coupling`, `field` ve
+    `heisenberg_step`in sonluluğu da denetlenir. AÇIK KALAN (ölçüldü
+    27.09.2026, düzeltilmedi): sonlu ama taşan `coupling`/`field` (1e308) hâlâ
+    geç ve adsız hatayla düşer; `float()` bool/str'i kabul eder (`coupling:
+    true` → 1.0, `'2'` → 2.0 — `md/factory.py`deki reddin karşılığı yok);
+    Python yolunda (`build_spin`) `field`/`heisenberg_step` sonluluğu kapısızdır.
     """
     unknown = set(raw) - _SPIN_TOP_LEVEL
     if unknown:
@@ -618,6 +626,13 @@ def _load_spin_scenario(raw: dict, file_path: Path) -> SpinScenario:
         raise ScenarioError(
             f"'coupling'/'field'/'heisenberg_step' sayı olmalı: {exc}"
         ) from exc
+    if not (math.isfinite(field) and math.isfinite(heisenberg_step)):
+        raise ScenarioError(
+            f"'field' ve 'heisenberg_step' sonlu olmalı, verilen: field = {field}, "
+            f"heisenberg_step = {heisenberg_step}. Sonlu olmayan 'field' hatayı ancak "
+            "enerji serisinde, adını anmadan verirdi; 'heisenberg_step' ise öneriyi "
+            "SESSİZCE dondururdu (<|m|> = 1.0)."
+        )
 
     if lattice_size < 2:
         raise ScenarioError(
@@ -629,7 +644,7 @@ def _load_spin_scenario(raw: dict, file_path: Path) -> SpinScenario:
     if any(not math.isfinite(t) or t <= 0.0 for t in temperatures):
         raise ScenarioError(
             f"'temperatures' değerleri pozitif ve sonlu olmalı: {temperatures}. "
-            "Sıcaklık kT/J cinsindendir ve sıfır bölen olarak Metropolis "
+            "Sıcaklık enerji birimindedir (k_B = 1) ve sıfır bölen olarak Metropolis "
             "üstelinin içine girer."
         )
     if len(set(temperatures)) != len(temperatures):
@@ -641,9 +656,9 @@ def _load_spin_scenario(raw: dict, file_path: Path) -> SpinScenario:
         raise ScenarioError(f"'n_sweep' en az 1 olmalı, verilen: {n_sweep}")
     if n_burn < 0:
         raise ScenarioError(f"'n_burn' negatif olamaz, verilen: {n_burn}")
-    if not coupling > 0.0:
+    if not (math.isfinite(coupling) and coupling > 0.0):
         raise ScenarioError(
-            f"'coupling' (J) pozitif olmalı, verilen: {coupling}. Bu modülün "
+            f"'coupling' (J) sonlu ve pozitif olmalı, verilen: {coupling}. Bu modülün "
             "dört çıpası da ferromanyetiktir ve J <= 0 için hiçbir doğrulama "
             "taşımaz; Wolff'ta ayrıca p = 1 - exp(-2J/T) negatife düşer ve "
             "algoritma sessizce sonsuz sıcaklığı örnekler."

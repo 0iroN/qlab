@@ -1,7 +1,9 @@
 # 2B Ising kafesinde sicaklik taramasi -- Modul 4.
 #
-# SICAKLIKLAR kT/J CINSINDENDIR, KELVIN DEGIL. Bu modulde J = k_B = 1 bir
-# BIRIM SECIMIDIR; donusum yoktur cunku cevrilecek bir sey yoktur.
+# SICAKLIKLAR ENERJI BIRIMINDEDIR, KELVIN DEGIL: bu modulde k_B = 1 bir BIRIM
+# SECIMIDIR; donusum yoktur cunku cevrilecek bir sey yoktur. J (coupling) bir
+# GIRDIDIR ve burada 1.0'dir, yani bu dosyadaki sayilar AYNI ZAMANDA kT/J'dir;
+# coupling degisirse karsilastirilacak sayi T/coupling'dir.
 #
 # IZGARA YUVARLAK SAYILARDAN KURULU VE BU BILINCLIDIR: Onsager'in tam
 # cozumunden gelen kT_c/J degeri bu dosyada HICBIR BASAMAGIYLA GECMEZ --

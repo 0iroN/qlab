@@ -364,6 +364,7 @@ def _run_spin(scenario: SpinScenario, output: str | None) -> int:
             "tau_int": yuk.tau_int,
             "binder": yuk.binder,
             "susceptibility": yuk.susceptibility,
+            "coupling": np.float64(scenario.coupling),  # kT/J = T/coupling, J*chi
             "provenance_json": json.dumps(
                 dataclasses.asdict(provenance), ensure_ascii=False
             ),

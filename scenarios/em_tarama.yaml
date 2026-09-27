@@ -28,7 +28,7 @@
 #
 # BIRIMLER: yaricap ve dalga boyu HUCRE cinsindendir, metre DEGIL; frekanslar
 # 1/(hucre) cinsindendir, hertz DEGIL. `c = eps_0 = mu_0 = 1` bir BIRIM
-# SECIMIDIR (Modul 4'un `J = k_B = 1`'iyle ayni statude) ve bu senaryonun
+# SECIMIDIR (Modul 4'un `k_B = 1`'iyle ayni statude) ve bu senaryonun
 # hicbir ciktisi SI birimi tasimaz.
 #
 # BESSEL KOKLERI BU DOSYADA HICBIR BASAMAGIYLA GECMEZ ve bunu

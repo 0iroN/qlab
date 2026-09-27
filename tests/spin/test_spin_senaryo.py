@@ -157,8 +157,8 @@ def test_SEVK_EDILEN_senaryo_yukleniyor_ve_BIRIM_DONUSUMU_YOK():
 
     BİRİM DÖNÜŞÜMÜ YOKLUĞU DA BİR İDDİADIR ve burada kilitlenir: `TBScenario`
     eV → hartree çevirir (TB literatürü eV'de yayınlanır), bu senaryo ise
-    HİÇBİR ŞEY çevirmez çünkü `J = k_B = 1` bir birim seçimidir ve ölçülen
-    büyüklükler zaten boyutsuzdur. YAML'daki 2.2 dataclass'ta da 2.2'dir.
+    HİÇBİR ŞEY çevirmez çünkü `k_B = 1` bir birim seçimidir (sıcaklık enerji
+    birimindedir, coupling bir girdidir). YAML'daki 2.2 dataclass'ta da 2.2'dir.
     """
     senaryo = load_scenario(SEVK_EDILEN)
     assert isinstance(senaryo, SpinScenario)
@@ -243,6 +243,10 @@ def test_BILINMEYEN_kind_listesi_spin_iceriyor(tmp_path):
         ("n_burn: 200", "n_burn: -1"),
         ("coupling: 1.0", "coupling: 0.0"),
         ("coupling: 1.0", "coupling: -1.0"),
+        ("coupling: 1.0", "coupling: .inf"),
+        ("field: 0.0", "field: .nan"),
+        ("field: 0.0", "field: .inf"),
+        ("model: ising", "model: heisenberg\nheisenberg_step: .nan"),
     ],
 )
 def test_BOZUK_senaryolar_REDDEDILIYOR(tmp_path, bozuk, desen):
@@ -252,7 +256,9 @@ def test_BOZUK_senaryolar_REDDEDILIYOR(tmp_path, bozuk, desen):
     ayrıntılı dengeyi bozar ve bozulma SESSİZDİR (sonuç makul görünür).
     `coupling: -1.0` de öyle: Wolff'ta `p = 1 - exp(-2J/T)` negatife düşer,
     hiçbir bağ kurulmaz ve algoritma sonsuz sıcaklığı örnekler — ölçüldü,
-    20 kat hata ve sıfır istisna (`engine/spin/wolff.py`).
+    20 kat hata ve sıfır istisna (`engine/spin/wolff.py`). `coupling: .inf`
+    27.09.2026'ya kadar GEÇİYORDU (`not coupling > 0`) ve hata geç geliyordu;
+    `field: .nan/.inf` de (adsız geç hata) ve `heisenberg_step: .nan` (SESSİZ donma).
     """
     with pytest.raises(ScenarioError):
         load_scenario(_yaz(tmp_path, SEVK_YAML.replace(bozuk, desen)))
@@ -347,7 +353,7 @@ def test_BEYAN_TEK_KAYNAKTAN_geliyor():
     STANDART TERİM MUAFİYETİ YOK, VE BU ÖLÇÜLDÜ: `test_downfold_senaryo.py`
     dört girdiyi muaf tutmak zorundaydı çünkü onlar cümle değil TERİMDİ
     ("Lowdin ortogonallestirmesi" gerçekten başka bir dosyada düz yazı
-    olarak geçiyor). Buradaki on bir girdinin on biri de tam cümledir ve
+    olarak geçiyor). Buradaki on iki girdinin on ikisi de tam cümledir ve
     muafiyetsiz sayım 1/0 tutuyor — yani muafiyet listesi eklemek denetimi
     gereksiz yere gevşetmek olurdu.
 
@@ -357,7 +363,7 @@ def test_BEYAN_TEK_KAYNAKTAN_geliyor():
     değişirse İKİSİ BİRDEN kırmızı olur.
     """
     beyanlar = _tum_beyanlar()
-    assert len(beyanlar) == 11, "beyan sayisi degisti; testi bilerek guncelleyin"
+    assert len(beyanlar) == 12, "beyan sayisi degisti; testi bilerek guncelleyin"
     bu_dosya = Path(__file__).resolve()
 
     for cumle in beyanlar:
@@ -380,11 +386,12 @@ def test_MODULUN_ETIK_CEKIRDEGI_metinde_YAZILI():
 
     Gerekçesi `test_tb_scenario.py`de ölçüldü: kelime bazlı bir test,
     bitişik dize sabitlerinin yalnızca İLK satırını değiştiren mutantları
-    kaçırıyor. Aşağıdaki sekiz parça bu modülün etik çekirdeğidir ve
+    kaçırıyor. Aşağıdaki on parça bu modülün etik çekirdeğidir ve
     sessizce yeniden yazılmamalıdır: ikisi birim seçimini ve sonlu kafesi
     (yani "burada keskin bir geçiş yok"u), ikisi 3B ile ξ'nin neden
     kapsam dışı olduğunu, ikisi kritik üsün sonlu-boyut kalıntısını, ikisi
-    de daireselliğin kendisini yazıyor.
+    de daireselliğin kendisini yazıyor. 27.09.2026'da iki parça eklendi:
+    kT/J = T/coupling (J bir girdidir) ve Ising'in T/J -> sonsuz donması.
 
     Bu test bir totoloji DEĞİLDİR: sağ taraf `factory` modülünden okunur,
     sol taraftaki cümleler burada BAĞIMSIZ olarak yazılmıştır.
@@ -400,7 +407,9 @@ def test_MODULUN_ETIK_CEKIRDEGI_metinde_YAZILI():
     )
     metin = " ".join(deger for _, deger in kaynak.as_lines())
     for cumle in (
-        "J = k_B = 1 BIR BIRIM SECIMIDIR, FIZIK DEGIL",
+        "k_B = 1 BIR BIRIM SECIMIDIR, FIZIK DEGIL",
+        "T degil kT/J = T/coupling'dir ve Yontem satirinda basilir",
+        "Ising checkerboard Metropolis T/J -> sonsuzda DONAR",
         "sonlu kafeste keskin bir faz gecisi",
         "3B Ising'in tam cozumu yoktur",
         "iliskisiz bir kafeste tohumlarin ~%38'i SAHTE bir xi donduruyor",
@@ -827,6 +836,124 @@ def test_BOZUK_SENARYO_CLI_DA_TEMIZ_HATA_veriyor(tmp_path):
     assert sonuc.returncode == 1
     assert "min_blocks" in sonuc.stderr
     assert "Traceback" not in sonuc.stderr
+
+
+# ---------------------------------------------------------------------------
+# BİRİM, KAPSAM KAPISI VE DONMA (27.09.2026). Ölçüm kayıtları depo dışında (gitignore):
+# `.superpowers/sdd/hf-spin-uygulama-betikleri-2026-09-27/` (p2_olc_*.py + .out). Hepsi PUBLIC panel yolundan.
+# ---------------------------------------------------------------------------
+
+
+def test_YONTEM_SATIRI_coupling_i_GIRDI_ve_GERCEK_kT_J_yi_basiyor():
+    """Panel `coupling`i ve gerçek `kT/J = T/coupling`i basar. Sweep koşmaz.
+
+    27.09.2026'ya kadar beyan "sıcaklık kT/J cinsindendir" diyordu; coupling
+    ≠ 1'de YANLIŞTI. ÖLÇÜLDÜ (L = 16, tohum 5, 500 burn + 4000, T = 2.269185):
+    coupling 0.5 / 1 / 2 → ⟨|m|⟩ 0.089652 / 0.734195 / 0.998039 — aynı "T",
+    üç ayrı faz. `T` basan (bölmeyen) ya da `T·J` basan mutant düşer; basamak
+    kaybı mutantı (.6g → .2g / .3g / .5g) üçüncü durumda düşer.
+    """
+    for J, T, beklenen in ((2.0, (3.0, 4.0), "kT/J = T/J: 1.5, 2"), (0.5, (3.0, 4.0), "kT/J = T/J: 6, 8"),
+                           (2.0, (4.53837, 6.0), "kT/J = T/J: 2.26918, 3")):
+        yontem = dict(
+            provenance_for(
+                dataclasses.replace(UCUZ_METRO, coupling=J, temperatures=T),
+                plateau_reached=np.array([True, True]),
+                tau_int=np.array([1.0, 2.0]),
+            ).as_lines()
+        )["Yöntem"]
+        assert f"J = {J:g} (girdi)" in yontem
+        assert yontem.endswith(beklenen)
+
+
+@pytest.mark.parametrize("taban", [UCUZ_METRO, UCUZ_WOLFF], ids=["metro", "wolff"])
+def test_SICAKLIK_ENERJI_BIRIMINDE_yalniz_T_bolu_coupling_sayiyor(taban):
+    """`(coupling, T) = (2, 2T')` koşumu `(1, T')` koşumuyla BİT BİT aynı.
+
+    2'nin kuvvetiyle ölçekleme IEEE'de kesindir: `dE/T` aynı sayıdır, kabul
+    kararları da. Beyanın ("kT/J = T/coupling") MOTORA bağlandığı yer burası:
+    fabrika `T`yi kT/J sanıp motora `T·coupling` geçirseydi seriler ayrışırdı
+    (iki dalda da sınandı: metropolis A3, wolff W1). Enerji serisi tam 2
+    katıdır; Wolff enerji TUTMAZ, orada yalnız `m` karşılaştırılır ve o da
+    kesindir (`wolff.py::run_wolff` `p_bond = 1 - exp(-2J/T)`).
+    """
+    bir = build_spin(taban)
+    iki = build_spin(dataclasses.replace(taban, coupling=2.0, temperatures=tuple(2.0 * t for t in taban.temperatures)))
+    for a, b in zip(bir.samples, iki.samples, strict=True):
+        assert np.array_equal(a.magnetisation_series, b.magnetisation_series)
+        if a.energy_series is None:
+            assert b.energy_series is None and taban is UCUZ_WOLFF
+        else:
+            assert np.array_equal(2.0 * a.energy_series, b.energy_series)
+
+
+@pytest.mark.parametrize("J", [-1.0, 0.0, float("inf"), float("-inf"), float("nan")])
+def test_PYTHON_YOLU_da_coupling_KAPSAM_KAPISINDAN_geciyor(J):
+    """Yükleyicinin `J <= 0` kapsam kararı + sonluluk Python yolunda da geçerli.
+
+    ÖLÇÜLDÜ (kapı YOKKEN): `SpinScenario(coupling=-1)` panele kadar koşuyordu
+    — T = 3 / 4'te ⟨|m|⟩ 0.055 / 0.064, Binder −0.046 / −0.040,
+    `converged=True`, AFM için anlamsız ve uyarısız. `coupling=inf`/`nan`
+    hatayı ancak `build_spin_payload`da, enerji serisi mesajıyla veriyordu.
+    Motorun kendisi J < 0'ı koşmaya DEVAM EDER; onu hf-spin ayar testi
+    (`tests/bridge/test_dusen_adaylar.py`) kullanır ve kilitler. Public
+    `provenance_for` da aynı kapıdan geçer: kapı yokken J = 0'da ham
+    ZeroDivisionError, J < 0 / inf / nan'da hatasız anlamsız kT/J basıyordu.
+    """
+    with pytest.raises(InvalidInputError, match="coupling"):
+        build_spin(dataclasses.replace(UCUZ_METRO, coupling=J))
+    with pytest.raises(InvalidInputError, match="coupling"):
+        provenance_for(dataclasses.replace(UCUZ_METRO, coupling=J), plateau_reached=np.ones(2, bool), tau_int=np.ones(2))
+
+
+def test_DONMA_YAML_dan_ULASILIR_ve_PANEL_YAKINSADI_DEMIYOR(tmp_path):
+    """Ising checkerboard T/J → ∞'da DONAR; `converged` bunu yakalıyor.
+
+    `coupling: 1.0e-6` kapıdan geçer (pozitif, sonlu: kapsam ihlali değil,
+    pencere sorunu). T/J = 1e6'da kabul ~1, her yarı-adım bir alt-örgüyü
+    bütünüyle çevirir: ⟨|m|⟩ ilişkisiz taban 0.099347 (L = 8, tam binom)
+    yerine ~1. ÖLÇÜLDÜ: bu pencerede 12/12 tohumda ⟨|m|⟩ ≥ 0.968 ve 12/12
+    `converged=False`; geniş taramada tabanın 1.5 katını aşan 128/128 satırda
+    plato yok (L = 8/16/32). Bayrak zaten düştüğü için KAPI DEĞİL BEYAN
+    seçildi. Kabulü yarıya indiren mutant donmayı çözer (ilk assert),
+    `converged`i sabitleyen mutant ikinciyi düşürür; aynı pencerede J = 0.2
+    (T/J = 5, 12/12 tohumda plato) `True` — dedektör gerçek bir koşumu ayırıyor.
+    """
+    senaryo = load_scenario(
+        _yaz(
+            tmp_path,
+            "kind: spin\nname: donma\nmodel: ising\nalgorithm: metropolis\n"
+            "lattice_size: 8\ntemperatures: [1.0]\nn_sweep: 800\nn_burn: 200\n"
+            "seed: 20260823\ncoupling: 1.0e-6\n",
+        )
+    )
+    yuk = build_spin_payload(build_spin(senaryo))
+    kaynak = provenance_for(
+        senaryo, plateau_reached=yuk.plateau_reached, tau_int=yuk.tau_int
+    )
+    assert yuk.magnetisation[0] > 0.9
+    assert kaynak.converged is False
+    assert dict(kaynak.as_lines())["Yakınsama"].startswith("✗")
+    ayni = dataclasses.replace(senaryo, coupling=0.2)
+    yuk = build_spin_payload(build_spin(ayni))
+    assert provenance_for(ayni, plateau_reached=yuk.plateau_reached, tau_int=yuk.tau_int).converged is True
+
+
+def test_KHI_ENERJI_EKSI_BIR_BIRIMINDE_ve_NPZ_coupling_TASIYOR(tmp_path, capsys):
+    """`(J, T) → (J/2, T/2)`: ⟨|m|⟩, Binder, C BİT BİT aynı, χ tam 2 KATI (enerji⁻¹; karşılaştırılacak
+    sayı J·χ). Beyan panelde; `coupling` `.npz`de ayrı anahtar (kT/J metin ayrıştırmadan kurulur)."""
+    from qlab import run
+    bir = build_spin_payload(build_spin(UCUZ_METRO))
+    yol = _yaz(tmp_path, "kind: spin\nname: khi\nmodel: ising\nalgorithm: metropolis\nlattice_size: 8\n"
+               "temperatures: [1.5, 2.0]\nn_sweep: 800\nn_burn: 200\nseed: 20260823\ncoupling: 0.5\n")
+    assert run.main([str(yol), "-o", str(tmp_path / "khi.npz")]) == 0
+    with np.load(tmp_path / "khi.npz", allow_pickle=False) as v:
+        assert float(v["coupling"]) == 0.5
+        for ad in ("magnetisation", "binder", "heat_capacity"):
+            assert np.array_equal(v[ad], getattr(bir, ad)), ad
+        assert np.array_equal(0.5 * v["susceptibility"], bir.susceptibility)
+        yaklasim = json.loads(str(v["provenance_json"]))["approximations"]
+    assert any("chi 1/l ile olceklenir, coupling'ler arasi karsilastirilacak sayi J*chi'dir" in a for a in yaklasim)
 
 
 # ---------------------------------------------------------------------------

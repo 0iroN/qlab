@@ -188,8 +188,15 @@ class SpinScenario:
     """Spin Monte Carlo sıcaklık taraması.
 
     BİRİM DÖNÜŞÜMÜ YOKTUR VE BU BİR EKSİKLİK DEĞİL BİR BEYANDIR: bu modülde
-    `J = k_B = 1` bir BİRİM SEÇİMİDİR. `temperatures` bu yüzden `kT/J`
-    cinsindendir ve KELVİN DEĞİLDİR; `coupling` ile `field` de boyutsuzdur.
+    `k_B = 1` bir BİRİM SEÇİMİDİR. `temperatures`, `coupling` ve `field`
+    AYNI enerji birimindedir ve sıcaklık KELVİN DEĞİLDİR. `coupling` (J) bir
+    GİRDİDİR, 1'e kilitli değildir: Onsager'in `kT_c/J`'siyle karşılaştırılacak
+    sayı `kT/J = T/coupling`'dir (27.09.2026'ya kadar burada "`J = k_B = 1`,
+    sıcaklık kT/J cinsinden" yazıyordu; coupling ≠ 1'de YANLIŞTI — ölçüldü:
+    T = 2.269185'te coupling 0.5 / 1 / 2 → ⟨|m|⟩ 0.090 / 0.734 / 0.998;
+    L = 16, tohum 5, 500 burn + 4000 ölçüm). `coupling` sonlu ve POZİTİF
+    olmalıdır: yükleyici (`ScenarioError`) ve Python yolunda `build_spin` ve
+    `provenance_for` (`InvalidInputError`) reddeder; motor J < 0'ı BİLEREK koşar.
     `TBScenario` eV'den hartree'ye çevirir çünkü TB literatürü eV'de
     yayınlanır; burada çevrilecek bir şey yoktur, çünkü ölçülen büyüklükler
     (`kT_c/J`, kritik üsler) zaten boyutsuzdur. Bu, `DownfoldScenario`nun
@@ -256,7 +263,7 @@ class EMScenario:
     hükmün penceresinin dışına taşınması ON KEZ ölçüldü.
 
     BİRİM DÖNÜŞÜMÜ YOKTUR, çünkü çevrilecek bir şey yoktur: bu modülde
-    `c = ε₀ = μ₀ = 1` bir BİRİM SEÇİMİDİR (Modül 4'ün `J = k_B = 1`'iyle aynı
+    `c = ε₀ = μ₀ = 1` bir BİRİM SEÇİMİDİR (Modül 4'ün `k_B = 1`'iyle aynı
     statüde). `radii` ve `wavelength_per_radius` HÜCRE cinsindendir, metre
     değil; frekanslar `1/(hücre)` cinsindendir, hertz değil.
 
@@ -335,7 +342,7 @@ class GravScenario:
     penceresinin dışına taşınması ON BİRDEN FAZLA kez ölçüldü.
 
     BİRİM DÖNÜŞÜMÜ YOKTUR, çünkü çevrilecek bir şey yoktur: `G = c = 1` bir
-    BİRİM SEÇİMİDİR (Modül 4'ün `J = k_B = 1`'i ve Modül 5'in
+    BİRİM SEÇİMİDİR (Modül 4'ün `k_B = 1`'i ve Modül 5'in
     `c = ε₀ = μ₀ = 1`'i ile aynı statüde). `mass` bu yüzden kilogram DEĞİLDİR
     ve `richardson`ın basamakları metre değildir; ölçülen büyüklüklerin hepsi
     (`2π(2+2γ−β)`, `πλ²(3+e²/6)`, `1+γ`, `|E|^{3/2}T/(G²m^{5/2})`) zaten

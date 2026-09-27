@@ -211,7 +211,8 @@ def test_YIRMI_BIR_CIFTIN_TAMAMI_BIR_KOVADA():
 def test_KOVA_TABLOSU_SAYIMI_SABITI_TUTUYOR_ve_TOPLAM_21():
     """Modül 7 kapanışında (30.08.2026) ÖLÇÜLDÜ: GERÇEK KÖPRÜ 1 · TAUTOLOJİ 4
     · YAPISAL YOK 8 · BENZERLİK 0 · ÖLÇÜLMEDİ 8; 22.09.2026'da 2/4/8/0/7
-    (tdse-md), 24.09.2026'da 3/4/8/0/6 (md-tb). Toplam 21 = C(7, 2) korunur.
+    (tdse-md), 24.09.2026'da 3/4/8/0/6 (md-tb), 27.09.2026'da 3/5/8/0/5
+    (hf-spin, kenarsız hükümle). Toplam 21 = C(7, 2) korunur.
 
     Testin adı 24.09.2026'da değişti (eski ad
     `test_KOVA_SAYILARI_1_4_8_0_8_ve_BENZERLIK_BOS_KALMASI_BIR_OLCUM`): hem
@@ -264,10 +265,11 @@ def test_OLCULMEDI_AYRI_BIR_KOVADIR_ve_HICBIR_SAYI_TASIMAZ():
     29.08.2026'da sekiz çift (tdse-md, tdse-tb, tdse-spin, hf-spin, md-tb,
     md-em, tb-em, spin-em) ikincideydi: o soruyu ölçen ajan API bağlantısı
     kopunca öldü ve hiçbir sayı gelmedi. Bu bir YOKLUK BEYANIDIR, bir sonuç
-    DEĞİL. İkisi kenarları yazılarak ayrıldı (tdse-md 22.09, md-tb 24.09);
-    bugün ALTI çift burada — sayı var, hüküm yok (22.09).
+    DEĞİL. İkisi kenarları yazılarak ayrıldı (tdse-md 22.09, md-tb 24.09),
+    üçüncüsü kenarsız, HÜKÜM verilerek (hf-spin 27.09 -> TAUTOLOJİ); bugün
+    BEŞ çift burada — sayı var, hüküm yok (22.09).
 
-    Kilit üç parçalı: (a) çiftler tam olarak o altı, (b) hepsinin
+    Kilit üç parçalı: (a) çiftler tam olarak o beş, (b) hepsinin
     `buyukluk`u `None` — çünkü 22.09.2026'da sayı geldi ama HÜKÜM gelmedi
     (sekiz hükmün sekizi 3/3 çürütüldü; 29.08'de hiç sayı gelmemişti), (c)
     beyan dizgesi YALNIZCA bu kovada geçiyor. (c) olmadan bu kovayı `YAPISAL_YOK`a
@@ -278,15 +280,15 @@ def test_OLCULMEDI_AYRI_BIR_KOVADIR_ve_HICBIR_SAYI_TASIMAZ():
     # ("md", "tdse") ARTIK BURADA DEĞİL: kenarı 22.09.2026'da yazıldı, çift
     # `GERCEK_KOPRU`ya geçti. Sekiz -> YEDİ. ("md", "tb") de 24.09.2026'da
     # aynı yolu izledi (kenarı `engine/md/tb_kuvvet.py`). Yedi -> ALTI.
+    # ("hf", "spin") 27.09.2026'da kenarsız TAUTOLOJİ'ye geçti. Altı -> BEŞ.
     assert {f.cift for f in olculmedi} == {
         ("tb", "tdse"),
         ("spin", "tdse"),
-        ("hf", "spin"),
         ("em", "md"),
         ("em", "tb"),
         ("em", "spin"),
     }
-    assert len(olculmedi) == 6  # 24.09.2026: md-tb de ayrildi (kenarı yazıldı)
+    assert len(olculmedi) == 5  # 27.09.2026: hf-spin hükümle ayrıldı
     # Beyan dizgesi HARFİ HARFİNE aranıyor, `HICBIR_SAYI_GELMEDI` sabiti
     # ÜZERİNDEN DEĞİL: gerekçeler o sabitten kuruluyor, dolayısıyla sabiti
     # "ölçüldü, sıfır çıktı" diye değiştiren bir mutant sabit üzerinden

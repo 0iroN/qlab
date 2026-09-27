@@ -42,6 +42,19 @@ gormuyor" degil. Ilginc olan su: ayni mutantta Heisenberg'in Mermin-Wagner
 egimi -1.0062'den yalnizca -0.9864'e gidiyor ve sinirin icinde kaliyor --
 yani bu mutanti Mermin-Wagner testi DEGIL, Onsager-Yang testi yakalar.
 
+DONMA -- T/|J| -> SONSUZ LIMITI ILISKISIZ TABAN DEGILDIR (Ising). Kabul ~1
+olunca her yari-adim bir alt-orguyu BUTUNUYLE cevirir; iki yari-adim tum
+kafesi cevirir ve `|m|` baslangici okur (J = 0'da tam 1.0, kabul 1.0).
+Olculdu (27.09.2026, public panel yolu, L = 16, T = 1 ve 2, 200 burn): J = 1e-4
+(T/J = 1e4 ve 2e4), 4000 olcumde `<|m|>` 0.27-0.45, iliskisiz taban 0.0498. Bu bir motor
+hatasi degil, checkerboard'un periyot-2 dinamigidir; panelde binning platosu
+bu rejimde OLUSMAZ (tabanin 1.5 katini asan 128/128 satir, L = 8/16/32) ve
+beyan `engine/spin/factory.py`dedir. Heisenberg'in surekli onerisi donmaz.
+
+SKALER `coupling` / `field` ZORUNLU: dizi sessizce yayinlanirdi. Olculdu: (L, L)
+kademeli alan istisnasiz kosuyor ve `energy_series` (n, L, L) cikiyordu
+(L = 8, h = 0.3 eta: -124.2 / -91.8, dogru skaler deger -108.6).
+
 BEYAN EDILEN MALIYET: `model.propose` HER site icin oneri uretir, ama bir
 yari-adimda sitelerin yarisi kullanilir. Yani Heisenberg'de rastgele sayilarin
 yarisi bosa gider. Bu bilincli: protokolu "yalniz su siteler icin oneri uret"
@@ -116,7 +129,19 @@ def _alt_orgu_maskeleri(L: int) -> tuple[np.ndarray, np.ndarray]:
     return maskeler
 
 
-def _dogrula(state: SpinState, model: SpinModel, temperature: float) -> None:
+def _dogrula(
+    state: SpinState,
+    model: SpinModel,
+    temperature: float,
+    coupling: float,
+    field: float,
+) -> None:
+    for ad, deger in (("coupling", coupling), ("field", field)):
+        if np.ndim(deger) != 0:
+            raise InvalidInputError(
+                f"{ad} SKALER olmali, verilen sekil {np.shape(deger)}: dizi "
+                "sessizce yayinlanir ve enerji serisi yanlis sekilde cikar."
+            )
     if state.L % 2 != 0:
         raise InvalidInputError(
             f"checkerboard Metropolis CIFT L gerektirir, verilen: L = {state.L}. "
@@ -153,7 +178,7 @@ def metropolis_sweep(
     yari-adimda kullanmak, ikinci alt-orgunun bayat komsu alanini gormesi
     demek olurdu ve ayrintili dengeyi bozardi.
     """
-    _dogrula(state, model, temperature)
+    _dogrula(state, model, temperature, coupling, field)
     spins = state.spins
     L = state.L
 
@@ -197,7 +222,7 @@ def run_metropolis(
     dagilimdan gelir), yani orada da tamdir. Yalniz burn-in SONRASI sweep'ler
     sayilir: burn-in'deki kabul orani denge degeri DEGILDIR.
     """
-    _dogrula(state, model, temperature)
+    _dogrula(state, model, temperature, coupling, field)
     if n_sweep < 1:
         raise InvalidInputError(f"n_sweep en az 1 olmali, verilen: {n_sweep}")
     if n_burn < 0:

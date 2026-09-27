@@ -40,7 +40,7 @@ GEÇERLİLİK PENCERESİ — BEYAN EDİLİYOR:
   alt-örgüdeki komşu bağ sayısı — L=5: 50 bağın 10'u (%20.0), L=9: 162'nin
   18'i (%11.1), L=17: 578'in 34'ü (%5.9); çift L'de 0. O bağların iki ucu
   aynı anda güncellenir ve ayrıntılı denge bozulur.
-- Klasik spin, kare kafes, `J = k_B = 1` birim seçimi, sonlu L.
+- Klasik spin, kare kafes, `k_B = 1` birim seçimi (J bir girdidir), sonlu L.
 - Bu dosya faz geçişi, kritik üs veya T_c hakkında HİÇBİR ŞEY iddia etmez;
   onlar Task 5'indir.
 """
@@ -669,6 +669,32 @@ def test_GECERSIZ_SICAKLIK_REDDEDILIYOR(gecersiz):
             field=0.0,
             rng=np.random.default_rng(TOHUM),
         )
+
+
+@pytest.mark.parametrize(
+    "ad, dizi",
+    [
+        ("field", 0.3 * (-1.0) ** np.add.outer(np.arange(8), np.arange(8))),
+        ("field", np.array([0.3])),
+        ("coupling", np.ones((8, 8))),
+        ("field", [[0.3 * (-1.0) ** (i + j) for j in range(8)] for i in range(8)]),  # liste: ndarray değil
+        ("coupling", (1.0,)),
+    ],
+)
+def test_SKALER_OLMAYAN_field_ve_coupling_REDDEDILIYOR(ad, dizi):
+    """Dizi SESSİZCE yayınlanırdı. ÖLÇÜLDÜ (27.09.2026, kapı YOKKEN, L = 8,
+    T = 2, tohum 5, 50 sweep): kademeli (L, L) alan istisnasız koşuyor ve
+    `energy_series` (50, 8, 8) çıkıyordu (değerler −124.2 / −91.8, doğru
+    skaler −108.6); (1,) alan (50, 1) şekilli seri, (L, L) coupling (50, 8, 8).
+    Depoda meşru dizi kullanımı YOK (grep: her `field=`/`coupling=` skaler).
+    Kapı iki giriş kapısında da (`run_metropolis`, `metropolis_sweep`) durur;
+    liste/demet de reddedilir (`isinstance(ndarray)` diye daraltan mutant düşer)."""
+    girdi = {"coupling": 1.0, "field": 0.0, ad: dizi}
+    ortak = dict(temperature=2.0, rng=np.random.default_rng(5), **girdi)
+    with pytest.raises(InvalidInputError, match=f"{ad} SKALER"):
+        run_metropolis(SpinState.uniform(L=8, n_component=1), IsingModel(), n_sweep=1, n_burn=0, **ortak)
+    with pytest.raises(InvalidInputError, match=f"{ad} SKALER"):
+        metropolis_sweep(SpinState.uniform(L=8, n_component=1), IsingModel(), **ortak)
 
 
 @pytest.mark.parametrize("n_sweep, n_burn", [(0, 10), (-1, 0), (10, -1)])

@@ -71,7 +71,8 @@ UC SINIR, UCU DE SESSIZ OLSAYDI TEHLIKELI OLURDU:
    T = 1e6/1e7/1e8/1e9 icin +4.189e-07/-08/-09/-10). J = -1 ve T = 1.5'in
    gercek degeri 0.009542350.
    Yani sonuc sonsuz sicakligindir, hata 20 KAT ve hicbir
-   istisna atilmaz.
+   istisna atilmaz. Bu, KAPI OLMASAYDI olacak olandir: `_dogrula` J <= 0'i
+   (ve sonlu olmayan J'yi) reddeder, yani bugun hicbir yol bunu sessizce kosamaz.
 
 `energy_series` ve `acceptance_rate` `None` DONER, sifir degil. Gerekcesi
 `metropolis.py`deki `SamplingResult` dokstringinde yazilidir: kume cevirmede

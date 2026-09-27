@@ -44,11 +44,12 @@ from qlab.observable.spin_obs import (
 
 @dataclass(frozen=True, eq=False)
 class SpinPayload:
-    """Sicaklik taramasi cizimi icin gereken her sey. HEPSI BOYUTSUZ.
+    """Sicaklik taramasi cizimi icin gereken her sey. SI birimi YOK.
 
-    `temperatures` kT/J cinsindendir; kelvin YOKTUR (bkz. birim secimi
-    beyani). Butun diziler ayni uzunluktadir ve senaryonun sicaklik listesiyle
-    AYNI SIRADADIR.
+    `temperatures` `coupling` ile ayni ENERJI birimindedir (k_B = 1; kT/J =
+    T/coupling); kelvin YOKTUR (bkz. birim secimi beyani). `susceptibility`
+    enerji^-1 birimindedir (bkz. birim beyani). Butun diziler ayni
+    uzunluktadir ve senaryonun sicaklik listesiyle AYNI SIRADADIR.
 
     `magnetisation_error` blok-ortalamasi hatasidir. `plateau_reached` False
     olan indislerde bu sayi hatanin KENDISI DEGIL bir ALT SINIRIDIR ve
