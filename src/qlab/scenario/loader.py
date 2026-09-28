@@ -846,6 +846,21 @@ def _load_em_scenario(raw: dict, file_path: Path) -> EMScenario:
         )
     if not eps_r > 0.0 or not math.isfinite(eps_r):
         raise ScenarioError(f"'eps_r' pozitif ve sonlu olmalı, verilen: {eps_r}")
+    # ETKİN COURANT (28.09): ham S kapısı yalnız eps_r >= 1'de yeter; eps_r < 1'de
+    # dalga c/√eps_r ile vakumdan HIZLIDIR. Kapı yokken eps_r = 0.25, S = 0.5
+    # yükleniyor, alanlar inf/nan'a taşıyor ve CLI nedeni anmadan "iki tepe
+    # bulunamadı" diyordu. Python yolundaki eşi: `factory._courant_kapisi`.
+    # min(eps_r, 1) EŞDEĞER MUTANTTIR (silinse davranış bit bit aynı: ham kapı önce
+    # koşar); kapıyı sıradan bağımsız kılmak için tutuldu (fabrika `0 < eps < 1` yazar).
+    etkin = courant / math.sqrt(min(eps_r, 1.0))
+    if etkin > _EM_COURANT_LIMIT_2D:
+        k = 5 - math.floor(math.log10(tavan := _EM_COURANT_LIMIT_2D * math.sqrt(eps_r)))
+        s_max = math.floor(tavan * 10**k) / 10**k  # 6 haneye AŞAĞI kesilir: öneri geçmeli
+        raise ScenarioError(
+            f"eps_r = {eps_r!r} < 1 ortamda dalga vakumdan hızlıdır ve etkin Courant "
+            f"S/√eps_r = {etkin!r} 2B sınırını ({_EM_COURANT_LIMIT_2D!r}) aşıyor "
+            f"(courant = {courant!r}); en çok S = {s_max!r} olabilir."
+        )
     if margin < 1:
         raise ScenarioError(
             f"'margin' en az 1 olmalı, verilen: {margin}. Merkez düğümü ile "

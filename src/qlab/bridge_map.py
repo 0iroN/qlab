@@ -67,33 +67,8 @@ class Kova:
 
     OLCULMEDI AYRI BIR KOVADIR -- spec 7.2.
     "OLCULDU, SIFIR CIKTI" ile "HIC OLCULMEDI" AYNI HUCREYE YAZILAMAZ.
-    29.08.2026'da SEKIZ sifir-kod-kenarli cift (tdse-md, tdse-tb, tdse-spin,
-    hf-spin, md-tb, md-em, tb-em, spin-em) IKINCIDEYDI: o soruyu olcen ajan
-    API baglantisi kopunca oldu ve HICBIR SAYI GELMEDI.
-
-    22.09.2026'DA DURUM DEGISTI VE KOVA YEDIYE DUSTU. spec 7.2'nin on
-    olcumu kosuldu (34 ajan: 8 olcum + her hukme uc mercekli curutme) ve
-    SEKIZININ SEKIZINDE DE SAYI GELDI. Ikisi ayrildi:
-      - `tdse-md` GERCEK_KOPRU'ya gecti, cunku kenari YAZILDI
-        (`engine/tdse/from_md.py`, 22.09.2026).
-      - Kalan YEDI hala burada, ama ARTIK BASKA BIR SEBEPLE: sayi geldi,
-        HUKUM verilemedi. Gerekceleri bunu adiyla yazar.
-    (Bu paragraf 22.09.2026'nin TARIHSEL kaydidir.)
-
-    24.09.2026'DA KOVA ALTIYA DUSTU: `md-tb` GERCEK_KOPRU'ya gecti, cunku
-    kenari YAZILDI (`engine/md/tb_kuvvet.py`, ss-sigma TB kuvvet alani).
-    Kod kenari yazilinca cift OLCULMEDI'de KALAMAZ -- `tablo_tutarsizliklari`
-    birinci kilidi buna izin vermez. Kalan ALTI hala burada, 22.09'un
-    sebebiyle: sayi geldi, HUKUM verilemedi.
-    "OLCULDU, SIFIR CIKTI" ile "HIC OLCULMEDI" hala AYRI KOVADIR ve bu
-    altisini YAPISAL_YOK'a katlamak, hukum verilmemis bir seyi verilmis
-    gibi gostermek olurdu. (Bu paragraf 24.09.2026'nin TARIHSEL kaydidir.)
-
-    27.09.2026'DA KOVA BESE DUSTU: `hf-spin` TAUTOLOJI'ye gecti -- kenar
-    YAZILMADAN, HUKUM VERILEREK (hf-spin on olcumu, 10 ajan). Ilk kez bir
-    cift OLCULMEDI'den kod kenari olmadan cikti; kova sozlugu BUKULMEDI,
-    yeni kova acilmadi (gerekce satirin kendisinde). Kalan BES hala
-    22.09'un sebebiyle burada: sayi geldi, HUKUM verilemedi.
+    Onu YAPISAL_YOK'a katlamak hukum verilmemis bir seyi verilmis gibi gosterirdi;
+    kova TARIHCESI (hangi cift ne zaman, neden gecti) TEK YERDE: `KOVA_SAYILARI` yorumu.
     """
 
     GERCEK_KOPRU = "GERCEK_KOPRU"
@@ -476,7 +451,7 @@ def taranamayanlar(kok: Path | str | None = None) -> tuple[str, ...]:
 _GRAV_ORANI = 8.093550856608016e-37
 _HF_TDSE_NOKTA = 4.096e09
 
-# --- Dusen adaylarin OLCULMUS buyuklukleri (Task 4 02.09.2026: iki; 27.09.2026: hf -> spin, uc) ---
+# --- Dusen adaylarin OLCULMUS buyuklukleri (Task 4: iki; 27.09: hf -> spin; 28.09: tdse -> spin) ---
 # Bu sayilar bir motor kosturularak uretildi ama BURAYA LITERAL yazildi:
 # bu modul hicbir motoru import etmez. Testler (`tests/bridge/
 # test_dusen_adaylar.py`) motoru kosturup bu literalleri canli olcume karsi
@@ -503,6 +478,18 @@ _TB_SPIN_M_FARKI = 0.0
 #: bir OLCUM sonucu, `tests/bridge/test_dusen_adaylar.py` canli sinar.
 _HF_SPIN_M_FARKI = 0.0
 
+_TDSE_SPIN_M_FARKI = 0.0  #: `tdse -> spin` (28.09.2026): dort TDSE `J`si, ayni test ve pencere.
+
+#: SPIN HEDEFININ ORTAK KOK NEDENI (28.09.2026; 22.09 P8: ayni olgu uc ayri
+#: gerekcede uc bagimsiz olgu gibi gorunmesin). `tb/hf/tdse -> spin` bunu okur.
+_SPIN_BUYUKLUGU_SILER = (
+    "KOK NEDEN `engine/spin/metropolis.py:189-191` (`ast` ile kilitli): `coupling` yalniz "
+    "`delta`yi carpiyor ve kabul olcutune `delta / temperature` olarak giriyor, yani ciktiya "
+    "SADECE `coupling/temperature` ORANI olarak giriyor; `h = 0`'da baska enerji olcegi YOK -- "
+    "spin hedefi, kaynak hangi motor olursa olsun, J'nin BUYUKLUGUNU SILER. Bit bit esitlik bir "
+    "OLCUM sonucudur, ozdeslik degil (float'ta esik 1 ulp oynayabilir; olcumu her gerekcede). "
+)
+
 _HF_SPIN_GEREKCE = (
     "SIFIR kod kenari, ama HUKUM VAR (27.09.2026 on olcumu, 10 ajan; "
     "`.superpowers/sdd/hf-spin-on-olcum-2026-09-27.md`). 29.08.2026'dan beri "
@@ -515,7 +502,7 @@ _HF_SPIN_GEREKCE = (
     "-0.00017495439344641936 / -1.9411358087445856e-05 Ha. 17 hane bu pencerenin "
     "kaydidir, fiziksel olarak ~7 anlamli hane (bu uc J'de esik oynatilinca "
     "bagil <= 1.89e-9, DIIS kapali 2.73e-9, tohum yayilimi <= 4.95e-9; eksenin "
-    "en kotusu 7.35e-8, 6-31G R = 3). "
+    "en kotusu 7.35e-8, 6-31G R = 3). " + _SPIN_BUYUKLUGU_SILER +
     "BUYUKLUK SADELESIYOR: protokol A (T = 2.269185 * |J|, Ising L = 32, h = 0, "
     "tohum 20260822, 2000 sweep burn-in DAHIL olculur, Neel baslangic) uc J'de `m` serisi "
     "J = -1'inkiyle bit bit ayni ve E == |J| * E(-1) bit bit (bu pencerede 3/3, "
@@ -524,7 +511,7 @@ _HF_SPIN_GEREKCE = (
     "[1e-9, 1e9]'de 60 rastgele K, E bit bit sinanmadi); "
     "protokol B'de (300 K) HF basamagi tb basamagiyla ve HF icerigi sifir "
     "sentetik bir merdivenle yorunge duzeyinde bit bit ayni (on olcum, sha256 "
-    "6/6; testte kosturulmaz). Bit bit bir OLCUM sonucudur, ozdeslik degil "
+    "6/6; testte kosturulmaz). OLCUMUN KANITI "
     "(R = 6/7'de karar esigi 1 birim farkli, elestirmen E1c). ISARET "
     "BIR AYAR ETIKETIDIR: h = 0 ve cift L'de (J, s0) ile (-J, eta * s0) "
     "kosumlari her sweep'te s(-J) == eta * s(J), eta = (-1)^(i+j) -- AFM(-J) "
@@ -549,6 +536,70 @@ _HF_SPIN_GEREKCE = (
     "cumlesinin esi: AFM'yi YAML'a acmak ya da kademeli gozlemlenebilir yazmak "
     "da kenari ACMAZ; cikan seri FM ciktisinin ayar-imgesidir. TUR A -- "
     "DUZELTILEMEZ (h = 0 motorunda)."
+)
+
+_ON_OLCUM_28_09 = "(28.09.2026 on olcumu; `.superpowers/sdd/olculmedi-bosaltma-on-olcum-2026-09-28.md`)"
+
+_TDSE_SPIN_GEREKCE = (
+    "SIFIR kod kenari, HUKUM VAR " + _ON_OLCUM_28_09 + "; 22.09'un YAPISAL_YOK hukmu DUSTU. "
+    "KAYNAK GERCEK: 1B soft-Coulomb H2 (e-e dahil), iki elektronun uzayi `Grid2D` + sanal zaman "
+    "`SplitOperatorPropagator` (SEVK EDILMIS ama bu birlesim TESTSIZ; triplet izdusumle), "
+    "J = (E_S - E_T)/2. PENCERE: n = 256, L = 40, dt = 0.01, yumusatma a = b = 1; J(R = 3/4/5/6 "
+    "bohr) = -0.03679538951052319 / -0.010055270069717404 / -0.0021743343691629224 / "
+    "-0.00041083190968227434 Ha, bagimsiz eigsh ile fark <= 2.3e-10, yani ~9-10 anlamli hane; "
+    "YUMUSATMA DUGMEDIR: a = b 0.707 -> 1.414'te J R = 3/4/6'da 1.88/4.52/23.2 kat oynar. TDSE "
+    "tarafi testte KOSMAZ, J'ler LITERAL. " + _SPIN_BUYUKLUGU_SILER + "PROTOKOL A (T = t * |J|): "
+    "on olcumde spin_tarama'da 42/42 seri ve E == |J| * E(1) bit bit (14/48 kabul sinifi 1 ulp "
+    "farkli); testte `hf -> spin` penceresinde canli. PROTOKOL B (300 K = 9.500e-04 Ha, ayni "
+    "pencere, public YAML yolu J <= 0'i ScenarioError ile reddeder, coupling = |J|, sayilar FM "
+    "imgesidir): R = 3/4/5'te T/|J| = 0.026 / 0.094 / 0.437 < 0.5, zincir DONAR ya da DOYAR "
+    "(pencere ayirmaz) -- |m| serisi tamamen 1.0, kabul 0.0, J = 1 / T = 1e-3 kosumuyla bit bit "
+    "ayni; tekbicim, -tekbicim, Neel baslangic ayni seriyi verir, denge |m| = 1 - O(e^(-8|J|/T)) "
+    "(R = 5'te 1.1e-8): cikti J'den bagimsiz; R = 6'da T/|J| = 2.312, <|m|> = 0.612 kipirdar ama "
+    "ayni T/|J|'de J = 1 kosumunun bit bit etiketidir (o T/|J| sevk listesinde yok, 0/4; ikisi "
+    "testte canli). BASLANGIC KANALI (sign(Re psi); yalniz motor yolu, `build_spin` HEP tekbicim): "
+    "T = 3.4'te 0.060307 keyfi baslangiclarin disinda ama 25 zincir tohumunda sira kesri tekduze "
+    "(KS p = 0.56) -- TASIMAZ. ISARET BIR AYAR ETIKETIDIR (`hf -> spin` gibi; K2: L = 16, h = 0, "
+    "T/|J| = 1.6/2.2/3.4 x 4 R, 1200 sweep'in hepsinde bit bit) ve bir TEOREMDIR, TDSE bilgisi "
+    "degil (40/40 rastgele sistemde E_S < E_T). TUR A -- DUZELTILEMEZ (h = 0 motorunda)."
+)
+
+#: EM HEDEFININ ORTAK TUR B YOLU (28.09.2026): `md -> em` ve `tb -> em`.
+_EM_ORTAM_HUKUMSUZ = (
+    "TUR B, HUKMU YOK: bilgi tasiyan tek yol EM'e konuma ya da yone gore degisen bir ortam "
+    "vermektir (sevk edilen yuzey TEKBICIM tek bir eps_r alir); o yolun buyuklugu serbest bir "
+    "beyana baglidir (ARGUMAN). "
+)
+
+_MD_EM_GEREKCE = (
+    "SIFIR kod kenari, HUKUM VAR " + _ON_OLCUM_28_09 + ". AKIM KANALI (J = sum q v) TUR A: "
+    "durust (esit) yukle sevk edilmis uc NVE senaryosunda (h2_morse, h2_aimd, tb_zincir_md) EM "
+    "kaydi BIT BIT 0.0 -- momentum korunumu; argon_nvt'de cikti Langevin termostatinin "
+    "tohumunun goruntusu (MD'siz bir ozyineleme 1.99e-15 farkla verir, kuvvet alani degisince "
+    "fark 1.85e-15); q girdiden geri okunur (K5); S = 1'de DYADIK J'de prob[n] + prob[n-1] == "
+    "J[n-d-1] bit bit (MD'nin float J'sinde 15/3989 nokta 1-8 ulp sapar: olcum, ozdeslik degil), "
+    "ama MD'siz rastgele DYADIK J'de de (0/3989). Her 0.0 semanin ya da korunumun sifiridir, "
+    "koprunun degil -> buyukluk None. ORTAM KANALI (MD konumu -> eps_r) bilgi tasir ve dogrusal "
+    "degildir (bagil artik D = 3'te 0.633, D = 0.003'te 0.00105; tb_zincir_md dimerlesmesi "
+    "0.075 -> 0.182 bohr yansimayi 0.175 oynatir); D, w, L serbest beyandir (1B pencere L = 0.05 "
+    "bohr/hucre, D = 3, w = 1, N = 2001, S = 0.5, PML 15, 7000 adim); sevk (yaricap) merdiveni "
+    "bu ortami HIC KOSMADI, D, w, L'ye K5 uygulanmadi, K4 icin md importu SART (ordek tipli "
+    "kopru tarayiciya gorunmez). " + _EM_ORTAM_HUKUMSUZ + "Sayilar testte kosturulmaz."
+)
+
+_TB_EM_GEREKCE = (
+    "SIFIR kod kenari, HUKUM VAR " + _ON_OLCUM_28_09 + ". TEKBICIM ortam TUR A: eps_r = K "
+    "kosumu, eps_r = 1, S/sqrt(K), adim * sqrt(K) kosumunun ETIKETIDIR -- K = 4 ve 16'da "
+    "panelin her alani bit bit ayni (public `load_scenario` -> `build_em` -> payload; tek dugme "
+    "kontrolu, yalniz S, 4.38e-6 ayrisir); eps_r frekanslardan TAM geri okunur (K3/K5) -> "
+    "buyukluk None. KONTRAST (ic disk, 0.5R) yolu: TB icerigi ciktiyi gurultunun 1350-4437 kati "
+    "kipirdatir ama b serbest beyani TB iceriginden BASKINDIR (b 10 -> 20: -9.0e-2; |t| x 2: "
+    "+2.6e-2 / +5.1e-2), metal zincir_tb'de taslak uretec sessizce eps = 1 verir (fail-open) ve "
+    "kontrastli kosumlarda sevk merdiveni YARGILANAMAZ der (p_inf None), K3/K4 uygulanmadi. "
+    + _EM_ORTAM_HUKUMSUZ + "R^-2 KAYDI: 22.09'un Bessel orani |kayma| serisi (eps_r x4, R = "
+    "5/10/20/40: 1.37e-02 .. 4.45e-04) bugun URETILEMIYOR; sevk borusu bugun -3.6e-03 / -1.0e-03 "
+    "/ -2.7e-04 / -6.8e-05 verir (ardisik oranlar 3.58 / 3.80 / 3.94): R^-2 yine tutuyor, "
+    "tasinan bugunkudur. Sayilar on olcumun kaydidir, testte kosturulmaz."
 )
 
 _GRAV_GEREKCE = (
@@ -665,18 +716,37 @@ _TB_MD_GEREKCE = (
     "totoloji; o sayi G4'te tekrar kosturulmadi)."
 )
 
-_OLCULMEDI_GEREKCE = (
-    "SIFIR KOD KENARI, AMA HUKUM YOK. Bu cifti olcen ajan 29.08.2026'da "
-    "API baglantisi kopunca oldu ve o gun " + HICBIR_SAYI_GELMEDI + ". "
-    "22.09.2026'DA SAYI GELDI AMA HUKUM GELMEDI: spec 7.2'nin on olcumu "
-    "(34 ajan; 8 olcum, her hukme uc mercekli curutme) bu cifti olctu ve "
-    "sekiz hukmun sekizi de 3/3 oyla CURUTULDU -- curuyen sey cogunlukla "
-    "KOVA degil SAYI ve PENCERE oldu. Yani bugun eldeki sey bir SONUC "
-    "degil, birbirini curuten adaylardir; sevk edilebilir tek bir buyukluk "
-    "ayakta kalmadi. 'OLCULDU, SIFIR CIKTI' ile 'HIC OLCULMEDI' AYNI "
-    "HUCREYE YAZILAMAZ -- ve 22.09'dan sonra UCUNCU bir hucre daha ayrilir: "
-    "'OLCULDU AMA HUKUM VERILEMEDI'. Bu yuzden buyukluk None. Tam rapor: "
-    "`.superpowers/sdd/modul7-72-on-olcum-2026-09-22.md`."
+#: OLCULMEDI girdilerinin ORTAK TARIHSEL BASI; NEDEN 28.09.2026'dan beri CIFT BASINADIR.
+_OLCULMEDI_TARIHCE = (
+    "SIFIR KOD KENARI, HUKUM YOK, buyukluk None. Bu cifti olcen ajan 29.08.2026'da API "
+    "baglantisi kopunca oldu ve o gun " + HICBIR_SAYI_GELMEDI + "; 22.09.2026'da sayi geldi ama "
+    "HUKUM gelmedi (spec 7.2 on olcumu, `.superpowers/sdd/modul7-72-on-olcum-2026-09-22.md`); "
+    + _ON_OLCUM_28_09 + " hukum yine VERILEMEDI ama NEDENI OLCULDU: "
+)
+
+_TDSE_TB_NEDEN = (
+    "sentezin 'iki-motor artigi eksi motorsuz taban <= 2.2e-16' olcutu bir TANIM SECIMIDIR "
+    "(depo `md -> tdse`de tabani DONDURULMUS-MD, yani tek-motor tabani diye tanimlar) ve "
+    "POZITIF KONTROLU YAPILMADI -- ayni olcut `md -> tdse`ye uygulansa bagimsiz bir cozucu "
+    "0.1317'yi de uretir ve sevk edilmis bir GERCEK_KOPRU 'sifir' cikar (ARGUMAN). Tutulmus "
+    "k'larda artik geri okuma degil FIZIGE BAGLI yakinsamadir (Mathieu s = 6/8/10 -> 8.08e-7 / "
+    "4.22e-8 / 2.77e-9) ve ters-sira K3 testi KORDUR (artik gurultu duzeyindeyken de 20/20 kip "
+    "`==`). Kova, tablo yazilip SEVK YOLUNDAN cagrilir mi sorusuna baglidir (`hf -> tb` emsali: "
+    "akis yok -> TAUTOLOJI); o sinav kosturulmadi."
+)
+
+_SPIN_EM_NEDEN = (
+    "p-kutuplanmada (`oblique.py`, TE_z; Ising'in s^z ekseni 2B TM_z bosluguna oturmaz) mu = M "
+    "ile eps = M yari-uzay kosumlari prob kaydinda bit bit ayni (12/12; M = 4 / "
+    "1.0653663504464286 / 2.25 / 1.001, ky = 0 / 0.08 / 0.14; ObliqueWindow varsayilanlari, 9000 "
+    "adim -- 20000 adimda M = 1.0654'te 12376. adimdan sonra ayrisir, bagil 1.9e-3: ikizlerin PML "
+    "sonumu farkli, `oblique.py` notu) -- OLCULDU AMA TEK ve CURUTULMEMIS bir olcum. Duzlem ici "
+    "anizotrop yol YON-BAGIMLIDIR: daire boslukta fiziksel olarak esdeger x ve y eksenleri farkli "
+    "hukum verir (c = 0.017'de x OTURDU, p_inf 3.007; y OTURMADI, p_inf 1.612; c = 0.065 ve "
+    "0.5'te iki eksen de YARGILANAMAZ) ve perturbasyon uyumu tek bir c'de (0.065; 0.02 / 0.15 / "
+    "0.3'te tutmuyor). "
+    "Hukum Ising ekseninin ve Lambda'nin BEYANINA baglidir: (mu - 1)/Lambda bit bit chi'dir ve "
+    "Lambda'nin hicbir bileseni depoda yok."
 )
 
 KOVA_TABLOSU: tuple[EdgeFact, ...] = (
@@ -715,7 +785,7 @@ KOVA_TABLOSU: tuple[EdgeFact, ...] = (
         gerekce=_TB_MD_GEREKCE,
         buyukluk=None,
     ),
-    # --- TAUTOLOJI (5) ------------------------------------------------------
+    # --- TAUTOLOJI (8) ------------------------------------------------------
     EdgeFact(
         kaynak="hf",
         hedef="tb",
@@ -768,12 +838,8 @@ KOVA_TABLOSU: tuple[EdgeFact, ...] = (
             "tohum 20260822, n_burn = 500, n_sweep = 1500. Besinde de "
             "max|m farki| = 0.0 (bit bit), E == J * E(J=1) (bit bit), kabul "
             "orani 0.187216796875 = 287565/1536000 besinde `==`. J 6.70 kat "
-            "degisti, cikti SIFIR kipirdadi. KOK NEDEN "
-            "`engine/spin/metropolis.py:189-191` (`ast` ile kilitli): "
-            "`coupling` yalniz `delta`yi carpiyor ve kabul olcutune "
-            "`delta / temperature` olarak giriyor, yani ciktiya SADECE "
-            "`coupling/temperature` ORANI olarak giriyor; `h = 0`'da baska "
-            "enerji olcegi YOK. KONTROL: h = 0.1'de ayni iki J'nin ciktisi "
+            "degisti, cikti SIFIR kipirdadi. " + _SPIN_BUYUKLUGU_SILER +
+            "KONTROL: h = 0.1'de ayni iki J'nin ciktisi "
             "9.961e-02 ayrisiyor -- motor ikinci bir olcek varsa J'yi GORUR, "
             "TB o olcegi (h) URETMEZ. BU YUZDEN TEK SATIR, kovasi TAUTOLOJI: "
             "U'yu buyutmek kenari ACMAZ (U/|t| = 4.07 / 8.13 / 16.26 / "
@@ -808,6 +874,10 @@ KOVA_TABLOSU: tuple[EdgeFact, ...] = (
         gerekce=_HF_SPIN_GEREKCE,
         buyukluk=_HF_SPIN_M_FARKI,
     ),
+    EdgeFact(kaynak="tdse", hedef="spin", kova=Kova.TAUTOLOJI,
+             gerekce=_TDSE_SPIN_GEREKCE, buyukluk=_TDSE_SPIN_M_FARKI),
+    EdgeFact(kaynak="md", hedef="em", kova=Kova.TAUTOLOJI, gerekce=_MD_EM_GEREKCE),
+    EdgeFact(kaynak="tb", hedef="em", kova=Kova.TAUTOLOJI, gerekce=_TB_EM_GEREKCE),
     EdgeFact(
         kaynak="md",
         hedef="spin",
@@ -906,47 +976,26 @@ KOVA_TABLOSU: tuple[EdgeFact, ...] = (
     # --- BENZERLIK (0) ------------------------------------------------------
     # Bicimsel analoji kovasi BOS: bu turda olculen yok. Bos kalmasi bir
     # ihmal degil bir OLCUM SONUCUDUR ve sayisi (0) testte kilitlidir.
-    # --- OLCULMEDI (5) ------------------------------------------------------
-    # `md-tb` 24.09.2026'da buradan GERCEK_KOPRU'ya gecti (kenari yazildi);
-    # `hf-spin` 27.09.2026'da TAUTOLOJI'ye (kenar yok, HUKUM verildi).
+    # --- OLCULMEDI (2) ------------------------------------------------------
     EdgeFact(
         kaynak="tdse",
         hedef="tb",
         kova=Kova.OLCULMEDI,
-        gerekce=_OLCULMEDI_GEREKCE,
-        buyukluk=None,
-    ),
-    EdgeFact(
-        kaynak="tdse",
-        hedef="spin",
-        kova=Kova.OLCULMEDI,
-        gerekce=_OLCULMEDI_GEREKCE,
-        buyukluk=None,
-    ),
-    EdgeFact(
-        kaynak="md",
-        hedef="em",
-        kova=Kova.OLCULMEDI,
-        gerekce=_OLCULMEDI_GEREKCE,
-        buyukluk=None,
-    ),
-    EdgeFact(
-        kaynak="tb",
-        hedef="em",
-        kova=Kova.OLCULMEDI,
-        gerekce=_OLCULMEDI_GEREKCE,
+        gerekce=_OLCULMEDI_TARIHCE + _TDSE_TB_NEDEN,
         buyukluk=None,
     ),
     EdgeFact(
         kaynak="spin",
         hedef="em",
         kova=Kova.OLCULMEDI,
-        gerekce=_OLCULMEDI_GEREKCE,
+        gerekce=_OLCULMEDI_TARIHCE + _SPIN_EM_NEDEN,
         buyukluk=None,
     ),
 )
 
-#: Kova basina beklenen girdi sayisi. OLCULDU (30.08.2026): 1 / 4 / 8 / 0 / 8.
+#: Kova basina beklenen girdi sayisi -- KOVA TARIHCESININ TEK YERI (dokstring ve yorumlar
+#: onu tekrarlamaz). OLCULDU (30.08.2026): 1 / 4 / 8 / 0 / 8; OLCULMEDI'deki SEKIZ cift
+#: (tdse-md, tdse-tb, tdse-spin, hf-spin, md-tb, md-em, tb-em, spin-em) 29.08'de ajan olunce dustu.
 #: 22.09.2026'DA DEGISTI -> 2 / 4 / 8 / 0 / 7: `md -> tdse` kenari YAZILDI ve
 #: cift OLCULMEDI'den GERCEK_KOPRU'ya gecti. Toplam 21 = C(7, 2) KORUNUR.
 #: 24.09.2026'DA YINE DEGISTI -> 3 / 4 / 8 / 0 / 6: `tb -> md` kenari
@@ -957,14 +1006,19 @@ KOVA_TABLOSU: tuple[EdgeFact, ...] = (
 #: gecti -- HUKUM verildi (buyukluk sadelesir, isaret h = 0'da bir ayar
 #: etiketi). Yine yeni kova ACILMADI: "yalniz isaret" kovasi bir girdi geri
 #: okumasini kova duzeyinde odullendirirdi.
+#: 28.09.2026'DA YINE DEGISTI -> 3 / 8 / 8 / 0 / 2 (olculmedi bosaltma on olcumu):
+#: `tdse -> spin`, `md -> em`, `tb -> em` KENARSIZ, HUKUMLE TAUTOLOJI'ye gecti; `tdse -> tb`
+#: ve `spin -> em` OLCULMEDI'de KALDI ama gerekceleri "sayi geldi, hukum gelmedi" degil
+#: OLCULMUS NEDENDIR. Yeni kova yine ACILMADI. KOR KOL BEYANI: tasinan uc cift kilit 1'in
+#: kenar tuzagini kaybeder -- TAUTOLOJI'de kod kenari yazilirsa tablo kirmiziya DONMEZ.
 #: Bu esleme bir testle hem tabloya hem `MODULLER`in kombinasyonlarina karsi
 #: sinanir.
 KOVA_SAYILARI: dict[str, int] = {
     Kova.GERCEK_KOPRU: 3,
-    Kova.TAUTOLOJI: 5,
+    Kova.TAUTOLOJI: 8,
     Kova.YAPISAL_YOK: 8,
     Kova.BENZERLIK: 0,
-    Kova.OLCULMEDI: 5,
+    Kova.OLCULMEDI: 2,
 }
 
 
@@ -1173,7 +1227,7 @@ _YAKLASIMLAR: tuple[str, ...] = (
     "iddia degil bir olcumdur (HF alaniyla cagrildiginda cipanin sayisini "
     "bit bit veriyor, testte kilitli)",
     "DUSEN ADAYLARIN SAYILARI TASINIYOR, YENIDEN KOSTURULMUYOR: `hf -> tb`, "
-    "`tb -> spin` ve (27.09.2026'dan beri) `hf -> spin` sayilari "
+    "`tb -> spin`, `hf -> spin` (27.09) ve `tdse -> spin` (28.09; TDSE yani KOSMAZ) sayilari "
     "`KOVA_TABLOSU` gerekcelerinde literal olarak "
     "durur ve `tests/bridge/test_dusen_adaylar.py` onlari motoru kosturarak "
     "dogrular; bu senaryo onlari yeniden OLCMEZ, yeniden OKUR",
@@ -1198,6 +1252,8 @@ _YONTEM_HEDEF_B = (
     "disi: (1) `hf -> tdse` icin 3B TDSE govdesi (O 1s icin 1600^3 = "
     "4.096e+09 nokta, tek complex128 dizi 61.04 GiB = 65.536 GB; span ve "
     "cozunurluk birer dugme); (2) `hf -> em` icin kirilma indisi ureteci. "
+    "(3) `md -> em` ve `tb -> em` icin EM'e konuma bagli ortam (28.09.2026: bilgi tasiyor, "
+    "hukmu YOK -- `tb -> em`de sevk merdiveni YARGILANAMAZ, `md -> em`de hic kosmadi). "
     "B'yi A diye yazmak yapilabilir isi gereksiz yere gomerdi"
 )
 
@@ -1228,18 +1284,19 @@ _YOKLUK_HARITASI_BEYANI = (
     "9.665562e+129 nokta (kenar 1 angstrom olsaydi 6.522644e+130 -- span bir "
     "dugmedir); `hf -> tdse` icin O 1s izgarasi 1600^3 = 4.096e+09 nokta = "
     "61.04 GiB; `em -> tdse` icin yazilacak bir mertebe YOK, eksik olan sayi "
-    "degil KARSILIKTIR. OLCULMEDI AYRI BIR KOVADIR: BES cift (tdse-tb, "
-    "tdse-spin, md-em, tb-em, spin-em) orada durur. "
+    "degil KARSILIKTIR. OLCULMEDI AYRI BIR KOVADIR: IKI cift (tdse-tb, "
+    "spin-em) orada durur. "
     "29.08.2026'da SEKIZDILER ve sebep 'hicbir sayi gelmedi'ydi; "
     "22.09.2026'da spec 7.2'nin on olcumu kosuldu, sekizinin sekizinde de "
     "sayi GELDI ve `tdse-md` kenari YAZILARAK GERCEK_KOPRU'ya gecti; "
     "24.09.2026'da `md-tb` kenari da YAZILDI ve ayni yolu izledi (tabani "
     "olculmedi); 27.09.2026'da `hf-spin` kenar YAZILMADAN, HUKUM verilerek "
     "TAUTOLOJI'ye gecti (buyukluk sadelesir, isaret h = 0'da bir ayar "
-    "etiketi). Kalan besin sebebi 22.09'dakidir: sayi var, HUKUM yok -- "
-    "sekiz hukmun sekizi de uc mercekli curutmede 3/3 dustu. 'olculdu, sifir cikti' ile ayni "
+    "etiketi); 28.09.2026'da `tdse-spin`, `md-em`, `tb-em` kenarsiz, HUKUMLE TAUTOLOJI'ye gecti. "
+    "Kalan ikinin NEDENI OLCULMUSTUR: `tdse-tb`de TANIM SECIMINE ve KOSTURULMAMIS sevk-yolu "
+    "sinavina, `spin-em`de EKSEN ve Lambda BEYANINA bagli. 'olculdu, sifir cikti' ile ayni "
     "hucreye YAZILAMAZ -- bu bir yokluk beyanidir, bir sonuc degil, ve spec "
-    "7.2 ACIK kalir"
+    "7.2 IKI CIFTTE ACIK kalir"
 )
 
 #: SEKLIN ADI (`hf - md - tb` UCGENI arti `md - tdse` KUYRUGU) bir testle
@@ -1311,9 +1368,10 @@ _DURUST_OLUMSUZLAR = (
     "7.2 HALA ACIK ama DARALDI: 22.09.2026'da sekiz ciftin sekizi de "
     "olculdu ve `tdse-md` kenari yazildi, 24.09.2026'da `md-tb` kenari da "
     "yazildi (kenar tabani OLCULMEDI, DOGA CIPASI YOK), 27.09.2026'da "
-    "`hf-spin` kenarsiz, hukumle TAUTOLOJI'ye gecti; kalan BES cift "
-    "OLCULMEDI kovasinda kalir cunku sayi geldi HUKUM gelmedi (sekiz hukmun "
-    "sekizi de uc mercekli curutmede 3/3 dustu); (2) `md -> "
+    "`hf-spin`, 28.09.2026'da `tdse-spin`, `md-em`, `tb-em` kenarsiz, hukumle "
+    "TAUTOLOJI'ye gecti; kalan IKI cift OLCULMEDI kovasinda kalir cunku hukum bir TANIM "
+    "SECIMINE ve kosturulmamis sevk-yolu sinavina (`tdse-tb`) ve bir EKSEN ve Lambda BEYANINA "
+    "(`spin-em`) bagli, EM ciftlerinin konuma bagli ortam yolu ise TUR B, hukmu YOK; (2) `md -> "
     "spin` ve `hf -> em` tautoloji hukumleri 29.08.2026 on olcumunden "
     "DEVRALINDI ve bu gorevde yeniden olculmedi (damgalari tabloda "
     "yazilidir); (3) makineler arasi tekrarlanabilirlik OLCULMEDI -- bit bit "
@@ -1329,7 +1387,7 @@ _DURUST_OLUMSUZLAR = (
 _DUSEN_ADAYLAR_BEYANI = (
     "DUSEN ADAYLAR, TAUTOLOJI OLARAK, PENCERESIYLE (Task 4'te iki, 7a26ed6; "
     "sayilar `KOVA_TABLOSU` gerekcelerinde ve tests/bridge/"
-    "test_dusen_adaylar.py'de motor kosturularak dogrulanir): (1) `hf -> tb` "
+    "test_dusen_adaylar.py'de motorla dogrulanir; (4)'te TDSE ve (5)-(6) kosmaz): (1) `hf -> tb` "
     "-- `t_m` halka kabugu uzerinde `np.mean` olarak TANIMLANIP `==` ile "
     "geri okunuyor, 6/6 sistemde; ozdeslik 15 hane yalniz N = 6'da ((6, 2.6) "
     "bagil 2.276e-15), N >= 8'de ~1e-8, yani SISTEME BAGLI; ayni elemanlar "
@@ -1349,7 +1407,10 @@ _DUSEN_ADAYLAR_BEYANI = (
     "h = 0, tohum 20260822, T = 2.269185 * |J|, 2000 sweep burn-in DAHIL, Neel "
     "baslangic), isaret h = 0 cift L'de "
     "bir AYAR ETIKETI (AFM kademeli seri == FM tekbicim seri, bit bit); o da "
-    "TAUTOLOJI, sessizce dusurulmedi"
+    "TAUTOLOJI, sessizce dusurulmedi. 28.09.2026'DA UC ADAY DAHA, kenarsiz: (4) `tdse -> spin` "
+    "-- ayni kok neden, dort TDSE J'si ayni pencerede bit bit (olcum, ozdeslik degil; testte "
+    "LITERAL; 300 K'de R = 3/4/5 donar ya da doyar); (5) `md -> em`, (6) `tb -> em` -- "
+    "tekbicim ortamda korunumun sifiri ya da bir eps kosumunun etiketi (pencereleri gerekcelerde)"
 )
 
 _CIPA_SINIFI_BEYANI = (

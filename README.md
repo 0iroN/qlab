@@ -176,14 +176,20 @@ Tasarım belgesi: `../docs/superpowers/specs/2026-08-05-qlab-kuantum-cekirdegi-d
   ağacını `ast` ile tarar, tablo her koşumda ona karşı sınanır ve çelişirse
   panel tik basmaz), `observable/bridge_obs.py` (tabanı ölçülen tek kenar
   `hf → md`'nin tabanı — **iki sayı**), `viz/bridge_frames.py` ve `kind: bridge`
-  senaryosu. **Sıfır yeni fizik.** Kova tablosu bugün **3 / 5 / 8 / 0 / 5**
+  senaryosu. **Sıfır yeni fizik.** Kova tablosu bugün **3 / 8 / 8 / 0 / 2**
   (gerçek köprü / tautoloji / yapısal yokluk / benzerlik / **ölçülmedi** — ayrı
-  kova, §7.2 açık). 27.09.2026'da `hf → spin` **kenar yazılmadan, hüküm
+  kova, §7.2 iki çiftte açık). 27.09.2026'da `hf → spin` **kenar yazılmadan, hüküm
   verilerek** `OLCULMEDI`den `TAUTOLOJI`ye geçti: H2 Yamaguchi `J`sinin
   büyüklüğü oran protokolünde bit bit sadeleşir, işareti `h = 0` çift L'de bir
   **ayar etiketidir** (AFM kademeli seri FM tekbiçim seriyle bit bit aynı) ve
   şartlıdır (`search_uhf(seeds=1)` kırık simetriyi bulamaz, sessizce +J verir);
-  yeni kova açılmadı. Modül 7 kapandığında **1 / 4 / 8 / 0 / 8**'di; iki çift
+  yeni kova açılmadı. 28.09.2026'da `tdse → spin`, `md → em` ve `tb → em` de
+  kenarsız, hükümle `TAUTOLOJI`ye geçti (TDSE'nin 1B soft-Coulomb H2 `J`si gerçek
+  ama spin hedefi büyüklüğü siler, 300 K'de R = 3/4/5 donar ya da doyar; EM çiftlerinde
+  tekbiçim ortam bir korunumun sıfırı ya da bir eps koşumunun etiketidir,
+  konuma bağlı ortam yolu TÜR B ve hükmü yok); `tdse → tb` ile `spin → em`
+  ölçülmedi kovasında kaldı ama nedenleri artık ölçülmüş: bir tanım seçimi (kovayı
+  belirleyecek sevk-yolu sınavı koşturulmadı) ve bir eksen/Λ beyanı. Modül 7 kapandığında **1 / 4 / 8 / 0 / 8**'di; iki çift
   sonradan `OLCULMEDI`den `GERCEK_KOPRU`ya geçti ve ikisinde de **kova
   sözlüğü bükülmedi, kod kenarı kuruldu**: 22.09.2026'da `md → tdse`
   (`engine/tdse/from_md.py`; kenar sayısı **0.13167174 bohr**, pencere
@@ -369,16 +375,18 @@ gerçek köprü var ve **hiçbiri bir doğa çıpası değildir**: `hf → md` b
 HF çözümünün soyundan gelir, uyum doğayı değil iki uygulamayı ölçer),
 `md → tdse` tek bir yüzeyin iki ayrı motorda koşulmasının **ayrışmasını**
 ölçer, `tb → md` ise **seçilmiş** bir radyal yasayı taşır (çıpaları modelin
-kendi kuramına karşıdır; kenar tabanı ölçülmedi). `hf → tb`, `tb → spin` ve
-(27.09.2026'dan beri) `hf → spin` birer tautolojidir (ilki `np.mean` tanımının
-`==` ile geri okunması, öteki ikisi `J`'nin yalnız `J/T` oranı olarak girmesi —
+kendi kuramına karşıdır; kenar tabanı ölçülmedi). `hf → tb`, `tb → spin`,
+(27.09.2026'dan beri) `hf → spin` ve (28.09.2026'dan beri) `tdse → spin`,
+`md → em`, `tb → em` birer tautolojidir (ilki `np.mean` tanımının
+`==` ile geri okunması, spin'e gidenler `J`'nin yalnız `J/T` oranı olarak girmesi,
+EM'e gidenler tekbiçim ortamda bir korunumun sıfırı ya da bir eps koşumunun etiketi —
 `hf → spin`de işaret de `h = 0`'da bir ayar etiketi; `tb → spin`in `+J`si
 bir ayar seçimidir — kaynak antiferromanyetiktir ve bu işaret dönmesi
 27.09.2026'ya kadar hiçbir yerde yazılmamıştı; beyan o gün eklendi, işaret
 çevrilmedi, çünkü çevrilse kilitli 0.687930 bozulurdu); `grav`
-atom ölçeğine **bağlanmaz** (`F_g/F_e = 8.09e-37`); beş çift ise **hükümsüz**
-kalır — sayı geldi, hüküm
-gelmedi — ve panel bunu "ölçüldü, sıfır çıktı" ile aynı hücreye yazmaz.
+atom ölçeğine **bağlanmaz** (`F_g/F_e = 8.09e-37`); iki çift ise **hükümsüz**
+kalır — nedeni ölçüldü, hüküm bir tanım seçimine (sevk-yolu sınavı koşturulmadı)
+ve bir eksen/Λ beyanına bağlı — ve panel bunu "ölçüldü, sıfır çıktı" ile aynı hücreye yazmaz.
 `hf → md`nin tabanı **iki sayıdır** ve yalnız birincisi (fizik-kapalı,
 3.40e-05 cm⁻¹) yazılsaydı panel gerçek hatayı **425.84 kat iyimser**
 gösterirdi — ikincisi (analitik ikiz, 1.20e-02 cm⁻¹) gerçek hatanın 0.83'ü.

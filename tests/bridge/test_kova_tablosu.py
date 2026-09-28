@@ -212,7 +212,8 @@ def test_KOVA_TABLOSU_SAYIMI_SABITI_TUTUYOR_ve_TOPLAM_21():
     """Modül 7 kapanışında (30.08.2026) ÖLÇÜLDÜ: GERÇEK KÖPRÜ 1 · TAUTOLOJİ 4
     · YAPISAL YOK 8 · BENZERLİK 0 · ÖLÇÜLMEDİ 8; 22.09.2026'da 2/4/8/0/7
     (tdse-md), 24.09.2026'da 3/4/8/0/6 (md-tb), 27.09.2026'da 3/5/8/0/5
-    (hf-spin, kenarsız hükümle). Toplam 21 = C(7, 2) korunur.
+    (hf-spin, kenarsız hükümle), 28.09.2026'da 3/8/8/0/2 (tdse-spin, md-em,
+    tb-em, kenarsız hükümle). Toplam 21 = C(7, 2) korunur.
 
     Testin adı 24.09.2026'da değişti (eski ad
     `test_KOVA_SAYILARI_1_4_8_0_8_ve_BENZERLIK_BOS_KALMASI_BIR_OLCUM`): hem
@@ -266,29 +267,27 @@ def test_OLCULMEDI_AYRI_BIR_KOVADIR_ve_HICBIR_SAYI_TASIMAZ():
     md-em, tb-em, spin-em) ikincideydi: o soruyu ölçen ajan API bağlantısı
     kopunca öldü ve hiçbir sayı gelmedi. Bu bir YOKLUK BEYANIDIR, bir sonuç
     DEĞİL. İkisi kenarları yazılarak ayrıldı (tdse-md 22.09, md-tb 24.09),
-    üçüncüsü kenarsız, HÜKÜM verilerek (hf-spin 27.09 -> TAUTOLOJİ); bugün
-    BEŞ çift burada — sayı var, hüküm yok (22.09).
+    dördü kenarsız, HÜKÜM verilerek (hf-spin 27.09; tdse-spin, md-em, tb-em
+    28.09 -> TAUTOLOJİ); bugün İKİ çift burada ve NEDENLERİ ÖLÇÜLDÜ (28.09).
 
-    Kilit üç parçalı: (a) çiftler tam olarak o beş, (b) hepsinin
-    `buyukluk`u `None` — çünkü 22.09.2026'da sayı geldi ama HÜKÜM gelmedi
-    (sekiz hükmün sekizi 3/3 çürütüldü; 29.08'de hiç sayı gelmemişti), (c)
-    beyan dizgesi YALNIZCA bu kovada geçiyor. (c) olmadan bu kovayı `YAPISAL_YOK`a
-    katlayan bir mutant sadece bir sayaç değiştirir; (c) ile birlikte
-    metnin kendisi de taşınmak zorunda kalır.
+    Kilit dört parçalı: (a) çiftler tam olarak o iki, (b) hepsinin
+    `buyukluk`u `None`, (c) tarihsel beyan dizgesi YALNIZCA bu kovada geçiyor
+    — (c) olmadan bu kovayı `YAPISAL_YOK`a katlayan bir mutant sadece bir
+    sayaç değiştirir; (d) gerekçe ÇİFT BAŞINA: iki çiftin ölçülmüş nedeni
+    farklıdır ve paylaşılan tek bir metne geri dönen mutant düşer.
     """
     olculmedi = [f for f in KOVA_TABLOSU if f.kova == Kova.OLCULMEDI]
     # ("md", "tdse") ARTIK BURADA DEĞİL: kenarı 22.09.2026'da yazıldı, çift
     # `GERCEK_KOPRU`ya geçti. Sekiz -> YEDİ. ("md", "tb") de 24.09.2026'da
     # aynı yolu izledi (kenarı `engine/md/tb_kuvvet.py`). Yedi -> ALTI.
     # ("hf", "spin") 27.09.2026'da kenarsız TAUTOLOJİ'ye geçti. Altı -> BEŞ.
-    assert {f.cift for f in olculmedi} == {
-        ("tb", "tdse"),
-        ("spin", "tdse"),
-        ("em", "md"),
-        ("em", "tb"),
-        ("em", "spin"),
-    }
-    assert len(olculmedi) == 5  # 27.09.2026: hf-spin hükümle ayrıldı
+    # 28.09.2026: tdse-spin, md-em, tb-em kenarsız TAUTOLOJİ'ye. Beş -> İKİ.
+    assert {f.cift for f in olculmedi} == {("tb", "tdse"), ("em", "spin")}
+    assert len(olculmedi) == 2
+    neden = {f.cift: f.gerekce for f in olculmedi}
+    assert "TANIM SECIMIDIR" in neden[("tb", "tdse")] and "YON-BAGIMLIDIR" in neden[("em", "spin")]
+    assert "TANIM SECIMIDIR" not in neden[("em", "spin")] and "YON-BAGIMLIDIR" not in neden[("tb", "tdse")]
+    assert "c = 0.017'de x OTURDU" in neden[("em", "spin")] and "9000 adim" in neden[("em", "spin")]  # pencereli
     # Beyan dizgesi HARFİ HARFİNE aranıyor, `HICBIR_SAYI_GELMEDI` sabiti
     # ÜZERİNDEN DEĞİL: gerekçeler o sabitten kuruluyor, dolayısıyla sabiti
     # "ölçüldü, sıfır çıktı" diye değiştiren bir mutant sabit üzerinden

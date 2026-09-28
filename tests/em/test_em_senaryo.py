@@ -366,6 +366,85 @@ def test_COURANT_SINIRI_MOTORDA_DA_duruyor():
         )
 
 
+def _eps_yaml(tmp_path, eps_r: float, S: float) -> Path:
+    metin = SEVK_YAML.replace("eps_r: 1.0", f"eps_r: {eps_r}")
+    return _yaz(tmp_path, metin.replace("courant: 0.5", f"courant: {S}"))
+
+
+@pytest.mark.parametrize(
+    "eps_r,S", [(0.25, 0.5), (0.4999, 0.5), (0.9999999999999999, 0.7071067811865476)]
+)
+def test_ETKIN_COURANT_eps_r_1_ALTINDA_NEDENIYLE_reddediliyor(
+    tmp_path, capsys, monkeypatch, eps_r, S
+):
+    """eps_r < 1'de dalga c/√eps_r ile vakumdan HIZLIDIR; sınır S/√eps_r'ye uygulanır.
+
+    ÖLÇÜLDÜ (28.09, kapı yokken, public yollar): eps_r = 0.25, S = 0.5 (etkin
+    1.0) YÜKLENİYORDU, `build_em` alanları inf/nan'a taşıyordu (yalnız numpy
+    RuntimeWarning) ve CLI rc = 1 ile "iki tepe bulunamadı" diyordu — nedeni
+    anmadan. 0.4999 sınırda: etkin 0.70718 > 0.70711. Üç yol (YAML, CLI, Python
+    `EMScenario` → `build_em`) artık nedeni ADIYLA söylüyor. Eşiğin YERİ de
+    ölçüldü: eps_r 0.25/0.5'te S/√eps_r = 1.001/√2 3000 adımda 3.65e+33
+    büyüyor, 0.999/√2 yalnız 1.67 (bkz. `grid.courant_limit`). MESAJ: eps_r ve etkin S TAM
+    (repr; `:g` 1 - 1e-16'yı "eps_r = 1 < 1" basardı); kapı hesaptan ÖNCE (`run_2d` yasak);
+    önerilen "en çok S" yüklenince GEÇER.
+    """
+    yaml = _eps_yaml(tmp_path, eps_r, S)
+    with pytest.raises(ScenarioError, match="etkin Courant S/√eps_r") as yuk:
+        load_scenario(yaml)
+    mesaj, etkin = str(yuk.value), S / math.sqrt(eps_r)
+    assert f"eps_r = {eps_r!r} < 1" in mesaj and f"S/√eps_r = {etkin!r} 2B" in mesaj
+    from qlab.run import main
+
+    assert main([str(yaml), "-o", str(tmp_path / "x.npz")]) == 1
+    hata = capsys.readouterr().err
+    assert "etkin Courant" in hata and "iki tepe" not in hata
+    tekli = dataclasses.replace(
+        load_scenario(SEVK_EDILEN), eps_r=eps_r, courant=S, radii=(5.0,)
+    )
+    monkeypatch.setattr(fabrika, "run_2d", lambda *a, **k: pytest.fail("kapi hesaptan sonra"))
+    desen = re.escape(f"eps_r = {eps_r!r} < 1") + ".*" + re.escape(f"(eps_r) = {etkin!r} ")
+    with pytest.raises(InvalidInputError, match=desen):
+        build_em(tekli)
+    oneri = float(re.search(r"en çok S = (\S+) olabilir", mesaj).group(1))
+    assert 0.0 < math.sqrt(eps_r / 2.0) - oneri < 1e-5, "oneri siniri asiyor ya da gereksiz kucuk"
+    assert load_scenario(_eps_yaml(tmp_path, eps_r, oneri)).courant == oneri
+
+
+@pytest.mark.parametrize(
+    "eps_r,S", [(0.5, 0.5), (0.25, 0.35), (1.0, 0.7071067811865476), (0.25, 0.3535533905932738)]
+)
+def test_ETKIN_COURANT_sinirin_ICINDE_kabul_ve_SONLU(tmp_path, eps_r, S):
+    """Kapı fazla sıkı değil: etkin 0.7071067811865475 (float'ta sınırın TAM
+    altı) ve 0.70 geçer, alan sonlu kalır. `√eps_r` yerine `eps_r` yazan bir
+    kapı (0.35/0.25 = 1.4) ikinciyi reddederdi. (1.0, 1/√2) YALNIZ yükleyicinin
+    ham S kapısını bağlar (fabrika kapısı eps_r >= 1'de susar); (0.25,
+    0.3535533905932738)'te √0.25 = 0.5 kesin ve etkin S float'ta TAM sınırdadır:
+    yükleyicinin VE fabrikanın (`_courant_kapisi`) `>`'ını bağlar, `>=` yazan
+    kapı onu reddederdi. Sevk davranışı bit bit aynı kaldı (28.09 ölçümü: dört
+    eps_r >= 1 koşumunun kayıt sha256'ları değişmedi).
+    """
+    sen = load_scenario(_eps_yaml(tmp_path, eps_r, S))
+    assert (sen.eps_r, sen.courant) == (eps_r, S)
+    kayit = build_em(dataclasses.replace(sen, radii=(5.0,))).records[0]
+    assert np.all(np.isfinite(kayit.probes))
+
+
+@pytest.mark.parametrize(
+    "eps_r,S,eski", [(0.0, 0.5, "adim sayisi 0"), (1.0, 0.9, "yani 1/sqrt")]
+)
+def test_ETKIN_COURANT_kapisi_ARALIK_DISINDA_eski_HATAYI_EZMEZ(
+    sevk_senaryo, eps_r, S, eski
+):
+    """Python yolunda kapı yalnız 0 < eps_r < 1'de konuşur: eps_r = 0 (adım 0)
+    ve eps_r = 1, S = 0.9 (motorun ham kapısı) kapıdan ÖNCEKİ hatayı verir —
+    ne √0'a bölüp `ZeroDivisionError`, ne motorun mesajını gasp."""
+    with pytest.raises(InvalidInputError, match=eski):
+        build_em(
+            dataclasses.replace(sevk_senaryo, eps_r=eps_r, courant=S, radii=(5.0,))
+        )
+
+
 def test_BEYAN_TEK_KAYNAKTAN_geliyor():
     """BU DOSYANIN EN ÖNEMLİ TESTİ. Beyan metninin İKİ KOPYASI OLAMAZ.
 

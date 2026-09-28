@@ -42,7 +42,7 @@ import math
 from dataclasses import dataclass
 
 from qlab.engine.em.boundary import CircularPEC
-from qlab.engine.em.grid import FieldRecord, Window
+from qlab.engine.em.grid import FieldRecord, Window, courant_limit
 from qlab.engine.em.medium import Medium
 from qlab.engine.em.source import ricker
 from qlab.engine.em.yee import run_2d
@@ -249,6 +249,20 @@ def _dedektorler(
     return tuple(cikti)
 
 
+def _courant_kapisi(scenario: EMScenario) -> None:
+    """Yukleyicinin ETKIN Courant kapisi PYTHON YOLUNDA DA (spin'in
+    `_coupling_kapisi` deseni), `build_em` GIRISINDE, hesaptan ONCE. eps_r < 1'de
+    dalga hizi c/sqrt(eps_r) > c; motor (`yee_coefficients_2d`) yalniz ham S'yi
+    sinar. eps_r <= 0 bu kapinin isi DEGIL. Sayilar TAM hassasiyetle (repr) basilir."""
+    eps = scenario.eps_r
+    if 0.0 < eps < 1.0 and scenario.courant / math.sqrt(eps) > courant_limit(2):
+        raise InvalidInputError(
+            f"eps_r = {eps!r} < 1 ortamda dalga vakumdan hizlidir ve etkin "
+            f"Courant S/sqrt(eps_r) = {scenario.courant / math.sqrt(eps)!r} "
+            f"2B sinirini ({courant_limit(2)!r}) asiyor (S = {scenario.courant!r})"
+        )
+
+
 def build_em(scenario: EMScenario) -> EMScanResult:
     """Her yaricapta bir 2B bosluk kosar. TOHUM YOK, PENCERE VAR.
 
@@ -286,6 +300,7 @@ def build_em(scenario: EMScenario) -> EMScanResult:
     burada cevrilecek bir sey yoktur, cunku `c = eps_0 = mu_0 = 1` bir birim
     secimidir ve olculen buyukluk (bir frekans ORANI) zaten boyutsuzdur.
     """
+    _courant_kapisi(scenario)
     kayitlar: list[FieldRecord] = []
     for R in scenario.radii:
         n, merkez = _geometri(scenario, R)

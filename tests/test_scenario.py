@@ -503,10 +503,11 @@ def test_shipped_scenario_loads_and_runs(scenario_path):
         yuk = build_bridge_payload(kisa)
         assert yuk.tutarsizliklar == ()
         # 24.09.2026: `md-tb` kenarı yazıldı (OLCULMEDI -> GERCEK_KOPRU).
-        # 27.09.2026: `hf-spin` kenarsız, hükümle (OLCULMEDI -> TAUTOLOJI).
+        # 27.09.2026: `hf-spin`; 28.09.2026: `tdse-spin`, `md-em`, `tb-em`
+        # kenarsız, hükümle (OLCULMEDI -> TAUTOLOJI).
         assert yuk.kova_sayim == {
-            "GERCEK_KOPRU": 3, "TAUTOLOJI": 5, "YAPISAL_YOK": 8,
-            "BENZERLIK": 0, "OLCULMEDI": 5,
+            "GERCEK_KOPRU": 3, "TAUTOLOJI": 8, "YAPISAL_YOK": 8,
+            "BENZERLIK": 0, "OLCULMEDI": 2,
         }
         assert len(yuk.kenarlar) == 4
         for taban in (yuk.a1, yuk.a2):

@@ -272,6 +272,12 @@ def oblique_coefficients(
     # TAM HUCREDEKI H (s'te Hx, p'de Hz). Manyetik kaybin ESLESME kosulu
     # sigma_m/mu = sigma_e/eps oldugu icin `d_h` burada `d_e`nin AYNISIDIR --
     # yari hucredeki gibi bir ortalama alinmaz, cunku ortalanacak bir sey yok.
+    # (28.09) ESLESME her mu'da korunur (tum kayip hizlari sigma/eps); degisen PML SONUMU:
+    # sigma*sqrt(mu/eps) ile olceklenir, sigma_max tasarimi eta = 1 (olculdu, duz ortam: eps = 4
+    # -> yansima 7.2e-4, mu = 4 -> 6.2e-7 ayriklik tabani). Dualite eta'yi 1/eta yapar: p'deki
+    # mu = M, s'deki eps = M ikizinden farkli sonum gorur (M 1.0654: 12376. adimdan sonra bagil
+    # 1.9e-3). Yalniz Hz'i mu'dan kurmak eslesmeyi BOZAR (6.2e-7 -> 9.0e-7); tum p hizlari
+    # mu'dan kurulursa ikizin yansimasi (7.2e-4) gelir. Sonuma bagli olan s<->p ikiz esdegerligi.
     mag_a = (1.0 - d_e) / (1.0 + d_e)
     mag_b = (courant / medium.mu_r) / (1.0 + d_e)
 

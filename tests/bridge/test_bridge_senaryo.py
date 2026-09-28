@@ -63,8 +63,8 @@ Toplam koşum ≈ 0.7 s (A1 0.50 s + A2 0.12 s + tarama 0.05 s); HF hiç
 
 (Yukarıdaki blok 03.09.2026'nın KAYDIDIR. İki satırı artık geçerli DEĞİL:
 22.09.2026'da `tdse → md`, 24.09.2026'da `md → tb` kenarları yazıldı,
-27.09.2026'da `hf-spin` kenarsız, hükümle TAUTOLOJİ'ye geçti —
-bugün kova sayımı 3 / 5 / 8 / 0 / 5, kod kenarı dört (md -> hf, md -> tb,
+27.09.2026'da `hf-spin`, 28.09.2026'da `tdse-spin`, `md-em`, `tb-em`
+kenarsız, hükümle TAUTOLOJİ'ye geçti — bugün kova sayımı 3 / 8 / 8 / 0 / 2, kod kenarı dört (md -> hf, md -> tb,
 tb -> hf, tdse -> md) ve yapı `hf - md - tb` üçgeni + `md - tdse` kuyruğu;
 ikisi de `test_6_1`/`test_6_2`de canlı panele karşı kilitli. Units ekseni,
 A1/A2 ve gerçek hata satırları değişmedi — `test_6_2`/`test_6_3` onları
@@ -445,7 +445,7 @@ def test_YAKLASIMLAR_IHMAL_DAIRESELLIK_SINIF_KURAM_PENCERE_KARISMIYOR(sevk_panel
 
 
 def test_6_1_YOKLUK_HARITASI_21_cift_bes_kova_MERTEBELERLE(sevk_yuk, sevk_panel):
-    """§6.1 — 21 çift, beş kova (bugün 3/5/8/0/5; Modül 7 kapanışında
+    """§6.1 — 21 çift, beş kova (bugün 3/8/8/0/2; Modül 7 kapanışında
     1/4/8/0/8), her yapısal yokluk için mertebe.
 
     Sayım PANELDE CANLI: tablodan `Counter` ile sayılır ve `KOVA_SAYILARI`
@@ -460,11 +460,11 @@ def test_6_1_YOKLUK_HARITASI_21_cift_bes_kova_MERTEBELERLE(sevk_yuk, sevk_panel)
     sayim = Counter(f.kova for f in KOVA_TABLOSU)
     assert {k: sayim.get(k, 0) for k in KOVALAR} == KOVA_SAYILARI == sevk_yuk.kova_sayim
     assert KOVA_SAYILARI == {
-        "GERCEK_KOPRU": 3, "TAUTOLOJI": 5, "YAPISAL_YOK": 8, "BENZERLIK": 0,
-        "OLCULMEDI": 5,
+        "GERCEK_KOPRU": 3, "TAUTOLOJI": 8, "YAPISAL_YOK": 8, "BENZERLIK": 0,
+        "OLCULMEDI": 2,
     }
-    assert "GERCEK_KOPRU 3 / TAUTOLOJI 5 / YAPISAL_YOK 8 / BENZERLIK 0 / OLCULMEDI 5 (toplam 21)" in tani
-    assert sevk_panel.diagnostics["kova"] == "3/5/8/0/5"
+    assert "GERCEK_KOPRU 3 / TAUTOLOJI 8 / YAPISAL_YOK 8 / BENZERLIK 0 / OLCULMEDI 2 (toplam 21)" in tani
+    assert sevk_panel.diagnostics["kova"] == "3/8/8/0/2"
 
     # Mertebeler: iki proton, elektron-proton, r_s kübü, O 1s ızgarası.
     G, m_p, m_e, e, eps0, c = (
@@ -495,13 +495,13 @@ def test_6_1_YOKLUK_HARITASI_21_cift_bes_kova_MERTEBELERLE(sevk_yuk, sevk_panel)
     assert 1600**3 * 16 / 2**30 == pytest.approx(61.04, abs=0.005)
     assert _girdi("hf", "tdse").buyukluk == 1600**3
     assert _girdi("em", "tdse").buyukluk is None
-    # ÖLÇÜLMEDİ AYRI KOVA: bugün BEŞ çift; beyan 29.08'in sekiz çiftini de
+    # ÖLÇÜLMEDİ AYRI KOVA: bugün İKİ çift; beyan 29.08'in sekiz çiftini de
     # adıyla anar (ikisi -- tdse-md 22.09, md-tb 24.09 -- kenarı yazılarak,
-    # hf-spin 27.09 kenarsız hükümle ayrıldı), ve "hiçbir sayı gelmedi"
-    # tarihsel cümlesini taşır.
-    assert "OLCULMEDI AYRI BIR KOVADIR" in tani
+    # hf-spin 27.09 ve tdse-spin/md-em/tb-em 28.09 kenarsız hükümle ayrıldı),
+    # ve "hiçbir sayı gelmedi" tarihsel cümlesini taşır.
+    assert "OLCULMEDI AYRI BIR KOVADIR: IKI cift (tdse-tb, spin-em)" in tani
     assert "hicbir sayi gelmedi" in tani
-    assert "spec 7.2 ACIK" in tani
+    assert "spec 7.2 IKI CIFTTE ACIK" in tani and "Kalan ikinin NEDENI OLCULMUSTUR" in tani
     for cift in ("tdse-md", "tdse-tb", "tdse-spin", "hf-spin", "md-tb", "md-em",
                  "tb-em", "spin-em"):
         assert cift in tani
@@ -806,7 +806,7 @@ def test_6_6_MU_KORLUGU_PANELDE_ve_sayilari_test_aimd_ile_AYNI(sevk_panel):
 
 
 def test_6_7_DUSEN_IKI_ADAY_TAUTOLOJI_OLARAK_PENCERESIYLE(sevk_panel):
-    """§6.7 — `hf → tb`, `tb → spin` (+ 27.09.2026 `hf → spin`) tautoloji olarak, penceresiyle;
+    """§6.7 — `hf → tb`, `tb → spin` (+ 27.09.2026 `hf → spin`, 28.09.2026 `tdse → spin`/`md → em`/`tb → em`) tautoloji olarak, penceresiyle;
     sayılar tablonun literalleriyle (Task 4'te motorla doğrulanmış) aynı."""
     dairesellik = dict(sevk_panel.as_lines())["Dairesellik"]
     assert "(1) `hf -> tb`" in dairesellik and "(2) `tb -> spin`" in dairesellik
@@ -827,6 +827,8 @@ def test_6_7_DUSEN_IKI_ADAY_TAUTOLOJI_OLARAK_PENCERESIYLE(sevk_panel):
     assert "(3) `hf -> spin`" in dairesellik and "bir AYAR ETIKETI" in dairesellik
     assert "T = 2.269185 * |J|, 2000 sweep burn-in DAHIL, Neel baslangic" in dairesellik
     assert _girdi("hf", "spin").kova == Kova.TAUTOLOJI and _girdi("hf", "spin").buyukluk == 0.0
+    assert "(4) `tdse -> spin`" in dairesellik and "(6) `tb -> em`" in dairesellik and "UC ADAY DAHA" in dairesellik
+    assert any("`tdse -> spin` (28.09; TDSE yani KOSMAZ)" in c for c in bm._YAKLASIMLAR)
     # Tablo ile aynı sayılar.
     assert "0.187216796875" in _girdi("tb", "spin").gerekce
     assert repr(_HF_TB_OZDESLIK_BAGIL) in _girdi("hf", "tb").gerekce
@@ -844,6 +846,7 @@ def test_6_8_YONTEM_HEDEF_UYUSMAZLIGININ_IKI_TURU_AYRI_ve_GRAVDAN_FARKLI(sevk_pa
     assert a in ihmal and b in ihmal
     assert "TUR A -- BU BORUDA DUZELTILEMEZ" in a and "(1) `grav`" in a and "(2) `spin` `J`" in a
     assert "TUR B -- ERTELENDI" in b and "`hf -> tdse`" in b and "`hf -> em`" in b
+    assert "(3) `md -> em` ve `tb -> em`" in b and "`md -> em`de hic kosmadi" in b
     assert a != grav_fabrika._YONTEM_HEDEF_A and b != grav_fabrika._YONTEM_HEDEF_B
     assert a not in grav_fabrika._YONTEM_HEDEF_A and b not in grav_fabrika._YONTEM_HEDEF_B
 
@@ -856,6 +859,7 @@ def test_DURUST_OLUMSUZLAR_BESI_DE_PANELDE(sevk_panel):
     for parca in (
         "(1) spec 7.2 HALA ACIK ama DARALDI: 22.09.2026'da sekiz ciftin sekizi "
         "de olculdu ve `tdse-md` kenari yazildi",
+        "28.09.2026'da `tdse-spin`, `md-em`, `tb-em` kenarsiz", "kalan IKI cift OLCULMEDI kovasinda kalir",
         "(2) `md -> spin` ve `hf -> em` tautoloji hukumleri 29.08.2026 on olcumunden DEVRALINDI",
         "(3) makineler arasi tekrarlanabilirlik OLCULMEDI",
         "numpy 2.5.1",
@@ -1213,8 +1217,8 @@ def test_CLI_UCTAN_UCA(tmp_path):
     assert "hf -> md    None" in sonuc.stdout
     assert "tb -> spin  0.000000e+00" in sonuc.stdout
     assert "hf -> tb    2.276006e-15" in sonuc.stdout
-    assert sonuc.stdout.count("None") == 10  # tdse-md ve (27.09) hf-spin SAYI tasiyor
-    assert "hf -> spin  0.000000e+00" in sonuc.stdout
+    assert sonuc.stdout.count("None") == 9  # tdse-md, hf-spin (27.09), tdse-spin (28.09) SAYI tasiyor
+    assert "hf -> spin  0.000000e+00" in sonuc.stdout and "tdse -> spin  0.000000e+00" in sonuc.stdout
     assert "taban A1 aritmetik" in sonuc.stdout and "taban A2 hata-cubugu" in sonuc.stdout
     assert "TABLO ≠ KOD" not in sonuc.stdout
     assert "TABLO KODLA TUTARLI" in sonuc.stdout
@@ -1223,8 +1227,8 @@ def test_CLI_UCTAN_UCA(tmp_path):
 
     with np.load(cikti, allow_pickle=False) as veri:
         assert list(veri["kova"]) == [f.kova for f in KOVA_TABLOSU]
-        assert int(veri["magnitude_is_none"].sum()) == 10
-        assert int(np.isfinite(veri["magnitude"]).sum()) == 11
+        assert int(veri["magnitude_is_none"].sum()) == 9  # 28.09: tdse-spin 0.0 tasir
+        assert int(np.isfinite(veri["magnitude"]).sum()) == 12
         assert np.all(np.isnan(veri["magnitude"][veri["magnitude_is_none"]]))
         # KONUMSAL DEGIL ADLA. `index("TAUTOLOJI") + 1` bugun tb -> spin'e denk
         # geliyor ama bu bir RASTLANTIDIR. OLCULDU (22.09.2026): tabloda DORT
@@ -1255,7 +1259,7 @@ def test_CLI_UCTAN_UCA(tmp_path):
     assert kaynak["theory_selector"] == bm._KURAM_SECICI_BEYANI
     assert kaynak["convergence_diagnosis"].startswith("[CANLI")
     assert kaynak["converged"] is True
-    assert kaynak["diagnostics"]["kova"] == "3/5/8/0/5"
+    assert kaynak["diagnostics"]["kova"] == "3/8/8/0/2"
 
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,5 @@
-"""Modül 7 / Task 4 — düşen adaylar (27.09.2026'dan beri üç) SESSİZCE DÜŞÜRÜLMEZ; tautoloji olarak,
+"""Modül 7 / Task 4 — düşen adaylar (27.09.2026'dan beri üç, 28.09.2026'dan beri dört: üç spin hedefli
++ `hf → tb`; iki EM tautolojisi `md → em`/`tb → em` burada SINANMAZ) SESSİZCE DÜŞÜRÜLMEZ; tautoloji olarak,
 SAYILARIYLA sevk edilir.
 
 `bridge_map.py`de `hf → tb` ve `tb → spin` girdileri Task 1'den beri
@@ -7,7 +8,7 @@ Bu dosya o alanları dolduran sayıları MOTORU KOŞTURARAK üretir ve
 `bridge_map.py`deki literallere karşı sınar — `bridge_map` hiçbir motoru
 import edemez, o yüzden sayılar orada literal, doğrulama burada canlı.
 
-ÜÇ TAUTOLOJİ (Task 4'ün ikisi + 27.09.2026 `hf → spin`), İKİ MEKANİZMA + BİR AYAR ETİKETİ:
+DÖRT TAUTOLOJİ (Task 4'ün ikisi + 27.09.2026 `hf → spin` + 28.09.2026 `tdse → spin`), İKİ MEKANİZMA + BİR AYAR ETİKETİ:
 
   `hf → tb`   `t_m` bir `np.mean` olarak TANIMLANIYOR (`downfold.py:256-268`)
               ve aynı ortalama `==` ile geri okunuyor. Uyum değil, tanımın
@@ -33,6 +34,9 @@ import edemez, o yüzden sayılar orada literal, doğrulama burada canlı.
               bit aynı. İşaret ŞARTLIDIR: `seeds = 1` kırık simetriyi
               bulamaz ve formül sessizce +J verir.
 
+  `tdse → spin` (28.09.2026, kenarsız): 1B soft-Coulomb H2 `J`si GERÇEK ama aynı oranda sadeleşir;
+              300 K'de R = 3/4/5 |m| = 1.0 (donar ya da doyar), R = 6 aynı T/|J|'de J = 1'in etiketi.
+
 PENCERELER (her sayı bunların içindedir, dışına taşınamaz):
   hf → tb   altı sistem (N, d) = (6, 2.6) (6, 3.0) (6, 3.6) (8, 2.0) (8, 2.6)
             (10, 2.6) bohr, STO-3G, `seeds = 12`, tam menzil `n_neighbour = N/2`
@@ -46,6 +50,8 @@ PENCERELER (her sayı bunların içindedir, dışına taşınamaz):
   hf → spin H2 R = 5/6/7 bohr (`%.10g`, unit="bohr"), STO-3G, `search_uhf(seeds
             = 12)` varsayılan eşikler; Ising L = 32, h = 0, tohum 20260822,
             T = 2.269185 · |J|, 2000 sweep `n_burn = 0` (burn-in DAHİL), Néel.
+  tdse → spin `TDSE_J` LİTERAL (Grid2D sanal zaman, n = 256, L = 40, dt = 0.01, a = b = 1, R = 3/4/5/6);
+            spin: Protokol A `hf → spin` penceresi, Protokol B `spin_tarama.yaml` + 300 K.
 """
 
 from __future__ import annotations
@@ -67,8 +73,13 @@ from qlab.bridge_map import (
     Kova,
     _HF_SPIN_M_FARKI,
     _HF_TB_OZDESLIK_BAGIL,
+    _SPIN_BUYUKLUGU_SILER,
     _TB_SPIN_M_FARKI,
+    _TDSE_SPIN_M_FARKI,
 )
+from qlab.engine.spin.factory import build_spin
+from qlab.errors import ScenarioError
+from qlab.scenario.loader import load_scenario
 from qlab.engine.hf.multistart import search_uhf
 from qlab.engine.spin.lattice import SpinState, magnetisation, neighbour_sum
 from qlab.engine.spin.metropolis import run_metropolis
@@ -81,7 +92,7 @@ from qlab.engine.tb.downfold import (
 )
 from qlab.engine.tb.hamiltonian import finite_ring_matrix
 from qlab.types import Molecule
-from qlab.units import BOHR_TO_ANGSTROM
+from qlab.units import BOHR_TO_ANGSTROM, KB_HARTREE_PER_KELVIN
 
 PROJE_KOKU = Path(__file__).resolve().parents[2]
 KAYNAK = PROJE_KOKU / "src" / "qlab"
@@ -717,6 +728,9 @@ HF_R = (5.0, 6.0, 7.0)
 HF_J = (-0.001308824217584225, -0.00017495439344641936, -1.9411358087445856e-05)
 #: `seeds = 1` kırık simetriyi bulamaz; formül SESSİZCE +J (FM) verir.
 HF_J_SEEDS1 = (0.12292785673387831, 0.14398775927612392, 0.15520099760670322)
+#: `tdse -> spin` (28.09.2026): TDSE TARAFI BURADA KOSMAZ -- on olcumun LITERAL J'leri (1B
+#: soft-Coulomb H2, `Grid2D` sanal zaman, n = 256, L = 40, dt = 0.01, a = b = 1, R = 3/4/5/6).
+TDSE_J = (-0.03679538951052319, -0.010055270069717404, -0.0021743343691629224, -0.00041083190968227434)
 #: "S2_BS > 0" LİTERAL yazılamaz: seeds = 1'in RHF-benzeri çözümü 2.2e-16 /
 #: 2.2e-16 / 1.1e-15 taşıyor ve `> 0`'ı GEÇİYOR. Kapı sayısal sıfırın üstünde.
 S2_BS_KAPISI = 1e-8
@@ -788,22 +802,65 @@ def test_HF_SPIN_BUYUKLUK_PROTOKOL_A_BIT_BIT_SADELESIR():
     """Üç HF J'si, T = 2.269185·|J|, Néel başlangıç: `m` serisi J = −1'inkiyle
     BİT BİT, E == |J|·E(−1) bit bit, kabul oranı `==`. `buyukluk = 0.0` burada
     canlı ölçümle eşitlenir. R = 6/7'de karar eşiği 1 birim farklı (eleştirmen
-    E1c) — eşitlik bir ÖLÇÜM sonucudur."""
+    E1c) — eşitlik bir ÖLÇÜM sonucudur. 28.09.2026: dört TDSE J'si (`tdse → spin`)
+    AYNI pencerede LITERAL parametre olarak koşar — TDSE tarafı burada KOŞMAZ."""
     ref = _tam(-1.0, NEEL)
     fark = 0.0
-    for J in HF_J:
+    for J in HF_J + TDSE_J:
         r = _tam(J, NEEL)
         assert np.array_equal(r.magnetisation_series, ref.magnetisation_series), J
         assert np.array_equal(r.energy_series, abs(J) * ref.energy_series), J
         assert r.acceptance_rate == ref.acceptance_rate
         fark = max(fark, float(np.abs(r.magnetisation_series - ref.magnetisation_series).max()))
-    assert fark == 0.0 == _HF_SPIN_M_FARKI == _girdi("hf", "spin").buyukluk
-    assert isinstance(_girdi("hf", "spin").buyukluk, float)
-    assert _girdi("hf", "spin").kova == Kova.TAUTOLOJI
+    tdse = _girdi("tdse", "spin")
+    assert fark == 0.0 == _HF_SPIN_M_FARKI == _girdi("hf", "spin").buyukluk == _TDSE_SPIN_M_FARKI == tdse.buyukluk
+    assert isinstance(_girdi("hf", "spin").buyukluk, float) and isinstance(tdse.buyukluk, float)
+    assert _girdi("hf", "spin").kova == tdse.kova == Kova.TAUTOLOJI
+    assert all(repr(J) in tdse.gerekce for J in TDSE_J) and "`hf -> spin` penceresinde canli" in tdse.gerekce
+    # 22.09 P8: kök neden TEK sabit, üç spin girdisi onu okur, kaynakta tek kopya.
+    assert {f.cift for f in KOVA_TABLOSU if _SPIN_BUYUKLUGU_SILER in f.gerekce} == {
+        ("spin", "tb"), ("hf", "spin"), ("spin", "tdse")}
+    assert (KAYNAK / "bridge_map.py").read_text(encoding="utf-8").count("ORANI olarak giriyor") == 1
+    assert "J'nin BUYUKLUGUNU SILER. Bit bit esitlik bir OLCUM sonucudur, ozdeslik degil" in _SPIN_BUYUKLUGU_SILER
     gerekce = _girdi("hf", "spin").gerekce  # sayılar YALNIZ bu pencereyle taşınır
     for parca in (f"T = {TC_BOLU_J} * |J|", f"Ising L = {L}, h = 0", f"tohum {TOHUM}",
                   f"{N_BURN + N_SWEEP} sweep burn-in DAHIL", "Neel baslangic"):
         assert parca in gerekce, f"gerekçe {parca!r} taşımıyor"
+
+
+def test_TDSE_SPIN_PROTOKOL_B_300K_R3_R5_DONAR_R6_J1_IMGESI(tmp_path):
+    """Protokol B (T = 300 K mutlak), sevk edilmiş `spin_tarama.yaml` penceresi, PUBLIC YAML yolu
+    (`load_scenario` -> `build_spin`); yükleyici TDSE'nin gerçek (negatif) J'sini REDDEDER, koşum
+    coupling = |J| (FM imgesi). R = 3/4/5'te T/|J| < 0.5: |m| serisi tamamen 1.0, kabul 0.0, J = 1 /
+    T = 1e-3 koşumuyla (TDSE içeriği SIFIR) bit bit aynı — zincir donar ya da doyar, pencere ayırmaz.
+    R = 6 kıpırdar ama aynı T/|J|'de J = 1 koşumunun bit bit etiketidir. KIRMA: 3000 K'de R = 5 çözülür."""
+    sevk = (PROJE_KOKU / "scenarios" / "spin_tarama.yaml").read_text(encoding="utf-8")
+    T300 = 300.0 * KB_HARTREE_PER_KELVIN
+
+    def kos(J: float, T: float):
+        metin = re.sub(r"(?m)^temperatures: .*$", f"temperatures: [{T!r}]", sevk)
+        (yol := tmp_path / "b.yaml").write_text(re.sub(r"(?m)^coupling: .*$", f"coupling: {J!r}", metin),
+                                                encoding="utf-8")
+        s = build_spin(load_scenario(yol)).samples[0]
+        return s.magnetisation_series, s.acceptance_rate
+
+    with pytest.raises(ScenarioError, match=r"'coupling' \(J\) sonlu ve pozitif"):
+        kos(TDSE_J[0], T300)
+    donuk, kabul0 = kos(1.0, 1e-3)
+    assert np.all(donuk == 1.0) and kabul0 == 0.0
+    oran = [T300 / abs(J) for J in TDSE_J]
+    for J, r in zip(TDSE_J[:3], oran):
+        m, kabul = kos(abs(J), T300)
+        assert r < 0.5 and np.array_equal(m, donuk) and kabul == 0.0, J
+    m6, k6 = kos(abs(TDSE_J[3]), T300)
+    m1, k1 = kos(1.0, oran[3])
+    assert np.array_equal(m6, m1) and k6 == k1 > 0.0 and not np.array_equal(m6, donuk)
+    gerekce = _girdi("tdse", "spin").gerekce
+    assert f"300 K = {T300:.3e} Ha" in gerekce
+    assert "R = 3/4/5'te T/|J| = " + " / ".join(f"{r:.3f}" for r in oran[:3]) + " < 0.5" in gerekce
+    assert f"R = 6'da T/|J| = {oran[3]:.3f}, <|m|> = {m6.mean():.3f}" in gerekce
+    for parca in ("J(R = 3/4/5/6 bohr)", "J <= 0'i ScenarioError", "coupling = |J|", "sevk listesinde yok, 0/4"):
+        assert parca in gerekce, parca
 
 
 def test_HF_SPIN_ISARET_AYAR_ETIKETI_AFM_KADEMELI_eq_FM_TEKBICIM_ve_h01_BOZAR():
@@ -873,8 +930,9 @@ def test_TABLODA_IKI_GIRDI_DOLDU_TEK_SATIR_DAMGA_KALKTI_ETIKET_ICERIDE():
 
       * `hf → tb` ve `tb → spin` hâlâ TAUTOLOJİ kovasında, hâlâ birer
         satır (Task 4'te kova sayıları 1/4/8/0/8'di ve DEĞİŞMEDİ; 27.09.2026
-        sayımı 3/5/8/0/5 -- TAUTOLOJİ 5, çünkü `hf → spin` kenarsız hükümle
-        eklendi; bu test yalnız TAUTOLOJİ sayısını kilitler)
+        sayımı 3/5/8/0/5, 28.09.2026'da 3/8/8/0/2 -- TAUTOLOJİ 8: `hf → spin`,
+        `tdse → spin`, `md → em`, `tb → em` kenarsız hükümle eklendi; bu test
+        yalnız TAUTOLOJİ sayısını kilitler)
       * ikisinin `buyukluk`u artık `None` değil — biri 2.276e-15 (bağıl
         özdeşlik artığı), öteki 0.0 (bit bit ölüm) — ve ikisi de `float`
       * ikisinden `YENIDEN_URETILMEDI` damgası KALKTI; damga TAUTOLOJİ
@@ -886,8 +944,8 @@ def test_TABLODA_IKI_GIRDI_DOLDU_TEK_SATIR_DAMGA_KALKTI_ETIKET_ICERIDE():
     """
     hf_tb, tb_spin = _girdi("hf", "tb"), _girdi("tb", "spin")
     assert hf_tb.kova == tb_spin.kova == Kova.TAUTOLOJI
-    assert KOVA_SAYILARI[Kova.TAUTOLOJI] == 5
-    assert sum(1 for f in KOVA_TABLOSU if f.kova == Kova.TAUTOLOJI) == 5
+    assert KOVA_SAYILARI[Kova.TAUTOLOJI] == 8
+    assert sum(1 for f in KOVA_TABLOSU if f.kova == Kova.TAUTOLOJI) == 8
 
     assert isinstance(hf_tb.buyukluk, float) and hf_tb.buyukluk == _HF_TB_OZDESLIK_BAGIL
     assert isinstance(tb_spin.buyukluk, float) and tb_spin.buyukluk == _TB_SPIN_M_FARKI == 0.0
@@ -907,6 +965,13 @@ def test_TABLODA_IKI_GIRDI_DOLDU_TEK_SATIR_DAMGA_KALKTI_ETIKET_ICERIDE():
     assert "22 kabugun 10'unda" in hf_tb.gerekce
     assert sum(TERS_SIRA_DUSEN.values()) == 10 and sum(n // 2 for n, _ in ALTI_SISTEM) == 22
     assert "seeds = 12" in hf_tb.gerekce and "seeds = 12" in tb_spin.gerekce
+    # 28.09: iki EM girdisi, TÜR etiketleri ve paylaşılan TÜR B sabiti LİTERAL (sabite karşı değil).
+    md_em, tb_em = _girdi("md", "em"), _girdi("tb", "em")
+    assert md_em.buyukluk is None and tb_em.buyukluk is None
+    assert "AKIM KANALI (J = sum q v) TUR A" in md_em.gerekce and "TEKBICIM ortam TUR A" in tb_em.gerekce
+    assert [f for f in KOVA_TABLOSU if "TUR B, HUKMU YOK" in f.gerekce and "serbest bir beyana baglidir" in f.gerekce] == [md_em, tb_em]
+    assert "HIC KOSMADI" in md_em.gerekce and md_em.gerekce.count("DYADIK J'de") == 2 and "YARGILANAMAZ der" in tb_em.gerekce
+    assert "TUR A -- DUZELTILEMEZ (h = 0 motorunda)" in _girdi("tdse", "spin").gerekce
 
 
 # ---------------------------------------------------------------------------
