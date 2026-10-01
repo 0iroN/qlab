@@ -252,8 +252,9 @@ def _dedektorler(
 def _courant_kapisi(scenario: EMScenario) -> None:
     """Yukleyicinin ETKIN Courant kapisi PYTHON YOLUNDA DA (spin'in
     `_coupling_kapisi` deseni), `build_em` GIRISINDE, hesaptan ONCE. eps_r < 1'de
-    dalga hizi c/sqrt(eps_r) > c; motor (`yee_coefficients_2d`) yalniz ham S'yi
-    sinar. eps_r <= 0 bu kapinin isi DEGIL. Sayilar TAM hassasiyetle (repr) basilir."""
+    dalga hizi c/sqrt(eps_r) > c; motor da 01.10.2026'dan beri sinar
+    (`yee._etkin_courant_kapisi`), bu kapi hesaptan ONCE ve senaryonun diliyle
+    konusur. eps_r <= 0 bu kapinin isi DEGIL. Sayilar TAM hassasiyetle (repr) basilir."""
     eps = scenario.eps_r
     if 0.0 < eps < 1.0 and scenario.courant / math.sqrt(eps) > courant_limit(2):
         raise InvalidInputError(

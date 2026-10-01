@@ -118,7 +118,8 @@ class Medium:
 
     @property
     def eps_min(self) -> float:
-        """EN HIZLI dalganin gordugu izinlilik.
+        """En kucuk izinlilik -- mu_r = 1'de EN HIZLI dalganin gordugu. mu_r != 1'de
+        en hizli dalgayi hucre basina eps_r*mu_r belirler (`yee._etkin_courant_kapisi`).
 
         `courant_limit` bu sayiyi KULLANMAZ ve kullanmamasi bir secimdir
         (bkz. grid.courant_limit): `S` en hizli dalga hiziyla tanimlidir,

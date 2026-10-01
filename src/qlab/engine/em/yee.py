@@ -55,6 +55,38 @@ class YeeCoefficients:
     courant: float
 
 
+def _etkin_courant_kapisi(medium: Medium, courant: float, limit: float, yol: str) -> None:
+    """ETKIN Courant kapisi -- uc katsayi yolunun (1B, 2B, egik) ORTAK kapisi.
+
+    `S` EN HIZLI dalga hiziyla tanimlidir (grid.courant_limit). Her hucrede
+    eps_r*mu_r >= 1 ise surekli ortamda en hizli dalga c'dir, etkin S = S ve bu kapi ham kapidan
+    SONRA kostugu icin yeni bir sey reddetmez (taban `min(1, .)`yi silen mutant
+    bu yuzden ESDEGERDIR, olculdu); bir hucrede < 1 ise dalga c/sqrt(eps_r*mu_r)
+    ile vakumdan HIZLIDIR ve sinanan sayi S/sqrt(min) olur. HUCRE carpiminin
+    minimumu, minimumlarin carpimi DEGIL -- olculdu (01.10.2026, public yol,
+    tohumlu, PEC, L = 200): eps 0.25|1 & mu 1|0.25'te esik 0.500019, minimumlarin
+    carpimi (0.0625) 0.25 derdi. `mu_r < 1` `eps_r < 1` ile AYNI deliktir
+    (0.500020 / 0.500020); senaryo semasinda mu olmadigi icin fabrika kapisi
+    onu goremez. Carpim alt tasmayla 0'a inerse etkin S sonsuzdur.
+
+    ACIK (olculdu 02.10.2026, bagimsiz iki dogrulayici, ESKI -- HEAD ayni adimda
+    patliyor): egik p + `ey_kural` != aritmetik + konuma bagli mu_r. p'de Hz tam
+    hucrede mu_r ile, Ey yari hucrede `eps_yari` ile eslenir; esik hucre
+    carpimiyla BELIRLENMEZ ve basit bir yerel carpimla da belirlenmez (aritmetik
+    kuralda yerel min 0.625 iken sema kararli). Her hucrede eps_r*mu_r = 1 iken
+    olculen esik izin verilenin 0.47-0.93 kati (sag/sol/harmonik). mu_r = 1'de
+    (senaryo yolu) ve aritmetik kuralda bu kapi YETERLI (rastgele ortam taramasi).
+    """
+    cm = float(np.min(medium.eps_r * medium.mu_r))
+    etkin = courant / float(np.sqrt(min(1.0, cm))) if cm > 0.0 else float("inf")
+    if etkin > limit:
+        raise InvalidInputError(
+            f"etkin Courant S/sqrt(min(eps_r*mu_r)) = {etkin!r} {yol} kararlilik "
+            f"sinirini ({limit!r}) asiyor: min(eps_r*mu_r) = {cm!r} < 1, dalga "
+            f"vakumdan hizlidir (S = {courant!r}). Ayrinti: grid.courant_limit."
+        )
+
+
 def yee_coefficients(
     medium: Medium, *, courant: float, boundary
 ) -> YeeCoefficients:
@@ -77,6 +109,7 @@ def yee_coefficients(
             "payi (periyodik izgarada 4000 adimda +5.99e-06, 20000 adimda "
             "+2.12e-07). Ayrinti: grid.courant_limit."
         )
+    _etkin_courant_kapisi(medium, courant, limit, "1B")
     sigma = np.asarray(boundary.sigma_1d(cells), dtype=float)
     if sigma.shape != (cells,):
         raise InvalidInputError(
@@ -346,6 +379,7 @@ def yee_coefficients_2d(medium: Medium, *, courant: float, boundary) -> YeeCoeff
             "DEVRALINAMAZ: S = 0.9 1B'de gecerdi, 2B'de sema patlar. Ayrinti: "
             "grid.courant_limit."
         )
+    _etkin_courant_kapisi(medium, courant, limit, "2B")
     sigma = np.asarray(boundary.sigma_2d(shape), dtype=float)
     if sigma.shape != (nx, ny):
         raise InvalidInputError(
@@ -409,7 +443,8 @@ def yee_step_2d(
 ) -> FieldState2D:
     """Bir 2B Yee adimi. Bu fonksiyon da GEOMETRIYI BILMEZ.
 
-    Ortamdan gordugu adlar `shape`, `eps_r`, `mu_yari_2d`; sinirdan gordugu
+    Ortamdan gordugu adlar `shape`, `eps_r`, `mu_yari_2d`, `mu_r` (yalniz etkin
+    Courant kapisi, 01.10.2026); sinirdan gordugu
     adlar `sigma_2d`, `pec_mask_2d`. Dairenin yaricapi, kaynagin yeri,
     dedektorlerin sayisi -- hicbiri buraya girmez. `yee_step_1d` ile ayni
     gerekce; ve `run_2d` ile ayni ic fonksiyon (`_adim_2d`).

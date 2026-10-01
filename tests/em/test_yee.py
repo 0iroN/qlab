@@ -39,7 +39,8 @@ from qlab.engine.em.grid import (
 )
 from qlab.engine.em.medium import EY_KURALLARI, Medium
 from qlab.engine.em.source import gauss_cos, ricker
-from qlab.engine.em.yee import _adim, run_1d, yee_coefficients, yee_step_1d
+from qlab.engine.em.oblique import oblique_coefficients, oblique_courant_limit
+from qlab.engine.em.yee import _adim, run_1d, yee_coefficients, yee_coefficients_2d, yee_step_1d
 from qlab.errors import InvalidInputError
 
 
@@ -77,11 +78,14 @@ def _kosum(ortam, sinir, *, steps=200, courant=0.5, cells=None):
 # ---------------------------------------------------------------------------
 # 1. ÇEKİRDEK ORTAMI BİLMİYOR
 # ---------------------------------------------------------------------------
-def test_CEKIRDEK_ORTAMDAN_YALNIZ_UC_AD_GORUYOR_ve_GEOMETRI_ONLARDA_YOK():
+def test_CEKIRDEK_ORTAMDAN_YALNIZ_DORT_AD_GORUYOR_ve_GEOMETRI_ONLARDA_YOK():
     """SINIF: TRANSKRİPSİYON DENETİMİ — ama Modül 5'in TAŞIYICI kilidi.
 
     Çekirdeğin ortamdan gördüğü şeylerin TAM listesi sayılıyor. Geometriye
     dair her şey (`interface`, `ey_kural`, `eps_min`) listenin DIŞINDA.
+    01.10.2026: küme ÜÇ addan DÖRDE çıktı — `mu_r` bir malzeme özelliğidir,
+    geometri değil: etkin Courant kapısı en hızlı dalganın hızını hücre
+    başına `eps_r * mu_r`den okur (`yee._etkin_courant_kapisi`).
 
     Bu, "yee.py ortamı bilmez" cümlesinin sayısal karşılığıdır: bir gün
     biri çekirdeğe `if medium.ey_kural == ...` ya da `medium.interface`
@@ -91,7 +95,7 @@ def test_CEKIRDEK_ORTAMDAN_YALNIZ_UC_AD_GORUYOR_ve_GEOMETRI_ONLARDA_YOK():
     sinir = _Kaydeden(PML(thickness=15))
     _kosum(ortam, sinir, cells=240)
 
-    assert ortam.dokunulan == {"cells", "eps_r", "mu_yari"}
+    assert ortam.dokunulan == {"cells", "eps_r", "mu_yari", "mu_r"}
     assert sinir.dokunulan == {"sigma_1d", "thickness"}
     # Geometri ve modelleme seçimleri çekirdeğe HİÇ girmiyor:
     for yasak in ("ey_kural", "eps_min", "eps_yari", "half_space", "interface"):
@@ -195,7 +199,9 @@ def test_COURANT_KAPISI_SINIRIN_TAM_USTUNDE_ACILIYOR_ve_EPS_MIN_KULLANMIYOR():
     bilinçlidir: `S` en hızlı dalga hızıyla tanımlıdır, dolayısıyla eps_r = 9
     olan bir ortamda ham eşik 3.0 olsa bile kapı yine 1.0'da kapanır.
     Kapı `eps_min`e bağlansaydı `S` ortamdan ortama başka bir şey anlamına
-    gelirdi ve `S·sqrt(d) = 1` çıpası ANLAMSIZLAŞIRDI.
+    gelirdi ve `S·sqrt(d) = 1` çıpası ANLAMSIZLAŞIRDI. 01.10.2026: eps_r·mu_r
+    < 1'de kapı ETKİN S'yi sınar ve bu seçimin ihlali DEĞİL, kendisidir — en
+    hızlı dalga orada c'den hızlıdır (bkz. bir sonraki test).
     """
     yogun = Medium(np.full(240, 9.0), np.ones(240))
     yee_coefficients(yogun, courant=1.0, boundary=PEC())  # tam sınırda geçer
@@ -205,6 +211,50 @@ def test_COURANT_KAPISI_SINIRIN_TAM_USTUNDE_ACILIYOR_ve_EPS_MIN_KULLANMIYOR():
         yee_step_1d(FieldState.zeros_1d(240), yogun, courant=1.5, boundary=PEC())
     with pytest.raises(InvalidInputError):
         yee_coefficients(Medium.vacuum(240), courant=0.0, boundary=PEC())
+
+
+@pytest.mark.parametrize("eps, mu", [(0.25, 1.0), (1.0, 0.25), (0.5, 0.5)])
+def test_ETKIN_COURANT_KAPISI_UC_YOLDA_SINIRIN_TAM_USTUNDE_ACILIYOR(eps, mu):
+    """SINIF: TRANSKRİPSİYON DENETİMİ — 28.09'un açık bıraktığı motor yolu.
+
+    eps_r·mu_r = 0.25'te dalga 2c ile gider; kapı S/sqrt(0.25) = 2S'yi 1B'de
+    1'e, 2B'de 1/sqrt(2)'ye, eğikte S_max(ky)'ye karşı sınar. Sınır değerleri
+    ikinin kuvvetiyle kurulur, yani float'ta TAM: sınırda geçer, 1e-12 üstünde
+    düşer (`>=` yazan mutant ölür). Kapı öncesi aynı S'ler kabul edilip
+    PATLIYORDU (public yol, tohumlu: 1B (0.500, 1.0], 2B (0.354, 0.707],
+    eğik ky = 0.8 (0.464, 0.928]); `mu` ile `eps` bit bit aynı delikti.
+    """
+    hizli = Medium(np.full(240, eps), np.full(240, mu))
+    yee_coefficients(hizli, courant=0.5, boundary=PEC())
+    with pytest.raises(InvalidInputError, match="etkin Courant .* 1B "):
+        yee_coefficients(hizli, courant=0.5 + 1e-12, boundary=PEC())
+    duz2 = Medium(np.full((27, 27), eps), np.full((27, 27), mu))
+    s2 = 0.5 * courant_limit(2)
+    yee_coefficients_2d(duz2, courant=s2, boundary=PEC())
+    with pytest.raises(InvalidInputError, match="etkin Courant .* 2B "):
+        yee_coefficients_2d(duz2, courant=s2 * (1 + 1e-12), boundary=PEC())
+    se = 0.5 * oblique_courant_limit(0.8)
+    for pol in ("s", "p"):
+        oblique_coefficients(hizli, courant=se, boundary=PEC(), polarization=pol, ky=0.8)
+        with pytest.raises(InvalidInputError, match="etkin Courant .* EGIK"):
+            oblique_coefficients(hizli, courant=se * (1 + 1e-12), boundary=PEC(), polarization=pol, ky=0.8)
+    # Public koşum yolu da kapanır: grid.courant_limit'in ölçtüğü S = 0.51 (KAYNAKLI
+    # koşumda patlıyordu; burada alan sıfır, test yalnız kapının koşumdan ÖNCE düştüğünü sınar):
+    with pytest.raises(InvalidInputError, match="etkin Courant"):
+        run_1d(hizli, courant=0.51, boundary=PEC(), steps=3000, source=None,
+               source_index=None, probes=(100,), wavelength=8.0, sgf=1.0)
+
+
+def test_ETKIN_KAPI_HUCRE_CARPIMINA_bakar_MINIMUMLARIN_CARPIMINA_DEGIL():
+    """SINIF: TRANSKRİPSİYON DENETİMİ. eps sol yarıda, mu sağ yarıda 0.25:
+    hücre çarpımı her yerde 0.25, minimumların çarpımı 0.0625. Ölçülen eşik
+    0.500019 (bkz. test_sema_cipalari) — minimumların çarpımı S = 0.5'i
+    REDDEDERDİ, oysa o S kararlıdır."""
+    sol = np.r_[np.full(120, 0.25), np.ones(120)]
+    karisik = Medium(sol, sol[::-1].copy())
+    yee_coefficients(karisik, courant=0.5, boundary=PEC())
+    with pytest.raises(InvalidInputError, match="etkin Courant"):
+        yee_coefficients(karisik, courant=0.5 + 1e-12, boundary=PEC())
 
 
 def test_COURANT_LIMIT_UC_BOYUTU_TANIYOR_ama_COZUCU_ETMIYOR():

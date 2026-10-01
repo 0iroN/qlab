@@ -429,11 +429,15 @@ def courant_limit(dim: int) -> float:
     S/sqrt(eps_r) = 1/sqrt(2)'de olculdu (eps_r 0.25 ve 0.5, 3000 adim: sinirin
     0.999 katinda buyume 1.67, 1.001 katinda 3.65e+33; iki eps'te 4 hanede ayni,
     0.5 bagil 9e-13 / 7e-11 ayrisir; 0.25 ise 0.999'da eps_r = 1 ile bit bit, cunku
-    2'nin kuvvetiyle olcekleme float'ta tamdir). `yee_coefficients_2d` ham S'yi sinar
-    ve bunu KACIRIR; 1B `yee_coefficients` da (run_1d PEC 3000 adim eps 0.25: S 0.51,
-    etkin 1.02, sonlu degil; S 0.5 sonlu) ve `oblique_coefficients` o S'yi kabul
-    eder. Kapi senaryo yolundadir (`loader._load_em_scenario`,
-    `factory._courant_kapisi`); motor yolu (1B, egik, 2B) ACIK.
+    2'nin kuvvetiyle olcekleme float'ta tamdir). 28.09'da kapi YALNIZ senaryo
+    yolundaydi (`loader._load_em_scenario`, `factory._courant_kapisi`) ve uc
+    katsayi yolu o S'yi kabul edip PATLIYORDU (run_1d PEC 3000 adim eps 0.25: S 0.51,
+    etkin 1.02, sonlu degil). 01.10.2026'dan beri MOTOR DA kapar
+    (`yee._etkin_courant_kapisi`, S/sqrt(min(eps_r*mu_r))); public yolla olculen
+    esik/beklenen: 1B 1.000040 (eps 0.25, mu 0.25, 0.5*0.5; L = 200, 3000 adim),
+    2B 1.000600 (L = 48, 1500 adim), egik ky = 0.8 s/p 1.000036 (L = 201, 3000
+    adim) -- `mu_r < 1` ayni delikti ve fabrika onu goremezdi. KAPSAMI DISI, ACIK:
+    egik p + `ey_kural` != aritmetik + konuma bagli mu_r (bkz. o fonksiyon).
 
     `dim` AYRIKTIR (1, 2, 3) ve surekli bir dugmeye cevrilemez -- spec 3.5'in
     ikincil ayirt edici olcutu. Bu yuzden d = 3 BURADA tanimlidir: 1/sqrt(3)

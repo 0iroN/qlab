@@ -41,7 +41,7 @@ import numpy as np
 
 from qlab.engine.em.grid import FieldRecord, FieldState, Window, dx_kapisi
 from qlab.engine.em.medium import Medium
-from qlab.engine.em.yee import YeeCoefficients, _adim, yee_coefficients
+from qlab.engine.em.yee import YeeCoefficients, _adim, _etkin_courant_kapisi, yee_coefficients
 from qlab.errors import InvalidInputError
 
 #: Iki kutuplanma. Adlari `s`/`p` -- optik uzlasimi; `TM_z`/`TE_z` adlari
@@ -263,6 +263,11 @@ def oblique_coefficients(
             "ustunde kalan pay her yerde 2e-04'un altinda. Ayrinti: "
             "oblique.oblique_courant_limit."
         )
+    # Ayni sira ETKIN kapida da (01.10.2026): `base` 1B'nin etkin kapisini kosturdu,
+    # bu satir eps_r*mu_r < 1'de egik BANDI keser (olculdu ky = 0.8, s ve p, eps ya da
+    # mu 0.25: esik 0.464255 = 0.5 * S_max(ky) * 1.000036). p + ey_kural != aritmetik +
+    # konuma bagli mu_r'de YETMEZ -- acik, bkz. `yee._etkin_courant_kapisi`.
+    _etkin_courant_kapisi(medium, courant, limit, f"EGIK (ky = {ky})")
 
     cells = medium.cells
     sigma = np.asarray(boundary.sigma_1d(cells), dtype=float)

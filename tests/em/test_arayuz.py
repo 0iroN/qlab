@@ -683,7 +683,8 @@ def test_EGIK_CEKIRDEK_ORTAMDAN_BES_AD_GORUYOR_ve_GEOMETRI_ONLARDA_YOK():
 
     Task 1'de 1B TM çekirdeği ortamdan ÜÇ ad görüyordu: `{cells, eps_r,
     mu_yari}`. Egik indirgeme İKİ ad daha ekliyor -- `mu_r` (tam hücredeki
-    H'nin katsayısı) ve **`eps_yari`** (yarım hücredeki TEĞET E, yani
+    H'nin katsayısı; 01.10.2026'dan beri 1B kümesinde de var, etkin Courant
+    kapısı yüzünden) ve **`eps_yari`** (yarım hücredeki TEĞET E, yani
     `ey_kural`ın ilk gerçek çağrısı; Task 1 raporunda "1B TM'de ölü kod"
     diye işaretlenmişti ve doğruydu).
 

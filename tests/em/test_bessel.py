@@ -511,7 +511,8 @@ def test_2B_CEKIRDEK_DE_ORTAMI_ve_GEOMETRIYI_BILMIYOR():
         source_index=(13, 15), probes=((12, 12), (14, 11)),
         wavelength=8.0, sgf=1.5,
     )
-    assert ortam.dokunulan == {"shape", "eps_r", "mu_yari_2d"}
+    # `mu_r` (01.10.2026): etkin Courant kapısı hücre başına eps_r * mu_r okur.
+    assert ortam.dokunulan == {"shape", "eps_r", "mu_yari_2d", "mu_r"}
     assert sinir.dokunulan == {"sigma_2d", "pec_mask_2d", "thickness"}
     for yasak in ("radius", "cells", "eps_yari", "ey_kural", "sigma_1d"):
         assert yasak not in ortam.dokunulan and yasak not in sinir.dokunulan

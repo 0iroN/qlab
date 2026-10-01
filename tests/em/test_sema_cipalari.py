@@ -29,6 +29,7 @@ HİÇBİR `setup` 0.005 s'yi geçmiyor (fixture kullanılmıyor), yani
 setup + call = call. BU DOSYANIN ölçülen call süreleri:
     1.63s  test_S_EN_HIZLI_DALGA_HIZIYLA_TANIMLI...      <- slow
     0.64s  test_PML_KALINLIGI_ONBES_ONIKI_DEGIL...       <- slow
+    0.94s  test_ETKIN_ESIK_HUCRE_CARPIMININ_MINIMUMUNDA... <- slow (01.10.2026)
     0.42s  test_COURANT_ESIGI_UC_BOYUTTA_DA_OLCULUYOR[3]
     0.35s  test_COURANT_SINIRI_1B_DE_OLCULUYOR...
     (dosyanın kalan 16 testi toplam 0.36 s)
@@ -56,6 +57,7 @@ from qlab.engine.em.yee import (
     run_1d,
     yee_coefficients,
 )
+from qlab.errors import InvalidInputError
 
 
 # ---------------------------------------------------------------------------
@@ -317,6 +319,50 @@ def test_S_EN_HIZLI_DALGA_HIZIYLA_TANIMLI_bu_bir_MODELLEME_SECIMI():
     # NORMALİZE eşik değişmiyor — dördü de aynı sayı.
     assert normalize.max() - normalize.min() < 1e-6
     assert normalize.mean() == pytest.approx(1.0, abs=1e-4)
+
+
+@pytest.mark.slow
+def test_ETKIN_ESIK_HUCRE_CARPIMININ_MINIMUMUNDA_ve_KAPI_ORAYA_OTURUYOR():
+    """SINIF: ŞEMA ÇIPASI — `yee._etkin_courant_kapisi`nin YERİNİ ölçer.
+
+    Bir önceki testin seçimi (S en hızlı dalgayla tanımlı) eps_r·mu_r < 1'e
+    uzanır: dalga orada c'den hızlıdır. ÖLÇÜLDÜ 01.10.2026 (kapı atlanarak,
+    sevk edilen `_adim`, PEC, L = 200, 3000 adım, tohum 5): eps 0.25, mu 0.25
+    ve eps 0.25|1 & mu 1|0.25 (KARIŞIK) için eşik 0.500020 / 0.500020 /
+    0.500019, yani sqrt(min hücre çarpımı) = 0.5'in 1.00004 katı (vakumun
+    payıyla aynı). KARIŞIK vaka iki mutantı ayırır: minimumların çarpımı
+    (0.0625) eşiği 0.25 derdi — ölçülenin YARISI.
+    """
+    L, adim = 200, 3000
+
+    def kararli(S, med):
+        rng = np.random.default_rng(5)
+        st = FieldState(rng.standard_normal(L), rng.standard_normal(L - 1), 1)
+        co = YeeCoefficients(ca=np.ones(L), cb=S / med.eps_r, da=np.ones(L - 1),
+                             db=S / med.mu_yari(), dim=1, courant=S)
+        n0 = float(np.max(np.abs(st.e)))
+        for _ in range(adim):
+            st = _adim(st, co)
+            m = float(np.max(np.abs(st.e)))
+            if not np.isfinite(m) or m > 1e12 * n0:
+                return False
+        return True
+
+    yari = np.r_[np.full(L // 2, 0.25), np.ones(L // 2)]
+    ortamlar = {
+        "eps": Medium(np.full(L, 0.25), np.ones(L)),
+        "mu": Medium(np.ones(L), np.full(L, 0.25)),
+        "karisik": Medium(yari, yari[::-1].copy()),
+    }
+    for ad, med in ortamlar.items():
+        esik = _esik(lambda s: kararli(s, med), 0.4, 0.6, 1e-7)
+        assert 1.0 < esik / 0.5 < 1.0 + 1e-4, (ad, esik)
+        # Kapı tam 0.5'te kapanır: altı geçer, üstü düşer.
+        yee_coefficients(med, courant=0.5, boundary=PEC())
+        with pytest.raises(InvalidInputError, match="etkin Courant"):
+            yee_coefficients(med, courant=0.5 + 1e-12, boundary=PEC())
+    kok_min_carpim = np.sqrt(yari.min() * yari[::-1].min())
+    assert esik / kok_min_carpim == pytest.approx(2.0, rel=1e-4)
 
 
 # ---------------------------------------------------------------------------
