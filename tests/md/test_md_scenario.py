@@ -833,7 +833,7 @@ def test_G5_ORTAK_DAL_OLCUTU_DEGISMEDI(tur):
 
     Hesap `run.py`den `factory.energy_drift`e taşındı; bu kilit taşımanın
     ortak dalı değiştirmediğini söyler. Formül aşağıda AÇIKÇA yazılı (G5
-    öncesi `run.py:726`): min(10, M) blok, |blok[-1] - blok[0]| / |blok[0]|.
+    öncesi `run.py`): min(10, M) blok, |blok[-1] - blok[0]| / |blok[0]|.
     M = 23 (10 blok, son 3 kayıt atılır) ve M = 7 (7 blok). Kayıtlar
     sentetik: kinetik sabit olmayan, potansiyel negatif (|blok[0]| ≠
     |toplam[0]|).

@@ -88,7 +88,7 @@ def test_atom_sonlu_olmayan_koordinati_reddediyor(deger, eksen):
     ÖLÇÜLDÜ (düzeltmeden önce): `Atom` nan/±inf'i sessizce kabul ediyordu ve
     hata çok sonra, YANLIŞ YERDEN geliyordu — `solve()` yüz SCF iterasyonu
     koşup `SCFConvergenceError: SCF 100 iterasyonda yakinsamadi (son residual
-    nan)` fırlatıyordu (scf.py:406). Tanı yakınsamayı suçluyordu, oysa kusur
+    nan)` fırlatıyordu (scf.py:445). Tanı yakınsamayı suçluyordu, oysa kusur
     girdideydi. Yol boyunca `integrals.py`'nin beş ayrı satırından
     `RuntimeWarning` yağıyordu.
 

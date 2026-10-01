@@ -125,7 +125,7 @@ from qlab.observable.grav_obs import newton_noise_floor
 from qlab.units import HARTREE_TO_WAVENUMBER, amu_to_electron_mass
 
 #: HF/STO-3G yuzeyinin kendi yay sabiti, Ha/bohr^2. PENCERESI VAR: statik
-#: ikinci fark `h = 0.002` ile okundu (`tests/md/test_aimd.py:29` ayni
+#: ikinci fark `h = 0.002` ile okundu (`tests/md/test_aimd.py:38` ayni
 #: sayiyi tasiyor). `h` bir pencere dugmesidir -- olculdu, h = 0.008 /
 #: 0.004 / 0.002 / 0.001 / 0.0005 icin k = 0.5729658789227488 /
 #: 0.5729422212219504 / 0.5729363070638982 / 0.5729348293570524 /

@@ -35,7 +35,7 @@ modülün on dokuz beyan cümlesinin içinde arandı:
     eşik 20 ->   0 eşleşme
 
 İLK TARAMADA 12/16/20'DE İKİ EŞLEŞME VARDI ve ikisi de aynı sabitti:
-`'miknatislanma serisi'` (`observable/spin_obs.py:172` ve `:212`, bir hata
+`'miknatislanma serisi'` (`observable/spin_obs.py:172` ve `observable/spin_obs.py:212`, bir hata
 mesajı etiketi). Bu bir kopya DEĞİL, beyan cümlesinin içinde geçen
 paylaşılan bir TERİMdi — Modül 6'nın 12'deki `foton kuresi` durumunun
 aynısı. Beyan `` `m` serisi `` diye yeniden yazıldı ve tarama 12'den itibaren

@@ -620,7 +620,7 @@ def test_TAM_SAYIM_BINDER_EGRISI_UCTE_IKIDEN_SIFIRA_INIYOR(tam_sayim):
        tek başına yetmezdi — iki kilit AYRI mutantları yakalıyor.
     3. L = 4 sütununun üç değeri Task 4'ün BAĞIMSIZ olarak kilitlediği tam
        sayım değerleriyle BİREBİR aynı (0.644810791 / 0.617199318 /
-       0.380777825, `tests/spin/test_spin_obs.py` satır 572-574). İki ayrı
+       0.380777825, `tests/spin/test_spin_obs.py:572-574`). İki ayrı
        yazılmış sayıcı aynı sayıyı veriyor — transkripsiyon denetimi.
     """
     tab3, tab4 = tam_sayim

@@ -58,7 +58,7 @@ class SpinPayload:
 
     `heat_capacity` `None` ise "OLCULMEDI" demektir, "sifir" degil.
 
-    `eq=False`: `frames.py:23`teki `FramePayload` `eq=True` tasiyor ve
+    `eq=False`: `frames.py:23-24`teki `FramePayload` `eq=True` tasiyor ve
     `p1 == p2` cagrisi numpy alanlari yuzunden ValueError atiyor (olculdu,
     `band_frames.py` dokstringi).
     """

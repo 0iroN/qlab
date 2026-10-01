@@ -210,8 +210,8 @@ def _atama(govde: ast.AST, ad: str) -> ast.Assign:
 def _kos(J: float, *, alan: float = 0.0):
     """`coupling = +J`: motorun konvansiyonunda (E = −c Σ s·s) FERROMANYETİK.
 
-    İŞARET BEYANI (27.09.2026): kaynak ANTİFERROMANYETİKTİR (`downfold.py:19-20`,
-    `tb/factory.py:134` ve `:174-178`); +J bir AYAR SEÇİMİDİR — `h = 0` çift
+    İŞARET BEYANI (27.09.2026): kaynak ANTİFERROMANYETİKTİR (`downfold.py:20`,
+    `tb/factory.py:134` ve `tb/factory.py:174-178`); +J bir AYAR SEÇİMİDİR — `h = 0` çift
     L'de AFM(−J) Néel başlangıçlı koşum bununla bit bit aynı, kilitli 0.687930
     doğru işaretli AFM'nin KADEMELİ ortalamasıdır (tekbiçimde 0.009724).
     İŞARETİ ÇEVİRME: kilit bozulur, hiçbir şey kazanılmaz. `h ≠ 0` penceresi
@@ -897,11 +897,11 @@ def test_TB_SPIN_ISARET_BEYANI_KAYNAK_AFM_ve_KONTROL_DOGRU_ISARETLE():
     5.078e-02 / 8.809e-01, c = −J/4'te 6.250e-02 / 7.812e-01: `h ≠ 0`'da
     çarpan SADELEŞMEZ ("sadeleşir" diye −J yazan mutant düşer)."""
     gerekce = _girdi("tb", "spin").gerekce
-    atif = re.search(r"`engine/tb/downfold\.py:(\d+)-(\d+)`", gerekce)
-    fab = re.search(r"`engine/tb/factory\.py:(\d+)` ve `:(\d+)-(\d+)`", gerekce)
+    atif = re.search(r"`engine/tb/downfold\.py:(\d+)(?:-(\d+))?`", gerekce)
+    fab = re.search(r"`engine/tb/factory\.py:(\d+)` ve `engine/tb/factory\.py:(\d+)-(\d+)`", gerekce)
     kaynak = (KAYNAK / "engine" / "tb" / "downfold.py").read_text(encoding="utf-8").splitlines()
     fabrika = (KAYNAK / "engine" / "tb" / "factory.py").read_text(encoding="utf-8").splitlines()
-    bas, son = map(int, atif.groups())
+    bas, son = int(atif.group(1)), int(atif.group(2) or atif.group(1))
     assert "antiferromanyetik" in " ".join(kaynak[bas - 1:son]).lower()
     t, b2, s2 = map(int, fab.groups())
     assert "antiferromanyetik" in fabrika[t - 1].lower()

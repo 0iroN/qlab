@@ -608,7 +608,7 @@ def test_OBSERVABLE_KATMANI_BAGLASIM_EKLEMIYOR_ve_dosya_sayisi_DOKUZ():
 def test_MD_FORCE_FIELD_KINDS_TUZAGI_KAPANDI_VE_KILITLENDI():
     """Bu görevin taşıyıcı fikrinin depodaki KANITI — ve artık ÇÖZÜMÜ.
 
-    TUZAK NEYDİ (ölçüldü 29-30.08.2026, `scenario/schema.py:56`):
+    TUZAK NEYDİ (ölçüldü 29-30.08.2026; demet bugün `scenario/schema.py:73`te):
         `MD_FORCE_FIELD_KINDS = ("harmonic", "morse", "lennard_jones")`
     hem ÖLÜydü (adın `src/`+`tests/` ağacındaki tek geçişi bir ATAMAydı;
     hiçbir yerde okunmuyordu) hem BAYATtı (`hartree_fock` listede yoktu,

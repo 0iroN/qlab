@@ -179,7 +179,7 @@ def test_DEJENERE_alt_uzayda_BANT_BASINA_agirlik_ANLAMSIZ():
 
 
 def test_yuk_eq_FALSE_karsilastirma_PATLAMIYOR():
-    """OLCULMUS TUZAK: `frames.py:23`teki FramePayload `eq=True` tasiyor ve
+    """OLCULMUS TUZAK: `frames.py:23-24`teki FramePayload `eq=True` tasiyor ve
     `p1 == p2` ValueError atiyor. Modul 2'nin yukleri `eq=False` kullanir.
     """
     a, b = _yuk(), _yuk()

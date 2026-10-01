@@ -870,7 +870,7 @@ def test_promolekulun_dogal_isgalleri_pauli_siniri_disinda_ve_bu_beyan_ediliyor(
     """Serbest ATOM Pauli icindedir; kurulan PROMOLEKUL degildir -- ve olmamali.
 
     Yukaridaki test her serbest atomun dogal isgallerinin 2'yi asmadigini
-    kilitler ve modul bu olcutu 296-303. satirlarda BIR KURULUMU REDDETMEK
+    kilitler ve modul bu olcutu `observable/hf_obs.py:371-377`de BIR KURULUMU REDDETMEK
     icin adiyla kullaniyor ("2.473 > 2 Pauli'yi ihlal eder"). Ama fark
     haritasinin gercekten kullandigi nesne tek atom degil, MOLEKULER bazda
     kurulan blok-kosegen toplamdir ve o toplam sinnri asar. OLCULDU

@@ -156,7 +156,7 @@ def test_pencere_homo_ile_aciliyor(su_penceresi):
 
     Su/STO-3G'de yedi orbital var, beşi dolu; HOMO indeksi 4.
     "Born-Oppenheimer" metni pencerenin kendi uydurması DEĞİL: `scf.py`'nin
-    kendi `Provenance.approximations` listesinden geliyor (scf.py:116).
+    kendi `Provenance.approximations` listesinden geliyor (scf.py:129).
     """
     pencere, molecule = su_penceresi
     assert pencere.orbital_index == molecule.n_electrons // 2 - 1 == 4

@@ -50,7 +50,7 @@ from qlab.units import HARTREE_TO_EV
 class BandPayload:
     """Bant yapisi cizimi icin gereken her sey. Enerjiler eV.
 
-    `eq=False` bilinclidir: olculdu, `frames.py:23`teki `FramePayload`
+    `eq=False` bilinclidir: olculdu, `frames.py:23-24`teki `FramePayload`
     `eq=True` tasiyor ve `p1 == p2` cagrisi numpy alanlari yuzunden
     ValueError atiyor.
     """

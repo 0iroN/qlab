@@ -815,7 +815,7 @@ def test_analiz_yakinsama_hukmunu_tasiyor(water):
 
     solve() yakinsamayi ISTISNA ile bildirdigi icin (SCFConvergenceError)
     converged=False tasiyan bir HFResult uretilemez; olculdu: depoda HFResult
-    YALNIZCA scf.solve() icinde kurulur (tek `HFResult(` cagrisi, scf.py:395)
+    YALNIZCA scf.solve() icinde kurulur (tek `HFResult(` cagrisi, scf.py:478)
     ve orada provenance'a converged=True SABIT yazilir -- converged=False
     yalnizca factory.run_scan'in ScanResult'inda gorunur. Bu yuzden test
     frozen dataclass'i dataclasses.replace ile kopyalayip alani dogrudan bozar.

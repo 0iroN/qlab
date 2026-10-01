@@ -44,7 +44,7 @@ class Atom:
         #
         # Olculdu -- kontrol yokken hata cok sonra ve YANLIS YERDEN geliyordu:
         # `solve()` yuz SCF iterasyonu kosup "SCF 100 iterasyonda yakinsamadi
-        # (son residual nan)" firlatiyordu (scf.py:406), yani tani yakinsamayi
+        # (son residual nan)" firlatiyordu (scf.py:445), yani tani yakinsamayi
         # sucluyordu. Yol boyunca integrals.py'nin bes ayri satirindan
         # RuntimeWarning yagiyordu.
         #
