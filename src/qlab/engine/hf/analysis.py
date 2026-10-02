@@ -419,9 +419,10 @@ def analyse(result: HFResult) -> AnalysisReport:
     temsil edilemez. Isgal edilecek orbital sayisi bazin tasidigindan fazla
     oldugunda scf._density_matrix'in `coefficients[:, :n_occupied]` dilimi
     numpy'da SESSIZCE kirpilir ve yogunluk molekulun iddia ettigi elektron
-    sayisini tasimaz. Olculdu (H2/STO-3G, charge=-4; n_electrons=6,
-    n_occupied=3, n_orbitals=2): solve() bunu NORMAL bir HFResult olarak,
-    enerjisi POZITIF (+0.9231791808701104 hartree) donduruyor; Tr(PS) = 4
+    sayisini tasimaz. Olculdu (11.08.2026, 100aa4e; H2/STO-3G, charge=-4;
+    n_electrons=6, n_occupied=3, n_orbitals=2): solve() bunu O GUN NORMAL bir
+    HFResult olarak, enerjisi POZITIF (+0.9231791808701104 hartree)
+    donduruyordu (393740f'den beri reddediyor); Tr(PS) = 4
     (molekul 6 der), Mulliken toplami -2.0 (yuk -4), H2'nin Mayer bag
     mertebesi 4.0 (RHF'de ust sinir 1.0), dipol 3.554 D. Bu alti sayiyi bir
     rapora koyup yalnizca homo/gap'i None birakmak, anlamsiz bir sonucu
@@ -432,15 +433,18 @@ def analyse(result: HFResult) -> AnalysisReport:
     sistemleri reddederken kullandigi tiptir) ve tani icin gereken uc sayiyi
     mesajinda tasir.
 
-    KAPSAM UYARISI -- asil kusur YUKARI AKISTA: bu sistemi ilk kabul eden yer
-    solve()'un kendisidir ve orada bir kapasite kontrolu YOKTUR (olculdu).
+    KAPSAM UYARISI -- asil kusur YUKARI AKISTAYDI: bu sistemi ilk kabul eden yer
+    solve()'un kendisiydi ve orada bir kapasite kontrolu YOKTU (olculdu).
     Duzeltme burada, cunku analyse() bu sonucun ilk PUBLIC tuketicisidir ve
     ham IndexError buradan cikiyordu; solve()'un ayni siniri kendi girisinde
-    reddetmesi ayri ve daha genis bir degisikliktir (evaluate_orbital,
-    electron_density gibi HFResult okuyan her yolu ilgilendirir). O bosluk
-    burada kapatilmis SAYILMAZ; tests/hf/test_analysis.py'deki
+    reddetmesi ayri ve daha genis bir degisiklikti (evaluate_orbital,
+    electron_density gibi HFResult okuyan her yolu ilgilendirir) ve 11.08.2026'da
+    YAPILDI (393740f: solve() girisinde UnsupportedSystemError). Bu kapi yine
+    durur, cunku HFResult elle kurulabilir; tests/hf/test_analysis.py'deki
     "test_isgal_bazin_kapasitesini_ASARSA_analiz_TIPLI_hata_veriyor"
-    testi yukari akistaki kusuru Tr(PS) = 4 iddiasiyla yaziya baglar.
+    testi bugun HEM solve()'un reddini HEM elle kurulmus (dataclasses.replace)
+    bir HFResult'ta bu kapiyi kilitler (Tr(PS) = 4 iddiasi 393740f'de testten
+    cikti).
 
     NE TASINIR: rapor kendi beyanlarini (Mulliken'in baz duyarliligi,
     Koopmans, Mayer'in ayrisma korlugu) dalga fonksiyonunun beyanlarinin
@@ -486,11 +490,10 @@ def analyse(result: HFResult) -> AnalysisReport:
             f"n_electrons={result.molecule.n_electrons}, "
             f"charge={result.molecule.charge}, baz={result.basis_name!r}. "
             "Bu sistem kapali kabuk RHF'de temsil EDILEMEZ ve elinizdeki "
-            "HFResult ona ait degildir: yogunluk matrisi yalnizca "
-            f"{2 * n_orbitals} elektron tasir (molekul "
-            f"{result.molecule.n_electrons} iddia eder), cunku SCF'in "
-            "isgal dilimi baz kapasitesinde sessizce kirpilir. Daha buyuk "
-            "bir baz secin veya yuku duzeltin."
+            "HFResult ona ait degildir: solve() boyle bir sistemi kendi "
+            "girisinde reddeder (11.08.2026'dan beri), yani bu sonuc elle "
+            "kurulmus ya da degistirilmis olmali. Daha buyuk bir baz secin "
+            "veya yuku duzeltin."
         )
 
     mulliken = _read_only(mulliken_charges(result))

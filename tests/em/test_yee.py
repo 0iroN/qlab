@@ -417,8 +417,8 @@ def test_MU_YARI_EY_KURALA_BAGLI_DEGIL():
     """SINIF: TRANSKRİPSİYON DENETİMİ.
 
     `ey_kural` teğet E'nin süreklilik kuralıdır, H'nin değil. `mu_yari`nin
-    ona bağlanması SESSİZ bir bağ olurdu: bu modülde `mu_r` her yerde 1
-    olduğu için dört kural da aynı diziyi verir ve bağ HİÇ FARK
+    ona bağlanması SESSİZ bir bağ olurdu: senaryo yolu `mu_r`'yi her yerde 1
+    sevk ettiği için orada dört kural da aynı diziyi verir ve bağ HİÇ FARK
     ETTİRMEZDİ — yani hata yıllarca görünmezdi. Test bunu mu_r'yi DEĞİŞKEN
     yaparak sınıyor.
     """

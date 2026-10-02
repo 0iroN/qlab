@@ -1,4 +1,4 @@
-"""YAML senaryo dosyalarını TDSEScenario ya da HFScanScenario'ya çevirir.
+"""YAML senaryo dosyalarını dokuz senaryo türünden birine çevirir (aşağıda).
 
 Bilinmeyen anahtarlar sessizce yutulmaz, hata verir: "sigma_bohrr" gibi bir
 yazım hatası sessizce varsayılana düşseydi simülasyon yanlış parametrelerle
@@ -144,7 +144,12 @@ _KNOWN_KINDS = (
 )
 
 
-def load_scenario(path: str | Path) -> TDSEScenario | HFScanScenario | MDScenario:
+def load_scenario(
+    path: str | Path,
+) -> (
+    TDSEScenario | HFScanScenario | MDScenario | TBScenario | DownfoldScenario
+    | SpinScenario | EMScenario | GravScenario | BridgeScenario
+):
     file_path = Path(path)
     if not file_path.is_file():
         raise ScenarioError(f"Senaryo dosyası bulunamadı: {file_path}")

@@ -6,9 +6,10 @@
 Toplu parametre taramaları ve doğrulama koşuları bu yoldan yapılır; app katmanı
 hiçbir zaman gerekmez. Bu, spec §3 İlke 1'in pratik karşılığıdır.
 
-Senaryo türüne göre dallanır: TDSEScenario mevcut split-operator yoluna,
-HFScanScenario ise engine.hf.factory.run_scan'e gider. İkisi de Provenance
-taşıdığı için şeffaflık bloğu tek bir yerden (provenance.as_lines()) basılır.
+Dokuz senaryo türüne göre dallanır: TDSEScenario split-operator yoluna,
+HFScanScenario engine.hf.factory.run_scan'e gider (ikisi `_run_loaded`);
+MD, TB, Downfold, Spin, EM, Grav ve Bridge kendi `_run_*` dallarına. Her dal
+şeffaflık bloğunu Provenance'tan (provenance.as_lines()) basar.
 """
 
 from __future__ import annotations
@@ -146,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
     reconfigure_stdio_utf8()
 
     parser = argparse.ArgumentParser(
-        prog="qlab.run", description="TDSE senaryosunu GUI olmadan koştur"
+        prog="qlab.run", description="Senaryoyu (dokuz türün herhangi biri) GUI olmadan koştur"
     )
     parser.add_argument("scenario", help="YAML senaryo dosyası")
     parser.add_argument("-o", "--output", required=True, help="çıktı .npz dosyası")

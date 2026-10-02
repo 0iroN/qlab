@@ -241,8 +241,8 @@ def main(argv: list[str] | None = None) -> int:
             raise ScenarioError(
                 "GUI kabuğu şu an yalnızca TDSE senaryolarını görselleştirir; "
                 f"{args.scenario!r} bir "
-                f"{type(scenario).__name__} (HF taraması). "
-                "HF taramaları GUI'siz koşucudan çalıştırılır: "
+                f"{type(scenario).__name__}. "
+                "TDSE dışındaki senaryolar GUI'siz koşucudan çalıştırılır: "
                 f"python -m qlab.run {args.scenario} -o cikti.npz"
             )
     except QLabError as exc:

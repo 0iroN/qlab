@@ -60,10 +60,12 @@ class Medium:
     Bir modelleme secimini gurultu eksenine cevirmek, olcumun cozunurlugunu
     yok etmek demektir.
 
-    `mu_r` bu modulde her yerde 1'dir ve oyle SEVK EDILIYOR; alan olarak
-    tutulmasinin sebebi `yee.py`nin ortami bilmemesi -- cekirdek "mu 1'dir"
-    varsayimini iceride tasisaydi, manyetik ortam eklemek cekirdegi
-    degistirmeyi gerektirirdi.
+    `mu_r` SENARYO YOLUNDA her yerde 1'dir ve oyle SEVK EDILIYOR (kuruculari
+    np.ones verir, EMScenario'da mu yok); alan olarak tutulmasinin sebebi
+    `yee.py`nin ortami bilmemesi -- cekirdek "mu 1'dir" varsayimini iceride
+    tasisaydi, manyetik ortam eklemek cekirdegi degistirmeyi gerektirirdi.
+    Motor yolu mu_r != 1'i KABUL EDER ve kararlilik kapilari onu okur
+    (`yee._etkin_courant_kapisi`, `oblique._egik_p_kesin_esik`).
     """
 
     eps_r: np.ndarray

@@ -261,8 +261,8 @@ Tasarım belgesi: `../docs/superpowers/specs/2026-08-05-qlab-kuantum-cekirdegi-d
   A2 1.0008 kat). `hf → md` bir **şema çıpasıdır** (iki tüketici de aynı HF
   çözümünün soyundan); mevcut `ω_B/ω_A` çıpası kütleye **bit bit kör** ve kütle
   borusu kendi mutlak sınavını aldı; düşen iki aday (`hf → tb`, `tb → spin`)
-  **tautoloji olarak, penceresiyle** sevk edildi (27.09.2026'dan beri üç: +
-  `hf → spin`, kenarsız hükümle). Planın/spec'in **yirmi beş**
+  **tautoloji olarak, penceresiyle** sevk edildi (28.09.2026'dan beri altı: +
+  `hf → spin`, `tdse → spin`, `md → em`, `tb → em`, kenarsız hükümle). Planın/spec'in **yirmi beş**
   sayısı ölçümle düzeltildi (Task 5'te bir: 6-31G'nin `ω_A`sı **penceresizdi**).
   Modül 7'nin Doğrulama bölümünde ayrı bir başlığı YOKTUR (bu satır eskiden
   öyle bir bölüme gönderme yapıyordu): ölçülen sayılar ve dürüst olumsuzlar
@@ -509,8 +509,9 @@ boyu hücre cinsindendir, metre değil** — `c = ε₀ = μ₀ = 1` bir birim s
 ve senaryo bir **tohum taşımaz**: FDTD deterministtir, tekrarlanabilirliğin
 karşılığı pencerenin tam beyanıdır. `npml` ve `Δx` bilinçli olarak **anahtar
 değildir** — biri bağlı değil (dairesel PEC boşluk tam yansıtıcıdır), öteki
-bağlı ama **sessizce yanlış** çalışıyor (ölçüldü: tepe sayısı `Δx` = 1/0.5/2
-için 20/13 → 4/4 → 31/43, `λ` üçünde de aynı kalarak). Panel ikisini de yine
+bağlıydı ama **sessizce yanlış** çalışıyordu (ölçüldü: tepe sayısı `Δx` = 1/0.5/2
+için 20/13 → 4/4 → 31/43, `λ` üçünde de aynı kalarak); 26.08.2026'dan beri
+motor `Δx ≠ 1`'i reddediyor (`engine/em/grid.dx_kapisi`). Panel ikisini de yine
 basar, değerleri koşumdan gelir. Panel dört ek satır basar: `Dairesellik`
 (bir malzemenin `R`'si bir tahmin değildir), `Çıpa sınıfı` (hangi sayı şema,
 hangisi fizik, hangisi çeviri denetimi), `Pencere` (ızgara/`Δx`/`S`/adım/`λ`/
@@ -566,12 +567,14 @@ pytest tests/ -v -m slow
 `pyproject.toml` bir `addopts` taşımaz, yani `pytest tests/` yavaş işaretli
 testleri de KOŞAR — ikinci komut ayrı bir küme değil, birincinin alt kümesidir.
 
-**Bu makinede ölçüldü** (ilk dört satır Modül 5, kalanı Modül 4):
+**Bu makinede ölçüldü** (ilk iki satır 02.10.2026, sonraki dördü Modül 5, kalanı Modül 4):
 
 | Koşu | Test | Süre |
 |---|---|---|
-| tam süite (iki kapıdan SONRA) | **1397** | **770.02 s** |
-| yalnız Modül 5 (`tests/em/`, aynı hâl) | **237** | **197.39 s** |
+| tam süite (`87337f0`, 02.10.2026) | **2248** | **1050.45 s** |
+| `-m "not slow"` (`87337f0`) | **2108** | **191.01 s** |
+| *tam süite (Modül 5'in iki kapısından SONRA)* | *1397* | *770.02 s* |
+| *yalnız Modül 5 (`tests/em/`, aynı hâl)* | *237* | *197.39 s* |
 | *tam süite (Modül 5 kapanışı, `cda2871`)* | *1389* | *939.68 s* |
 | *yalnız Modül 5 (`tests/em/`, `cda2871`)* | *229* | *237.32 s* |
 | *tam süite (Modül 4 kapanışı)* | *1159* | *585.36 s* |
@@ -580,9 +583,10 @@ testleri de KOŞAR — ikinci komut ayrı bir küme değil, birincinin alt küme
 | *yalnız Modül 4 (`tests/spin/`)* | *186* | *187.23 s* |
 | *aynısı, `-m "not slow"`* | *166* | *29.82 s* |
 
-**Eğik yazılan yedi satır ESKİ ölçümlerdir ve YENİDEN ÖLÇÜLMEDİ** (ikisi
-Modül 5 kapanışı `cda2871`, beşi Modül 4 kapanışı); bugünkü toplama uydurmak
-ölçüm değil uydurma olurdu. `cda2871` satırı yine de bugün BİR KEZ yeniden
+**Eğik yazılan dokuz satır ESKİ ölçümlerdir ve YENİDEN ÖLÇÜLMEDİ** (ikisi
+Modül 5'in iki kapısından sonra, ikisi Modül 5 kapanışı `cda2871`, beşi Modül 4
+kapanışı); bugünkü toplama uydurmak
+ölçüm değil uydurma olurdu. `cda2871` satırı yine de 26.08.2026'da BİR KEZ yeniden
 koşuldu ve **1389 passed / 738.92 s** verdi — 939.68 s ile arasındaki fark
 aşağıda beyan edilen makine gürültüsündendir, süite değişmedi.
 
@@ -592,6 +596,21 @@ süresi **1.51 s** ve içinde hiç `slow` işareti YOK. Eğik Courant kapısı
 (`engine/em/oblique.oblique_courant_limit`) ise **hiç test EKLEMEDİ** — mevcut
 kararlılık kilidini yeniden yazdı, çünkü kapı konunca eski ölçüm kendi kapısını
 ölçer hâle gelirdi.
+
+29.09–02.10.2026 arasında Modül 5'in kararlılık kapılarına üçü daha eklendi:
+`eps_r < 1` ortamında **etkin Courant** `S/√eps_r` yükleyici ve fabrika kapısı
+(`5d9a0bf`); aynı kapı **motor düzeyinde**, hücre başına
+`S/√min(1, eps_r·mu_r)` ile üç katsayı yolunda (`yee._etkin_courant_kapisi`,
+`c4c66ad`, 2242 → 2247 test — motor `eps_r·mu_r < 1` ortamında patlayan bir S
+bandını kabul ediyordu ve `mu_r < 1` aynı delikti, fabrika onu göremezdi); ve
+eğik p'nin **kesin** kararlılık eşiği `S = 2/√λmax`, ayrık operatörün en büyük
+özdeğerinden (`oblique._egik_p_kesin_esik`, `87337f0`, 2247 → 2248 test —
+`ey_kural` ≠ aritmetik ve konuma bağlı `mu_r`'de hücre çarpımı kapısı
+yetmiyordu; model tek adım büyütme matrisi ve zaman adımlamasıyla iki bağımsız
+yoldan doğrulandı ve kayıplı sınırda — PML, LossyLayer — da kesin). Ayrıca depodaki her `dosya.py:N`
+atfı artık bugünün satırına kilitli (`tests/test_satir_atiflari.py`, `f1cf900`,
+2240 → 2242 test — 49 atfın 6'sı hedef dosyaya satır eklendikçe sessizce
+kaymıştı). Ölçümler ilgili docstringlerde.
 
 MAKİNE GÜRÜLTÜSÜ: **aynı** süit aynı gün 727.75 s ve 770.02 s (`tests/em`:
 191.01 s ve 197.39 s), `cda2871` ise 939.68 s ve 738.92 s koştu. Yani
@@ -717,7 +736,7 @@ B2'nin hiç dokunmadığı yavaş alt küme aynı iki ölçüm arasında
 bu tablonun *ölçümleriydi* ve yanlışlıkla limite çevrilmişti. Yerine geçen
 kural ölçüme dayanıyor: yeni testler `@pytest.mark.slow` şeridine girer,
 varsayılan şeride yalnız saniye altı çıpalar konur; çünkü hızlı şerit
-(53.62 s) günlük çalışma döngüsüdür ve korunması tam süiteden daha
+(Plan D'de 53.62 s, 02.10.2026'da 191.01 s) günlük çalışma döngüsüdür ve korunması tam süiteden daha
 değerlidir. Kural Modül 2E'de iki kez iş gördü: plan dört testi yavaş
 işaretlemişti, ölçüm dördünü de hızlı şeride geri gönderdi.
 
@@ -2131,7 +2150,7 @@ T = 3.4 → 24/24. Yani işaretin **iki yönü de** aynı sevk edilmiş senaryod
 kilitlenebiliyor.
 
 Beyan metninin **tek kaynağı** `engine/spin/factory.py`dir ve bu bir disiplin
-değil bir **test**tir: on bir beyan cümlesinin her biri `src/` ağacında tam bir
+değil bir **test**tir: on iki beyan cümlesinin her biri `src/` ağacında tam bir
 kez geçer, `tests/` tarafında da kilidi kuran tek dosya dışında hiç geçmez.
 `run.py::_run_spin` metnin bir harfini bile yeniden yazmaz. Tek kelimelik
 istisna `ALT SINIR` işaretidir ve o da yazılmaz, fabrikadan **ithal edilir**.
@@ -2417,12 +2436,13 @@ sayısı, `eps_r`.
 
 **İKİ DÜĞME BİLİNÇLİ OLARAK ANAHTAR DEĞİLDİR — VE SEBEPLERİ FARKLI.** `npml`
 **bağlı değildir**: dairesel PEC boşluk tam yansıtıcıdır ve
-`CircularPEC.thickness` sabit sıfırdır. `Δx` ise **bağlıdır ama sessizce
-yanlış çalışır ve bu ölçüldü**: `run_2d` kaynağı `t = n·S·Δx` zamanında besler,
-oysa `wavelength` **hücre** cinsinden verilir ve ikisi yalnız `Δx = 1`'de
-örtüşür. R = 5/10 penceresinde tepe sayısı `Δx` = 1'de **20/13**, `Δx` = 0.5'te
-**4/4**, `Δx` = 2'de **31/43** çıkıyor — `λ` üçünde de 7.257613 kalarak. Yani
-kaynağın bandı kipin frekansına göre kayıyor. Bağlanmamış ya da sessizce yanlış
+`CircularPEC.thickness` sabit sıfırdır. `Δx` ise **bağlıydı ama sessizce
+yanlış çalışıyordu ve bu ölçüldü**: `run_2d` kaynağı `t = n·S·Δx` zamanında
+besliyordu, oysa `wavelength` **hücre** cinsinden verilir ve ikisi yalnız
+`Δx = 1`'de örtüşür. R = 5/10 penceresinde tepe sayısı `Δx` = 1'de **20/13**,
+`Δx` = 0.5'te **4/4**, `Δx` = 2'de **31/43** çıkıyordu — `λ` üçünde de 7.257613
+kalarak. Yani kaynağın bandı kipin frekansına göre kayıyordu (26.08.2026'da
+kapandı: `dx_kapisi`, bkz. aşağıdaki kapanış maddesi). Bağlanmamış ya da sessizce yanlış
 çalışan bir düğmeyi kabul etmek bu depoda düzeltilmiş bir hatadır
 (`heisenberg_step` + Ising). Panel ikisini de yine basar (`npml = 0`,
 `dx = 1`), değerleri `Window`dan gelerek.
@@ -2492,6 +2512,18 @@ edilince sınanabilir hâle gelen iddialardı**:
    `Δx ≠ 1`'i reddediyor, `t = n·S·Δx` üç koşum yolunda da `t = n·S` oldu ve
    "lambda … hucre" beyanı ilk kez sınanabilir hâle geldi
    (`tests/em/test_hucre_birimi.py`).
+5. **Kararlılık kapıları motor yolunda eksikti — 29.09–02.10.2026'da kapandı.**
+   Yükleyici ve fabrika `eps_r < 1`'de etkin `S/√eps_r`'yi denetliyordu
+   (`5d9a0bf`), ama üç katsayı yolu (`yee_coefficients`,
+   `yee_coefficients_2d`, `oblique_coefficients`) `eps_r·mu_r < 1` ortamında
+   patlayan bir bandı KABUL ediyordu — public yolla ölçüldü: 1B (0.5, 1], 2B
+   (0.354, 0.707], eğik `ky = 0.8` (0.464, 0.928] (`eps` ya da `mu` 0.25).
+   `yee._etkin_courant_kapisi` hücre başına `eps_r·mu_r`yi okur (`c4c66ad`);
+   karışık ortamda eşik 0.500019 ölçüldü, minimumların çarpımı 0.25 derdi.
+   Eğik p'de `ey_kural` ≠ aritmetik ve konuma bağlı `mu_r` ile o kapı da
+   yetmiyordu (her hücrede `eps·mu = 1` iken `eps 4|0.25`, `L = 200`: harmonik
+   0.627587, sağ 0.470588); `oblique._egik_p_kesin_esik` kesin eşiği ayrık
+   operatörün en büyük özdeğerinden okur (`87337f0`).
 
 #### Dürüst olumsuzlar
 
@@ -2854,7 +2886,7 @@ Beşi de **panelde ve `.npz` kaydında** yazılıdır — saklanmıyorlar:
 - **İzotropik `K`'nın kapalı formu türetilmedi**, ve izotropik `λ = 0`
   çizgisinin model artığı **`−24π(1+γ)²` ÖLÇÜLDÜ ama TÜRETİLMEDİ**.
 
-Bunlara ek olarak, panelde değil ama burada yazılı olan üç açık kalem:
+Bunlara ek olarak, panelde değil ama burada yazılı olan üç beyan (ikincisi ölçülerek kapandı):
 
 - **`slow` eşiğinden sapma beyan edildi:** modülün ölçülmüş eşiği 1.0 s,
   `test_CLI_UCTAN_UCA` **1.43 s** sürüyor ve bilerek işaretlenmedi — yoksa
@@ -2931,13 +2963,13 @@ Spec §15'teki yedi maddenin gerçek durumu (ölçüm ayrıntıları
 
 | # | Kriter | Durum |
 |---|---|---|
-| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — **1705/1705 test yeşil** (`pytest tests/`, 766.92 s; Modül 6 kapanışında ölçüldü). Önceki ölçümler 1389/1389 (939.68 s, Modül 5 kapanışı), 1159/1159 (585.36 s, Modül 4 kapanışı) ve 971/971 (432.22 s, Modül 3H kapanışı) idi; süre 1389 → 1705'te DÜŞTÜ ve bu bir hızlanma değil bir KARIŞIM değişimidir — Modül 6'nın 307 testinin çoğu mikrosaniyelik kapalı-form ve panel denetimidir; aşağıdaki `reference/` deneyi o günden de eskidir. Ayrıca `reference/` geçici olarak kaldırılıp tam süite yeniden koşuldu: testler ATLANMIYOR, KIRMIZI oluyor — ölçüldü, **128 failed + 132 error + 291 passed, 0 skipped** (toplam 551, 154.20 s). Yani 260 test kırmızıya dönüyor ve hiçbiri sessizce atlanmıyor. Dikkat: bu ikinci deney süite 551 testliyken yapıldı ve o günün sayılarını taşır; yeniden koşulmadı, sayıları bugünkü toplama uydurmak ölçüm değil uydurma olurdu. Not: PySCF bu makinede **kurulu değildir** — `reference/*.json` kayıtları PySCF 2.14.0 ile başka bir yerde üretilmiştir ve testler koşarken PySCF'e bağımlı değildir; "PySCF referans testleri dahil" ifadesi kayıtlarla karşılaştırmayı anlatır, canlı bir PySCF çağrısını değil |
+| 1 | `pytest` tam yeşil, PySCF referans testleri dahil | **Kapandı** — **2248/2248 test yeşil** (`pytest tests/`, 1050.45 s; 02.10.2026, `87337f0`). Önceki ölçümler 1815/1815 (1203.40 s, Modül 7 kapanışı), 1705/1705 (766.92 s, Modül 6 kapanışı), 1389/1389 (939.68 s, Modül 5 kapanışı), 1159/1159 (585.36 s, Modül 4 kapanışı) ve 971/971 (432.22 s, Modül 3H kapanışı) idi; süre 1389 → 1705'te DÜŞTÜ ve bu bir hızlanma değil bir KARIŞIM değişimidir — Modül 6'nın 307 testinin çoğu mikrosaniyelik kapalı-form ve panel denetimidir; aşağıdaki `reference/` deneyi o günden de eskidir. Ayrıca `reference/` geçici olarak kaldırılıp tam süite yeniden koşuldu: testler ATLANMIYOR, KIRMIZI oluyor — ölçüldü, **128 failed + 132 error + 291 passed, 0 skipped** (toplam 551, 154.20 s). Yani 260 test kırmızıya dönüyor ve hiçbiri sessizce atlanmıyor. Dikkat: bu ikinci deney süite 551 testliyken yapıldı ve o günün sayılarını taşır; yeniden koşulmadı, sayıları bugünkü toplama uydurmak ölçüm değil uydurma olurdu. Not: PySCF bu makinede **kurulu değildir** — `reference/*.json` kayıtları PySCF 2.14.0 ile başka bir yerde üretilmiştir ve testler koşarken PySCF'e bağımlı değildir; "PySCF referans testleri dahil" ifadesi kayıtlarla karşılaştırmayı anlatır, canlı bir PySCF çağrısını değil |
 | 2 | Headless koşucu çalışır + H₂ eğrisi bağ uzunluğu ±%8 | **Kapandı** — `python -m qlab.run scenarios/h2_bond_scan.yaml -o h2_curve.npz`; taramanın parabol fiti **0.71348 Å**, deneyselden sapma %3.7, kriterin istediği ±%8 sağlanıyor. Bu sayı yöntemin denge uzunluğu DEĞİL: STO-3G'nin gerçek minimumu 0.71223 Å, fark taramanın ızgara eseridir (Modül 1B tablosunun altındaki nota bakın). Bu satır bir zamanlar 0.7156 Å diyordu — o sayı bu komuttan değil, `test_physical`'ın ayrı ızgarasından geliyordu; artık `test_shipped_h2_scan_fit_is_grid_biased_but_less_than_the_uniform_grid` senaryonun kendi sayısını kilitliyor |
 | 3 | GUI'de H₂O HOMO izoyüzeyi döndürülebilir | **Kapandı — bu depoda ilk gerçek-ekran doğrulaması.** `python -m qlab.app.main --molecule "O 0 0 0; H 0 0.757 0.587; H 0 -0.757 0.587"` gerçek Windows platformunda açıldı; su HOMO'su (1b₁) çizildi, ±faz iki renkte, 1764/1764 tepe, çekirdekler ve şeffaflık paneli görüldü. Döndürme ölçüldü: kamera azimutu değişince kare piksel bileşenlerinin **%14.1'i**, elevasyon değişince **%7.2'si** değişiyor — sahne gerçekten 3B ve görünüm tepki veriyor. **Ne ölçülmedi:** fareyle sürükleyerek döndürme; kamera programatik değiştirildi. Kriterin "döndürülebilir" kelimesi bu yüzden yalnızca sahne tarafında kapalıdır, girdi tarafında bir insanın bakması gerekir. Doğrulamanın kendisi bir kusuru da GÖRÜNÜR KILDI: 12 satırlık beyan 140 px'lik panelde katlanın altında kalıyordu (düzeltildi, `TransparencyPanel(max_height=…)`) |
 | 4 | Kaydırıcı ile canlı iletim, analitiğin ±%2'si içinde | **Kapandı** — ölçülen fark %0.07 |
 | 5 | Şeffaflık paneli her hesapta dolu | **Kapandı** — TDSE tarafında pencere paneli; HF tarafında headless koşucu her senaryoda Yöntem/Yaklaşımlar/İhmal edilen/Beklenen hata/Yakınsama satırlarını basar (`h2_bond_scan.yaml` çıktısı) |
 | 6 | Yakınsamayan SCF sessizce sayı döndürmez, test edilmiş | **Kapandı** — `SCFConvergenceError`, `test_non_convergence_raises_rather_than_returning` ile test edilmiştir |
-| 7 | `engine`'in `viz`/`app` bağımlılığı yok, import-linter ile doğrulandı | **Kapandı** — üç sözleşme (`engine görselleştirmeyi bilmez`, `observable görselleştirmeyi ve GUI'yi bilmez`, `Katmanlı mimari`), hepsi KEPT. Sözleşmenin kendisinin diş taşıdığı da ölçülüyor: enjekte edilen 8 ihlalin 8'i adı geçen sözleşmeyi BROKEN yapıyor (bkz. "Mimari kuralı") |
+| 7 | `engine`'in `viz`/`app` bağımlılığı yok, import-linter ile doğrulandı | **Kapandı** — üç sözleşme (`engine görselleştirmeyi bilmez`, `observable görselleştirmeyi ve GUI'yi bilmez`, `Katmanlı mimari`), hepsi KEPT. Sözleşmenin kendisinin diş taşıdığı da ölçülüyor: enjekte edilen 13 ihlalin 13'ü adı geçen sözleşmeyi BROKEN yapıyor (11.08'de 8'di) (bkz. "Mimari kuralı") |
 
 **7/7 madde kapalıdır.** Kriter 3 Modül 1B2 ile kapandı; yukarıdaki tablonun
 yedi satırı da "Kapandı" der.

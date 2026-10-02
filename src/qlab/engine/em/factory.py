@@ -61,7 +61,8 @@ _EM_YAKLASIMLAR: tuple[str, ...] = (
     "klasik elektrodinamik: durum vektoru (E, H)dir, kuantum operatoru "
     "DEGIL; guncelleme denklemlerinde ne foton ne hbar gecer",
     "c = eps_0 = mu_0 = 1 BIR BIRIM SECIMIDIR, FIZIK DEGIL: uzunluk hucre, "
-    "zaman S*dx cinsindendir ve bu modulun hicbir ciktisi metre, saniye ya "
+    "zaman S cinsindendir (dt = S, dx = 1) ve bu modulun hicbir ciktisi "
+    "metre, saniye ya "
     "da hertz tasimaz (Modul 4'un k_B = 1'iyle AYNI STATUDE)",
     "dogrusal, dispersif olmayan, izotropik ortam: eps gercek, yalniz "
     "konuma bagli ve frekanstan BAGIMSIZDIR",

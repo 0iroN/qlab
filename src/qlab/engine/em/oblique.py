@@ -186,7 +186,7 @@ def _egik_p_kesin_esik(medium: Medium, ky: float) -> float:
     eslenir; hucre carpimi kapisi (`yee._etkin_courant_kapisi`) bu ESLESMEYI
     goremez. Ic dugumlerde (PEC duvar e[0], e[-1]'i sabitler) w = mu_r,
     K = D^T diag(1/eps_yari) D + ky^2 diag(1/eps_r); W^-1/2 K W^-1/2 simetrik
-    uc-kosegendir ve S_krit = 2/sqrt(lambda_max). OLCULDU 02.10.2026, dort
+    uc-kosegendir ve S_krit = 2/sqrt(lambda_max). OLCULDU 02.10.2026, uc
     bagimsiz yol: tek adim buyutme matrisiyle 8960 vakada bagil fark <= 5.5e-13
     (ikiye bolme aracinin tek yonlu payi dahil);
     zaman adimlamasiyla 22/22 (artik pay adim^-2.08 ile iner); PML ve LossyLayer'da
