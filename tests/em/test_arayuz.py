@@ -55,6 +55,7 @@ from qlab.engine.em.medium import Medium
 from qlab.engine.em.oblique import (
     POLARIZATIONS,
     ObliqueCoefficients,
+    _egik_p_kesin_esik,
     oblique_coefficients,
     oblique_courant_limit,
     oblique_step,
@@ -854,6 +855,92 @@ def _egik_kararli_mi(S: float, ky: float, L: int, adim: int, tohum: int,
         if not np.isfinite(m) or m > 1e12 * n0:
             return False
     return True
+
+
+def _yogun_egik_p_esigi(med: Medium, ky: float) -> float:
+    """Kapının modelini BAĞIMSIZ kurar: açık D matrisi + yoğun eigvalsh (üç-köşegen kısayolu yok)."""
+    n = med.cells
+    D = (np.eye(n - 1, n, 1) - np.eye(n - 1, n))[:, 1:-1]
+    K = D.T @ np.diag(1.0 / med.eps_yari()) @ D + ky**2 * np.diag(1.0 / med.eps_r[1:-1])
+    s = 1.0 / np.sqrt(med.mu_r[1:-1])
+    return float(2.0 / np.sqrt(np.linalg.eigvalsh(s[:, None] * K * s[None, :]).max()))
+
+
+def _egik_patlar_mi(co: ObliqueCoefficients, L: int, adim: int = 3000, tohum: int = 3) -> bool:
+    rng = np.random.default_rng(tohum)
+    st = FieldState(rng.standard_normal(L) + 0j, rng.standard_normal(L - 1) + 0j, 1)
+    aux = rng.standard_normal(L) + 0j
+    n0 = float(np.max(np.abs(st.e)))
+    for _ in range(adim):
+        st, aux = oblique_step(st, aux, co)
+        m = float(np.max(np.abs(st.e)))
+        if not np.isfinite(m) or m > 1e12 * n0:
+            return True
+    return False
+
+
+def test_EGIK_P_KESIN_KAPI_ESLESMEYI_KESER_ve_TAM_ESIGE_OTURUR(monkeypatch):
+    """SINIF: ŞEMA ÇIPASI — kapanmış ESKİ açığın kilidi (02.10.2026).
+
+    p'de Hz tam hücrede mu_r, Ey yarı hücrede `eps_yari` (`ey_kural`) ile
+    eşlenir. Bu ortamda her hücrede eps·mu = 1, yani hücre çarpımı kapısı
+    S <= 1'e izin veriyordu; şema harmonikte 0.627587'de, sağda 0.470588'de
+    patlıyordu (c4c66ad'de public `run_oblique_1d` eşiğin hemen üstündeki S'yi
+    kabul edip patlıyordu). Beklenen sayılar TEK ADIM BÜYÜTME MATRİSİNİN eşiğidir
+    (modelle <= 5.5e-13, bölme aracının payı dahil), kodun kendi çıktısı DEĞİL;
+    model ayrıca yoğun matrisle bağımsız kurulur. Kapı tam eşikte açılır,
+    0.999'u kararlı, kapı atlanınca 1.001'i patlar; aritmetikte ve mu = 1'de
+    bugünkü kapıdan SIKI değildir.
+
+    eps·mu = 1 ortamında 1/eps_r = mu_r OLDUĞU İÇİN ky² terimini mu_r'den kuran
+    mutant ilk dört çapayı geçiyordu (doğrulayıcı yakaladı) — İKİNCİ ÇAPA
+    eps·mu != 1, konuma bağlı mu ve ky = 0.8'dedir: eps 2|0.5, mu 0.3|1, sağ,
+    L = 40. Eşiği kendi büyütme matrisi aracımla 0.5775927064 (Jordan noktasında
+    özdeğer duyarlılığı sqrt(eps) olduğu için 1e-8 hassasiyetinde; model
+    0.5775927075); dinamik: 0.999 sınırlı (tepe 2.3), kapı atlanınca 1.001 312.
+    adımda, mutantın eşiğinin 0.999'u 74. adımda patlıyor. Bu çapa aynı zamanda
+    kapının ORTAMDAN kurulmasının (tek kaynak istisnası) bekçisidir.
+    """
+    L = 200
+    eps = np.r_[np.full(L // 2, 4.0), np.full(L // 2, 0.25)]
+    mu = eps[::-1].copy()
+    matris = {("harmonik", 0.0): 0.627586660138914, ("sag", 0.0): 0.470588235294272,
+              ("harmonik", 0.8): 0.608700014742208, ("sag", 0.8): 0.462466377568198}
+    for (kural, ky), sayi in matris.items():
+        med = Medium(eps, mu, kural)
+        esik = _egik_p_kesin_esik(med, ky)
+        assert esik == pytest.approx(sayi, rel=1e-12)
+        assert esik == pytest.approx(_yogun_egik_p_esigi(med, ky), rel=1e-12)
+        oblique_coefficients(med, courant=esik, boundary=PEC(), polarization="p", ky=ky)
+        with pytest.raises(InvalidInputError, match="KESIN kararlilik"):
+            oblique_coefficients(med, courant=esik * (1 + 1e-12), boundary=PEC(), polarization="p", ky=ky)
+        oblique_coefficients(med, courant=0.9 * oblique_courant_limit(ky), boundary=PEC(), polarization="s", ky=ky)
+    med = Medium(eps, mu, "harmonik")
+    esik = _egik_p_kesin_esik(med, 0.0)
+    kur = lambda S: oblique_coefficients(med, courant=S, boundary=PEC(), polarization="p", ky=0.0)
+    assert not _egik_patlar_mi(kur(0.999 * esik), L)
+    monkeypatch.setattr("qlab.engine.em.oblique._egik_p_kesin_esik", lambda *a: np.inf)
+    assert _egik_patlar_mi(kur(1.001 * esik), L)
+    monkeypatch.undo()
+    # İKİNCİ ÇAPA: eps·mu != 1, konuma bağlı mu, ky != 0 (aux yolu canlı).
+    L2, ky2 = 40, 0.8
+    med2 = Medium(np.r_[np.full(20, 2.0), np.full(20, 0.5)], np.r_[np.full(20, 0.3), np.full(20, 1.0)], "sag")
+    esik2 = _egik_p_kesin_esik(med2, ky2)
+    assert esik2 == pytest.approx(0.5775927064071993, rel=1e-8)
+    kur2 = lambda S: oblique_coefficients(med2, courant=S, boundary=PEC(), polarization="p", ky=ky2)
+    assert not _egik_patlar_mi(kur2(0.999 * esik2), L2)
+    monkeypatch.setattr("qlab.engine.em.oblique._egik_p_kesin_esik", lambda *a: np.inf)
+    assert _egik_patlar_mi(kur2(1.001 * esik2), L2)
+    monkeypatch.undo()
+    # Sayısal aralık dışı ölçek: kapalı yönde ve DOĞRU istisna türüyle.
+    with pytest.raises(InvalidInputError, match="HESAPLANAMIYOR"):
+        oblique_coefficients(Medium(np.full(10, 1e170), np.full(10, 1e170)), courant=0.5,
+                             boundary=PEC(), polarization="p", ky=0.0)
+    # Bugünkü kapıdan SIKI olmadığı yerler: aritmetik (aynı ortam) ve em_obs biçimi (mu = 1).
+    oblique_coefficients(Medium(eps, mu), courant=1.0, boundary=PEC(), polarization="p", ky=0.0)
+    for kural in ("harmonik", "sol", "sag"):
+        yari = Medium.half_space(L, interface=L // 2, eps1=4.0, eps2=1.0, ey_kural=kural)
+        oblique_coefficients(yari, courant=oblique_courant_limit(0.55536), boundary=PEC(), polarization="p", ky=0.55536)
 
 
 def test_KARARLILIK_SINIRI_ky_ILE_DUSUYOR_ve_KAPI_ARTIK_SINIYOR():

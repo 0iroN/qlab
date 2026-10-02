@@ -200,8 +200,10 @@ class Medium:
         """(i+1/2)'de H'nin gordugu mu -- HER ZAMAN ARITMETIK.
 
         Bu `ey_kural`a BAGLI DEGILDIR ve olmamalidir: `ey_kural` teget E'nin
-        arayuzdeki sureklilik kuraliyla ilgilidir, H ile degil. Ayrica bu
-        modulde `mu_r` her yerde 1 oldugu icin dort kural da sayi sayi ayni
-        diziyi verir; kuralin buraya baglanmasi SESSIZ bir bag olurdu.
+        arayuzdeki sureklilik kuraliyla ilgilidir, H ile degil. `mu_r` = 1'de dort
+        kural sayi sayi ayni diziyi verir ve kuralin buraya baglanmasi SESSIZ bir
+        bag olurdu. `mu_r` konuma bagliyken ise egik p'de Hz'in TAM hucre mu_r'si
+        ile Ey'nin `eps_yari`si eslenir ve kararliligi o eslesme belirler (olculdu
+        02.10.2026; kapi: `oblique._egik_p_kesin_esik`).
         """
         return _yari_hucre(self.mu_r, "aritmetik")

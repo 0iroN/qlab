@@ -69,15 +69,15 @@ def _etkin_courant_kapisi(medium: Medium, courant: float, limit: float, yol: str
     (0.500020 / 0.500020); senaryo semasinda mu olmadigi icin fabrika kapisi
     onu goremez. Carpim alt tasmayla 0'a inerse etkin S sonsuzdur.
 
-    ACIK (olculdu 02.10.2026, bagimsiz iki dogrulayici, ESKI -- HEAD ayni adimda
-    patliyor): egik p + `ey_kural` != aritmetik + konuma bagli mu_r. p'de Hz tam
-    hucrede mu_r ile, Ey yari hucrede `eps_yari` ile eslenir; esik hucre
-    carpimiyla BELIRLENMEZ ve basit bir yerel carpimla da belirlenmez (aritmetik
-    kuralda yerel min 0.625 iken sema kararli). Her hucrede eps_r*mu_r = 1 iken
-    olculen esik izin verilenin 0.47-0.93 kati (sag/sol/harmonik). mu_r = 1'de
-    (senaryo yolu) ve aritmetik kuralda bu kapi YETERLI (rastgele ortam taramasi).
+    YETMEDIGI YER (olculdu 02.10.2026; ESKI acik, c4c66ad ayni adimda patliyordu):
+    egik p + `ey_kural` != aritmetik + konuma bagli mu_r. p'de Hz tam hucrede mu_r
+    ile, Ey yari hucrede `eps_yari` ile eslenir; esik hucre carpimiyla da basit bir
+    yerel carpimla da BELIRLENMEZ ve her hucrede eps*mu = 1 iken bile izinin altina
+    iner -- kontrasta ve geometriye bagli, alttan sinirsiz (eps 4|0.25, mu 0.25|4,
+    L = 200'de 0.47-0.66 kati). O bandi `oblique._egik_p_kesin_esik` keser.
     """
-    cm = float(np.min(medium.eps_r * medium.mu_r))
+    with np.errstate(over="ignore", under="ignore"):  # tasma -> inf (yavas dalga, gecer); alt tasma -> 0 (inf, reddeder)
+        cm = float(np.min(medium.eps_r * medium.mu_r))
     etkin = courant / float(np.sqrt(min(1.0, cm))) if cm > 0.0 else float("inf")
     if etkin > limit:
         raise InvalidInputError(

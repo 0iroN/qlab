@@ -436,8 +436,8 @@ def courant_limit(dim: int) -> float:
     (`yee._etkin_courant_kapisi`, S/sqrt(min(eps_r*mu_r))); public yolla olculen
     esik/beklenen: 1B 1.000040 (eps 0.25, mu 0.25, 0.5*0.5; L = 200, 3000 adim),
     2B 1.000600 (L = 48, 1500 adim), egik ky = 0.8 s/p 1.000036 (L = 201, 3000
-    adim) -- `mu_r < 1` ayni delikti ve fabrika onu goremezdi. KAPSAMI DISI, ACIK:
-    egik p + `ey_kural` != aritmetik + konuma bagli mu_r (bkz. o fonksiyon).
+    adim) -- `mu_r < 1` ayni delikti ve fabrika onu goremezdi. Egik p'deki mu_r /
+    eps_yari eslesmesini ayrica `oblique._egik_p_kesin_esik` keser (02.10.2026).
 
     `dim` AYRIKTIR (1, 2, 3) ve surekli bir dugmeye cevrilemez -- spec 3.5'in
     ikincil ayirt edici olcutu. Bu yuzden d = 3 BURADA tanimlidir: 1/sqrt(3)

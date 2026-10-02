@@ -38,6 +38,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 import numpy as np
+from scipy.linalg import eigvalsh_tridiagonal
 
 from qlab.engine.em.grid import FieldRecord, FieldState, Window, dx_kapisi
 from qlab.engine.em.medium import Medium
@@ -178,6 +179,45 @@ class ObliqueCoefficients:
     ky: float
 
 
+def _egik_p_kesin_esik(medium: Medium, ky: float) -> float:
+    """Egik p semasinin KESIN kararlilik esigi -- kayipsiz ayrik operatorun ozdegeri.
+
+    p'de Hz tam hucrede `mu_r` ile, Ey yari hucrede `eps_yari` (`ey_kural`) ile
+    eslenir; hucre carpimi kapisi (`yee._etkin_courant_kapisi`) bu ESLESMEYI
+    goremez. Ic dugumlerde (PEC duvar e[0], e[-1]'i sabitler) w = mu_r,
+    K = D^T diag(1/eps_yari) D + ky^2 diag(1/eps_r); W^-1/2 K W^-1/2 simetrik
+    uc-kosegendir ve S_krit = 2/sqrt(lambda_max). OLCULDU 02.10.2026, dort
+    bagimsiz yol: tek adim buyutme matrisiyle 8960 vakada bagil fark <= 5.5e-13
+    (ikiye bolme aracinin tek yonlu payi dahil);
+    zaman adimlamasiyla 22/22 (artik pay adim^-2.08 ile iner); PML ve LossyLayer'da
+    kayipli esik BUNA ESIT (CN ortalamali kayip lambda = -1'de duser -- kayip pay
+    KAZANDIRMAZ, operator butun izgara uzerinden kurulur). s'de GEREKMEZ: H yari
+    hucrede HEP aritmetik `mu_yari` ile oturur ve hucre carpimi kapisi yeter
+    (Titu siniri; binlerce rastgele ortamda 0 siki). Esik sonlu izgaranin payini
+    TASIR (vakumda 1/cos(pi/(2(L-1))) kadar), bu yuzden oteki kapilarin YERINE
+    degil YANINA konur -- yerine konsaydi o payin icindeki bugunku retler (orn.
+    test_yee ETKIN, p, ky = 0.8) kabule donerdi. Ortam ~1e+-150 olcegindeyse
+    hesap tasar ya da coker: kapi KAPALI yonde InvalidInputError atar (hucre
+    carpimi kapisinin alt tasma kuralinin esi; c4c66ad bunlari kabul ediyordu).
+    """
+    w = np.sqrt(medium.mu_r[1:-1])
+    c = medium.eps_yari()
+    with np.errstate(all="ignore"):
+        d = (1.0 / c[:-1] + 1.0 / c[1:] + ky * ky / medium.eps_r[1:-1]) / (w * w)
+        e = -1.0 / (w[:-1] * w[1:] * c[1:-1])
+    n = d.size
+    try:
+        lam = float(eigvalsh_tridiagonal(d, e, select="i", select_range=(n - 1, n - 1))[0])
+    except (ValueError, np.linalg.LinAlgError):
+        lam = float("nan")
+    if not (np.isfinite(lam) and lam > 0.0):
+        raise InvalidInputError(
+            f"egik p kesin kararlilik esigi bu ortam/ky olceginde HESAPLANAMIYOR "
+            f"(lambda_max = {lam!r}; tasma ya da alt tasma) -- kapi kapali yonde reddeder."
+        )
+    return 2.0 / float(np.sqrt(lam))
+
+
 def oblique_coefficients(
     medium: Medium, *, courant: float, boundary, polarization: str, ky: float
 ) -> ObliqueCoefficients:
@@ -186,7 +226,11 @@ def oblique_coefficients(
     `yee_coefficients` HER IKI kutuplanma icin de cagrilir -- p'de sonucun
     yalniz bir kismi kullanilsa bile. Sebep kapinin tek kaynaktan gecmesidir:
     ikinci bir kararlilik denetimi yazilsaydi iki denetim birbirinden
-    sessizce ayrilabilirdi.
+    sessizce ayrilabilirdi. BILINCLI ISTISNA (02.10.2026): p'deki kesin kapi
+    (`_egik_p_kesin_esik`) operatoru katsayilardan degil ORTAMDAN yeniden kurar,
+    yani semanin yuvalari degisirse sessizce ayrilabilir. Bekcisi
+    `test_EGIK_P_KESIN_KAPI_ESLESMEYI_KESER_ve_TAM_ESIGE_OTURUR`in ky = 0.8 dinamik
+    capasidir: kapi atlaninca esigin 1.001'i patlamali, 0.999'u kararli kalmali.
 
     `ky`NIN BIRIMI: RADYAN BOLU HUCRE. Bu bir ayrinti degil, bu dosyanin
     `dx` ile iliskisinin TAMAMI. Enine terim `cb * (i*ky) * aux` diye
@@ -207,7 +251,12 @@ def oblique_coefficients(
     `ky = 0`da band bostur (esik tam 1.0 = `courant_limit(1)`) ve bu bir
     kusur degil, iki kapinin ORADA CAKISTIGININ ta kendisidir. Kapinin bu
     SIRADA olmasi da bir secimdir: once konsaydi izotropik kapi hicbir zaman
-    yeni bir sey reddetmezdi ve OLU bir kod yolu olurdu.
+    yeni bir sey reddetmezdi ve OLU bir kod yolu olurdu. 01-02.10.2026'da iki
+    kapi daha geldi ve ikisi de CANLI: etkin kapi (eps_r*mu_r < 1) duzgun eps 0.25'te
+    S in (0.464238, 0.464251] bandini (ky = 0.8, L = 200) YALNIZ kendisi keser; p'deki kesin kapi
+    (`_egik_p_kesin_esik`) her hucrede eps*mu = 1 olan eps 4|0.25, mu 0.25|4,
+    L = 200, ky = 0 ortaminda harmonikte (0.627587, 1], sagda (0.470588, 1]
+    bandini YALNIZ kendisi keser.
 
     BU PARAGRAF BIR ZAMANLAR BIR DURUST OLUMSUZ TASIYORDU: *"AMA KAPI BUNU
     SINAMAZ: `ky` yeterince buyutulurse `courant_limit(1)` gecer ve sema
@@ -265,9 +314,18 @@ def oblique_coefficients(
         )
     # Ayni sira ETKIN kapida da (01.10.2026): `base` 1B'nin etkin kapisini kosturdu,
     # bu satir eps_r*mu_r < 1'de egik BANDI keser (olculdu ky = 0.8, s ve p, eps ya da
-    # mu 0.25: esik 0.464255 = 0.5 * S_max(ky) * 1.000036). p + ey_kural != aritmetik +
-    # konuma bagli mu_r'de YETMEZ -- acik, bkz. `yee._etkin_courant_kapisi`.
+    # mu 0.25: esik 0.464255 = 0.5 * S_max(ky) * 1.000036). p'deki mu_r / eps_yari
+    # ESLESMESINI goremez -- onu asagidaki kesin kapi keser (02.10.2026).
     _etkin_courant_kapisi(medium, courant, limit, f"EGIK (ky = {ky})")
+    if polarization == "p":
+        esik = _egik_p_kesin_esik(medium, float(ky))
+        if courant > esik:
+            raise InvalidInputError(
+                f"S = {courant!r} EGIK p semasinin KESIN kararlilik esigini ({esik!r}) "
+                f"asiyor (ky = {ky}): Hz tam hucrede mu_r, Ey yari hucrede eps_yari ile "
+                "eslenir ve hucre carpimi kapisi bu eslesmeyi goremez. Ayrinti: "
+                "oblique._egik_p_kesin_esik."
+            )
 
     cells = medium.cells
     sigma = np.asarray(boundary.sigma_1d(cells), dtype=float)
