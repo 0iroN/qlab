@@ -289,11 +289,17 @@ def build(scenario: MDScenario):
 #: dt = 40 a.u.'da 1.739e-03, dt = 70'te 1.342e-02, dt = 90'da 2.397e-01.
 #: Eskiden `converged=True` SABİTTİ ve panel %24 kaymış enerjinin yanında bile
 #: ✓ basıyordu -- deponun `tdse/factory.py` ve `hf/factory.py` desenine aykırı.
+#: HF dalı (03.10.2026, C5) bu eşiği max(KE) paydasıyla kullanır. Eşik
+#: Morse kalibrasyonundan TAŞINDI ve HF'de ayrıca ölçülmedi: Morse'ta
+#: |blok[0]|/max(KE) = 1.09 / 1.23 / 0.81 (yukarıdaki üç dt), yani eşik fiilen
+#: max(KE) ölçeğinde ölçülmüştü. HF'de hüküm omega*dt ve koşu uzunluğuyla
+#: MONOTON DEĞİLDİR (bkz. `energy_drift`, SINIR).
 _MD_DRIFT_TOLERANCE: float = 5.0e-03
 
-#: TB dalının NVE sürüklenme eşiği. ORTAK EŞİKLE KARŞILAŞTIRILAMAZ: payda
-#: farklıdır (`energy_drift`: |blok[0]| değil, kaydedilen EN BÜYÜK kinetik
-#: enerji), yani bu sayı "sürüklenme, hareketin en büyük kinetik enerjisinin
+#: TB dalının NVE sürüklenme eşiği. ORTAK EŞİKLE KARŞILAŞTIRILAMAZ: KLASİK
+#: dallardan farklı paydayla (`energy_drift`: |blok[0]| değil, kaydedilen EN
+#: BÜYÜK kinetik enerji; HF de 03.10'dan beri bu paydada) ve TB'ye özgü
+#: pencerelerde ölçüldü, yani bu sayı "sürüklenme, hareketin en büyük kinetik enerjisinin
 #: %1'i" demektir. ÖLÇÜLDÜ (G5, 24.09.2026, bu makine, 115 hücre; pencere
 #: aileleri `energy_drift` dokstringinde):
 #:
@@ -329,7 +335,26 @@ def energy_drift(
 
     PAYDA TÜRE BAĞLIDIR:
 
-    * Ortak dal (TB DIŞINDAKİ her tür): |blok[0]|. Değişmedi.
+    * Ortak dal (klasik kuvvet alanları: harmonic, morse, lennard_jones):
+      |blok[0]|. Değişmedi.
+    * `hartree_fock` (03.10.2026, C5): max(KE), TB ile aynı. |blok[0]| HF'de
+      ELEKTRONİK enerjidir (~-1.117 Ha): titreşim enerjisinin 1644 katı
+      (h2_aimd genliği 0.05; 0.10'da 432), yani eski oran sürüklenmeye bu
+      kadar kördü -- ✗ ancak pay titreşim enerjisinin ~8 katını aşınca
+      basılıyordu (Morse-eşdeğer dt 40/70/90 x n 50-800 ızgarasında 15/15 ✓).
+      ÖLÇÜLDÜ (public yol, A/B): sevk edilen h2_aimd penceresinde (200 adım)
+      yalnız gradyan adımı 1e-5 -> 1e-13 değişince (sonlu fark gürültüsü;
+      başlangıç, dt ve Verlet salınımı aynı) yeni oran 1.465e-04 (✓) ->
+      2.825e-01 (✗); eski oran 8.78e-08 -> 2.62e-04, ikisinde de ✓.
+
+    SINIR -- BLOK ÖLÇÜTÜ SALINIMI SÜRÜKLENMEDEN AYIRAMAZ (bütün dallar,
+    03.10.2026 doğrulaması): kısa koşuda (birkaç periyot) ya da örnekleme
+    katlanmasında pay Verlet salınımının kendisi olabilir. HF h2_aimd
+    geometrisi omega*dt = 0.25, n = 20: ✗ 1.488e-02 ~ (omega*dt)^2/4, n >= 30
+    ✓; omega*dt = 1.4037: n = 100/400/1600 ✗, 3200 ✓ (tepe-tepe sabit). Morse
+    aynı hücrelerde ✗ verir. Bu yüzden ✗ "korunum DOĞRULANAMADI" demektir,
+    "sürüklenme kanıtlandı" değil: koşuyu uzatın ya da save_every/dt'yi
+    değiştirip yeniden bakın. ✓ payın eşiğin altında kaldığını söyler.
     * `tb_ss_sigma`: kaydedilen EN BÜYÜK kinetik enerji, max(KE).
       |blok[0]| TB'de KEYFİ BİR SIFIRA bölmektir (spec B8, eleştirmen
       P0-2): tekbiçim bir onsite c Omega'yı n_e*c kaydırır, kuvveti ve
@@ -392,7 +417,7 @@ def energy_drift(
     blok = toplam[: (len(toplam) // n_blok) * n_blok].reshape(n_blok, -1).mean(axis=1)
     pay = float(abs(blok[-1] - blok[0]))
     tur = scenario.force_field["kind"]
-    if tur == "tb_ss_sigma":
+    if tur == "tb_ss_sigma" or tur == "hartree_fock":
         olcek = float(np.max(kinetic))
         return pay / olcek if olcek > 0.0 else float("nan")
     # numpy bölmesi BİLEREK (G5 öncesi `run.py` ile bit bit aynı): blok[0] = 0
@@ -428,8 +453,8 @@ def provenance_for(
         )
         esik = _MD_DRIFT_TOLERANCE
         if tur == "tb_ss_sigma":
-            # TB'nin sürüklenmesi `energy_drift`te max(KE)'ye bölünür (enerjinin
-            # sıfırı keyfi); ortak eşik |blok[0]| paydası içindir, taşınamaz.
+            # TB'nin eşiği TB'ye özgü pencerelerde ölçüldü (`_TB_DRIFT_TOLERANCE`);
+            # HF ortak eşiği max(KE) paydasıyla kullanır (C5, `_MD_DRIFT_TOLERANCE`).
             beklenen, esik = _TB_BEKLENEN, _TB_DRIFT_TOLERANCE
         yakinsadi = bool(np.isfinite(energy_drift)) and energy_drift <= esik
     else:
@@ -461,6 +486,10 @@ def provenance_for(
         "masses_electron_mass": np.round(kutleler, 4).tolist(),
         "amu_to_electron_mass": AMU_TO_ELECTRON_MASS,
     }
+    if tur == "hartree_fock":
+        # C5 (03.10.2026): paydası TB'ninki gibi max(KE); panelde AÇIK. ✗ burada
+        # "korunum DOĞRULANAMADI" demektir (`energy_drift`, SINIR).
+        tanilar.update(energy_drift_scale="max_kinetic", energy_drift_tolerance=esik)
     if tur == "tb_ss_sigma":
         # Eleştirmen E4: V4'ün tanılarında kT, n_electron ve r_cut YOKTU.
         # Sıcaklık İKİ birimde basılır -- tuzağın kendisi bu (spec B7).

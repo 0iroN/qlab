@@ -243,8 +243,9 @@ def test_M7_GERIYE_UYUM_sabit_yasa_uniform_model_ile_BIT_BIT_ayni(orgu):
     r_on = 3.7). Olculen: bes pencerenin besi bit bit ayni; kabuklar
     1B-a2.0 {2.0}, 1B-a1.8 {1.8, 3.6}, SSH {1.6, 1.8, 3.4}, kubik
     {2.5, 3.536}, fcc {3.465}. Bes pencere toplam 2.9 ms.
-    On kosul (spec M7 uyarisi): `uniform_model`in max_cell = 2'si bu
-    pencerelerde kabuk kaybetmez (1B a = 1.2 kaybeder, ayri testte).
+    On kosul (spec M7 uyarisi): max_cell = 2 bu pencerelerde kabuk
+    kaybetmez (asagidaki ikinci assert). 03.10.2026'dan beri `uniform_model`
+    de max_cell'i `max_cell_for_cutoff`tan turetir (D12).
     KIRMA (olculdu): -t, t yerine t' ve hucreyi ters isaretle yazan
     mutantlar bes pencerenin besinde; (i, j)'yi ters yazan mutant yalniz
     iki atomlu SSH penceresinde kiriliyor (tek atomlu tabanda i = j,
@@ -302,17 +303,24 @@ def test_M7_KONTROL_kuyruk_AKTIFKEN_listeler_AYRISIR():
     assert abs(en_buyuk - 0.1 * (2.0 + math.sqrt(2.0)) / 4.0) < 1e-15
 
 
-def test_M7_pencere_SINIRI_uniform_model_3a_da_KABUK_KAYBEDER():
-    """ACIK KALAN, beyanli (spec 6): uniform_model'in max_cell = 2'si.
+def test_M7_pencere_SINIRI_uniform_model_3a_da_KABUK_KAYBETMIYOR():
+    """D12 KAPANDI (03.10.2026): uniform_model max_cell'i `max_cell_for_cutoff`tan turetir.
 
-    1B a = 1.2, kesme 3.8: kabuklar 1.2, 2.4, 3.6 = 3a; uniform_model 4
-    komsu buluyor, distance_model 6 (olculdu). Bu yuzden M7'nin penceresi
-    kesme < 3 min|a| ile sinirli. Biri uniform_model'i onarirsa bu test
-    kirilir ve `hamiltonian.py` beyani guncellenmelidir.
+    1B a = 1.2, kesme 3.8: kabuklar 1.2, 2.4, 3.6 = 3a. Eskiden (max_cell = 2
+    SABIT) uniform_model 4 komsu buluyordu, distance_model 6; simdi ikisi de
+    6. Kayip 2B/3B'de 3|a|'dan ONCE basliyordu ve simetriyi kiriyordu (fcc
+    2.449|a|'da 86 yerine 80, C4z 0.398 Ha) -- o pencere asagidaki fcc kolu.
+    max_cell = 2 ile `neighbour_shells` hala 4 bulur: pencere duyarlidir.
     """
     orgu = Lattice(vectors=np.array([[1.2, 0, 0]]), basis=np.zeros((1, 3)))
-    assert len(uniform_model(orgu, np.zeros(1), R_CUT, -0.1).hoppings) == 4
+    assert len(neighbour_shells(orgu, R_CUT, max_cell=2)) == 4
+    assert len(uniform_model(orgu, np.zeros(1), R_CUT, -0.1).hoppings) == 6
     assert len(distance_model(orgu, np.zeros(1), SABIT).hoppings) == 6
+    fcc = Lattice(vectors=0.5 * np.array([[0.0, 1, 1], [1, 0, 1], [1, 1, 0]]), basis=np.zeros((1, 3)))
+    kesme = 6**0.5 * 0.5**0.5  # sqrt(6) * en yakin komsu
+    tam = neighbour_shells(fcc, kesme, max_cell=max_cell_for_cutoff(fcc, kesme))
+    assert len(neighbour_shells(fcc, kesme, max_cell=2)) < len(tam)
+    assert len(uniform_model(fcc, np.zeros(1), kesme, -0.1).hoppings) == len(tam)
 
 
 # --------------------------------------------------------------------- M8 --
@@ -459,16 +467,59 @@ def test_CAKISIK_atom_KENDI_goruntusuyle_PATOLOJIK_orgu():
     Kapi "atomun kendisi"ni (i = j VE cell = 0) yalniz sifir hucrede atar;
     `i == j` tek basina yetmez. KIRMA (olculdu): kosulu `if i == j:`e
     indiren mutant yalniz bu ornekte yakalaniyor (diger her orgude esdeger).
-    Yalniz max_cell = 2 kullanan iki yol sinanir: `distance_model`
-    `max_cell_for_cutoff`tan ~7.6e9 alir ve Python dongusu pratikte bitmez
-    (beyanli acik kalan: patolojik olcekte hucre sayisi kapisi yok).
+    max_cell = 2 ile `neighbour_shells` cakismayi gorur. `uniform_model` ve
+    `distance_model` max_cell'i `max_cell_for_cutoff`tan alir (~6e9): eskiden
+    `distance_model`in Python dongusu pratikte bitmiyordu (~96 GB'lik aralik
+    tahsisi); 03.10.2026'dan beri ikisi de hucre sayisi kapisina ANINDA takilir.
     """
     orgu = Lattice(vectors=np.array([[5e-10, 0.0, 0.0]]), basis=np.zeros((1, 3)))
     with pytest.raises(InvalidInputError, match="cakisik atom"):
         neighbour_shells(orgu, 3.0)
-    with pytest.raises(InvalidInputError, match="cakisik atom"):
+    with pytest.raises(InvalidInputError, match="hucre sayisi"):
         uniform_model(orgu, np.zeros(1), 3.0, -0.1)
+    with pytest.raises(InvalidInputError, match="hucre sayisi"):
+        distance_model(orgu, np.zeros(1), SABIT)
+    # |a| = 1e-300: ters orgu sonsuza tasar -- ham OverflowError degil.
+    asiri = Lattice(vectors=np.array([[1e-300, 0.0, 0.0]]), basis=np.zeros((1, 3)))
+    with pytest.raises(InvalidInputError, match="ters orgu sonlu degil"):
+        uniform_model(asiri, np.zeros(1), 3.0, -0.1)
 
+
+def test_HUCRE_SAYISI_KAPISI_mesru_en_buyugu_gecirir_siniri_asani_reddeder():
+    """`_HUCRE_SINIRI` = 1e7 hucre, (2 max_cell + 1)^d -- ATOM SAYISINA BAKMAZ.
+
+    OLCULDU: depo testlerinde en buyuk 2197 hucre (3B, max_cell 6); 1 derece egik
+    2B orgu kesme 8|a|'da 844561. Sinirin hemen ustu (1B, max_cell 5000000 ->
+    10000001 hucre) taramadan ONCE reddedilir. max_cell TAMSAYI olmali (bool ve
+    float reddedilir); np.uint8 dar tipi int'e cevrilir -- eskiden -max_cell
+    tasip SESSIZCE bos sonuc veriyordu (03.10 dogrulayicisi).
+    """
+    iki_atom = Lattice(vectors=np.eye(3) * 2.0, basis=np.array([[0.0, 0, 0], [1.0, 0, 0]]))
+    assert len(neighbour_shells(iki_atom, 1.0, max_cell=6)) > 0  # 13^3 = 2197 hucre
+    zincir = Lattice(vectors=np.array([[1.0, 0, 0]]), basis=np.zeros((1, 3)))
+    with pytest.raises(InvalidInputError, match="hucre sayisi .* = 10000001 > 10000000"):
+        neighbour_shells(zincir, 1.0, max_cell=5_000_000)
+    for kotu in (2.9, 2.0, True, float("inf")):
+        with pytest.raises(InvalidInputError, match="tamsayi"):
+            neighbour_shells(zincir, 1.0, max_cell=kotu)
+    alanlar = lambda ciftler: [(c.i, c.j, c.cell, c.distance) for c in ciftler]  # NeighbourPair eq=False
+    beklenen = alanlar(neighbour_shells(zincir, 1.0, max_cell=3))
+    assert len(beklenen) == 2 and alanlar(neighbour_shells(zincir, 1.0, max_cell=np.uint8(3))) == beklenen
+    assert len(neighbour_shells(zincir, 1.0, max_cell=np.uint8(255))) == 2
+
+
+@pytest.mark.slow
+def test_HUCRE_SAYISI_KAPISI_SUPERCELLI_REDDETMEZ():
+    """Ilk surumun kusuru (03.10 dogrulayicisi): kapi hucre x n_atom^2'ye bakiyordu
+    ve HEAD'in hesapladigi mesru supercell'leri reddediyordu (1B N >= 448, 2B 15x15,
+    3B 5^3, Si 3x3x3 216 atom). 600 atomlu 1B supercell: max_cell 2 -> 5 hucre;
+    eski yuk 5 * 600^2 = 1.8e6 > 1e6 RED derdi, hucre kapisi gecirir. Her atomun
+    iki komsusu (+-2 bohr) -> 1200 yonlu hoplama.
+    """
+    n = 600
+    zincir = Lattice(vectors=np.array([[2.0 * n, 0, 0]]), basis=np.array([[2.0 * k, 0, 0] for k in range(n)]))
+    model = uniform_model(zincir, np.zeros(n), 3.8, -0.1)
+    assert len(model.hoppings) == 2 * n
 
 def test_CAKISMA_esigi_ESKI_sessiz_atma_esigi_ve_MD_yolu_ile_uyum():
     """Esik 1e-9 bohr: eskiden ATILAN her cift artik hata, TUTULAN her cift aynen tutulur.

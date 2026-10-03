@@ -49,6 +49,18 @@ _KESME_TOLERANSI = 1e-9
 # 1e-9 bandinda kafes yolu hata verir, MD yolu hesaplar (beyanli fark).
 _CAKISMA_ESIGI_BOHR = 1e-9
 
+#: `neighbour_shells`in tarayabilecegi en buyuk HUCRE sayisi, (2 max_cell + 1)^d.
+#: Kapi ATOM SAYISINA BAKMAZ: patlayan sey hucre sayisidir (ilk surum
+#: hucre x n_atom^2'ye bakiyordu ve HEAD'in saniyeler icinde hesapladigi mesru
+#: supercell'leri reddediyordu -- 1B N >= 448, 2B 15x15, 3B 5^3, Si 3x3x3 216
+#: atom; 03.10 dogrulayicisi). OLCULDU: depo testlerinde en buyuk 2197 hucre
+#: (3B, max_cell 6); 1 derece egik 2B orgu kesme 8|a|'da 844561 hucre -- sinir
+#: ondan 11 kat yukarida. Sinirdaki tarama hucre basina ~3-8e-06 s (+ n_atom^2
+#: cift) ve araliklar tuple'a acildigi icin yuzlerce MB. Patolojik olcek
+#: (|a| = 5e-10: kesme 3.0 -> max_cell ~6e9, ~96 GB; kesme 3.8 -> ~7.6e9,
+#: ~121.6 GB aralik tahsisi) artik aninda InvalidInputError.
+_HUCRE_SINIRI = 10_000_000
+
 
 @dataclass(frozen=True, eq=False)
 class NeighbourPair:
@@ -152,8 +164,8 @@ def max_cell_for_cutoff(lattice: Lattice, cutoff_bohr: float) -> int:
     (taban atomu hucre disinda) kayip 0, ama sinir gerekenin ~4 katina
     cikabiliyor (19'a karsi 5, 21'e karsi 8). Hucre sayisi (2n + 1)^d oldugu
     icin cok egik ya da patolojik olcekli orguler `neighbour_shells`i
-    pratikte bitmez kilar (|a| = 5e-10, kesme 3.8 -> n = 7.6e9); bunun bir
-    kapisi YOKTUR (acik kalan, beyanli).
+    pratikte bitmez kilardi (|a| = 5e-10, kesme 3.8 -> n = 7.6e9); 03.10.2026'dan
+    beri `neighbour_shells` hucre sayisini `_HUCRE_SINIRI`na karsi sinar.
     """
     if not np.isfinite(cutoff_bohr) or cutoff_bohr <= 0.0:
         raise InvalidInputError(
@@ -163,11 +175,15 @@ def max_cell_for_cutoff(lattice: Lattice, cutoff_bohr: float) -> int:
     fark = lattice.basis[:, None, :] - lattice.basis[None, :, :]
     yayilim = float(np.max(np.linalg.norm(fark, axis=-1)))
     menzil = cutoff_bohr * (1.0 + _KESME_TOLERANSI) + yayilim
-    n = max(
-        int(np.ceil(menzil * float(np.linalg.norm(b_i)) / (2.0 * np.pi)))
-        for b_i in b
-    )
-    return max(1, n)
+    with np.errstate(over="ignore", invalid="ignore"):  # tasma -> inf, asagida reddedilir
+        oranlar = [menzil * float(np.linalg.norm(b_i)) / (2.0 * np.pi) for b_i in b]
+    if not all(np.isfinite(o) for o in oranlar):
+        # |a| = 1e-300 gibi olcekte ters orgu sonsuza tasar; int(inf) ham
+        # OverflowError olurdu (03.10 dogrulayicisi).
+        raise InvalidInputError(
+            f"ters orgu sonlu degil (orgu olcegi patolojik): {oranlar}"
+        )
+    return max(1, max(int(np.ceil(o)) for o in oranlar))
 
 
 def neighbour_shells(
@@ -190,11 +206,21 @@ def neighbour_shells(
         raise InvalidInputError(
             f"kesme yaricapi pozitif ve sonlu olmali: {cutoff_bohr}"
         )
-    if max_cell < 1:
+    if isinstance(max_cell, bool) or not isinstance(max_cell, (int, np.integer)):
+        raise InvalidInputError(f"max_cell bir tamsayi olmali: {max_cell!r}")
+    m = int(max_cell)  # np.uint8 gibi dar tiplerde -max_cell TASAR (sessiz bos sonuc)
+    if m < 1:
         raise InvalidInputError(f"max_cell en az 1 olmali, verilen: {max_cell}")
 
     d = lattice.dimension
-    araliklar = [range(-max_cell, max_cell + 1)] * d + [range(0, 1)] * (3 - d)
+    hucre_sayisi = (2 * m + 1) ** d
+    if hucre_sayisi > _HUCRE_SINIRI:
+        raise InvalidInputError(
+            f"hucre sayisi (2 max_cell + 1)^d = {hucre_sayisi} > {_HUCRE_SINIRI} "
+            f"(max_cell = {m}, d = {d}): kesme / orgu olcegi patolojik "
+            "(|a| cok kucuk ya da kesme cok buyuk)"
+        )
+    araliklar = [range(-m, m + 1)] * d + [range(0, 1)] * (3 - d)
     sinir = cutoff_bohr * (1.0 + _KESME_TOLERANSI)
 
     ciftler: list[NeighbourPair] = []

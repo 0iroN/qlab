@@ -1209,7 +1209,7 @@ değildir.
 | **ω — YOL B (dinamik)** | MD periyodu, ikinci türev ALINMAZ | **5481.22946 cm⁻¹** |
 | **İki yolun uyuşması** | \|ω_B/ω_A − 1\| < 1e-4 | **−4.36e-06** — milyonda 4.4; marj 23× |
 | Geometri kapısı | R > 21.1 bohr'da hata fırlatır | E(21.10) = −0.5695574096 → E(21.20) = −0.2057275665, **ΔE = +0.36383 hartree** |
-| MD senaryosu CLI'dan uçtan uca | `python -m qlab.run scenarios/h2_aimd.yaml -o h2aimd.npz` | çıkış 0, `energy_drift=8.78e-08`, panelde `gradient_step_bohr=1e-05` |
+| MD senaryosu CLI'dan uçtan uca | `python -m qlab.run scenarios/h2_aimd.yaml -o h2aimd.npz` | çıkış 0, `energy_drift=1.465e-04` (03.10.2026'dan beri payda max(KE); eskiden \|blok[0]\| ile 8.78e-08), panelde `gradient_step_bohr=1e-05`, `energy_drift_scale=max_kinetic` |
 
 **İki yolun bağımsızlığı iddia değil, ölçüm.** Kuvvetleri ×1.001 ile bozan
 bir mutant çalıştırıldı:
@@ -1564,7 +1564,7 @@ sessizce atılmıyor: `neighbour_shells` d ≤ 1e-9 bohr çiftinde
 
 **Açık kalanlar (beyanlı, ayrı iş):** tek N_e ve tek N'de Kohn seçim kuralı
 farklıdır ve pencere dışıdır; `uniform_model`in `max_cell = 2` kabuk kaybı (1B'de
-kesme 3\|a\|'da) düzeltilmedi; enine (y, z) hareket ve 3B periyodik kristal
+kesme 3\|a\|'da) *03.10.2026'da düzeltildi: max_cell `max_cell_for_cutoff`tan, patolojik ölçek tarama yükü kapısında*; enine (y, z) hareket ve 3B periyodik kristal
 sınanmadı; p orbitalleri ve açıya bağlı Slater-Koster tablosu yok; kenar
 tarayıcısının kör noktaları (alt paket, `importlib`, `TYPE_CHECKING`) açık
 *(26.09.2026: kapandı — alt paket ve göreli import çözülüyor, `importlib` ve

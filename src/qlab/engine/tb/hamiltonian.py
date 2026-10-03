@@ -120,18 +120,25 @@ def uniform_model(
     hoplama bu fonksiyonun isi DEGILDIR; ss-sigma satiri `distance_model`dedir.
     Yone bagli Slater-Koster (p/d orbitalleri, yon kosinusleri) depoda YOKTUR.
 
-    `max_cell` = 2 SABITTIR ve bu bir ACIK KALANDIR (ayri is, spec md-tb 6):
-    kesme iki hucre otesine uzaninca kabuk SESSIZCE kaybolur (olculdu: 1B'de
-    kesme 3|a|'da, 15 derece egik 2B orguda 0.79|a|'da); cakisik atom kapisi
-    da yalniz bu hucreler icinde gorur. `distance_model` max_cell'i
-    `max_cell_for_cutoff` ile turetir ve bu kaybi yasamaz.
+    `max_cell` `max_cell_for_cutoff`tan turetilir (`distance_model` gibi).
+    03.10.2026'ya kadar 2 SABITTI ve kesme iki hucre otesine uzaninca kabuk
+    SESSIZCE kayboluyordu -- 1B'de 3|a|'da, ama 2B/3B'de DAHA ONCE ve simetri
+    kirilarak (olculdu: fcc'de kesme 2.449|a|'da 86 yerine 80 hoplama ve
+    t = -0.1'de C4z altinda bant farki 4|t| = 0.400 Ha; ucgen orguda C6).
+    Duzeltme olculdu: kayipsiz 226 vakanin 226'sinda (dogrulayici ayrica
+    bagimsiz bir orneklemle teyit etti) hoplama listesi, H(k) ve ozdegerler
+    bit bit ayni; kayipli 240 vakanin
+    240'inda liste `distance_model` ile ayni. Patolojik olcek
+    `neighbour_shells`in hucre sayisi kapisina takilir.
     """
     return TBModel(
         lattice=lattice,
         onsite=onsite,
         hoppings=tuple(
             Hopping(i=c.i, j=c.j, cell=c.cell, t=t)
-            for c in neighbour_shells(lattice, cutoff_bohr)
+            for c in neighbour_shells(
+                lattice, cutoff_bohr, max_cell=max_cell_for_cutoff(lattice, cutoff_bohr)
+            )
         ),
     )
 

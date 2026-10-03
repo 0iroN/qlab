@@ -827,9 +827,12 @@ def test_G5_HAREKETSIZ_TB_KOSUSU_YARGILANAMAZ():
     assert qlab.engine.md.factory.energy_drift(_senaryo("morse"), kinetik, potansiyel) == 0.0
 
 
-@pytest.mark.parametrize("tur", sorted(KLASIK | {"hartree_fock"}))
+@pytest.mark.parametrize("tur", sorted(KLASIK))
 def test_G5_ORTAK_DAL_OLCUTU_DEGISMEDI(tur):
-    """TB dışındaki her türde ölçüt G5 öncesinin AYNISI (bit bit).
+    """Klasik türlerde ölçüt G5 öncesinin AYNISI (bit bit).
+
+    `hartree_fock` 03.10.2026'da (C5) bu listeden ÇIKTI: paydası artık
+    max(KE) -- bkz. `test_C5_HF_NVE_...`.
 
     Hesap `run.py`den `factory.energy_drift`e taşındı; bu kilit taşımanın
     ortak dalı değiştirmediğini söyler. Formül aşağıda AÇIKÇA yazılı (G5
@@ -846,6 +849,59 @@ def test_G5_ORTAK_DAL_OLCUTU_DEGISMEDI(tur):
         blok = toplam[: (m // n) * n].reshape(n, -1).mean(axis=1)
         beklenen = float(abs(blok[-1] - blok[0]) / abs(blok[0]))
         assert qlab.engine.md.factory.energy_drift(_senaryo(tur), k, v) == beklenen
+
+
+@pytest.mark.slow
+def test_C5_HF_NVE_kuvvet_gurultusu_max_KE_paydasiyla_KALIR_eski_payda_GECIRIRDI(tmp_path, capsys):
+    """C5 (03.10.2026): HF dalının paydası max(KE); |blok[0]| ELEKTRONİK enerjiydi.
+
+    A/B: sevk edilen `scenarios/h2_aimd.yaml` (200 adım) ve AYNI senaryo yalnız
+    gradyan adımı 1e-5 -> 1e-13 (sonlu fark gürültüsü). Başlangıç, dt ve Verlet
+    salınımı aynı; farkı yalnız KUVVET HATASI yaratır, yani bu katlanma değil
+    gerçek bir korunum hatasıdır. ÖLÇÜLDÜ: yeni oran 1.465e-04 (✓) ->
+    2.825e-01 (✗); eski |blok[0]| oranı 8.78e-08 -> 2.62e-04, İKİSİNDE DE ✓.
+    """
+    import qlab.run as run_modulu
+
+    sevk = Path(__file__).resolve().parents[2] / "scenarios" / "h2_aimd.yaml"
+    metin = sevk.read_text(encoding="utf-8")
+    assert "step: 1.0e-5" in metin
+    esik = qlab.engine.md.factory._MD_DRIFT_TOLERANCE
+    oranlar = {}
+    for ad, adim in (("temiz", "1.0e-5"), ("gurultulu", "1.0e-13")):
+        yol = tmp_path / f"{ad}.yaml"
+        yol.write_text(metin.replace("step: 1.0e-5", f"step: {adim}"), encoding="utf-8")
+        cikti = tmp_path / f"{ad}.npz"
+        assert run_modulu.main([str(yol), "-o", str(cikti)]) == 0
+        satir = next(s for s in capsys.readouterr().out.splitlines() if s.startswith("Yakınsama"))
+        assert "energy_drift_scale=max_kinetic" in satir and f"energy_drift_tolerance={esik:.3e}" in satir
+        kayit = np.load(cikti)
+        toplam = kayit["kinetic"] + kayit["potential"]
+        blok = toplam[: (len(toplam) // 10) * 10].reshape(10, -1).mean(axis=1)
+        pay = abs(blok[-1] - blok[0])
+        oranlar[ad] = (pay / np.max(kayit["kinetic"]), pay / abs(blok[0]), satir)
+    assert oranlar["temiz"][0] < esik and "✓" in oranlar["temiz"][2]
+    assert oranlar["gurultulu"][0] > 10 * esik and "✗" in oranlar["gurultulu"][2]
+    assert oranlar["gurultulu"][1] < esik  # eski payda gerçek korunum hatasını GEÇİRİRDİ
+
+
+def test_C5_HF_ESIGI_PANELDE_ve_HUKUMDE_AYNI_SAYI_ve_HAREKETSIZ_YARGILANAMAZ():
+    """TB'nin ulp kilidinin HF karşılığı (03.10 doğrulayıcısı: üç mutant geçiyordu).
+
+    Panelin `energy_drift_tolerance`ı hükmün GERÇEKTEN kullandığı eşik ve
+    `_MD_DRIFT_TOLERANCE`; bir ulp altı ✓, bir ulp üstü ✗. HF dalında max(KE) = 0
+    ise oran `nan` ve hüküm ✗ (YARGILANAMAZ), 0.0 = sahte ✓ değil.
+    """
+    hf = _senaryo("hartree_fock")
+    t = provenance_for(hf, energy_drift=1e-9).diagnostics
+    esik = t["energy_drift_tolerance"]
+    assert t["energy_drift_scale"] == "max_kinetic"
+    assert esik == qlab.engine.md.factory._MD_DRIFT_TOLERANCE
+    assert provenance_for(hf, energy_drift=float(np.nextafter(esik, 0.0))).converged
+    assert not provenance_for(hf, energy_drift=float(np.nextafter(esik, 1.0))).converged
+    oran = qlab.engine.md.factory.energy_drift(hf, np.zeros(12), np.full(12, -1.1))
+    assert np.isnan(oran)
+    assert provenance_for(hf, energy_drift=oran).converged is False
 
 
 def test_G5_energy_drift_KAYIT_ve_SEKIL_KAPISI():
@@ -884,8 +940,9 @@ def test_G5_energy_drift_KAYIT_ve_SEKIL_KAPISI():
 def test_G5_energy_drift_SAKLI_DAL_YOK_ve_run_py_KENDISI_HESAPLAMIYOR(
     sevk_tarayici, dize_karsilastirma_tarayici
 ):
-    """(a) `energy_drift`in TEK dizge karşılaştırması `tur == "tb_ss_sigma"`
-    (saklı bir `x["kind"] == ...` dalı kırmızı olur); (b) `run.py::_run_md`
+    """(a) `energy_drift`in dizge karşılaştırmaları TAM OLARAK `tur == "tb_ss_sigma"`
+    ve (03.10.2026, C5) `tur == "hartree_fock"` (saklı bir `x["kind"] == ...`
+    dalı kırmızı olur); (b) `run.py::_run_md`
     sürüklenmeyi KENDİSİ hesaplamaz: `energy_drift`i çağırır ve gövdesinde
     `reshape`/`mean` yoktur -- G5 öncesinin |blok[0]| formülü oraya geri
     kopyalanırsa kırmızı (TB'nin sıfırdan bağımsızlığı sessizce kaybolurdu).
@@ -895,8 +952,11 @@ def test_G5_energy_drift_SAKLI_DAL_YOK_ve_run_py_KENDISI_HESAPLAMIYOR(
     import qlab.run as run_modulu
 
     fabrika = qlab.engine.md.factory
-    assert dize_karsilastirma_tarayici(fabrika, "energy_drift") == {("tur", "tb_ss_sigma")}
-    assert sevk_tarayici(fabrika, "energy_drift", "tur") == {"tb_ss_sigma"} <= ELEKTRON_COZEN
+    # C5 (03.10.2026): `hartree_fock` de max(KE) dalında; ikisi de ELEKTRON ÇÖZEN tür.
+    assert dize_karsilastirma_tarayici(fabrika, "energy_drift") == {
+        ("tur", "tb_ss_sigma"), ("tur", "hartree_fock")
+    }
+    assert sevk_tarayici(fabrika, "energy_drift", "tur") == ELEKTRON_COZEN
     kaynak = Path(run_modulu.__file__).read_text(encoding="utf-8")
     govde = next(
         d for d in ast.walk(ast.parse(kaynak))
