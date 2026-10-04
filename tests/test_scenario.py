@@ -373,9 +373,14 @@ def test_shipped_scenario_loads_and_runs(scenario_path):
         # yapisi sonlu cikiyor ve iletkenlik hukmu verilebiliyor. Izgara
         # KUCULTULUR (senaryonun kendi k_points'i degil), cunku burada
         # aranan sey fizik degil dosyanin calisir olmasidir.
-        from qlab.engine.tb.bands import band_structure, uniform_k_grid
+        from qlab.engine.tb.bands import (
+            band_structure,
+            grid_lipschitz_bound,
+            hamiltonian_rounding_scale,
+            uniform_k_grid,
+        )
         from qlab.engine.tb.factory import build_tb
-        from qlab.observable.tb_obs import is_metal
+        from qlab.observable.tb_obs import certified_conduction, is_metal
 
         model, provenance = build_tb(
             dataclasses.replace(scenario, k_points=_TB_SAMPLE_K_POINTS)
@@ -390,6 +395,15 @@ def test_shipped_scenario_loads_and_runs(scenario_path):
         assert isinstance(
             is_metal(enerjiler, scenario.n_electron_per_cell), bool
         )
+        # Panelin bastigi KANITLI hukum (E13) de sevk edilen her senaryoda
+        # kurulabilmeli.
+        hukum = certified_conduction(
+            enerjiler,
+            scenario.n_electron_per_cell,
+            grid_lipschitz_bound(model, _TB_SAMPLE_K_POINTS),
+            hamiltonian_rounding_scale(model),
+        )
+        assert hukum.verdict in ("metal", "yalıtkan", "belirsiz")
         assert provenance.method.startswith("tight-binding")
         return
 

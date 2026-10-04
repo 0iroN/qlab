@@ -443,6 +443,15 @@ def _load_tb_scenario(raw: dict, file_path: Path) -> TBScenario:
             raise ScenarioError(
                 f"'hoppings[{indis}]' eksik anahtar(lar): {sorted(eksik)}"
             )
+        # Eskiden int(x) KESIYORDU: [1.7, 0, 0] sessizce (1, 0, 0) oluyordu
+        # (dogrulama turu, 04.10.2026). Tam sayi olmayan bilesen reddedilir.
+        if not isinstance(ham["cell"], (list, tuple)) or any(
+            isinstance(x, bool) or not isinstance(x, (int, float)) or not float(x).is_integer()
+            for x in ham["cell"]
+        ):
+            raise ScenarioError(
+                f"'hoppings[{indis}].cell' üç tam sayı olmalı: {ham['cell']!r}"
+            )
         hucre = tuple(int(x) for x in ham["cell"])
         if len(hucre) != 3:
             raise ScenarioError(

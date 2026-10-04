@@ -852,7 +852,7 @@ KOVA_TABLOSU: tuple[EdgeFact, ...] = (
             "ISARET BEYANI (27.09.2026): kaynak ANTIFERROMANYETIKTIR "
             "(`engine/tb/downfold.py:20`; TB paneli `converged` tikini "
             "iki-siteli antiferromanyetik yapinin bulunmasina baglar, "
-            "`engine/tb/factory.py:134` ve `engine/tb/factory.py:174-178`), motor ise c = +J ile "
+            "`engine/tb/factory.py:143` ve `engine/tb/factory.py:183-187`), motor ise c = +J ile "
             "FM kosar (E = -c * sum s s). +J bir AYAR SECIMIDIR: h = 0 cift L'de "
             "AFM(-J) Neel baslangicli kosum her sweep'te bununla bit bit ayni "
             "(s(-J) == eta * s(J)); kilitli 0.687930 dogru isaretli AFM'nin "

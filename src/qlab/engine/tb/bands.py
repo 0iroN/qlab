@@ -96,6 +96,99 @@ def band_structure(model: TBModel, kpoints: np.ndarray) -> np.ndarray:
     )
 
 
+def grid_lipschitz_bound(model: TBModel, n: int) -> float:
+    """B1 (hartree): sirali her ozdeger, n izgarasi ile surekli k arasinda
+    en cok bu kadar oynar -- KANITLI, olculmus degil.
+
+    B1 = (pi / n) * max_i sum_{h: h.i = i} |t_h| * ||cell_h||_1.
+
+    Turetme (E13, 04.10.2026): Weyl, |lambda_b(k) - lambda_b(k')| <=
+    ||H(k) - H(k')||; Hermityen matriste ||A||_2 <= max satir toplami; hucre
+    gauge'unda her eleman t (e^{i k.R} - e^{i k'.R}) ve |e^{ix} - e^{iy}| <=
+    |x - y|. Gamma merkezli izgarada her k'ye kesirli koordinatta eksen
+    basina en cok 1/(2n) uzakta bir nokta vardir (H ters orgude periyodik),
+    yani |dk . R| <= (pi / n) ||cell||_1. Bant KESISIMINDE de gecerlidir
+    (ikinci mertebe sinir orada gecersizdir -- kink). Olculdu: dogrulama
+    turunda 690 model / 1157 (model, n) cifti (1B-3B, 1-10 orbital, |cell|
+    <= 5, egik orgu, dejenere ikizler, en kotu durum aramasi) ihlal 0, en
+    buyuk gercek/sinir orani 0.9992.
+
+    ON KOSULLAR (`TBModel` denetler): Hermitlik -- tek yonlu listede ayni
+    formul 36/900 vakada ihlal edildi; H0 toleransi icindeki asimetri
+    (olcege gore 1e-12) en kotu dizilimde sinira ~1e-13 ekledi, sahte hukum
+    kurulamadi -- ve TAM SAYI hucre (kesirli hucrede H periyodik degildir,
+    sinir 128 kat asildi).
+    """
+    satir = _satir_toplami(model, kuvvet=1).max()
+    sinir = float(np.pi / _izgara_n(n) * satir)
+    # Alt-normal t'de sinir 0'a yuvarlanabiliyordu ve "H(k) sabit" dalina
+    # (kanitli yalitkan) dusuyordu (dogrulama turu, t = 5e-324 hartree):
+    # hoplama varken sinir ASLA sifir olmaz.
+    return max(sinir, float(np.nextafter(0.0, 1.0))) if satir > 0.0 else sinir
+
+
+def hamiltonian_rounding_scale(model: TBModel) -> float:
+    """H(k)'nin KURULUS yuvarlamasinin olcegi (hartree):
+    max_i (|onsite_i| + sum_{h: h.i = i} |t_h| (1 + 2 pi ||cell_h||_1)).
+
+    `certified_conduction`in yuvarlama payi bunu |E|max'a ekler. Sebep
+    (dogrulama turu, 04.10.2026, kamu yolundan): ayni (i, j, R) birbirini
+    goturen parcalarla yazilinca (1.23 + 1.6 - 2.83 eV = 0) toplamada kalan
+    kirinti DUZ bandi "metal (tanikli)" gosteriyordu; |R| ~ 1e3 hucrede faz
+    argumaninin yuvarlamasi da ayni seyi yapiyordu. Ikisi de |E|max ile degil
+    sum |t| ve |k . R| <= 2 pi ||cell||_1 ile olceklenir.
+    """
+    d = model.lattice.dimension
+    satir = np.abs(np.asarray(model.onsite, dtype=float)).copy()
+    for h in model.hoppings:
+        satir[h.i] += abs(h.t) * (
+            1.0 + 2.0 * np.pi * sum(abs(h.cell[eksen]) for eksen in range(d))
+        )
+    return float(satir.max())
+
+
+def grid_extremum_bound(model: TBModel, n: int) -> float:
+    """B2 (hartree): spektrumun GLOBAL alt ucu (en alt bandin minimumu) ve
+    ust ucu (en ust bandin maksimumu) n izgarasinda en cok bu kadar
+    kacirilir. KANITLI; izgara degeri hep ICERIDEDIR (gercek min <= izgara
+    min <= gercek min + B2).
+
+    B2 = (pi^2 / (2 n^2)) * max_i sum_{h: h.i = i} |t_h| * ||cell_h||_1^2.
+
+    Turetme (E1, 04.10.2026): u, k*'daki en alt ozvektor olsun. Rayleigh:
+    lambda_min(k* + dk) <= <u|H(k* + dk)|u> = f(dk). k* minimum oldugu icin
+    f'nin birinci turevi SIFIRDIR -- dejenerelikte bile (degilse u yonunde
+    daha asagi inilirdi); |f''| <= max satir toplami |t| (dk . R)^2 ve
+    |dk . R| <= (pi / n) ||cell||_1 (bkz. `grid_lipschitz_bound`). Yalniz
+    GLOBAL uclar icin gecerlidir: ic kenarlarda (VBM/CBM) bantlar
+    kesisebilir ve egri kirilir; orada B1 kullanilir.
+
+    SIKI: 1B zincirde tek n'de gercek hata ile B2'nin orani n buyudukce 1'e
+    gider (cos'un ikinci mertebe acilimi). Olculdu: dogrulama turunda 1157
+    (model, n) ciftinde ihlal 0, en buyuk oran 0.9995; IC bantta (kesisim,
+    kacinilmis kesisim) B2 32-316 kat ihlal edildi -- yani "yalniz global
+    uclar" kaydi suslemek degil.
+    """
+    return float(
+        np.pi**2 / (2.0 * _izgara_n(n) ** 2) * _satir_toplami(model, kuvvet=2).max()
+    )
+
+
+def _izgara_n(n: int) -> int:
+    if n < 2:
+        raise InvalidInputError(f"n en az 2 olmali, verilen: {n}")
+    return n
+
+
+def _satir_toplami(model: TBModel, kuvvet: int) -> np.ndarray:
+    """Satir basina sum |t| * ||cell||_1^kuvvet (ilk `dimension` bilesen)."""
+    d = model.lattice.dimension
+    satir = np.zeros(model.n_orbital)
+    for h in model.hoppings:
+        satir[h.i] += abs(h.t) * sum(abs(h.cell[eksen]) for eksen in range(d)) ** kuvvet
+    return satir
+
+
 def k_path(vertices: tuple[np.ndarray, ...], n_per_segment: int) -> KPath:
     """Koseleri birlestiren yol. Ortak noktalar bir kez sayilir."""
     if len(vertices) < 2:

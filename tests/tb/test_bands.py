@@ -18,6 +18,9 @@ import pytest
 from qlab.engine.tb.bands import (
     band_edges,
     band_structure,
+    grid_extremum_bound,
+    grid_lipschitz_bound,
+    hamiltonian_rounding_scale,
     k_path,
     uniform_k_grid,
 )
@@ -296,3 +299,131 @@ def test_IKI_BOYUTTA_coklu_baslangic_GEREKLI():
 
     # ...ve tek baslangicin dustugu yerel tuzaga DUSMEMELI (o ~%30 yukarida)
     assert abs(alt - (-0.323908)) < 1e-5
+
+
+def _rastgele_2B(tohum: int) -> TBModel:
+    """Iki orbitalli 2B model, hucreler |c| <= 2 (KOSEGEN hucreler dahil --
+    ||cell||_1 ile ||cell||_inf'i ayirmak icin), Hermityen kurulur."""
+    rng = np.random.default_rng(tohum)
+    orgu = Lattice(
+        vectors=np.array([[2.5, 0.0, 0.0], [0.8, 2.2, 0.0]]),
+        basis=np.array([[0.0, 0.0, 0.0], [1.1, 0.7, 0.0]]),
+    )
+    hop = []
+    for hucre in ((0, 0), (1, 0), (0, 1), (1, 1), (1, -1), (2, 0), (2, -1), (1, 2)):
+        for i in range(2):
+            for j in range(2):
+                if hucre == (0, 0) and i >= j:
+                    continue
+                t = float(rng.normal(0.0, 0.05))
+                c = (hucre[0], hucre[1], 0)
+                hop.append(Hopping(i, j, c, t))
+                hop.append(Hopping(j, i, (-c[0], -c[1], 0), t))
+    return TBModel(lattice=orgu, onsite=rng.normal(0.0, 0.1, 2), hoppings=tuple(hop))
+
+
+def test_B1_B2_KANITLI_SINIRLAR_rastgele_2B_modellerde_TUTUYOR():
+    """E13/E1 (04.10.2026): B1 her sirali ozdegerin izgara ile surekli k
+    arasindaki farkini, B2 global uclarin kacirilma miktarini sinirlar.
+
+    Rastgele k noktasi ile ona EN YAKIN izgara noktasi (kesirli koordinatta
+    yuvarlama) karsilastirilir: |lambda_b(k) - lambda_b(k_g)| <= B1, ve
+    izgara_min - orneklem_min <= B2 (ust uc icin simetrik). Bu modellerde
+    oranlar GEVSEK (B1 en cok 0.42, B2 0.12): test yalniz kaba (>~2.4x)
+    ihlalleri yakalar. Norm ve sabit kilidi `test_B1_B2_SIKI_ve_NORMU_dogru`da
+    (dogrulama turunda ||cell||_inf ve yari sabit mutantlari burada yesildi).
+    """
+    n = 6
+    for tohum in range(4):
+        model = _rastgele_2B(tohum)
+        b = reciprocal_vectors(model.lattice)
+        B1 = grid_lipschitz_bound(model, n)
+        B2 = grid_extremum_bound(model, n)
+        izgara = band_structure(model, uniform_k_grid(model.lattice, n))
+        kesirli = np.random.default_rng(100 + tohum).random((1000, 2))
+        en_yakin = np.rint(kesirli * n) / n
+        surekli = band_structure(model, kesirli @ b[:2])
+        komsu = band_structure(model, en_yakin @ b[:2])
+        assert np.abs(surekli - komsu).max() <= B1
+        assert float(izgara.min()) - float(surekli.min()) <= B2
+        assert float(surekli.max()) - float(izgara.max()) <= B2
+
+
+def _kare_capraz(hucreler) -> TBModel:
+    orgu = Lattice(vectors=np.array([[2.5, 0.0, 0.0], [0.0, 2.5, 0.0]]), basis=np.zeros((1, 3)))
+    hop = tuple(Hopping(0, 0, (a, b, 0), -0.0625) for a, b in hucreler)
+    return TBModel(lattice=orgu, onsite=np.array([0.0]), hoppings=hop)
+
+
+def test_B1_B2_SIKI_ve_NORMU_dogru():
+    """Sinirlarin GEVSEK ya da YANLIS normlu olmadigini kilitler.
+
+    (1) Zincir, E = 2t cos(ka): ka = pi/2'deki izgara noktasi ile iki izgara
+        noktasinin TAM ortasi arasindaki fark B1 = (pi/n) 2|t|'ye 1 - O(1/n^2)
+        oranla yaklasir.
+    (2) Yalniz +-(1,1) hucreli 2B model: faz 2 pi (f1 + f2), orta nokta fazi
+        2 pi / n kaydirir -- B1'deki ||cell||_1 = 2 SIKI. ||cell||_inf (= 1)
+        kullanan bir sinir burada 2 kat IHLAL edilir.
+    (3) +-(1,+-1) hucreli 2B model, E = 4t cos(2 pi f1) cos(2 pi f2), tek n:
+        maksimum (1/2, 0)'da ve izgarada yok (en yakin nokta bir eksende
+        1/(2n) uzakta); gercek hata 4|t|(1 - cos(pi/n)), B2 = pi^2/(2 n^2)
+        * 16|t| -> oran 1/4'e gider. B2'nin ||cell||_1^2 ile kuruldugu
+        formulun kendisiyle de kilitlenir (||cell||_inf bunu 4'e boler).
+    """
+    n = 400
+    orgu = Lattice(vectors=np.array([[2.5, 0.0, 0.0]]), basis=np.zeros((1, 3)))
+    zincir = TBModel(
+        lattice=orgu, onsite=np.array([0.0]),
+        hoppings=(Hopping(0, 0, (1, 0, 0), -0.0625), Hopping(0, 0, (-1, 0, 0), -0.0625)),
+    )
+    b = reciprocal_vectors(orgu)[0]
+    kg = (n // 4) / n
+    sapma = abs(
+        band_structure(zincir, np.array([(kg + 0.5 / n) * b]))[0, 0]
+        - band_structure(zincir, np.array([kg * b]))[0, 0]
+    )
+    assert 0.99 < sapma / grid_lipschitz_bound(zincir, n) <= 1.0
+
+    capraz = _kare_capraz(((1, 1), (-1, -1)))
+    b2 = reciprocal_vectors(capraz.lattice)[:2]
+    fg = np.array([n // 8, n // 8]) / n  # 2 pi (f1 + f2) = pi/2
+    sapma = abs(
+        band_structure(capraz, np.array([(fg + 0.5 / n) @ b2]))[0, 0]
+        - band_structure(capraz, np.array([fg @ b2]))[0, 0]
+    )
+    assert 0.99 < sapma / grid_lipschitz_bound(capraz, n) <= 1.0
+
+    n_tek = 101
+    carpim = _kare_capraz(((1, 1), (-1, -1), (1, -1), (-1, 1)))
+    B2 = grid_extremum_bound(carpim, n_tek)
+    assert B2 == pytest.approx(np.pi**2 / (2 * n_tek**2) * 16 * 0.0625, rel=1e-14)
+    izgara = band_structure(carpim, uniform_k_grid(carpim.lattice, n_tek))
+    assert float(izgara.min()) == pytest.approx(-0.25, abs=1e-15)  # Gamma izgarada
+    oran = (0.25 - float(izgara.max())) / B2  # maksimum (1/2, 0)'da
+    assert 0.249 < oran <= 0.25
+
+
+def test_B1_ALT_NORMAL_t_de_SIFIRA_DUSMEZ_ve_H_OLCEGI_formulu():
+    """Dogrulama turu (04.10.2026): t = 5e-324 hartree'de B1 = (pi/n) * t
+    sifira yuvarlaniyordu ve `certified_conduction` "H(k) sabit" dalina
+    (kanitli yalitkan) dusuyordu. Hoplama varken B1 > 0 olmali; hoplama
+    yokken (ya da hepsi R = 0) TAM 0.
+
+    `hamiltonian_rounding_scale` = max_i(|eps_i| + sum |t| (1 + 2 pi ||cell||_1))
+    -- yuvarlama payina giren kurulus olcegi; formul burada kilitlenir.
+    """
+    orgu = Lattice(vectors=np.array([[2.5, 0.0, 0.0]]), basis=np.zeros((1, 3)))
+    alt_normal = TBModel(
+        lattice=orgu, onsite=np.array([1.0]),
+        hoppings=(Hopping(0, 0, (1, 0, 0), 5e-324), Hopping(0, 0, (-1, 0, 0), 5e-324)),
+    )
+    assert grid_lipschitz_bound(alt_normal, 13) > 0.0
+    sabit = TBModel(lattice=orgu, onsite=np.array([1.0]), hoppings=())
+    assert grid_lipschitz_bound(sabit, 13) == 0.0
+    t, eps = -0.0625, -0.1948
+    zincir = TBModel(
+        lattice=orgu, onsite=np.array([eps]),
+        hoppings=(Hopping(0, 0, (1, 0, 0), t), Hopping(0, 0, (-1, 0, 0), t)),
+    )
+    beklenen = abs(eps) + 2 * abs(t) * (1 + 2 * np.pi)
+    assert hamiltonian_rounding_scale(zincir) == pytest.approx(beklenen, rel=1e-15)

@@ -18,6 +18,7 @@ from qlab.engine.tb.hamiltonian import Hopping, TBModel, uniform_model
 from qlab.engine.tb.lattice import Lattice
 from qlab.errors import InvalidInputError
 from qlab.observable.tb_obs import (
+    certified_conduction,
     density_of_states,
     fermi_level,
     is_metal,
@@ -242,3 +243,59 @@ def test_gecersiz_girdiler_reddediliyor():
         density_of_states(e, n_bin=1)
     with pytest.raises(InvalidInputError, match="bant duz"):
         structure_ratio(np.full((10, 1), -0.3))
+
+
+def test_E13_certified_conduction_KURALLARI():
+    """E13 (04.10.2026): metal yalniz TANIKLI, yalitkan yalniz aralik > 2*B1.
+
+    Izgara ozdegerleri (yuvarlama payi icinde) gercek ozdegerlerdir; bu yuzden
+    ortusme tanigi yanlis olamaz. Pay 1e3*eps*(|E|max + H olcegi): grafende K
+    izgaradayken dokunan bantlar +5e-17 ayrik cikiyordu ve `>=` bunu aralik
+    sayiyordu.
+    """
+    B = 0.01
+    # Iki k noktasi, iki bant; ortusme FARKLI k'larda (sirali ozdegerler).
+    iki = lambda vbm, cbm: np.array([[-0.3, cbm], [vbm, cbm + 0.2]])
+    # cift sayim: ortusme -> metal (tanikli); aralik > 2B -> yalitkan; arasi belirsiz
+    assert certified_conduction(iki(0.10, 0.09), 2, B, 0.0).verdict == "metal"
+    assert certified_conduction(iki(0.10, 0.10 + 2 * B + 1e-6), 2, B, 0.0).verdict == "yalıtkan"
+    assert certified_conduction(iki(0.10, 0.10 + 2 * B - 1e-6), 2, B, 0.0).verdict == "belirsiz"
+    # yuvarlama: +-5e-17 ne metal ne yalitkan -- sinir sifir olsa bile
+    for kayma in (+5e-17, -5e-17, 0.0):
+        h = certified_conduction(iki(0.10, 0.10 + kayma), 2, 0.0, 0.0)
+        assert h.verdict == "belirsiz", kayma
+    assert certified_conduction(iki(0.10, 0.10 - 1e-12), 2, 0.0, 0.0).verdict == "metal"
+    # H olcegi payi GENISLETIR: kurulus kirintisi (1e-12) buyuk H'de tanik sayilmaz
+    assert certified_conduction(iki(0.10, 0.10 - 1e-12), 2, 0.0, 1e2).verdict == "belirsiz"
+    # tum bantlar dolu
+    assert certified_conduction(iki(0.10, 0.20), 4, B, 0.0).verdict == "yalıtkan"
+    # tek sayim: genis bant tanikli metal; duz gorunen bant belirsiz, B1 = 0'da yalitkan
+    duz = np.array([[0.1], [0.1], [0.1]])
+    kirinti = np.array([[0.1], [0.1 + 1e-17], [0.1]])  # yuvarlama mertebesinde genislik
+    assert certified_conduction(np.array([[0.0], [0.2]]), 1, B, 0.0).verdict == "metal"
+    for bant in (duz, kirinti):
+        assert certified_conduction(bant, 1, B, 0.0).verdict == "belirsiz"
+        assert certified_conduction(bant, 1, 0.0, 0.0).verdict == "yalıtkan"
+    # gecersiz sinir / olcek
+    for kotu in (float("nan"), -1e-3, float("inf")):
+        with pytest.raises(InvalidInputError, match="sinir"):
+            certified_conduction(duz, 1, kotu, 0.0)
+        with pytest.raises(InvalidInputError, match="H olcegi"):
+            certified_conduction(duz, 1, B, kotu)
+
+
+def test_E13_describe_eV_basar_ve_hukmu_ilk_kelimede_tasir():
+    from qlab.units import HARTREE_TO_EV
+
+    h = certified_conduction(np.array([[-0.3, 0.2], [0.0, 0.1]]), 2, 0.01, 0.0)
+    assert h.verdict == "yalıtkan"
+    metin = h.describe()
+    assert metin.startswith("yalıtkan — ")
+    assert f"{0.1 * HARTREE_TO_EV:.3e} eV" in metin and f"{0.02 * HARTREE_TO_EV:.3e} eV" in metin
+    # "belirsiz" gercek METALI de kapsar (dogrulama turu: ilk metin onu disliyordu)
+    belirsiz = certified_conduction(np.array([[-0.3, 0.2], [0.0, 0.001]]), 2, 0.01, 0.0)
+    metin = belirsiz.describe()
+    assert metin.startswith("belirsiz — ")
+    assert "metal, yarı metal ya da dar aralıklı yalıtkan" in metin
+    alt = (0.001 - 0.02) * HARTREE_TO_EV
+    assert f"[{alt:.3e}, {0.001 * HARTREE_TO_EV:.3e}] eV" in metin

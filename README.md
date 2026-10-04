@@ -1436,6 +1436,40 @@ bir **sayımdır** (300/300, iki bağımsız uygulamayla). Ama **çift** sayım
 yalıtkanlığı **garanti etmez**: bant örtüşmesi yüzünden metal çıkma oranı
 1B %67, 2B %34, 3B %20 ölçüldü. Silisyumun yarıiletkenliği sayımdan çıkmıyor.
 
+**Panel hükmü 04.10.2026'dan beri kanıtlıdır (E13).** Izgaranın kendi hükmü
+(`is_metal`) iki yerde yanlış "yalıtkan" diyordu. Bunu kamu yolundan ölçtük:
+- Grafen **her** `k_points`'te "yalıtkan ✓" çıkıyordu. Dirac noktası ızgarada
+  yoksa aralık sahte; ızgaradaysa dokunan bantlar yuvarlamayla +5e-17 ayrık
+  çıkıyor ve `>=` bunu aralık sayıyor.
+- İki orbitalli bir metal k = 4 ve 16'da "yalıtkan ✓" çıkıyordu.
+
+Panel artık `certified_conduction`'ı basar:
+- **metal**: yalnız ızgarada tanık varken (bant örtüşmesi ya da tek sayımda
+  yuvarlamadan geniş yarı dolu bant). Tek sayımda yarı dolu bant ızgarada
+  düz görünürse hüküm "belirsiz"dir.
+- **yalıtkan**: yalnız ızgara aralığı 2·B1'i aşarken, bütün bantlar doluyken
+  ya da H(k) k'dan bağımsızken. B1 = (π/n)·max_i Σ|t|·‖cell‖₁, Weyl sınırı.
+- **belirsiz**: geri kalan her durum. Gerçek aralık [g − 2·B1, g] içindedir;
+  metal, yarı metal ya da dar aralıklı yalıtkan olabilir.
+
+Yuvarlama payı 1e3·eps·(|E|max + max_i(|ε_i| + Σ|t|(1 + 2π‖cell‖₁))).
+İlk sürümde pay yalnız |E|max'a bağlıydı. Doğrulama turu bu yüzden kamu
+yolundan iki sahte "metal (tanıklı)" üretti: birbirini götüren parçalı
+hoplama (1.23 + 1.6 − 2.83 eV) ve |R| = 1000 hücrede faz yuvarlaması.
+
+Dokunan bantlar (yarı metal) hiçbir n'de metal kanıtlanamaz; grafen her
+ızgarada "belirsiz"dir. Ön ölçüm ajanlarının kurduğu ~880 karşı örnekte sahte
+"yalıtkan" sıfır. "yalıtkan" denen 23 dosyanın 23'ü 200 000 noktalık ızgarada
+kanıtlı. İki bayrak birbirinden bağımsızdır: grafen k=100'de kenarlar kanıtlı
+(✓) ama hüküm "belirsiz". npz'de `iletkenlik` tam hükmü taşır; `is_metal`
+yalnız kanıtlı metalde True'dur ve False "yalıtkan" demek **değildir**.
+
+**Hoplama listesi Hermityen olmalıdır (H0, 04.10.2026).** Eskiden tek yönlü
+yazılmış bir zincir rc=0 ile "metal ✓" basıyor ve bant genişliği yarıya
+iniyordu (3.4 eV, doğrusu 6.8), çünkü `eigvalsh` yalnız alt üçgeni okur.
+`TBModel` artık bunu reddediyor. Tolerans ölçeğe göre 1e-12; testlerin
+kurduğu 1904 modelde en büyük yuvarlama sapması 7.22e-16.
+
 #### Tautoloji-çıpa — bu depoda üçüncü kez
 
 Ön ölçümde "çıpa" ilan edilenlerin çoğu karşıt doğrulamada düştü:
@@ -1503,9 +1537,17 @@ bulunması gerektiğini söylüyor, kod **denetliyor** (`must_include`).
 - **`band_edges` çok boyutta bir SINIRDIR, kanıtlanmış küresel uç değer
   değil.** Ölçüldü: 50 aramada tek başlangıç 31/50 başarısız (en kötüsü bant
   genişliğinin **%51.5**'i), 5×5 çoklu başlangıç 8/50.
-- **`converged` ölçütü kandırılabilir.** n vs 2n karşılaştırması "iki ızgara
-  aynı sonucu veriyor" der, "sonuç doğru" demez; n=4 gibi çok kaba bir çift
-  ızgara bile `True` veriyor çünkü sıfır yoğunluktan değil **pariteden** geliyor.
+- **`converged` eskiden kandırılıyordu; 04.10.2026'dan beri KANITLI (E1).**
+  n vs 2n karşılaştırması n'nin **hatasını** değil n ile 2n arasındaki
+  **iyileşmeyi** ölçüyordu. İki ızgara gerçek uca en yakın aynı noktayı
+  paylaşınca fark tam 0 çıkıyordu. Ölçüldü: ucu kesirli 0.26'da olan ikinci
+  komşulu zincir n=4 ve 12'de ✓ alıyordu, gerçek uç hatası 7.885e-04 Ha
+  (eşiğin 788 katı). Zincir n=4'teki ✓ ise doğruydu, uçlar ızgaradaydı, ama
+  bir kanıt değildi. Artık `converged` = B2 ≤ 1e-4 Ha
+  (Osman'ın eşiği). B2 = (π²/2n²)·max_i Σ|t|·‖cell‖₁², ızgaranın spektrum
+  uçlarını en çok ne kadar kaçırabileceğinin **kanıtıdır** (Rayleigh bölümü;
+  zincirde sıkı, oran → 1). Sevk edilen zincir n=100'de 6.17e-05 ✓, n=4'te ✗.
+  Köşegenleştirme gerekmediği için `build_tb` artık iki ızgara hesaplamıyor.
 - **Ortogonal olmayan taban yoktur** (S = I). Bedeli ölçüldü: bant genişliğinin
   %45–65'i.
 - **`viz` katmanının GUI yasağı YOKTUR** — ölçüldü, `viz/band_frames.py →

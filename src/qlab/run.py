@@ -213,19 +213,33 @@ def _run_tb(scenario: TBScenario, output: str | None) -> int:
     yolundan geçmez, çünkü `RunResult` bir zaman serisi varsayar ve bant
     yapısı zaman serisi değildir.
     """
-    from qlab.engine.tb.bands import band_structure, k_path, uniform_k_grid
+    from qlab.engine.tb.bands import (
+        band_structure,
+        grid_lipschitz_bound,
+        hamiltonian_rounding_scale,
+        k_path,
+        uniform_k_grid,
+    )
     from qlab.engine.tb.factory import build_tb
     from qlab.engine.tb.lattice import reciprocal_vectors
-    from qlab.observable.tb_obs import fermi_level, is_metal
+    from qlab.observable.tb_obs import certified_conduction, fermi_level
+    from qlab.units import HARTREE_TO_EV
 
     model, provenance = build_tb(scenario)
     izgara = uniform_k_grid(model.lattice, scenario.k_points)
     enerjiler = band_structure(model, izgara)
-    metal = is_metal(enerjiler, scenario.n_electron_per_cell)
+    # E13 (04.10.2026): panel ızgaranın kendi hükmünü (`is_metal`) DEĞİL
+    # kanıtlı hükmü basar -- grafen her k_points'te "yalıtkan ✓" çıkıyordu.
+    hukum = certified_conduction(
+        enerjiler,
+        scenario.n_electron_per_cell,
+        grid_lipschitz_bound(model, scenario.k_points),
+        hamiltonian_rounding_scale(model),
+    )
     e_fermi = fermi_level(enerjiler, scenario.n_electron_per_cell)
 
     print(f"{scenario.name}: {model.n_orbital} bant, {len(izgara)} k-noktası")
-    print(f"  İletkenlik    : {'metal' if metal else 'yalıtkan'}")
+    print(f"  İletkenlik    : {hukum.describe()}")
     for etiket, deger in provenance.as_lines():
         print(f"{etiket:<14}: {deger}")
 
@@ -248,7 +262,11 @@ def _run_tb(scenario: TBScenario, output: str | None) -> int:
             tick_distances=yuk.tick_distances,
             tick_labels=np.array(yuk.tick_labels),
             fermi_ev=np.array(yuk.fermi_ev),
-            is_metal=np.array(metal),
+            # `is_metal` yalnız KANITLI metalde True; False "yalıtkan"
+            # DEMEK DEĞİLDİR -- tam hüküm `iletkenlik` alanındadır.
+            is_metal=np.array(hukum.verdict == "metal"),
+            iletkenlik=np.array(hukum.verdict),
+            iletkenlik_cozunurluk_ev=np.array(hukum.bound * HARTREE_TO_EV),
         )
     return 0
 

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from qlab.engine.tb.bands import band_structure, uniform_k_grid
+from qlab.engine.tb.bands import grid_extremum_bound
 from qlab.engine.tb.downfold import (
     STAGGERING_TOLERANCE,
     DownfoldedParameters,
@@ -30,20 +30,28 @@ from qlab.provenance import Provenance
 from qlab.scenario.schema import DownfoldScenario, TBScenario
 from qlab.units import EV_TO_HARTREE
 
-# k-izgarasi yakinsama esigi (hartree). Olcut: n ve 2n izgaralarinda bant
-# KENARLARININ (spektrumun alt ve ust ucu) max farki. Esik olculmus degil
-# SECILMISTIR; `Provenance.diagnostics` ham sapmayi da tasir, yani okuyucu
-# kendi esigini uygulayabilir.
+# k-izgarasi yakinsama esigi (hartree), Osman'in karari (04.10.2026): 1e-4
+# hartree = 2.7 meV. Olcut OLCUM DEGIL KANITTIR: B2 (`grid_extremum_bound`)
+# izgaranin spektrum uclarini en cok ne kadar kacirabilecegini hoplama
+# listesinden hesaplar; `converged` = B2 <= esik.
 #
-# OLCULMUS SINIR -- n vs 2n olcutu KANDIRILABILIR. Bu olcut "iki izgara
-# ayni sonucu veriyor" der, "sonuc dogru" DEMEZ; ikisi de AYNI sistematik
-# hatayi tasiyorsa fark sifir cikar. 1B zincirde tam bu oluyor: cift n'de
-# sapma TAM 0.000000e+00, cunku hem n hem 2n cift ve ikisi de bant
-# kenarlarini TAM yakaliyor -- yani sifir, yogunluktan degil PARITEDEN
-# geliyor. Tek n'de olculdu: n=3 -> 6.247e-02, n=11 -> 5.061e-03,
-# n=101 -> 6.044e-05 (hepsi esigi gecmiyor, ve HAKLI OLARAK gecmiyor:
-# tek izgarada bant kenari n=101'de bile %0.024 eksik).
-_K_YAKINSAMA_ESIGI = 1e-6
+# ESKI OLCUT (n ile 2n izgarasinin uc farki) n'nin HATASINI degil n ile 2n
+# arasindaki IYILESMEYI olcuyordu: ikisi gercek uca en yakin AYNI noktayi
+# paylasinca fark TAM 0 cikar, hata sifir olmasa bile. Olculdu (dogrulama
+# turu): ucu kesirli 0.26'da olan ikinci komsulu zincir (t2 = 0.05, t1 =
+# -4 t2 cos(2 pi 0.26)) n=4 ve n=12'de eski ✓ veriyordu, gercek uc hatasi
+# 7.885e-04 hartree (eski esigin 788 kati); B2(4) = 1.31e-01 (✗). Zincir
+# n=4'teki ve grafendeki eski ✓ ise DOGRUYDU (uclar izgaradaydi) -- ama
+# kanit degildi. B2 a priori'dir:
+# sevk edilen zincirde n=4 -> 3.854e-02 (✗), n=78 -> 1.013e-04 (✗),
+# n=79 -> 9.880e-05 (✓), n=100 -> 6.166e-05 (✓). 1e-6 secilseydi zincir
+# n >= 786 isterdi ve 2B/3B'de hicbir makul izgara ✓ almazdi. Esik bir
+# GARANTI oldugu icin gercek hata genelde cok daha kucuktur; TB
+# parametrelerinin kendi belirsizligi eV mertebesindedir.
+#
+# Bu olcut ILETKENLIK hukmunu sertifikalamaz -- o ic kenarlara (VBM/CBM)
+# bakar ve `certified_conduction` (B1) ile kendi satirinda basilir.
+_K_YAKINSAMA_ESIGI = 1e-4
 
 _YAKLASIMLAR: tuple[str, ...] = (
     "tight-binding: sonlu menzilli, ortogonal (S = I) tek-parcacik modeli",
@@ -55,6 +63,12 @@ _YAKLASIMLAR: tuple[str, ...] = (
     "ILETKEN hukmu elektron SAYIMINDAN gelir ve parametrelerden bagimsizdir; "
     "YALITKAN hukmu gelmez -- cift sayim yalitkanligi garanti etmez "
     "(olculdu: 1B %67, 2B %34, 3B %20 metal cikiyor)",
+    "iletkenlik hukmu izgaradan KANITLIDIR: metal yalniz izgarada tanik "
+    "varken (tek sayimda da: yari dolu bant izgarada duz gorunurse "
+    "'belirsiz'), yalitkan yalniz izgara araligi 2*B1'i asarken ya da butun "
+    "bantlar doluyken ya da H(k) k'dan bagimsizken, aksi halde 'belirsiz' "
+    "(B1 = (pi/n) max_i sum|t| ||cell||_1, Weyl siniri; dokunan bantlar -- "
+    "yari metal -- hicbir n'de metal kanitlanamaz)",
     "cekirdekler sabit: fonon yok, Peierls carpilmasinin enerjetigi yok",
 )
 
@@ -84,17 +98,12 @@ def build_tb(scenario: TBScenario) -> tuple[TBModel, Provenance]:
 
     # `converged` OLCULEBILIR bir seye baglanir. Olculmus tuzak: `eigvalsh`
     # dort patolojik girdide de istisna atmadan sonlu deger dondurdu, yani
-    # "SCF yok, True" yazmak alani anlamsizlastirirdi. Burada olcut,
-    # k-izgarasi ikiye katlandiginda bant KENARLARININ ne kadar oynadigi.
+    # "SCF yok, True" yazmak alani anlamsizlastirirdi. Burada olcut, bant
+    # KENARLARININ izgarada kacirilabilecegi en buyuk miktarin KANITLI
+    # siniridir (B2) -- kosegenlestirme gerektirmez (eskiden n ve 2n
+    # izgaralari hesaplaniyordu: grafen k=100'de ~1.3 s).
     n = scenario.k_points
-    kaba = band_structure(model, uniform_k_grid(orgu, n))
-    ince = band_structure(model, uniform_k_grid(orgu, 2 * n))
-    sapma = float(
-        max(
-            abs(float(kaba.min()) - float(ince.min())),
-            abs(float(kaba.max()) - float(ince.max())),
-        )
-    )
+    sinir = grid_extremum_bound(model, n)
 
     kaynak = Provenance(
         method=f"tight-binding ({scenario.name})",
@@ -106,9 +115,9 @@ def build_tb(scenario: TBScenario) -> tuple[TBModel, Provenance]:
             "dogruluk (gercek-uzay <-> Bloch capraz kontrolu) hata/||H|| "
             "olcusunde 1e-13 altindadir."
         ),
-        converged=bool(sapma < _K_YAKINSAMA_ESIGI),
+        converged=bool(sinir <= _K_YAKINSAMA_ESIGI),
         diagnostics={
-            "k_convergence_hartree": sapma,
+            "k_edge_bound_hartree": sinir,
             "k_points": float(n),
             "n_electron_per_cell": float(scenario.n_electron_per_cell),
         },

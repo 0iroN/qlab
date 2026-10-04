@@ -211,7 +211,7 @@ def _kos(J: float, *, alan: float = 0.0):
     """`coupling = +J`: motorun konvansiyonunda (E = −c Σ s·s) FERROMANYETİK.
 
     İŞARET BEYANI (27.09.2026): kaynak ANTİFERROMANYETİKTİR (`downfold.py:20`,
-    `tb/factory.py:134` ve `tb/factory.py:174-178`); +J bir AYAR SEÇİMİDİR — `h = 0` çift
+    `tb/factory.py:143` ve `tb/factory.py:183-187`); +J bir AYAR SEÇİMİDİR — `h = 0` çift
     L'de AFM(−J) Néel başlangıçlı koşum bununla bit bit aynı, kilitli 0.687930
     doğru işaretli AFM'nin KADEMELİ ortalamasıdır (tekbiçimde 0.009724).
     İŞARETİ ÇEVİRME: kilit bozulur, hiçbir şey kazanılmaz. `h ≠ 0` penceresi

@@ -27,6 +27,17 @@ from qlab.engine.tb.lattice import Lattice, max_cell_for_cutoff, neighbour_shell
 from qlab.engine.tb.radyal import UsselRadyalYasa
 from qlab.errors import InvalidInputError
 
+# H0 (04.10.2026): hoplama listesinin Hermitlik toleransi, listedeki en buyuk
+# |toplam t|'ye GORE. Kapi olmadan tek yonlu yazilmis bir zincir rc=0 ile
+# "metal ✓" basiyordu ve bant genisligi YARIYA iniyordu (3.4 eV, dogrusu
+# 6.8): `eigvalsh` yalniz alt ucgeni okur, eksik es sessizce yok sayilir.
+# OLCULDU: testlerin kurdugu 1904 modelde en buyuk sapma 7.22e-16 (yuvarlama;
+# distance_model'in iki yonu ayri hesaplamasindan), es-eksik 0 -- yani esik
+# 1000 kattan fazla pay birakir. Eleman-basina bagil olcut SECILMEDI: kucuk
+# bir elemanin bagil yuvarlamasi (6e-14) ozdegeri etkilemez, olcege gore
+# sapma etkiler.
+_HERMIT_TOLERANSI = 1e-12
+
 
 @dataclass(frozen=True, eq=False)
 class Hopping:
@@ -71,6 +82,39 @@ class TBModel:
                 )
             if not np.isfinite(h.t):
                 raise InvalidInputError(f"hoplama sonlu olmali: t={h.t}")
+            # Kesirli hucrede H ters orgude periyodik DEGILDIR; B1/B2'nin
+            # turetmesi cokuyor (dogrulama turu: sinir 128 kat asildi).
+            if not all(float(c).is_integer() for c in h.cell):
+                raise InvalidInputError(
+                    f"hucre bilesenleri tam sayi olmali: cell={list(h.cell)}"
+                )
+        self._hermit_kapisi()
+
+    def _hermit_kapisi(self) -> None:
+        """Her (i, j, R) toplami (j, i, -R) toplamina esit olmali (t gercel).
+
+        Anahtar yalniz ilk `dimension` hucre bilesenidir -- `bloch_hamiltonian`
+        otekilerini okumaz. Ayni (i, j, R) birden cok kez yazilabilir;
+        karsilastirilan TOPLAMDIR. Esi yazilmamis bir anahtarin esi 0 sayilir:
+        tek yonlu SIFIR hoplama H'yi degistirmez ve reddedilmez.
+        """
+        d = self.lattice.dimension
+        toplam: dict[tuple, float] = {}
+        for h in self.hoppings:
+            anahtar = (h.i, h.j, tuple(h.cell[eksen] for eksen in range(d)))
+            toplam[anahtar] = toplam.get(anahtar, 0.0) + float(h.t)
+        olcek = max((abs(t) for t in toplam.values()), default=0.0)
+        for (i, j, hucre), t in toplam.items():
+            es = toplam.get((j, i, tuple(-c for c in hucre)))
+            if abs(t - (0.0 if es is None else es)) > _HERMIT_TOLERANSI * olcek:
+                raise InvalidInputError(
+                    f"hoplama listesi Hermityen degil: (i={i}, j={j}, "
+                    f"cell={list(hucre)}) toplami {t!r} hartree, esi (i={j}, j={i}, "
+                    f"cell={[-c for c in hucre]}) "
+                    f"{'YOK' if es is None else repr(es)}. Her hoplama iki "
+                    "yonde de yazilmalidir; tek yonlu liste bant genisligini "
+                    "sessizce yariya indirir."
+                )
 
     @property
     def n_orbital(self) -> int:

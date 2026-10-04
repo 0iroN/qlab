@@ -190,6 +190,62 @@ def test_gecersiz_model_reddediliyor():
         bloch_hamiltonian(_zincir(), np.zeros(3), gauge="baska")
 
 
+def test_H0_HERMITYEN_OLMAYAN_hoplama_listesi_REDDEDILIYOR():
+    """H0 (04.10.2026): tek yonlu liste eskiden bant genisligini YARIYA indiriyordu.
+
+    `eigvalsh` yalniz alt ucgeni okur; eksik es sessizce yok sayiliyordu.
+    Tolerans OLCEGE gore 1e-12: 1e-11 reddedilir, 1e-13 gecer (testlerin
+    kurdugu 1904 modelde en buyuk yuvarlama sapmasi 7.22e-16).
+    """
+    orgu = Lattice(vectors=np.array([[A_ZINCIR, 0.0, 0.0]]), basis=np.zeros((1, 3)))
+    eps = np.array([EPS_ZINCIR])
+    with pytest.raises(InvalidInputError, match="Hermityen degil.*YOK"):
+        TBModel(lattice=orgu, onsite=eps, hoppings=(Hopping(0, 0, (1, 0, 0), T_ZINCIR),))
+    for bagil, gecer in ((1e-11, False), (1e-13, True)):
+        cift = (
+            Hopping(0, 0, (1, 0, 0), T_ZINCIR),
+            Hopping(0, 0, (-1, 0, 0), T_ZINCIR * (1.0 + bagil)),
+        )
+        if gecer:
+            TBModel(lattice=orgu, onsite=eps, hoppings=cift)
+        else:
+            with pytest.raises(InvalidInputError, match="Hermityen degil"):
+                TBModel(lattice=orgu, onsite=eps, hoppings=cift)
+    # Ayni (i, j, R) parcali yazilabilir: karsilastirilan TOPLAMDIR.
+    parcali = (
+        Hopping(0, 0, (1, 0, 0), T_ZINCIR / 2),
+        Hopping(0, 0, (1, 0, 0), T_ZINCIR / 2),
+        Hopping(0, 0, (-1, 0, 0), T_ZINCIR),
+    )
+    TBModel(lattice=orgu, onsite=eps, hoppings=parcali)
+    # Esi yazilmamis SIFIR hoplama H'yi degistirmez: kabul (dogrulama turu).
+    TBModel(
+        lattice=orgu, onsite=eps,
+        hoppings=parcali + (Hopping(0, 0, (2, 0, 0), 0.0),),
+    )
+    # Kesirli hucrede H ters orgude periyodik degildir: B1/B2 coker.
+    with pytest.raises(InvalidInputError, match="tam sayi"):
+        TBModel(
+            lattice=orgu, onsite=eps,
+            hoppings=(Hopping(0, 0, (0.5, 0, 0), T_ZINCIR), Hopping(0, 0, (-0.5, 0, 0), T_ZINCIR)),
+        )
+    # Iki orbital: (0, 1, R)'nin esi (1, 0, -R) -- (1, 0, +R) DEGIL.
+    orgu2 = Lattice(
+        vectors=np.array([[A_ZINCIR, 0.0, 0.0]]),
+        basis=np.array([[0.0, 0.0, 0.0], [A_ZINCIR / 2, 0.0, 0.0]]),
+    )
+    yanlis_isaret = (
+        Hopping(0, 1, (0, 0, 0), T_ZINCIR),
+        Hopping(1, 0, (0, 0, 0), T_ZINCIR),
+        Hopping(0, 1, (-1, 0, 0), T_ZINCIR),
+        Hopping(1, 0, (-1, 0, 0), T_ZINCIR),
+    )
+    with pytest.raises(InvalidInputError, match="Hermityen degil"):
+        TBModel(lattice=orgu2, onsite=np.zeros(2), hoppings=yanlis_isaret)
+    dogru = yanlis_isaret[:3] + (Hopping(1, 0, (1, 0, 0), T_ZINCIR),)
+    TBModel(lattice=orgu2, onsite=np.zeros(2), hoppings=dogru)
+
+
 def test_finite_ring_matrix_HERMITYEN_ve_dogru_boyutta():
     model = _zincir()
     H = finite_ring_matrix(model, n_cell=12)
