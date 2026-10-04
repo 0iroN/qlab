@@ -1002,7 +1002,12 @@ protokolünün bu geometrilerde daha düşük bir çözüm bulamadığıdır.)*
 aynı yüzey bir spin eyeridir — 4.0 bohr'da gerçek HF taban durumu
 **0.1748 hartree aşağıdadır**. Modül 2D'nin BO yüzeyi bu yüzden yalnızca
 Rc'nin altında HF taban durumudur; üstünde "RHF yüzeyi"dir ve öyle
-okunmalıdır.
+okunmalıdır. *03.10.2026'dan beri panel bunu kendisi söyler (B10):* her adımın
+merkez SCF'i iç ve dış kararlılık analiziyle çözülür ve en kötü hüküm
+"Kararlılık" / "Dış kararlılık" satırlarına girer — durgun R₀ = 2.5 bohr
+koşusunda "✗ SPİN EYERİ" (λ = −0.4501), sevk edilen `h2_aimd`'de iki satır da
+✓. Yakınsama hükmü değişmez; kapı Rc'ye daraltılmadı (Rc moleküle özgüdür,
+kararlı H₂O/LiH/He₂ dengelerini reddederdi).
 
 #### M9 deliği — tasarlanmış bir mutant dokuz denetimi de geçti
 

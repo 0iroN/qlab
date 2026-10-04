@@ -904,6 +904,92 @@ def test_C5_HF_ESIGI_PANELDE_ve_HUKUMDE_AYNI_SAYI_ve_HAREKETSIZ_YARGILANAMAZ():
     assert provenance_for(hf, energy_drift=oran).converged is False
 
 
+def test_B10_KARARLILIK_YAKINSAMAYA_GIRMEZ_ve_VARSAYILAN_ADIM_PANELDE():
+    """Osman'ın kararı (03.10.2026): kararlılık hükmü `converged`ı DEĞİŞTİRMEZ,
+    kendi satırını alır. Ayrıca YAML `step` vermezse panel artık `None` değil
+    koşunun gerçekten kullandığı varsayılanı (5e-5) basar.
+    """
+    from qlab.provenance import StabilityVerdict
+
+    hf = _senaryo("hartree_fock")
+    eyer = StabilityVerdict(stable=False, lowest_eigenvalue=-0.45, n_rotations=1, channel="dis")
+    ic = StabilityVerdict(stable=True, lowest_eigenvalue=3.037, n_rotations=1, channel="ic")
+    duz = provenance_for(hf, energy_drift=1e-9)
+    izli = provenance_for(
+        hf, energy_drift=1e-9, stability=ic, external_stability=eyer, kararlilik_tanisi={"dis_kararsiz": "3/5"}
+    )
+    assert duz.converged is izli.converged is True
+    satirlar = dict(izli.as_lines())
+    assert "SPİN EYERİ" in satirlar["Dış kararlılık"] and "Dış kararlılık" not in dict(duz.as_lines())
+    assert satirlar["Kararlılık"].startswith("✓") and "Kararlılık" not in dict(duz.as_lines())
+    assert izli.diagnostics["dis_kararsiz"] == "3/5"
+    assert "step" not in hf.force_field.get("params", {})
+    assert duz.diagnostics["gradient_step_bohr"] == 5e-5
+
+
+_RC_USTU_YAML = """kind: md
+name: rc_ustu
+force_field:
+  kind: hartree_fock
+  params:
+    symbols: ["H", "H"]
+    basis: sto-3g
+    step: 1.0e-5
+initial:
+  positions_bohr: [[0.0, 0.0, 0.0], [0.0, 0.0, 2.5]]
+  masses_amu: [1.00782503207, 1.00782503207]
+dt: 5.031487
+n_steps: 20
+save_every: 1
+"""
+
+
+def test_B10_RC_USTU_KISA_KOSU_run_YOLUNDAN_PANELE(tmp_path, capsys):
+    """Hızlı şerit: `run.py`nin izlemeyi okuyup panele taşıdığı yol (2 adım).
+
+    Durgun R0 = 2.5 bohr Rc'nin üstünde -- her merkez SCF dış kanalda
+    kararsız (k = n), iç kanal kararlı. Yavaş testin run.py yarısını hızlı
+    şeritte tutar (mutasyon turunda M6/M10/M11 yalnız yavaş testte ölüyordu).
+    """
+    import qlab.run as run_modulu
+
+    yol = tmp_path / "rc_ustu_kisa.yaml"
+    yol.write_text(_RC_USTU_YAML.replace("n_steps: 20", "n_steps: 2"), encoding="utf-8")
+    assert run_modulu.main([str(yol), "-o", str(tmp_path / "kisa.npz")]) == 0
+    panel = {s[:14].strip(): s[16:] for s in capsys.readouterr().out.splitlines() if len(s) > 16}
+    assert panel["Dış kararlılık"].startswith("✗ SPİN EYERİ") and panel["Kararlılık"].startswith("✓")
+    k, n = map(int, panel["Yakınsama"].split("dis_kararsiz=")[1].split(",")[0].split("/"))
+    assert 0 < k == n
+    assert "ic_kararsiz=0/" in panel["Yakınsama"] and "max_bag_bohr=2.5" in panel["Yakınsama"]
+
+
+@pytest.mark.slow
+def test_B10_RC_USTU_YORUNGE_PANELDE_SPIN_EYERI_SEVK_EDILEN_TEMIZ(tmp_path, capsys):
+    """B10: R > Rc = 2.1796947938 bohr'da H2/STO-3G RHF yüzeyi SPİN EYERİ.
+
+    Durgun R0 = 2.5 bohr koşusu: eskiden panel hiçbir şey demiyordu (✓);
+    şimdi "Dış kararlılık ✗ SPİN EYERİ" (en kötü λ = -0.4501, ölçüldü), iç
+    kanal ✓. Sevk edilen h2_aimd Rc'nin 0.784 bohr altında kalır: iki satır ✓.
+    """
+    import qlab.run as run_modulu
+
+    yol = tmp_path / "rc_ustu.yaml"
+    yol.write_text(_RC_USTU_YAML, encoding="utf-8")
+    sevk = Path(__file__).resolve().parents[2] / "scenarios" / "h2_aimd.yaml"
+    paneller = {}
+    for ad, senaryo in (("rc_ustu", yol), ("sevk", sevk)):
+        assert run_modulu.main([str(senaryo), "-o", str(tmp_path / f"{ad}.npz")]) == 0
+        paneller[ad] = {s[:14].strip(): s[16:] for s in capsys.readouterr().out.splitlines() if len(s) > 16}
+    rc = paneller["rc_ustu"]
+    assert rc["Dış kararlılık"].startswith("✗ SPİN EYERİ") and "-4.501e-01" in rc["Dış kararlılık"]
+    assert rc["Kararlılık"].startswith("✓")
+    k, n = map(int, rc["Yakınsama"].split("dis_kararsiz=")[1].split(",")[0].split("/"))
+    assert 0 < k <= n
+    sevk_p = paneller["sevk"]
+    assert sevk_p["Dış kararlılık"].startswith("✓") and sevk_p["Kararlılık"].startswith("✓")
+    assert "dis_kararsiz=0/" in sevk_p["Yakınsama"]
+
+
 def test_G5_energy_drift_KAYIT_ve_SEKIL_KAPISI():
     """M < 2 kayıt hata (tek blokta pay 0.0 olurdu: ölçülmemiş ✓); şekil hatası da.
 

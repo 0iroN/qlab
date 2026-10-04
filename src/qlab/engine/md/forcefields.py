@@ -12,6 +12,7 @@ import numpy as np
 
 from qlab.engine.hf.scf import solve
 from qlab.errors import InvalidInputError
+from qlab.provenance import StabilityVerdict
 from qlab.types import Molecule
 from qlab.units import BOHR_TO_ANGSTROM
 
@@ -192,11 +193,27 @@ class HartreeFockGradient:
 
     İLERİ FARK KULLANILMIYOR: 1.8x ucuz ama H2O'da 442x kötü (ölçüldü).
 
-    `stability=False`: her adımda kararlılık analizi anlamsız ve H2'de +%31
-    maliyet getiriyor (ölçüldü).
+    KARARLILIK İZLEMESİ (03.10.2026, B10): her adımın MERKEZ SCF'i iç (RHF->RHF)
+    ve dış (RHF->UHF) kararlılık analiziyle çözülür; koşu boyunca iki kanalın en
+    kötü hükmü ve kararsız çağrı sayısı birikir, panel "Kararlılık" / "Dış
+    kararlılık" satırlarını basar. Sebep: H2/STO-3G'de R > Rc = 2.1796947938
+    bohr'da (6-31G 2.2513161973) RHF yüzeyi bir SPİN EYERİDİR -- 4.0 bohr'da
+    UHF 0.1748 Ha aşağıda -- ve yörünge oraya girdiğinde panel hiçbir şey
+    demiyordu (durgun R0 = 2.5 koşusunda karelerin %38.8'i Rc üstü, panel ✓).
+    YAKINSAMA HÜKMÜ DEĞİŞMEZ: kararlılık ayrı bir kavramdır (`StabilityVerdict`).
+    KAPI Rc'YE DARALTILMADI: Rc moleküle ve baza özgüdür (LiH 3.8426) ve kapı
+    en büyük atomlar arası mesafeye bakar -- daralsaydı kararlı H2O, LiH ve He2
+    dengelerini reddederdi. KAYDEDİLEN KARELERDE DEĞİL ADIMDA ölçülür: Rc
+    üstü gezintiler 2-3 adım sürebilir ve save_every = 50 onları kaçırıyordu.
+    Yörünge bit bit aynıdır (analiz SCF'ten SONRA koşar). MALİYET (ölçüldü,
+    200 kuvvet çağrısı, dönüşümlü tekrarların medyanı): H2/STO-3G +%1.2
+    (6 tekrar), 6-31G +%0.5 (2 tekrar). Yer değiştirme noktalarında analiz
+    yapılmaz -- orada anlamsızdır ve H2/STO-3G'de +%12 getirirdi (6-31G
+    +%5); `stability=True` bu yüzden reddedilir.
 
-    GEOMETRİ KAPISI: R > 21.109 bohr'da RHF iyonik H-/H+ dalına atlar ve PES
-    0.3636 hartree sıçrar (ölçüldü). Bağlı dinamik oraya girmez, ama sessiz
+    GEOMETRİ KAPISI: RHF iyonik H-/H+ dalına R = 21.109006 bohr'da atlar ve PES
+    0.363616 hartree sıçrar (ölçüldü, STO-3G; iç kanal olayı, Rc ile ilgisiz).
+    Kapı 21.0'dadır (0.109 bohr pay). Bağlı dinamik oraya girmez, ama sessiz
     kalmaz.
     """
 
@@ -206,6 +223,13 @@ class HartreeFockGradient:
     max_bond_bohr: float = 21.0
     stability: bool = False
     n_scf_calls: int = field(default=0, init=False, repr=False)
+    # B10: koşu boyunca biriken kararlılık izlemesi (merkez SCF başına bir kayıt).
+    kararlilik_cagri: int = field(default=0, init=False, repr=False)
+    ic_kararsiz_cagri: int = field(default=0, init=False, repr=False)
+    dis_kararsiz_cagri: int = field(default=0, init=False, repr=False)
+    en_kotu_ic: StabilityVerdict | None = field(default=None, init=False, repr=False)
+    en_kotu_dis: StabilityVerdict | None = field(default=None, init=False, repr=False)
+    max_bag_bohr: float = field(default=0.0, init=False, repr=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "symbols", tuple(self.symbols))
@@ -215,8 +239,31 @@ class HartreeFockGradient:
             )
         if not np.isfinite(self.step) or self.step <= 0.0:
             raise InvalidInputError(f"adım pozitif ve sonlu olmalı: {self.step}")
+        if self.stability:
+            raise InvalidInputError(
+                "stability = True kabul edilmez: merkez SCF'te iç ve dış kararlılık "
+                "HER ADIMDA ölçülür (B10); yer değiştirme noktalarında analiz "
+                "anlamsızdır ve H2/STO-3G'de +%12 maliyet getirir"
+            )
 
-    def _energy(self, positions: np.ndarray) -> float:
+    def _kararlilik_kaydet(self, ic: StabilityVerdict | None, dis: StabilityVerdict | None) -> None:
+        object.__setattr__(self, "kararlilik_cagri", self.kararlilik_cagri + 1)
+        for alan, sayac, hukum in (
+            ("en_kotu_ic", "ic_kararsiz_cagri", ic),
+            ("en_kotu_dis", "dis_kararsiz_cagri", dis),
+        ):
+            if hukum is None:
+                continue
+            if not hukum.stable:
+                object.__setattr__(self, sayac, getattr(self, sayac) + 1)
+            eski = getattr(self, alan)
+            if eski is None or (
+                hukum.lowest_eigenvalue is not None
+                and (eski.lowest_eigenvalue is None or hukum.lowest_eigenvalue < eski.lowest_eigenvalue)
+            ):
+                object.__setattr__(self, alan, hukum)
+
+    def _energy(self, positions: np.ndarray, kararlilik: bool = False) -> float:
         object.__setattr__(self, "n_scf_calls", self.n_scf_calls + 1)
         angstrom = positions * BOHR_TO_ANGSTROM
         # DİKKAT -- `!r` KULLANMA. NumPy 2'de `repr(np.float64(0.0))` =
@@ -228,11 +275,10 @@ class HartreeFockGradient:
             "%s %.17g %.17g %.17g" % (sembol, r[0], r[1], r[2])
             for sembol, r in zip(self.symbols, angstrom)
         )
-        return float(
-            solve(
-                Molecule.from_string(metin), self.basis, stability=self.stability
-            ).energy_total
-        )
+        sonuc = solve(Molecule.from_string(metin), self.basis, stability=kararlilik)
+        if kararlilik:
+            self._kararlilik_kaydet(sonuc.provenance.stability, sonuc.provenance.external_stability)
+        return float(sonuc.energy_total)
 
     def __call__(self, positions: np.ndarray) -> tuple[float, np.ndarray]:
         pos = np.asarray(positions, dtype=float)
@@ -256,7 +302,8 @@ class HartreeFockGradient:
             )
 
         object.__setattr__(self, "n_scf_calls", 0)
-        enerji = self._energy(pos)
+        object.__setattr__(self, "max_bag_bohr", max(self.max_bag_bohr, en_uzak))
+        enerji = self._energy(pos, kararlilik=True)
         kuvvet = np.zeros_like(pos)
         h = self.step
         # ÖTELEME DEĞİŞMEZLİĞİ KISAYOLU: enerji yalnız BAĞIL konumlara bağlı

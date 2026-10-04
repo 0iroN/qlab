@@ -726,7 +726,24 @@ def _run_md(scenario: MDScenario, output: str | None) -> int:
     # KALDIĞI ön koşuluna dayanır ve o ön koşul burada geçerli değil.
     kisit = 3 if termostat is None else 0
 
-    provenance = provenance_for(scenario, energy_drift=suruklenme, n_constraints=kisit)
+    # B10 (03.10.2026): HF kuvvet alanı her adımın merkez SCF'inde iç/dış
+    # kararlılığı ölçer; en kötü hüküm panele kendi satırıyla girer.
+    kararlilik = {}
+    if getattr(alan, "kararlilik_cagri", 0):
+        n = alan.kararlilik_cagri
+        kararlilik = {
+            "stability": alan.en_kotu_ic,
+            "external_stability": alan.en_kotu_dis,
+            "kararlilik_tanisi": {
+                "kararlilik_merkez_scf": n,
+                "ic_kararsiz": f"{alan.ic_kararsiz_cagri}/{n}",
+                "dis_kararsiz": f"{alan.dis_kararsiz_cagri}/{n}",
+                "max_bag_bohr": round(alan.max_bag_bohr, 6),
+            },
+        }
+    provenance = provenance_for(
+        scenario, energy_drift=suruklenme, n_constraints=kisit, **kararlilik
+    )
     for etiket, deger in provenance.as_lines():
         print(f"{etiket:<14}: {deger}")
 

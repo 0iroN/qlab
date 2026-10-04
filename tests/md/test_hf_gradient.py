@@ -119,11 +119,37 @@ def test_kisayol_TAM_alanla_ayni_kuvveti_veriyor():
 
 
 def test_kararlilik_analizi_KAPALI():
-    """Her adımda kararlılık analizi anlamsız ve ÖLÇÜLDÜ: H2'de +%31 maliyet.
+    """YER DEĞİŞTİRME noktalarında kararlılık analizi anlamsız: H2'de +%31 (ölçüldü).
 
-    Açık kalırsa bir AIMD koşusu sessizce üçte bir yavaşlar.
+    B10 (03.10.2026): MERKEZ SCF'te iç/dış kararlılık her adımda ölçülür; bu
+    yüzden `stability = True` reddedilir (her SCF'e analiz eklerdi, boşa).
     """
     assert HartreeFockGradient(["H", "H"]).stability is False
+    with pytest.raises(InvalidInputError, match="HER ADIMDA"):
+        HartreeFockGradient(["H", "H"], stability=True)
+
+
+def test_B10_merkez_SCF_kararliligi_IZLER_ve_enerjiyi_DEGISTIRMEZ():
+    """H2/STO-3G: Rc = 2.1796947938 bohr'un üstünde RHF yüzeyi SPİN EYERİ.
+
+    Kuvvet alanı her çağrıda merkez SCF'in iç/dış hükmünü biriktirir; en kötü
+    özdeğer korunur. R = 2.5 bohr dış -0.4501 (ölçüldü), R = 1.4 bohr kararlı.
+    Analiz SCF'ten SONRA koştuğu için enerji BİT BİT aynıdır (yörünge değişmez).
+    """
+    from qlab.engine.hf.scf import solve
+    from qlab.types import Molecule
+
+    alan = HartreeFockGradient(["H", "H"], step=1e-5)
+    alan(np.array([[0.0, 0, 0], [0, 0, 1.4]]))
+    assert (alan.kararlilik_cagri, alan.dis_kararsiz_cagri) == (1, 0)
+    alan(np.array([[0.0, 0, 0], [0, 0, 2.5]]))
+    assert (alan.kararlilik_cagri, alan.dis_kararsiz_cagri, alan.ic_kararsiz_cagri) == (2, 1, 0)
+    assert alan.en_kotu_dis.channel == "dis" and not alan.en_kotu_dis.stable
+    assert alan.en_kotu_dis.lowest_eigenvalue == pytest.approx(-0.4501, abs=5e-4)
+    assert alan.en_kotu_ic.stable and alan.max_bag_bohr == 2.5
+    for R in (0.74, 1.3):  # angstrom: Rc'nin altı ve üstü
+        m = Molecule.from_string(f"H 0 0 0; H 0 0 {R}")
+        assert solve(m, "sto-3g", stability=True).energy_total == solve(m, "sto-3g", stability=False).energy_total
 
 
 def test_VARSAYILAN_adim_olculmus_degerde_kalıyor():

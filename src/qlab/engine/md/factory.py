@@ -15,7 +15,7 @@ from qlab.engine.md.tb_kuvvet import SsSigmaTBKuvveti
 from qlab.engine.md.thermostats import Langevin, NoseHoover
 from qlab.engine.tb.radyal import UsselRadyalYasa
 from qlab.errors import InvalidInputError, ScenarioError
-from qlab.provenance import Provenance
+from qlab.provenance import Provenance, StabilityVerdict
 from qlab.scenario.schema import (
     RADIAL_LAW_FIELDS,
     TB_SS_SIGMA_LAWS,
@@ -426,8 +426,22 @@ def energy_drift(
 
 
 def provenance_for(
-    scenario: MDScenario, *, energy_drift: float, n_constraints: int = 3
+    scenario: MDScenario,
+    *,
+    energy_drift: float,
+    n_constraints: int = 3,
+    stability: StabilityVerdict | None = None,
+    external_stability: StabilityVerdict | None = None,
+    kararlilik_tanisi: dict | None = None,
 ) -> Provenance:
+    """MD koşusunun şeffaflık bloğu.
+
+    `stability` / `external_stability` (B10, 03.10.2026): HF kuvvet alanının
+    koşu boyunca biriktirdiği EN KÖTÜ iç / dış kararlılık hükmü
+    (`HartreeFockGradient.en_kotu_ic` / `en_kotu_dis`). `converged`a GİRMEZ --
+    kararlılık yakınsamadan ayrı bir kavramdır (Osman'ın kararı, 03.10.2026);
+    panelde kendi satırlarını alır.
+    """
     kutleler = amu_to_electron_mass(
         np.asarray(scenario.initial["masses_amu"], dtype=float)
     )
@@ -481,7 +495,12 @@ def provenance_for(
         "n_steps": scenario.n_steps,
         "energy_drift": energy_drift,
         "basis": p.get("basis"),
-        "gradient_step_bohr": p.get("step"),
+        # YAML `step` vermezse koşu HartreeFockGradient'ın VARSAYILANIYLA yapılır;
+        # panel eskiden `None` basıyordu (03.10.2026, B10 ön ölçümü).
+        "gradient_step_bohr": p.get(
+            "step",
+            HartreeFockGradient.__dataclass_fields__["step"].default if tur == "hartree_fock" else None,
+        ),
         "n_constraints": n_constraints,
         "masses_electron_mass": np.round(kutleler, 4).tolist(),
         "amu_to_electron_mass": AMU_TO_ELECTRON_MASS,
@@ -506,6 +525,8 @@ def provenance_for(
             energy_drift_scale="max_kinetic",
             energy_drift_tolerance=esik,
         )
+    if kararlilik_tanisi:
+        tanilar.update(kararlilik_tanisi)
     return Provenance(
         method=yontem,
         approximations=yaklasimlar,
@@ -513,4 +534,6 @@ def provenance_for(
         expected_error=beklenen,
         converged=yakinsadi,
         diagnostics=tanilar,
+        stability=stability,
+        external_stability=external_stability,
     )
