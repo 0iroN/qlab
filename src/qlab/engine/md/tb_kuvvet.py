@@ -29,6 +29,8 @@ MD sinifi onu kabul etmez. kT > 0'in bedeli beyanlidir: tek global mu
 yerel olmayan bir ciftlenim uretir (buyuklugu 1/kT ile olceklenir) ve
 O(dt^2) davranis ancak bir adimdaki aralik degisimi / kT kucukken geri
 gelir; bu kosul analitik denetlenemez, dt'yi kullanici secer (spec B10).
+Secilen dt'yi NVE'de kosudan SONRA salinim hukmu yargilar (D2, 09.10.2026:
+`md/factory.py::energy_oscillation`).
 
 BIRIM SINIRI (spec B7). Sinif HARTREE alir (`kT_hartree`); senaryo KELVIN
 tasir (`electron_temperature_kelvin`) ve donusum `md/factory.py`de yapilir.

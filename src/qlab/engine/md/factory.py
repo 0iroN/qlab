@@ -10,6 +10,7 @@ from qlab.engine.md.forcefields import (
     LennardJones,
     Morse,
 )
+from qlab.engine.md.integrator import Trajectory
 from qlab.engine.md.state import MDState
 from qlab.engine.md.tb_kuvvet import SsSigmaTBKuvveti
 from qlab.engine.md.thermostats import Langevin, NoseHoover
@@ -106,7 +107,8 @@ _TB_YAKLASIMLAR = (
     "max(r_cut) < L/2 kesin koşul",
     "dt kararlılık denetimi TB dalında yapılmaz: omega analitik değildir ve "
     "O(dt^2) davranış ancak bir adımdaki aralık değişimi / kT küçükken geri "
-    "gelir -- dt'yi kullanıcı seçer",
+    "gelir -- dt'yi kullanıcı seçer; seçilen dt'yi koşudan SONRA NVE'nin "
+    "salınım hükmü yargılar (energy_oscillation)",
 )
 _TB_IHMALLER = (
     "çekirdeklerin kuantum istatistiği (Maxwell-Boltzmann klasik limittir), "
@@ -136,8 +138,10 @@ _TB_BEKLENEN = (
     "kinetik enerjisinin bir kesridir ve TB'ye özgü sürüklenmeyi -- Fermi "
     "seviyesindeki geçiş adımda çözülmediğinde (adım başına aralık "
     "değişimi / kT büyük) doğan enerji sıçramalarını -- yakalar; iri dt'nin "
-    "SALINIMINI yargılamaz: ✓, dt'nin yeterince küçük olduğu anlamına "
-    "gelmez. Hareketsiz koşu (max KE = 0) YARGILANAMAZ ve ✗ basılır."
+    "SALINIMINI ise ayrı ölçüt yargılar: energy_oscillation = tepe-tepe(KE + "
+    "Omega) / max(KE), uçlar kayıtlardan değil her adımdan, eşiği "
+    "energy_oscillation_tolerance. Yakınsama ikisinin VE'sidir. Hareketsiz "
+    "koşu (max KE = 0) YARGILANAMAZ ve ✗ basılır."
 )
 
 
@@ -313,9 +317,100 @@ _MD_DRIFT_TOLERANCE: float = 5.0e-03
 #: * YAKALAMADIĞI iri dt'nin SALINIMIDIR: omega_max*dt >= 0.93 olan 33
 #:   hücrenin 8'i eşiğin altında kaldı (1.2'de 5.35e-05'e kadar). Verlet
 #:   orada hâlâ kararlı ve simplektik: enerji büyük salınır, sürüklenmez.
-#:   Bu eşik dt'nin yeterince küçük olduğunu ONAYLAMAZ (spec B10: dt'yi
-#:   kullanıcı seçer).
+#:   Bu eşik TEK BAŞINA dt'nin yeterince küçük olduğunu ONAYLAMAZ (spec
+#:   B10: dt'yi kullanıcı seçer). D2 (09.10.2026): o yarıyı
+#:   `_TB_OSCILLATION_TOLERANCE` yargılar; TB NVE'de Yakınsama ikisinin
+#:   VE'sidir. (Bu 33 hücrenin ekseni M11 minimumunun omega_max'ıdır; D2
+#:   ön ölçümünde pencerelerin kendi yol boyu omega_max'ı D ve Q
+#:   ailelerinde 1.2-1.6 kat büyük, U/U2'de 0.86-1.20, metalik W3'te
+#:   0.87-0.88 kat -- yani "33 hücre" ile salınım eşiğinin sınıfları AYNI
+#:   eksende değildir; U 1000 a.u. dt 40 hücresi kendi ekseninde gri, 0.83.)
 _TB_DRIFT_TOLERANCE: float = 1.0e-02
+
+#: TB dalının NVE SALINIM eşiği (D2, 09.10.2026). Ölçüt `energy_oscillation`:
+#: S = [max(KE + Omega) - min(KE + Omega)] / max(KE), uçlar integratörün HER
+#: adımından. ÖLÇÜLDÜ (D2 ön ölçümü wf_e71a1dcb-1dc, bu makine; düz aileler,
+#: N = 16, 871 hücre; EKSEN: her pencerenin KENDİ yol boyu omega_max'ı,
+#: omega_ref): omega_ref*dt <= 0.463 sınıfının en büyük S'i 3.56e-02,
+#: omega_ref*dt >= 0.925 sınıfının en küçüğü 7.29e-02 -- 2.05 katlık bir
+#: ayırma bandı; 5e-02 onun geometrik ortasına (0.051) yakın. Bu kümede
+#: sahte ✗ 0/405, sahte ✓ 0/235 (Fermi ve U0 aileleri hariç); G5'in
+#: sürüklenme eşiğinden geçen 8 iri-dt hücresinin 8'i burada ✗. 1e-01
+#: eşiği bu kümenin iri 235 hücresinden 3'ünü (en küçüğü S 7.29e-02) ve
+#: G5'in U 1000 a.u. dt 40 hücresini (S 7.66e-02) kaçırırdı. Sevk edilen
+#: `tb_zincir_md` S = 1.0054e-02 (5x pay). Küçük dt'de (dt 2.5-10,
+#: omega_ref*dt <~ 0.3) S temiz O(dt^2) ölçeklenir (pencere başına log-log
+#: eğim medyanı 2.00-2.01; Fermi sıçramalı pencere sapar); iri dt'de
+#: S/(omega*dt)^2 büyür ve S dt ile monoton bile olmayabilir.
+#:
+#: BANT, ÖLÇÜLEN AİLELERİN DEĞERİDİR, SINIR DEĞİL: tek bir harmonik modda
+#: Verlet'in S'i analitik x^2/(4 - x^2)'dir (x = omega*dt; T8'in S = 1.0'ı
+#: x = sqrt(2)); eşik 0.05 orada x = 0.436'ya düşer. Doğrulamada (D2,
+#: 09.10.2026) yalnız en yüksek modu uyarılmış Peierls minimumu yol
+#: omega_max*dt 0.441'de ✗ verdi (S 5.086e-02, analitikle aynı).
+#:
+#: GRİ BÖLGE (ölçülen ailelerde 0.463 < omega_ref*dt < 0.925): S = 0.05'in
+#: hangi omega*dt'ye düştüğü pencereye ve tohuma bağlıdır (S/(omega*dt)^2
+#: küçük sınıfta 0.074-0.20); hükmü tohum, aile, başlangıç ve koşu uzunluğu
+#: değiştirir. Eşik orada bir sınırın yeri DEĞİLDİR.
+_TB_OSCILLATION_TOLERANCE: float = 5.0e-02
+
+#: TB NVE "Yakınsama tanısı" satırının SABİT yarısı (D2). Canlı yarı
+#: (`_tb_yakinsama_tanisi`) iki ölçütün bu koşudaki hükmünü söyler; bu yarı
+#: hükmün nerede bir şey söylemediğini. `diagnostics`e konmaz: ✓/✗'nin
+#: hemen ardına basılırdı (`Provenance.convergence_diagnosis` gerekçesi).
+_TB_SALINIM_BEYANI = (
+    "GRİ BÖLGE: ölçülen ailelerde omega_max*dt kabaca 0.46 ile 0.93 arasında "
+    "(her pencerenin kendi yol boyu omega_max'ıyla) salınım hükmünü tohum, "
+    "aile, başlangıç ve koşu uzunluğu değiştirir; alt kenar aileye bağlıdır "
+    "(tek harmonik modda S = x^2/(4 - x^2), eşik x = 0.436'da). BÜYÜME "
+    "EVRESİ: kararsızlığın pencere içinde büyüdüğü koşuda ✗ 'korunum "
+    "doğrulanamadı' diye okunur, 'dt iri' diye değil. YUVARLAMA TABANI: max KE "
+    "yuvarlama düzeyindeyse S gürültüdür ve dt'yi küçültmek çare değildir. KÖR "
+    "AİLELER: payda TÜM kinetik enerjidir; titreşime katılmayan ya da az "
+    "katılan her KE S'yi seyreltir -- ayrışan parçaların ötelemesi, kütle "
+    "safsızlığı, yalnız düşük modun uyarıldığı koşu, yüksek T_ion (ön ölçümde "
+    "3000-6000 K), enine yumuşak modlu geometri; liste kapsayıcı değildir. "
+    "Bunlarda S iri dt'ye rağmen eşiğin altında kalabilir; ✓ orada dt'nin "
+    "yeterince küçük olduğunu kanıtlamaz."
+)
+
+
+def _tb_yakinsama_tanisi(
+    suruklenme_gecti: bool, salinim_gecti: bool, salinim_sonlu: bool
+) -> str:
+    """TB NVE "Yakınsama tanısı": iki ölçütün AYRI hükmü + sabit beyan.
+
+    Hükümler `provenance_for`da BİR KEZ hesaplanır ve buraya geçer -- eşik
+    karşılaştırması iki yerde yazılsaydı biri kayınca panel hükmüyle
+    açıklaması ayrışırdı.
+    """
+    if suruklenme_gecti and salinim_gecti:
+        canli = (
+            "sürüklenme ve salınım ikisi de eşiğin altında: KE + Omega bu "
+            "koşuda ne sürükleniyor ne iri salınıyor."
+        )
+    else:
+        parcalar = []
+        if not salinim_sonlu:
+            parcalar.append(
+                "salınım YARGILANAMAZ (S sonlu değil: max KE = 0, uçlar "
+                "biriktirilmedi ya da enerji sonlu değil)"
+            )
+        elif not salinim_gecti:
+            parcalar.append(
+                "salınım eşiğin üstünde: dt bu hareket için iri olabilir, "
+                "yörünge bir büyüme evresinde olabilir ya da max KE yuvarlama "
+                "düzeyindedir -- dt'yi küçültüp yeniden koşun; S dt^2 ile "
+                "küçülmüyorsa sebep dt değildir"
+            )
+        if not suruklenme_gecti:
+            parcalar.append(
+                "sürüklenme eşiğin üstünde ya da yargılanamaz: koşuyu uzatın "
+                "ya da dt'yi küçültün (energy_drift, SINIR)"
+            )
+        canli = "korunum DOĞRULANAMADI -- " + "; ".join(parcalar) + "."
+    return canli + " " + _TB_SALINIM_BEYANI
 
 
 def energy_drift(
@@ -383,7 +478,9 @@ def energy_drift(
     zincir, zincir(16, 2, 0.05, 1..6) v0 = 0 4000 a.u., düzgün zincir
     (gürültüsüz ve 1e-6 gürültülü) v0 = 0, çeyrek dolu N16 ve yarı dolu N8;
     dt merdiveni omega_max*dt = 0.05 ... 2.1 (omega_max = 0.02315, M11
-    minimumunun en yüksek x-modu; öteki ailelerde yaklaşık).
+    minimumunun en yüksek x-modu; öteki ailelere de bu sayı uygulandı ve
+    orada YAKLAŞIK bile değil: D/U/Q pencerelerinin kendi yol boyu
+    omega_max'ı 1.2-1.6 kat büyük -- D2 ön ölçümü, 09.10.2026).
 
     NEDEN ORTALAMA KE DEĞİL (ÖLÇÜLDÜ, G5): KE'nin zaman ortalaması
     DURAĞAN OLMAYAN koşuda yanlış ✗ verdi. Düzgün zincir + 1e-6 bohr
@@ -398,7 +495,15 @@ def energy_drift(
     HAREKETSİZ KOŞU YARGILANAMAZ: max(KE) = 0 ise oran `nan` döner ve
     panel ✗ basar -- sıfır sürüklenme diye ✓ DEĞİL. max(KE) sıfır değil
     ama yuvarlama düzeyindeyse (ör. gürültüsüz düzgün zincir, kararsızlık
-    henüz büyümemiş) oran anlamsız derecede büyür; hüküm yine ✗'dir.
+    henüz büyümemiş) bu oran HER ŞEY olabilir, sıfır dahil: ÖLÇÜLDÜ (D2,
+    09.10.2026) -- bu makinede (numpy 2.5.1'in OpenBLAS'ı, SkylakeX
+    çekirdeği) kamu yolunda o zincirde dt 10 x 80'de blok farkı tam 0.0
+    çıkıyor ve sürüklenme tek başına ✓ derdi. "Tam 0" bir YUVARLAMA
+    RASTLANTISIDIR: OPENBLAS_CORETYPE ile zorlanan Haswell / Sandybridge /
+    Katmai çekirdeklerinde ve zincir 0.37 bohr ötelenince sürüklenme kendisi
+    ✗ veriyor (doğrulama, aynı gün). TB NVE'de o koşuyu her durumda bir
+    ölçüt yakalar: burada salınım hükmü (yuvarlama düzeyindeki max KE'ye
+    bölünen tepe-tepe farkı, ✗).
     """
     kinetic = np.asarray(kinetic, dtype=float)
     potential = np.asarray(potential, dtype=float)
@@ -425,16 +530,67 @@ def energy_drift(
     return float(pay / abs(blok[0]))
 
 
+def energy_oscillation(scenario: MDScenario, trajectory: Trajectory) -> float | None:
+    """TB NVE enerji SALINIMI S; öteki koşularda `None` (hesaplanmaz).
+
+    S = [max_t(KE + Omega) - min_t(KE + Omega)] / max_t(KE). Uçlar
+    integratörün HER ADIMINDAN gelir (`Trajectory.total_min`, `total_max`,
+    `kinetic_max`; adım 0 dahil), kayıtlı karelerden DEĞİL: ÖLÇÜLDÜ (D2 ön
+    ölçümü, 09.10.2026) -- karelerden okunan S save_every ile hem alta hem
+    üste kayıyor, çünkü paydadaki max(KE) de seyreltiliyor (sevk
+    geometrisi, dt 40 x 75, save_every 20: kareler 0.039, her adım 0.278 --
+    S'nin kendi eşiğinde sahte ✓; panel aynı karelerin sürüklenmesiyle,
+    2.07e-02, yine ✗ derdi). Pay ve payda `energy_drift`in TB dalıyla aynı
+    ölçekte; tepe-tepe farkı enerjinin keyfi sıfırından bağımsızdır (spec B8).
+
+    NE YARGILAR: iri dt'nin Verlet salınımını -- sürüklenme ölçütünün kör
+    olduğu yarıyı (`_TB_DRIFT_TOLERANCE`, 33 hücrenin 8'i). Eşik ve ölçüm
+    `_TB_OSCILLATION_TOLERANCE`ta. Kararsızlığın pencere içinde büyüdüğü
+    koşuda ✗ "korunum DOĞRULANAMADI" diye okunur, "dt iri" diye değil.
+
+    KÖR AİLELER (beyan: `_TB_SALINIM_BEYANI`): payda TÜM kinetik enerjidir;
+    titreşime katılmayan ya da az katılan her KE S'yi seyreltir. Kamu
+    yolunda ölçülenler: ayrışan iki zincir (titreşim T1 hücresininki, yol
+    omega_max*dt 1.09) S = 0.021 ✓, öteleme yokken aynı çift ✗ (doğrulama,
+    09.10.2026); kütle safsızlığı (15 x 12 amu + tek H) omega*dt = 1.0'da
+    S = 0.036 ✓; ön ölçümde yalnız en düşük mod uyarılmışken omega*dt
+    1.5'te S 0.0425, T_ion 3000-6000 K'de 0.045-0.050. Liste kapsayıcı değil.
+
+    Hareketsiz koşu (max KE = 0) ve uçları biriktirmeyen bir kurucu (`nan`,
+    ör. `run.py`nin termostat döngüsü) `nan` döner, panel ✗ basar.
+
+    YALNIZ `tb_ss_sigma` NVE: NVT'de toplam enerji tanım gereği korunmaz.
+    HF ve klasik dallar D2 ön ölçümünde (B) ÖLÇÜLDÜ ama hükme alınmadı: 0.05
+    eşiği omega*dt 0.463'te HF/HO/Morse hücrelerinde sahte ✗ veriyordu
+    (S ~ 0.057; 8/60). HF'nin dt hükmü ayrı envanter maddesidir.
+    """
+    tur = scenario.force_field["kind"]
+    if tur == "tb_ss_sigma" and scenario.thermostat is None:
+        olcek = trajectory.kinetic_max
+        if not olcek > 0.0:  # 0 ve nan (karşılaştırma nan'da False)
+            return float("nan")
+        return float((trajectory.total_max - trajectory.total_min) / olcek)
+    return None
+
+
 def provenance_for(
     scenario: MDScenario,
     *,
     energy_drift: float,
+    energy_oscillation: float | None = None,
     n_constraints: int = 3,
     stability: StabilityVerdict | None = None,
     external_stability: StabilityVerdict | None = None,
     kararlilik_tanisi: dict | None = None,
 ) -> Provenance:
     """MD koşusunun şeffaflık bloğu.
+
+    `energy_oscillation` (D2, 09.10.2026): `energy_oscillation()`ın S'i.
+    TB NVE'de ZORUNLUDUR ve Yakınsama = (sürüklenme eşik altı) VE (S eşik
+    altı); verilmezse InvalidInputError -- "yok say" sürüklenmenin kör
+    olduğu iri-dt salınımına yeni bir sahte ✓ kapısı açardı. Öteki
+    koşularda (NVT, HF, klasik) S hesaplanmaz ve verilirse yine hata:
+    hükme girmeyen bir sayının panelde hüküm gibi durmaması için.
 
     `stability` / `external_stability` (B10, 03.10.2026): HF kuvvet alanının
     koşu boyunca biriktirdiği EN KÖTÜ iç / dış kararlılık hükmü
@@ -459,6 +615,24 @@ def provenance_for(
     else:
         yaklasimlar, ihmaller = _YAKLASIMLAR, _IHMALLER
     termostat = scenario.thermostat
+    salinim_hukme_girer = tur == "tb_ss_sigma" and termostat is None
+    if salinim_hukme_girer and energy_oscillation is None:
+        raise InvalidInputError(
+            "TB NVE koşusunda salınım ölçütü zorunludur: provenance_for(..., "
+            "energy_oscillation=energy_oscillation(scenario, yorunge)); "
+            "sürüklenme iri dt'nin salınımına kördür (D2)"
+        )
+    if not salinim_hukme_girer and energy_oscillation is not None:
+        raise InvalidInputError(
+            "energy_oscillation yalnız TB NVE koşusunda hükme girer; bu koşu "
+            f"({tur}, termostat {termostat['kind'] if termostat else None}) için None verin"
+        )
+    if energy_oscillation is not None and energy_oscillation < 0.0:
+        # Tepe-tepe farkı negatif olamaz; `energy_oscillation()` bunu üretmez.
+        # Kapı yoksa doğrudan API çağrısında negatif sayı ✓ alırdı (doğrulama).
+        raise InvalidInputError(f"energy_oscillation negatif olamaz: {energy_oscillation}")
+    salinim_esigi = None  # NVT'de ve TB dışında salınım hükme girmez (0.0 DEĞİL)
+    yakinsama_tanisi = None
     if termostat is None:
         yontem = f"klasik MD / velocity-Verlet / {tur}"
         beklenen = (
@@ -471,6 +645,16 @@ def provenance_for(
             # HF ortak eşiği max(KE) paydasıyla kullanır (C5, `_MD_DRIFT_TOLERANCE`).
             beklenen, esik = _TB_BEKLENEN, _TB_DRIFT_TOLERANCE
         yakinsadi = bool(np.isfinite(energy_drift)) and energy_drift <= esik
+        if salinim_hukme_girer:
+            # D2: sürüklenme iri dt'nin SALINIMINA kördür (33 hücrenin 8'i);
+            # S onu yargılar. `nan` (hareketsiz koşu) -> ✗, YARGILANAMAZ.
+            salinim_esigi = _TB_OSCILLATION_TOLERANCE
+            salinim_sonlu = bool(np.isfinite(energy_oscillation))
+            salinim_gecti = salinim_sonlu and energy_oscillation <= salinim_esigi
+            yakinsama_tanisi = _tb_yakinsama_tanisi(
+                yakinsadi, salinim_gecti, salinim_sonlu
+            )
+            yakinsadi = yakinsadi and salinim_gecti
     else:
         parametreler = ", ".join(
             f"{ad}={deger}" for ad, deger in sorted(termostat["params"].items())
@@ -524,6 +708,13 @@ def provenance_for(
             # |blok[0]| paydasıyla karıştırılmasın diye (`energy_drift`).
             energy_drift_scale="max_kinetic",
             energy_drift_tolerance=esik,
+            # D2: salınımın paydası "max_kinetic_all_steps" -- kayıtların değil
+            # HER adımın max KE'si (sürüklenmeninkinden farklı; ikisi ayrı ad).
+            # NVT'de S hesaplanmaz: üç anahtar da None (hesaplanmamış bir
+            # sayının paydası ✓'nin yanında basılmasın -- doğrulama, 09.10).
+            energy_oscillation=energy_oscillation,
+            energy_oscillation_scale="max_kinetic_all_steps" if salinim_hukme_girer else None,
+            energy_oscillation_tolerance=salinim_esigi,
         )
     if kararlilik_tanisi:
         tanilar.update(kararlilik_tanisi)
@@ -534,6 +725,7 @@ def provenance_for(
         expected_error=beklenen,
         converged=yakinsadi,
         diagnostics=tanilar,
+        convergence_diagnosis=yakinsama_tanisi,
         stability=stability,
         external_stability=external_stability,
     )

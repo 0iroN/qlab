@@ -516,7 +516,9 @@ def test_ELEKTRON_COZEN_HER_TURDE_panel_ELEKTRON_YOK_DEMIYOR(tur):
     hücresi kırmızı; TB dalı tamamen silinince de (tür `else`e düşer).
     """
     assert (tur in ELEKTRON_COZEN) != (tur in KLASIK), f"{tur} sınıflandırılmamış"
-    prov = provenance_for(_senaryo(tur), energy_drift=1e-9)
+    # D2: TB NVE'de salınım S'i zorunlu, öteki türlerde verilmez (kapı).
+    salinim = 1e-9 if tur == "tb_ss_sigma" else None
+    prov = provenance_for(_senaryo(tur), energy_drift=1e-9, energy_oscillation=salinim)
     metin = " ".join(prov.approximations + prov.neglected).lower()
     if tur in ELEKTRON_COZEN:
         assert "elektron yok" not in metin
@@ -543,7 +545,7 @@ def test_TB_PANELI_MERMIN_KELVIN_SS_SIGMA_DOGA_CIPASI_ve_dt_BEYANI():
     KIRMA (ölçüldü): TB `expected_error`ı ortak metne geri bağlanınca
     kırmızı; panelin kT'si Kelvin'den çevrilmeden basılınca kırmızı.
     """
-    prov = provenance_for(_senaryo("tb_ss_sigma"), energy_drift=1e-9)
+    prov = provenance_for(_senaryo("tb_ss_sigma"), energy_drift=1e-9, energy_oscillation=1e-9)
     metin = " ".join(prov.approximations + prov.neglected).lower()
     # G6: anahtar adı (`electron_temperature_kelvin`) cümleden TANILARA
     # taşındı -- `tests/md/test_tb_beyan.py`nin parça-kopya eşiği ölçümü
@@ -559,6 +561,8 @@ def test_TB_PANELI_MERMIN_KELVIN_SS_SIGMA_DOGA_CIPASI_ve_dt_BEYANI():
         "açı çarpanı özdeş 1",
         "doğa çıpası yok",
         "dt kararlılık denetimi tb dalında yapılmaz",
+        # D2: a priori denetim yok, a posteriori hüküm var.
+        "koşudan sonra nve'nin salınım hükmü yargılar",
     ):
         assert parca in metin, f"TB beyanında eksik: {parca!r}"
     beklenen = prov.expected_error.lower()
@@ -572,10 +576,15 @@ def test_TB_PANELI_MERMIN_KELVIN_SS_SIGMA_DOGA_CIPASI_ve_dt_BEYANI():
         "|blok[0]|'a bölünmez",
         "sıfırı keyfidir",
         "fermi seviyesindeki geçiş adımda çözülmediğinde",
-        "yargılamaz",
-        "anlamına gelmez",
+        # D2 (09.10.2026): "salınımı yargılamaz / ✓ dt'nin küçük olduğu
+        # anlamına gelmez" cümlesi bayatladı -- salınımı artık ayrı ölçüt
+        # yargılıyor ve hüküm ikisinin VE'si.
+        "ayrı ölçüt yargılar",
+        "kayıtlardan değil her adımdan",
+        "yakınsama ikisinin ve'sidir",
     ):
         assert parca in beklenen, f"TB sürüklenme beyanında eksik: {parca!r}"
+    assert "yargılamaz" not in beklenen and "anlamına gelmez" not in beklenen
     t = prov.diagnostics
     assert t["electron_temperature_kelvin"] == 631.6
     assert abs(t["kT_hartree"] - 0.002) < 2e-7  # 631.6 K = 0.0020002 hartree
@@ -608,7 +617,7 @@ def test_TB_PANELI_r_cut_IKI_yasanin_BUYUGU_ve_KURULAN_KESMEYLE_AYNI(ss_rc, itme
         itme={**_yasa(0.05, 6.0), "r_cut_bohr": itme_rc},
     )
     senaryo = _senaryo("tb_ss_sigma", params)
-    t = provenance_for(senaryo, energy_drift=1e-9).diagnostics
+    t = provenance_for(senaryo, energy_drift=1e-9, energy_oscillation=1e-9).diagnostics
     assert t["r_cut_bohr"] == 4.2
     _, alan, _ = build(senaryo)
     assert max(alan.ss_sigma.r_cut_bohr, alan.itme.r_cut_bohr) == t["r_cut_bohr"]
@@ -783,11 +792,16 @@ def test_G5_TB_ESIGI_PANELDE_ve_HUKUMDE_AYNI_SAYI():
     kırmızı (ulp üstü ✓); eşik 1e-3 ve 5e-3 mutantları kırmızı.
     """
     tb = _senaryo("tb_ss_sigma")
-    t = provenance_for(tb, energy_drift=1e-9).diagnostics
+    # D2: S eşiğin altında sabit (1e-9): bu test YALNIZ sürüklenme eşiğini sınar.
+    t = provenance_for(tb, energy_drift=1e-9, energy_oscillation=1e-9).diagnostics
     esik = t["energy_drift_tolerance"]
     assert t["energy_drift_scale"] == "max_kinetic"
-    assert provenance_for(tb, energy_drift=float(np.nextafter(esik, 0.0))).converged
-    assert not provenance_for(tb, energy_drift=float(np.nextafter(esik, 1.0))).converged
+    assert provenance_for(
+        tb, energy_drift=float(np.nextafter(esik, 0.0)), energy_oscillation=1e-9
+    ).converged
+    assert not provenance_for(
+        tb, energy_drift=float(np.nextafter(esik, 1.0)), energy_oscillation=1e-9
+    ).converged
     morse = provenance_for(_senaryo("morse"), energy_drift=float(np.nextafter(esik, 0.0)))
     assert not morse.converged
     assert "energy_drift_scale" not in morse.diagnostics
@@ -823,7 +837,8 @@ def test_G5_HAREKETSIZ_TB_KOSUSU_YARGILANAMAZ():
     tb = _senaryo("tb_ss_sigma")
     oran = qlab.engine.md.factory.energy_drift(tb, kinetik, potansiyel)
     assert np.isnan(oran)
-    assert provenance_for(tb, energy_drift=oran).converged is False
+    # S eşik altında sabit: ✗'yi sürüklenmenin `nan`ı veriyor, salınım değil.
+    assert provenance_for(tb, energy_drift=oran, energy_oscillation=1e-9).converged is False
     assert qlab.engine.md.factory.energy_drift(_senaryo("morse"), kinetik, potansiyel) == 0.0
 
 
@@ -1053,3 +1068,24 @@ def test_G5_energy_drift_SAKLI_DAL_YOK_ve_run_py_KENDISI_HESAPLAMIYOR(
     oznitelikler = {f.attr for f in cagrilar if isinstance(f, ast.Attribute)}
     assert "energy_drift" in adlar
     assert not {"reshape", "mean"} & oznitelikler, oznitelikler
+    # D2 (09.10.2026): salınım da fabrikada. `energy_oscillation`ın TEK dalı
+    # TB'dir; `_run_md` onu çağırır, S'yi KENDİSİ hesaplamaz (kayıtlı
+    # karelerden ptp/max/min = save_every'ye bağlı sahte hüküm, D2 ön ölçümü)
+    # ve sonucu `provenance_for`a `energy_oscillation=` ile geçirir.
+    assert dize_karsilastirma_tarayici(fabrika, "energy_oscillation") == {
+        ("tur", "tb_ss_sigma")
+    }
+    assert "energy_oscillation" in adlar
+    assert not {"ptp", "max", "min"} & oznitelikler, oznitelikler
+    # Doğrulama (09.10.2026, N05/N12): yerleşik min/max ya da
+    # `dataclasses.replace` ile kayıtlı karelerden S kuran bir `_run_md` yalnız
+    # yukarıdaki öznitelik yasağından geçiyordu. Yerleşikler ve `replace` de
+    # yasak; davranış tarafı T1'in save_every 2 hücresinde (test_d2_salinim).
+    assert not {"min", "max", "sorted"} & adlar, adlar
+    assert "replace" not in oznitelikler and "replace" not in adlar
+    prov_cagrisi = next(
+        d for d in ast.walk(govde)
+        if isinstance(d, ast.Call) and isinstance(d.func, ast.Name)
+        and d.func.id == "provenance_for"
+    )
+    assert "energy_oscillation" in {k.arg for k in prov_cagrisi.keywords}

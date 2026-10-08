@@ -702,7 +702,12 @@ def _run_bridge(scenario: BridgeScenario, output: str | None) -> int:
 
 def _run_md(scenario: MDScenario, output: str | None) -> int:
     """MD senaryosunu koşturur ve şeffaflık panelini basar."""
-    from qlab.engine.md.factory import build, energy_drift, provenance_for
+    from qlab.engine.md.factory import (
+        build,
+        energy_drift,
+        energy_oscillation,
+        provenance_for,
+    )
     from qlab.engine.md.integrator import Trajectory, run
 
     durum, alan, termostat = build(scenario)
@@ -737,6 +742,10 @@ def _run_md(scenario: MDScenario, output: str | None) -> int:
     # `md/factory.py::energy_drift`te: TB'de enerjinin sıfırı keyfidir ve
     # |blok[0]|'a bölmek hükmü o sıfıra bağlıyordu (spec B8; ölçüm orada).
     suruklenme = energy_drift(scenario, yorunge.kinetic, yorunge.potential)
+    # SALINIM (D2, 09.10.2026): TB NVE'de iri dt'yi yargılar, öteki koşularda
+    # None. Uçlar integratörün HER adımından gelir (`Trajectory.total_min` ...);
+    # buradaki termostat döngüsü onları biriktirmez ve NVT'de S hesaplanmaz.
+    salinim = energy_oscillation(scenario, yorunge)
 
     # KISIT SAYISI TERMOSTATA BAĞLIDIR: ÖLÇÜLDÜ -- Langevin kütle merkezini
     # YENİDEN ISITIYOR (<KE_COM>/(1.5kT) = 1.098, çıkarılmış kalsaydı 0.000),
@@ -761,7 +770,8 @@ def _run_md(scenario: MDScenario, output: str | None) -> int:
             },
         }
     provenance = provenance_for(
-        scenario, energy_drift=suruklenme, n_constraints=kisit, **kararlilik
+        scenario, energy_drift=suruklenme, energy_oscillation=salinim,
+        n_constraints=kisit, **kararlilik
     )
     for etiket, deger in provenance.as_lines():
         print(f"{etiket:<14}: {deger}")

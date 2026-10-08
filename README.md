@@ -446,7 +446,8 @@ Sıkı-bağ MD (md ↔ tb ss-σ kenarı, 24.09.2026) — 16 atomlu yarı dolu bi
 zincirde (kütle ¹H; atomlar bir element DEĞİL, yasası seçilmiş bir modelin
 siteleridir) kısa NVE; kuvvet, tek orbitalli ss-σ modelinin Mermin serbest
 enerjisinin gradyanıdır (ölçüldü, 24.09.2026, bu makine: CLI 0.72 s,
-`energy_drift` 4.513e-04, eşik 1e-02; pencere senaryonun kendisi — a = 2
+`energy_drift` 4.513e-04, eşik 1e-02; salınım S 1.005e-02, eşik 5e-02 —
+D2, 09.10.2026; pencere senaryonun kendisi — a = 2
 bohr zincir + 0.05 bohr bozulma, 631.6 K, L = 32 bohr, dt = 10, 400 adım):
 
 ```bash
@@ -1173,14 +1174,33 @@ yasalar seçildi, yasadan geri okunan bağ, genlik ve eşik fizik iddiası deği
 | KE + E korunmuyor, kT·ΔS'de doyuyor | aynı zincir düzgün, **metalik kT = 0.02** (M11 penceresinde kT·ptp(S) yalnız 2.6e-08 ve E ile Ω ayırt edilemiyor) | tt(KE+Ω) oranları **4.0178 / 4.0044**, tt(KE+E) oranları **1.0881 / 1.0215**; ω_max·dt = 0.05'te tt(KE+E)/(kT·ptp S) = **1.0072** |
 | Kelvin tuzağı | zincir(16, 2, 0.05, 3), n_e = 16, L = 32, yalnız bant | max\|F\| kT = 0.002'de **1.054e-01**, kT = 300 "hartree"de **2.803e-05** (3759 kat, sessizce) — sınıf kT ≥ 1 hartree'yi reddeder; 1 K altındaki bir Kelvin sayısı ve ters tuzak yakalanmaz (beyanlı) |
 | HF'e dokunmuyor | alt süreçte yalnız `import qlab.engine.md.tb_kuvvet`; fabrikadan kurulan TB alanında 20 adım NVE | yüklenen hf modülü **0**; `hf.scf.solve` çağrısı **0** (pozitif kontrol: aynı sayaçla HF alanında 1 adım **14**) |
-| Sürüklenme hükmü enerjinin sıfırından bağımsız | zincir(16, 2, 0.05, 3), 631.6 K, L = 32, dt = 20, 200 adım; Ω + c | eski ölçüt (\|blok[0]\|'a bölen) c = 0'da **3.26e-05** ✓, c = −Ω₀'da **9.13e-02** ✗; TB ölçütü (max KE'ye bölen) c boyunca bağıl **≤ 8.5e-11** aynı |
-| Eşik TB'ye özgü sürüklenmeyi yakalıyor | aynı zincir, n_e = 15, v₀ = 0, dt = 10, 400 adım | T_e = 3.16 K'de **5.48e-02** ✗ (Fermi seviyesindeki geçiş adımda çözülmüyor), 631.6 K'de **5.97e-04** ✓; eşik **1e-02** |
+| Sürüklenme hükmü enerjinin sıfırından bağımsız | zincir(16, 2, 0.05, 3), 631.6 K, L = 32, dt = 15, 267 adım; Ω + c (D2'den önce dt = 20, 200 adım: orada S 4.138e-02, eşiğin yalnız 1.2 katı altı) | eski ölçüt (\|blok[0]\|'a bölen) c = 0'da **1.09e-05** ✓, c = −Ω₀'da **5.35e-02** ✗ (dt = 20'de 3.26e-05 / 9.13e-02); TB ölçütü (max KE'ye bölen) c boyunca bağıl **≤ 5.1e-11**, S **≤ 2.9e-13** aynı; S **2.297e-02** ✓ |
+| Eşik TB'ye özgü sürüklenmeyi yakalıyor | aynı zincir, n_e = 15, v₀ = 0, dt = 10, 400 adım | T_e = 3.16 K'de **5.48e-02** ✗ (Fermi seviyesindeki geçiş adımda çözülmüyor), 631.6 K'de **5.97e-04** ✓; eşik **1e-02**. D2'den beri 3.16 K'de S de ✗ (7.30e-02); test sürüklenme hükmünü S'den ayrı okur |
+| Salınım hükmü iri dt'yi yakalıyor (D2) | zincir(16, 2, 0.05, 4), n_e = 16, 631.6 K, v₀ = 0, dt = 40, 100 adım (kamu yolu) | save_every 1'de sürüklenme **8.788e-03**, 2'de 1.401e-03 (ikisi de eşik altı; D2 öncesi panel ✓ basıyordu), S = tepe-tepe(KE + Ω)/max(KE) **2.310e-01** ✗; save_every 1/2/5/20'de S bit bit aynı (karelerden okunan S 2.310e-01 → 2.081e-01 kayıyor); sevk edilen senaryoda S **1.0054e-02** ✓; eşik **5e-02** |
 
 Çağrı maliyeti (bu makine, 1B zincir a = 2, kT = 2e-3, L = 2N, 5 tekrarın en
 küçüğü): N = 16'da **0.62 ms**, 128'de **4.31 ms**. `energy_drift` eşiği
-iri dt'nin **salınımını yargılamaz**: ✓, dt'nin yeterince küçük olduğu anlamına
-gelmez (ω_max·dt ≥ 0.93 olan 33 hücrenin 8'i eşiğin altında kaldı); dt
-kararlılık denetimi TB dalında yoktur, dt'yi kullanıcı seçer.
+iri dt'nin salınımına kördür (M11 minimumunun ω_max'ıyla ω_max·dt ≥ 0.93
+olan 33 hücrenin 8'i eşiğin altında kaldı). **D2'den (09.10.2026) beri o yarıyı
+salınım hükmü yargılar:** S = [max(KE + Ω) − min(KE + Ω)] / max(KE), uçlar
+integratörün **her adımından** (kayıtlı karelerden okunan S save_every'ye göre
+hem alta hem üste kayıyordu), eşik **5e-02** (ön ölçümde, her pencerenin kendi
+yol boyu ω_max'ıyla, ω·dt ≤ 0.463 sınıfının en büyük S'i 0.0356, ω·dt ≥ 0.925
+sınıfının en küçüğü 0.0729 — ölçülen ailelerin değeri, sınır değil: tek
+harmonik modda S = x²/(4 − x²) analitiktir, x = ω·dt, ve eşik x = 0.436'ya
+düşer); TB NVE'de Yakınsama = sürüklenme **VE** S, ve "Yakınsama tanısı"
+satırı ikisinin ayrı hükmünü basar. A priori (koşudan önce) dt kararlılık
+denetimi TB dalında yoktur, dt'yi kullanıcı seçer; seçilen dt'yi koşudan sonra
+S yargılar. NVT'de S hesaplanmaz. **Beyanlı sınırlar:** gri bölgede
+(ölçülen ailelerde ω·dt ≈ 0.46–0.93) hükmü tohum, aile ve koşu uzunluğu
+değiştirir; büyüme evresindeki ✗ "korunum doğrulanamadı" diye okunur; max KE
+yuvarlama düzeyindeyse S gürültüdür. Payda **tüm** kinetik enerji olduğu için
+titreşime katılmayan ya da az katılan her KE S'yi seyreltir — **kör aileler**,
+liste kapsayıcı değil: ayrışan parçaların ötelemesi (T1 zincirinin iki kopyası
+±v_y ile ayrışırken yol ω_max·dt 1.09'da S = 0.021, panel ✓; ötelemesiz ✗),
+kütle safsızlığı (15 × 12 amu zincirde tek H, ω·dt = 1.0'da S = 0.036, ✓),
+yalnız düşük modun uyarıldığı koşu, yüksek T_ion (ön ölçümde 3000–6000 K),
+enine yumuşak modlu geometri. İlk ikisi testle kilitli dürüst olumsuzdur.
 
 **Dürüst olumsuzlar:** termostatlı TB koşusu hiç koşulmadı (panel yalnız NVT'de
 eşiğin `None` olduğunu söyler; korunum cümlesi — KE + Ω korunur, KE + E

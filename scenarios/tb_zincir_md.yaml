@@ -10,10 +10,15 @@
 # kararsız olduğu için bozulma büyür ve zincir dimerleşerek salınır.
 # Kütle 1H (M_H). Kutu yalnız x'te periyodik, L = 32 = 2N (max r_cut < L/2).
 #
-# dt = 10 a.u.: M11 penceresinin omega_max = 0.02315'iyle omega_max*dt ~ 0.23.
-# TB dalında dt kararlılık denetimi YOKTUR (spec B10). Sürüklenme ölçütü
-# |blok[-1] - blok[0]| / max(KE) (enerjinin sıfırı keyfi, spec B8); bu koşuda
-# ölçüldü (G5, 24.09.2026): bkz. `tests/md/test_tb_kuvvet.py`.
+# dt = 10 a.u.: BU pencerenin kendi omega_max'ıyla omega_max*dt kare 0'da
+# 0.255, yol boyunca ~0.31-0.32 (81 karede 0.313, 201 karede 0.317; seyrek
+# örnekleme aşağı sapar -- D2 ön ölçümü, 09.10.2026; M11 penceresinin
+# 0.02315'i burada 0.23 verirdi -- başka bir pencerenin sayısı).
+# TB dalında a priori dt kararlılık denetimi YOKTUR (spec B10). Sürüklenme
+# ölçütü |blok[-1] - blok[0]| / max(KE) (enerjinin sıfırı keyfi, spec B8);
+# bu koşuda ölçüldü (G5, 24.09.2026): bkz. `tests/md/test_tb_kuvvet.py`.
+# Salınım ölçütü (D2) tepe-tepe(KE + Omega) / max(KE), her adımdan: bu koşuda
+# S = 1.0054e-02, eşiğin (5e-02) 5 kat altında.
 kind: md
 name: TB ss-sigma zincir NVE
 force_field:

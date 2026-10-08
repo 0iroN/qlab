@@ -55,7 +55,7 @@ from scipy.optimize import minimize
 import qlab.engine.hf.scf as hf_scf
 import qlab.engine.md.forcefields as forcefields_modulu
 import qlab.engine.md.tb_kuvvet as tb_kuvvet_modulu
-from qlab.engine.md.factory import build, energy_drift, provenance_for
+from qlab.engine.md.factory import build, energy_drift, energy_oscillation, provenance_for
 from qlab.engine.md.integrator import run, velocity_verlet_step
 from qlab.engine.md.state import MDState
 from qlab.engine.md.tb_kuvvet import SsSigmaTBKuvveti
@@ -739,26 +739,47 @@ def _ortak(senaryo: MDScenario) -> MDScenario:
 
 
 def _hukum(senaryo: MDScenario, yorunge) -> tuple[float, bool]:
+    """Sürüklenme oranı ve panelin BİRLEŞİK hükmü (D2: TB NVE'de S de girer)."""
     oran = energy_drift(senaryo, yorunge.kinetic, yorunge.potential)
-    return oran, provenance_for(senaryo, energy_drift=oran).converged
+    salinim = energy_oscillation(senaryo, yorunge)
+    return oran, provenance_for(
+        senaryo, energy_drift=oran, energy_oscillation=salinim
+    ).converged
+
+
+def _suruklenme_hukmu(senaryo: MDScenario, oran: float) -> bool:
+    """YALNIZ sürüklenme hükmü: S eşiğin altında (0.0) sabitlenir.
+
+    D2'den beri birleşik hüküm iki ölçütün VE'sidir; bir pencerede ikisi de
+    ✗ derse birleşik hükme bakan test sürüklenme eşiğinin mutantına kör
+    kalır (Fermi penceresinde 3.16 K: sürüklenme 5.48e-02, S 7.30e-02).
+    """
+    return provenance_for(senaryo, energy_drift=oran, energy_oscillation=0.0).converged
 
 
 def test_G5_SURUKLENME_HUKMU_ENERJI_SIFIRINDAN_BAGIMSIZ():
     """Omega + c: yorunge bit bit ayni, TB orani ve HUKMU ayni; eski olcut kayar.
 
     Pencere: zincir(16, 2, 0.05, 3), n_e = 16, 631.6 K, L = 32, M_H, v0 = 0
-    (sevk yolu: `build`), iki kol: dt = 20 x 200 adim ve dt = 40 x 100 adim
-    (4000 a.u.). c in {-Omega0, +16} (-Omega0: blok[0] ~ 0, eski paydanin
-    patolojisi; +16: n_e x 1 hartree onsite). Olculen (g5_olcum7.log):
-    TB orani dt = 20'de 1.2044065180e-03 (GECER), dt = 40'ta 7.0039486469e-02
-    (KALIR); c boyunca bagil fark <= 8.5e-11 (yuvarlama: c eklenen toplamin
-    blok farki). Tolerans 1e-9 bagil. Eski olcut (ortak dal, AYNI kayitlar):
-    dt = 20'de c = 0 -> 3.2592e-05 (GECER), c = -Omega0 -> 9.1300e-02 (KALIR);
-    dt = 40'ta 1.8311e-03 (GECER) -> 1.6733 (KALIR) -- hukum enerjinin sifirina
-    bagliydi (spec B8'in 4.6e+11'i ayni olgunun prototip penceresi).
+    (sevk yolu: `build`), iki kol: dt = 15 x 267 adim ve dt = 40 x 100 adim
+    (~4000 a.u.). c in {-Omega0, +16} (-Omega0: blok[0] ~ 0, eski paydanin
+    patolojisi; +16: n_e x 1 hartree onsite). Olculen (dt 40 kolu
+    g5_olcum7.log; dt 15 kolu D2 dogrulamasi, 09.10.2026): TB orani dt = 15'te 3.8919877720e-04, S
+    2.2971250111e-02 (ikisi de GECER); dt = 40'ta 7.0039486469e-02, S
+    3.4599e-01 (KALIR); c boyunca bagil fark oranda <= 5.1e-11, S'de <=
+    2.9e-13 (yuvarlama). Tolerans 1e-9 bagil. Eski olcut (ortak dal, AYNI
+    kayitlar): dt = 15'te c = 0 -> 1.0935e-05 (GECER), c = -Omega0 ->
+    5.3519e-02 (KALIR); dt = 40'ta 1.8311e-03 (GECER) -> 1.6733 (KALIR) --
+    hukum enerjinin sifirina bagliydi (spec B8'in 4.6e+11'i ayni olgunun
+    prototip penceresi).
 
-    KIRMA (olculdu, sk/g5_mutasyon.log): TB paydasi |blok[0]|'a geri
-    cevrilince kirmizi (c = -Omega0'da oran 3.3e-05 -> 9.1e-02); TB paydasi
+    D2 (09.10.2026): kol dt = 20 x 200'den dt = 15'e TASINDI. dt = 20'de S
+    4.1384e-02, esigin yalniz 1.2x alti; dt = 15 2.2x pay birakir. Hukum
+    birlesiktir (suruklenme VE S); S de c'den bagimsizdir ve ayrica sinanir.
+
+    KIRMA (olculdu, sk/g5_mutasyon.log; G5'te dt 20 kolunda): TB paydasi
+    |blok[0]|'a geri cevrilince kirmizi (c = -Omega0'da oran 3.3e-05 ->
+    9.1e-02; dt 15 kolunda eski olcut 1.09e-05 -> 5.35e-02); TB paydasi
     |ortalama(potansiyel)| yapilinca kirmizi. Ortalama KE paydasi (o da
     sifirdan bagimsiz) burada YESIL kalir; onu asagidaki duragan-olmayan
     test yakalar.
@@ -766,10 +787,11 @@ def test_G5_SURUKLENME_HUKMU_ENERJI_SIFIRINDAN_BAGIMSIZ():
     senaryo = _tb_senaryo(631.6)
     durum, alan, _ = build(senaryo)
     omega0 = alan(durum.positions)[0]
-    for dt, n, beklenen in ((20.0, 200, True), (40.0, 100, False)):
+    for dt, n, beklenen in ((15.0, 267, True), (40.0, 100, False)):
         ref = run(durum, alan, dt=dt, n_steps=n)
         ref_oran, ref_hukum = _hukum(senaryo, ref)
-        assert ref_hukum is beklenen, (dt, ref_oran)
+        ref_salinim = energy_oscillation(senaryo, ref)
+        assert ref_hukum is beklenen, (dt, ref_oran, ref_salinim)
         _, eski_c0 = _hukum(_ortak(senaryo), ref)
         eski = {eski_c0}
         for c in (-omega0, 16.0):
@@ -779,6 +801,8 @@ def test_G5_SURUKLENME_HUKMU_ENERJI_SIFIRINDAN_BAGIMSIZ():
             assert not np.array_equal(yor.potential, ref.potential)
             oran, hukum = _hukum(senaryo, yor)
             assert abs(oran - ref_oran) < 1e-9 * ref_oran, (dt, c, oran, ref_oran)
+            salinim = energy_oscillation(senaryo, yor)
+            assert abs(salinim - ref_salinim) < 1e-9 * ref_salinim, (dt, c, salinim)
             assert hukum is beklenen
             eski.add(_hukum(_ortak(senaryo), yor)[1])
         # Pozitif kontrol: AYNI kayitlarda eski olcutun hukmu c ile DEGISIYOR,
@@ -804,12 +828,18 @@ def test_G5_ESIK_TB_OZGU_SURUKLENMEYI_YAKALAR_FERMI_GECISI():
 
     KIRMA (olculdu): esik 1e-1 -> 3.16 K kolu GECER (kirmizi); TB paydasi
     |blok[0]| -> 3.16 K kolu GECER (kirmizi).
+
+    D2 (09.10.2026): 3.16 K kolunda S de esigin ustunde (7.2979e-02;
+    631.6 K'de 1.1357e-02). Birlesik hukum o yuzden suruklenme esiginin
+    mutantina KORDUR; iddia (suruklenme TB'ye ozgu sicramayi yakalar)
+    `_suruklenme_hukmu` ile S esik altinda sabitlenerek okunur.
     """
     for kelvin, beklenen in ((631.6, True), (3.16, False)):
         senaryo = _tb_senaryo(kelvin, n_electron=15)
         durum, alan, _ = build(senaryo)
         yorunge = run(durum, alan, dt=10.0, n_steps=400)
         oran, hukum = _hukum(senaryo, yorunge)
+        assert _suruklenme_hukmu(senaryo, oran) is beklenen, (kelvin, oran)
         assert hukum is beklenen, (kelvin, oran)
         assert _hukum(_ortak(senaryo), yorunge)[1] is True, kelvin
 
@@ -818,8 +848,8 @@ def test_G5_DURAGAN_OLMAYAN_KOSU_max_KE_ORTALAMA_KE_DEGIL():
     """Kararsizligin pencere icinde buyudugu kosu: max(KE) GECER, ortalama KE KALIR derdi.
 
     Pencere: duzgun zincir + 1e-6 bohr gauss gurultu (tohum 5), n_e = 16,
-    631.6 K, L = 32, M_H, v0 = 0, dt = 10 x 100 adim (omega_max dt ~ 0.23,
-    ince dt). Yari dolu duzgun zincir Peierls'e kararsiz: KE[0] = 0,
+    631.6 K, L = 32, M_H, v0 = 0, dt = 10 x 100 adim (pencerenin kendi yol
+    omega_max'iyla omega_max dt ~ 0.27; M11 sabitiyle 0.23 -- ince dt). Yari dolu duzgun zincir Peierls'e kararsiz: KE[0] = 0,
     KE[50] = 7.78e-03, max 2.23e-02. Olculen (g5_olcum7.log): pay/max(KE)
     = 3.851995e-03 (GECER, 2.6x alti), pay/ortalama(KE) = 1.785206e-02 (KALIR) --
     sessiz baslangic ortalamayi seyreltiyor. On kosul (test dogrular):
@@ -839,8 +869,11 @@ def test_G5_DURAGAN_OLMAYAN_KOSU_max_KE_ORTALAMA_KE_DEGIL():
     oran, hukum = _hukum(senaryo, yorunge)
     assert yorunge.kinetic[0] == 0.0 and yorunge.kinetic.max() > 1e-2
     ortalama_ile = oran * float(yorunge.kinetic.max()) / float(yorunge.kinetic.mean())
-    tolerans = provenance_for(senaryo, energy_drift=oran).diagnostics["energy_drift_tolerance"]
+    tolerans = provenance_for(
+        senaryo, energy_drift=oran, energy_oscillation=0.0
+    ).diagnostics["energy_drift_tolerance"]
     assert ortalama_ile > tolerans, ortalama_ile
+    # D2: birlesik hukum de GECER (S 1.3672e-02, buyume evresine ragmen).
     assert hukum is True, oran
 
 
@@ -853,8 +886,10 @@ def test_G5_SEVK_EDILEN_TB_SENARYOSU_CLI_UCTAN_UCA(tmp_path, capsys):
     Senaryo: zincir(16, 2, 0.05, 3), n_e = 16, 631.6 K, L = 32, 1H, v0 = 0,
     dt = 10, 400 adim, save_every 2 (201 kayit). Olculen (24.09.2026, CLI):
     energy_drift = 4.513e-04 (GECER, esigin 22x alti), duvar saati 0.70 s
-    (yorumlayici baslangici dahil). Panel TB'nin kendi beyanini, surukleme
-    paydasini ve esigini basar; ortak listenin yalanlarini basmaz.
+    (yorumlayici baslangici dahil); D2 (09.10.2026): salinim S = 1.0054e-02
+    her adimdan (GECER, esigin 5x alti; kayitli 201 kareden okunsaydi
+    9.69e-03). Panel TB'nin kendi beyanini, surukleme ve salinim paydasini
+    ve esiklerini basar; ortak listenin yalanlarini basmaz.
     """
     from qlab.run import main
 
@@ -864,13 +899,22 @@ def test_G5_SEVK_EDILEN_TB_SENARYOSU_CLI_UCTAN_UCA(tmp_path, capsys):
     ekran = capsys.readouterr().out
     # Kaynak ASCII kalsin diye aksanli dizgeler kacis dizisiyle: "Yakinsama"
     # satiri ve onay isareti U+2713, "doga cipasi yok" beyani.
-    yakinsama = next(s for s in ekran.splitlines() if s.startswith("Yak\u0131nsama"))
+    satirlar = {s.split(":", 1)[0].strip(): s for s in ekran.splitlines() if ":" in s}
+    yakinsama = satirlar["Yak\u0131nsama"]
     assert "\u2713" in yakinsama and "energy_drift_scale=max_kinetic" in yakinsama
     for parca in (
         "Omega (Mermin)", "ss-sigma", "do\u011fa \xe7\u0131pas\u0131 yok",
         "kT_hartree=2.000e-03", "max(KE)", "energy_drift_tolerance=1.000e-02",
     ):
         assert parca in ekran, parca
+    # D2 (T2): salinim olcutu panelde ve bu kosuda ESIGIN 5x ALTINDA -- olculen
+    # S = 1.0054e-02 (her adimdan). Esigi 1e-2'ye ceken mutant burada \u2717 basar.
+    for parca in (
+        "energy_oscillation=1.005e-02", "energy_oscillation_scale=max_kinetic_all_steps",
+        "energy_oscillation_tolerance=5.000e-02",
+    ):
+        assert parca in yakinsama, parca
+    assert "ikisi de e\u015fi\u011fin alt\u0131nda" in satirlar["Yak\u0131nsama tan\u0131s\u0131"]
     assert "elektron yok" not in ekran and "analitik bir model" not in ekran
 
 

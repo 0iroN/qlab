@@ -20,13 +20,26 @@ from qlab.errors import InvalidInputError
 
 @dataclass(frozen=True, eq=False)
 class Trajectory:
-    """Kaydedilen anlar. `positions`/`velocities` (M,N,3), ötekiler (M,)."""
+    """Kaydedilen anlar. `positions`/`velocities` (M,N,3), ötekiler (M,).
+
+    `total_min` / `total_max` / `kinetic_max` (D2, 09.10.2026): KE + potansiyelin
+    ve KE'nin HER ADIMDAKİ uçları (adım 0 dahil), kayıt seyreltmesinden
+    bağımsız. Salınım hükmü bunlardan okunur: kayıtlı karelerden okunan S
+    save_every'ye göre hem alta hem üste kayıyordu (ÖLÇÜLDÜ, D2 ön ölçümü:
+    sevk geometrisi dt 40 x 75, save_every 20'de kareler 0.039, her adım
+    0.278 -- S'nin kendi eşiğinde sahte ✓). Varsayılan
+    `nan`: uçları biriktirmeyen bir kurucu (ör. `run.py`nin termostat
+    döngüsü) "ölçülmedi" der, sıfır değil.
+    """
 
     times: np.ndarray
     positions: np.ndarray
     velocities: np.ndarray
     kinetic: np.ndarray
     potential: np.ndarray
+    total_min: float = float("nan")
+    total_max: float = float("nan")
+    kinetic_max: float = float("nan")
 
 
 def velocity_verlet_step(
@@ -66,18 +79,27 @@ def run(
         raise InvalidInputError(f"save_every en az 1 olmalı, verilen: {save_every}")
 
     enerji, kuvvetler = force_field(state.positions)
+    ke = state.kinetic_energy()
     zamanlar, konumlar, hizlar = [0.0], [state.positions], [state.velocities]
-    kinetik, potansiyel = [state.kinetic_energy()], [enerji]
+    kinetik, potansiyel = [ke], [enerji]
+    # Uçlar np.minimum/np.maximum ile: `nan` YAYILIR (Python'un min/max'ı ve
+    # `<` karşılaştırması nan'ı sırayla sessizce düşürürdü).
+    t_min = t_max = ke + enerji
+    k_max = ke
 
     for adim in range(1, n_steps + 1):
         state, enerji, kuvvetler = velocity_verlet_step(
             state, kuvvetler, force_field, dt
         )
+        ke = state.kinetic_energy()
+        t_min = np.minimum(t_min, ke + enerji)
+        t_max = np.maximum(t_max, ke + enerji)
+        k_max = np.maximum(k_max, ke)
         if adim % save_every == 0:
             zamanlar.append(adim * dt)
             konumlar.append(state.positions)
             hizlar.append(state.velocities)
-            kinetik.append(state.kinetic_energy())
+            kinetik.append(ke)
             potansiyel.append(enerji)
 
     return Trajectory(
@@ -86,4 +108,7 @@ def run(
         velocities=np.array(hizlar),
         kinetic=np.array(kinetik),
         potential=np.array(potansiyel),
+        total_min=float(t_min),
+        total_max=float(t_max),
+        kinetic_max=float(k_max),
     )
