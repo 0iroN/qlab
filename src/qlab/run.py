@@ -259,6 +259,7 @@ def _run_tb(scenario: TBScenario, output: str | None) -> int:
             k_distance=yuk.k_distance,
             energies_ev=yuk.energies_ev,
             orbital_weights=yuk.orbital_weights,
+            degenerate=yuk.degenerate,
             tick_distances=yuk.tick_distances,
             tick_labels=np.array(yuk.tick_labels),
             fermi_ev=np.array(yuk.fermi_ev),

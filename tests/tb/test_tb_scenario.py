@@ -306,6 +306,54 @@ def test_H0_TEK_YONLU_hoplama_KAMU_YOLUNDA_reddediliyor(tmp_path, capsys):
     assert not (tmp_path / "x.npz").exists()
 
 
+_T2G_YAML = """kind: tb
+name: t2g kubik
+lattice_vectors_bohr: [[4.0, 0, 0], [0, 4.0, 0], [0, 0, 4.0]]
+basis_bohr: [[0, 0, 0], [0.1, 0, 0], [0.2, 0, 0]]
+onsite_ev: [-2.0, -2.0, -2.0]
+hoppings:
+  - {i: 0, j: 0, cell: [1, 0, 0], t_ev: -0.8}
+  - {i: 0, j: 0, cell: [-1, 0, 0], t_ev: -0.8}
+  - {i: 0, j: 0, cell: [0, 1, 0], t_ev: -0.8}
+  - {i: 0, j: 0, cell: [0, -1, 0], t_ev: -0.8}
+  - {i: 1, j: 1, cell: [0, 1, 0], t_ev: -0.8}
+  - {i: 1, j: 1, cell: [0, -1, 0], t_ev: -0.8}
+  - {i: 1, j: 1, cell: [0, 0, 1], t_ev: -0.8}
+  - {i: 1, j: 1, cell: [0, 0, -1], t_ev: -0.8}
+  - {i: 2, j: 2, cell: [0, 0, 1], t_ev: -0.8}
+  - {i: 2, j: 2, cell: [0, 0, -1], t_ev: -0.8}
+  - {i: 2, j: 2, cell: [1, 0, 0], t_ev: -0.8}
+  - {i: 2, j: 2, cell: [-1, 0, 0], t_ev: -0.8}
+n_electron_per_cell: 2
+k_points: 11
+"""
+
+
+def test_E3a_npz_DEJENERE_bayragi_KAMU_YOLUNDA(tmp_path, capsys):
+    """E3a (04.10.2026), kamu yolu: t2g kubik modelde (xy, yz, zx) Gamma -> X
+    yolunda xy ile zx HER noktada dejenere -- npz [0.5, 0, 0.5] yazar --,
+    Gamma'da ucu birden (1/3). Dogrulama turu: CLI testindeki tek bantli
+    zincir kontrolu bos kaliyordu (bayrak orada hic True olamaz); numpy'nin
+    ham secimi bu yolda [1,0,0]/[0,0,1] idi.
+    """
+    import qlab.run as run_modulu
+
+    cikti = tmp_path / "t2g.npz"
+    assert run_modulu.main([str(_yaz(tmp_path, _T2G_YAML)), "-o", str(cikti)]) == 0
+    capsys.readouterr()
+    with np.load(cikti) as veri:
+        bayrak = veri["degenerate"]
+        agirlik = veri["orbital_weights"]
+    assert bayrak.shape == (11, 3)
+    assert bayrak.sum(axis=1).tolist() == [3] + [2] * 10
+    assert np.allclose(agirlik[0], 1.0 / 3.0, atol=1e-15)
+    for ik in range(1, 11):
+        cift = agirlik[ik][bayrak[ik]]
+        tek = agirlik[ik][~bayrak[ik]]
+        assert np.allclose(cift, [0.5, 0.0, 0.5], atol=1e-15)
+        assert np.allclose(tek, [0.0, 1.0, 0.0], atol=1e-15)
+
+
 def test_CLI_uctan_uca(tmp_path):
     """`python -m qlab.run scenarios/zincir_tb.yaml -o cikti.npz`.
 
@@ -324,6 +372,8 @@ def test_CLI_uctan_uca(tmp_path):
     with np.load(cikti) as veri:
         assert "energies_ev" in veri
         assert "orbital_weights" in veri
+        assert veri["degenerate"].shape == veri["energies_ev"].shape
+        assert not veri["degenerate"].any()  # tek bant: dejenere kume yok
         assert bool(veri["is_metal"]) is True
         assert str(veri["iletkenlik"]) == "metal"
     assert "Yaklaşımlar" in sonuc.stdout

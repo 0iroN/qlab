@@ -31,6 +31,26 @@ ayni olcude gecerli bir ozvektor cifti ve agirliklari [0.5,0.5]/[0.5,0.5].
 ALT UZAY TOPLAMI iki tabanda da ayni. Bant basina agirlik yalniz dejenere
 OLMAYAN noktalarda anlamlidir.
 
+E3a (04.10.2026): bu yuzden yuk dejenere kumede bant basina agirlik yerine
+ALT UZAY ORTALAMASINI yazar (taban-bagimsiz) ve `degenerate` bayragiyla
+isaretler. "Dejenere" = ardisik ozdegerler 1e3 * eps * (|E|max + H olcegi)
+icinde; kumeleme GECISLIDIR (ardisik farklar esik altindaysa kume tek
+parcadir ve yayilimi esigi asabilir -- 40'lik zincirde 35 esik olculdu).
+H olcegi terimi YUK TASIR: birbirini goturen hoplamalarda toplama
+kirintisi |E|max kadardir (dogrulama turu). SUREKSIZLIK YOK OLMAZ,
+OLCEGI KUCULUR: esigin hemen alti ve ustu yine 0.5 / 1.0 verir. Sabit
+1e-8 hartree (on olcum) bunu fiziksel olarak cozulebilen ayrismalara
+tasiyordu; bu esik makine hassasiyetinin ~1e3 katidir. Esigin icinde
+`eigh`in agirligi ~1e-3 dogrulukla belirli olabilir; yine de BILEREK
+ortalanir -- muhafazakar secim (olculdu: eigh'in gercek ayrisma kirintisi
+en cok 8e-3 esik, 240 orbitale ve |E| 300 hartree'ye kadar).
+
+BANT EKSENI ENERJI SIRASIDIR, BANT KIMLIGI DEGIL (bkz. `band_structure`):
+her (k, E, w) noktasi tek basina dogrudur, ama ayni indisi k boyunca
+cizgiyle birlestirmek kesisimde bantlari degistirir. Bant takibi BILEREK
+eklenmedi -- on olcumde kacinilmaz kesisimde bulunan "kimlik" adim
+yogunluguna bagliydi; bant cozumlu nicelik (etkin kutle vb.) uretilmez.
+
 BIRIM SINIRI BURASIDIR: motor hartree konusur, yuk eV dondurur.
 """
 
@@ -40,10 +60,14 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from qlab.engine.tb.bands import KPath
+from qlab.engine.tb.bands import KPath, hamiltonian_rounding_scale
 from qlab.engine.tb.hamiltonian import TBModel, bloch_hamiltonian
 from qlab.errors import InvalidInputError
 from qlab.units import HARTREE_TO_EV
+
+# E3a: dejenere kume esigi, |E|max + H olcegi'nin bu kati kadar eps. Ayni
+# katsayi `tb_obs.certified_conduction`in yuvarlama payindadir.
+_DEJENERE_KATSAYISI = 1e3
 
 
 @dataclass(frozen=True, eq=False)
@@ -58,6 +82,7 @@ class BandPayload:
     k_distance: np.ndarray
     energies_ev: np.ndarray
     orbital_weights: np.ndarray
+    degenerate: np.ndarray
     tick_distances: np.ndarray
     tick_labels: tuple[str, ...]
     fermi_ev: float
@@ -81,18 +106,34 @@ def build_band_payload(
 
     enerjiler: list[np.ndarray] = []
     agirliklar: list[np.ndarray] = []
+    dejenereler: list[np.ndarray] = []
+    olcek = hamiltonian_rounding_scale(model)
     for k in path.points:
         ozdeger, ozvektor = np.linalg.eigh(bloch_hamiltonian(model, k))
         enerjiler.append(ozdeger)
         # |c|^2: (n_orb, n_band) -> bant ekseni one alinir. Ozvektor bu
         # satirdan sonra ERISILEBILIR DEGILDIR -- gauge'a bagli olan tek
         # sey oydu ve tasinmiyor.
-        agirliklar.append((np.abs(ozvektor) ** 2).T)
+        agirlik = (np.abs(ozvektor) ** 2).T
+        dejenere = np.zeros(ozdeger.shape[0], dtype=bool)
+        esik = _DEJENERE_KATSAYISI * np.finfo(float).eps * (
+            float(np.abs(ozdeger).max()) + olcek
+        )
+        bas = 0
+        for son in range(1, ozdeger.shape[0] + 1):
+            if son == ozdeger.shape[0] or ozdeger[son] - ozdeger[son - 1] > esik:
+                if son - bas > 1:
+                    agirlik[bas:son] = agirlik[bas:son].mean(axis=0)
+                    dejenere[bas:son] = True
+                bas = son
+        agirliklar.append(agirlik)
+        dejenereler.append(dejenere)
 
     return BandPayload(
         k_distance=np.asarray(path.distances, dtype=float),
         energies_ev=np.asarray(enerjiler, dtype=float) * HARTREE_TO_EV,
         orbital_weights=np.asarray(agirliklar, dtype=float),
+        degenerate=np.asarray(dejenereler, dtype=bool),
         tick_distances=np.asarray(path.tick_distances, dtype=float),
         tick_labels=tuple(tick_labels),
         fermi_ev=float(fermi_hartree) * HARTREE_TO_EV,

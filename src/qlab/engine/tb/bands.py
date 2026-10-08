@@ -22,9 +22,16 @@ SIHIRLI SAYI YOK. On olcumde iki farkli izgara konvansiyonu iki farkli
 "dogru N" verdi (601 ve N % 3 == 0); ikisi de kendi konvansiyonunda dogru.
 Bu yuzden parite kodda sabitlenmez, `must_include` ile denetlenir.
 
-`band_structure` ciktisi SIRALAMADIR, BANT KIMLIGI DEGILDIR. Olculdu:
-sirali "bant 0"in etkin kutlesi -6.42e-05, gercek bandinki -8.000e-01 --
-12457 kat hata. Cizim icin dogru, bant-cozumlu nicelikler icin degil.
+`band_structure` ciktisi SIRALAMADIR, BANT KIMLIGI DEGILDIR. Olculdu (iki
+bagimsiz zincir, kesisim ka* = 2.0427): kesisimin 0.05 bohr^-1 SAGINDA
+sirali "bant 0"in etkin kutlesi +1.6735 -- obur zincirinki --, gercek zincir
+0'inki -0.6276: ISARET BILE TERS, ve sonlu fark adimindan (1e-3 ... 1e-5)
+bagimsiz. (Eski "12457 kat" sayisi YENIDEN URETILEMEDI: kesisimin tam
+uzerinde sirali kutle adim h ile olceklenir -- oran 1/h, h = 1e-3/1e-4/1e-5
+icin 674/6736/67361 --, yani sayi buyuk olasilikla orada alinmisti; ama
+eski metnin "-0.800"u bu modelin kesisimdeki -0.859'uyla tutmuyor.) Cizim icin
+dogru, bant-cozumlu nicelikler icin degil -- ve depo bant cozumlu nicelik
+URETMEZ (`tests/tb/test_bands.py` cagiran listesini kilitler).
 """
 
 from __future__ import annotations
@@ -33,7 +40,7 @@ from dataclasses import dataclass
 from itertools import product
 
 import numpy as np
-from scipy.optimize import minimize_scalar
+from scipy.optimize import minimize
 
 from qlab.engine.tb.hamiltonian import TBModel, bloch_hamiltonian
 from qlab.engine.tb.lattice import Lattice, reciprocal_vectors
@@ -43,6 +50,16 @@ from qlab.errors import InvalidInputError
 # kesirli koordinat uzerinden olculur, dolayisiyla boyutsuzdur ve mutlak
 # bir enerji/uzunluk esigine bagli degildir.
 _UYELIK_TOLERANSI = 1e-9
+
+# E2 (04.10.2026): `band_edges`in tohum izgarasi ve cilasi -- gerekceler
+# (olculmus) fonksiyonun dokstring'inde.
+_TOHUM_YOGUNLUGU = 8  # eksen basina, birim hoplama menzili basina tohum noktasi
+_ADAY_SAYISI = 3
+_KOMPAS_TAVANI = 10_000
+# Kompas bir adimi yalniz iyilesme bu kat eps * H olcegini asarsa kabul eder:
+# yuvarlama gurultusunu iyilesme sayinca dar duzgun vadide 10 000 adimlik
+# tavana dayanip zikzak ciziyordu (aralikli grafen, 2.6 s/arama).
+_KOMPAS_GURULTU_KATSAYISI = 16.0
 
 
 @dataclass(frozen=True, eq=False)
@@ -219,48 +236,148 @@ def k_path(vertices: tuple[np.ndarray, ...], n_per_segment: int) -> KPath:
     )
 
 
-def band_edges(model: TBModel, band_index: int) -> tuple[float, float]:
-    """Bir bandin (min, max) enerjisi -- SUREKLI minimizasyonla, hartree.
+def _kesirli_hamiltonyen(model: TBModel):
+    """H(f) kurucusu, f KESIRLI koordinat (hucre gauge'u): H_ij += t exp(2 pi i
+    f . c). `bloch_hamiltonian(model, sum f_a b_a)` ile matematikte AYNIDIR
+    (b_a . a_b = 2 pi delta_ab), ama faz k . R uzerinden degil dogrudan f . c
+    uzerinden hesaplanir. Sebep (E2 dogrulama turu): kotu kosullu (orn.
+    indirgenmemis a2 = (N a, a)) tabanda k . R buyuk terimlerin birbirini
+    goturmesiyle hesaplaniyordu; N = 3e4'te faz gurultusu 1.2e-7 W'ye cikti
+    ve `band_edges` gercek minimumun 1.9e-8 W ALTINA indi -- "aralik icerde"
+    garantisi bozuldu. f in [0, 1) ve c tam sayi oldugu icin buradaki faz
+    hatasi kosuldan bagimsizdir.
+    """
+    d = model.lattice.dimension
+    taban = np.diag(np.asarray(model.onsite, dtype=float)).astype(complex)
+    if not model.hoppings:
+        return lambda kesirli: taban.copy()
+    i = np.array([h.i for h in model.hoppings])
+    j = np.array([h.j for h in model.hoppings])
+    hucre = np.array([[h.cell[eksen] for eksen in range(d)] for h in model.hoppings], dtype=float)
+    t = np.array([h.t for h in model.hoppings], dtype=float)
 
-    Izgara KULLANILMAZ; sebep modul dokstring'indeki olculmus tuzaktir.
-    Her eksen sirayla Brent (bounded) ile taranir; birden cok baslangictan
-    kosulur cunku bant coklu yerel uc deger tasiyabilir. Cok boyutta sonuc
-    bir ALT SINIRDIR ve bu beyan edilir.
+    def kur(kesirli: np.ndarray) -> np.ndarray:
+        H = taban.copy()
+        np.add.at(H, (i, j), t * np.exp(2j * np.pi * (hucre @ np.asarray(kesirli, dtype=float))))
+        return H
+
+    return kur
+
+
+def band_edges(model: TBModel, band_index: int) -> tuple[float, float]:
+    """Bir bandin (min, max) enerjisi, hartree -- BULUNAN EN IYI uc degerler.
+
+    KESIN OLAN YON (yuvarlama payi ~eps * H olcegi icinde): donen her deger
+    gercek bir k noktasindaki gercek bir ozdegerdir; donen min gercek
+    minimumun ustunde, donen max gercek maksimumun altindadir -- aralik
+    gercek bandin ICINDEDIR (bant genisligi icin alt sinir, bant araligi
+    icin ust sinir). H(f) kesirli koordinatta kurulur (`_kesirli_hamiltonyen`);
+    bu yuzden garanti orgu tabaninin kosulundan bagimsizdir (dogrulama turu:
+    k . R ile kurulan eski yol kosul 9e8'de gercek minimumun 1.9e-8 W ALTINA
+    iniyordu). Kuresel uc KANITLANMAZ; kanitli dis sinir icin
+    `grid_lipschitz_bound`, iletkenlik icin `certified_conduction`.
+
+    ALGORITMA (E2, 04.10.2026): eksen basina 8 R_a noktali Gamma merkezli
+    tohum izgarasi (R_a: o eksende sifir olmayan hoplamalarin en buyuk
+    |hucre| bileseni; 0 ise tek nokta), izgaranin en iyi 3 yerel ucundan
+    f mod 1 ile sarili L-BFGS-B, sonra kompas cilasi (3^d - 1 yon, adim
+    1e-3'ten 1e-16'ya; bir adim yalniz iyilesme 16 eps * H olcegini asarsa
+    kabul, 10 000 adim tavani). OLCULEREK SECILENLER (scratchpad e2/*.py):
+    - kompas: kompassiz grafen 20/48, PT simetrik iki orbitalli 8/40 arama
+      1e-12'yi asiyordu (L-BFGS-B nokta kinkinde ve duragan TRIM'de durur).
+    - kompasin gurultu esigi: esiksiz kompas dar duzgun vadide 10 000 adim
+      tavanina dayaniyordu (81 666 -> 1 882 eigvalsh, sonuc ayni); bedeli
+      hassasiyetin 1e-16'dan ~1e-13 bagila inmesi.
+    - tohum yogunlugu 8 R_a: Gamma merkezli SABIT 8 nokta esit genlikli uzun
+      menzilli ("puruzlu") 1B'de 22/149 modeli bozuyordu (en kotu %39.5).
+    - 3 aday: tek adayla uzun menzilli 2B 2/40, PT 2/40 (%5), puruzlu 2B
+      3/160 arama kaciyordu.
+    - kaydirma YOK: on olcumdeki 0.381966 adim kaydirilmis tohum puruzlu 1B'de
+      bir dar tepeyi (%1.18) kaciriyordu; Gamma merkezli tohum bulur.
+    TASARIM VARSAYILANI (olculmus etkisi yok): sarma (faz kucuk kalsin --
+    ilke), L-BFGS-B (yalniz hiz; kompas tek basina ayni sonucu verir),
+    capraz kompas yonleri ve yerel uc suzgeci.
+
+    OLCULEN SONUC (eski 1e-9 / yeni 1e-12): orijinal 2B 14/50 / 0/50, 3B
+    8/30 / 0/30, grafen 24/48 / 0/48, PT 20/40 / 0/40, uzun menzilli 2B
+    39/40 / 0/40, puruzlu 1B 133/298 / 0/298, puruzlu 2B 153/160 / 0/160,
+    puruzlu 3B 19/20 / 0/20 (eskinin en kotusu bant genisliginin %56'si).
+    BILINEN BASARISIZLIK SINIFLARI (bagimsiz dogrulama turu, kamu
+    yolundan; testle kilitli olan isaretli):
+    - 2B/3B'de KESISIM CIZGISI/YUZEYI olan bantlarin IC kenarlari: uc, iki
+      bandin kesistigi dikis uzerinde dar bir V tepesidir ve tohum
+      izgarasinda yerel uc olarak GORUNMEZ -- aday ve yon sayisini artirmak
+      cozmuyor (olculdu). Eslesmesiz 2B: 40 ic kenarin 25'i, en kotu %6;
+      cok orbitalli %10; 3B 4/24. [kilitli]
+    - zayif eslesmeli KACINILMIS KESISIMIN dar havzasi R'den bagimsizdir:
+      1B'de bile %7.5 (164 kenarda 2); tohumu 32 R yapmak duzeltir.
+    - kacinilmis kesisim araligi <= 1e-6 iken kompas tavana dayanir (cagri
+      basina ~15 s; sonuc cogunlukla dogru).
+    Maliyet tohumla (8 R)^d buyur: yogun 3B R=2/3/4'te 0.13 / 0.34 / 1.06 s.
+    SURE (kesirli kurucu Python dongusunu kaldirdigi icin) eskinin
+    0.94x'i (puruzlu 1B) ile 176x'i (puruzlu 3B) arasinda; 3B kumede 72x.
+
+    IZGARA KENARI OKUMAZ: tohum yalniz BASLANGIC secer; ucu surekli arama
+    bulur (modul dokstring'indeki parite tuzagi).
     """
     if not (0 <= band_index < model.n_orbital):
         raise InvalidInputError(
             f"bant indisi aralik disi: {band_index}, bant sayisi "
             f"{model.n_orbital}"
         )
-    b = reciprocal_vectors(model.lattice)
     d = model.lattice.dimension
+    kur = _kesirli_hamiltonyen(model)
 
     def enerji(kesirli: np.ndarray, isaret: float) -> float:
-        k = sum(kesirli[eksen] * b[eksen] for eksen in range(d))
-        return isaret * float(
-            np.linalg.eigvalsh(bloch_hamiltonian(model, k))[band_index]
-        )
+        return isaret * float(np.linalg.eigvalsh(kur(kesirli))[band_index])
 
+    # Tohum yogunlugu eksen basina hoplama MENZILIYLE olceklenir: tek
+    # orbitalde E(f) = sum t cos(2 pi f . c) ve eksen a'daki en yuksek
+    # frekans R_a = max |c_a|; sabit 8 nokta R >= 3'te havza basina 3'ten az
+    # nokta dusuruyor ve dogru havzayi eliyordu (olculdu, asagida).
+    # Menzil 0 (o eksende k'ya bagimlilik yok) -> tek nokta yeter.
+    boyutlar = [
+        max(1, _TOHUM_YOGUNLUGU * max(
+            (abs(h.cell[eksen]) for h in model.hoppings if h.t != 0.0), default=0
+        ))
+        for eksen in range(d)
+    ]
+    izgara = np.array(
+        list(product(*[np.arange(n) / n for n in boyutlar]))
+    )
+    degerler = np.array([enerji(f, 1.0) for f in izgara])
+    yonler = np.array([v for v in product((-1, 0, 1), repeat=d) if any(v)], dtype=float)
+
+    gurultu = np.finfo(float).eps * hamiltonian_rounding_scale(model)
     uc_degerler: list[float] = []
     for isaret in (+1.0, -1.0):
-        en_iyi: float | None = None
-        for baslangic in product(np.linspace(0.0, 1.0, 9)[:-1], repeat=d):
-            taban = np.array(baslangic, dtype=float)
-            for eksen in range(d):
-
-                def tek_eksen(x: float, taban=taban, eksen=eksen) -> float:
-                    aday = taban.copy()
-                    aday[eksen] = x
-                    return enerji(aday, isaret)
-
-                sonuc = minimize_scalar(
-                    tek_eksen,
-                    bounds=(0.0, 1.0),
-                    method="bounded",
-                    options={"xatol": 1e-12},
-                )
-                taban[eksen] = float(sonuc.x)
-            deger = enerji(taban, isaret)
-            en_iyi = deger if en_iyi is None else min(en_iyi, deger)
-        uc_degerler.append(isaret * float(en_iyi))
+        isaretli = isaret * degerler
+        kup = isaretli.reshape(boyutlar)
+        yerel = np.ones_like(kup, dtype=bool)
+        for eksen in range(d):
+            for kayma in (1, -1):
+                yerel &= kup <= np.roll(kup, kayma, axis=eksen)
+        adaylar = np.nonzero(yerel.ravel())[0]
+        adaylar = adaylar[np.argsort(isaretli[adaylar])][:_ADAY_SAYISI]
+        en_iyi = float(isaretli.min())
+        for aday in adaylar:
+            sonuc = minimize(
+                lambda f, isaret=isaret: enerji(np.mod(f, 1.0), isaret),
+                izgara[aday].astype(float),
+                method="L-BFGS-B",
+                options={"gtol": 1e-12, "ftol": 1e-15, "maxiter": 500},
+            )
+            nokta = np.mod(sonuc.x, 1.0)
+            deger = enerji(nokta, isaret)
+            adim, sayac = 1e-3, 0
+            while adim > 1e-16 and sayac < _KOMPAS_TAVANI:
+                sayac += 1
+                komsular = [enerji(np.mod(nokta + v * adim, 1.0), isaret) for v in yonler]
+                j = int(np.argmin(komsular))
+                if komsular[j] < deger - _KOMPAS_GURULTU_KATSAYISI * gurultu:
+                    deger, nokta = komsular[j], np.mod(nokta + yonler[j] * adim, 1.0)
+                else:
+                    adim /= 2.0
+            en_iyi = min(en_iyi, deger)
+        uc_degerler.append(isaret * en_iyi)
     return (uc_degerler[0], uc_degerler[1])

@@ -24,9 +24,10 @@ from qlab.engine.tb.bands import (
     k_path,
     uniform_k_grid,
 )
-from qlab.engine.tb.hamiltonian import Hopping, TBModel
+from qlab.engine.tb.hamiltonian import Hopping, TBModel, bloch_hamiltonian
 from qlab.engine.tb.lattice import Lattice, reciprocal_vectors
 from qlab.errors import InvalidInputError
+from qlab.units import HARTREE_TO_EV
 
 A = 2.5
 T = -0.0625
@@ -209,9 +210,12 @@ def test_band_structure_SIRALAMA_BANT_KIMLIGI_DEGIL():
     """DURUST OLUMSUZ, testle kilitleniyor.
 
     OLCULDU: `eigh` ozdegerleri her k'da kucukten buyuge dizer, ama gercek
-    bantlar KESISIR. Sirali "bant 0"in etkin kutlesi -6.42e-05 cikarken
-    gercek bandinki -8.000e-01 -- 12457 KAT hata. Yani `band_structure`in
-    ciktisi CIZIM icin dogrudur, BANT KIMLIGI icin degildir.
+    bantlar KESISIR. Kesisimin 0.05 bohr^-1 saginda sirali "bant 0"in etkin
+    kutlesi +1.6735 (OBUR zincirin), gercek zincir 0'inki -0.6276 -- isaret
+    ters ve sonlu fark adimindan bagimsiz. Yani `band_structure`in ciktisi
+    CIZIM icin dogrudur, BANT KIMLIGI icin degildir. (Eski "12457 kat"
+    yeniden uretilemedi: kesisimin tam uzerinde oran 1/h ile olceklenir,
+    ve eski "-0.800" bu modelin kesisimdeki -0.859'uyla tutmuyor.)
 
     Iki BAGIMSIZ zincir (biri genis, biri dar ve ters isaretli) kesisen
     bantlar uretir; sirali dizi kesisme noktasinda KOSE yapar.
@@ -235,6 +239,27 @@ def test_band_structure_SIRALAMA_BANT_KIMLIGI_DEGIL():
     assert ikinci_fark.max() > 20.0 * np.median(ikinci_fark), (
         "siralamanin kose yaptigi gorulemedi -- kesisme kurulamamis"
     )
+    # Adimdan BAGIMSIZ kimlik hatasi: kesisimin saginda sirali bant 0 obur
+    # zincirin egriligini tasir.
+    # Zincirler AYRIK: H(k)'nin kosegeni zincirlerin kendi bantlaridir --
+    # gercek kimlik ve kesisim MODELDEN olculur (dogrulama turu: sabit
+    # formul model degisse de geciyordu).
+    from scipy.optimize import brentq
+
+    def zincir(i, q):
+        return float(bloch_hamiltonian(model, np.array([q, 0.0, 0.0]))[i, i].real)
+
+    k_kesisim = brentq(lambda q: zincir(0, q) - zincir(1, q), 1e-6, np.pi / 4.0)
+    assert k_kesisim * 4.0 == pytest.approx(2.0427, abs=1e-4)
+    k = k_kesisim + 0.05
+    assert zincir(0, k) > zincir(1, k)  # kesisimin saginda sirali bant 0 = zincir 1
+    for h in (1e-3, 1e-4, 1e-5):
+        noktalar = np.array([[k - h, 0, 0], [k, 0, 0], [k + h, 0, 0]])
+        E = band_structure(model, noktalar)[:, 0]
+        sirali = h * h / (E[0] - 2 * E[1] + E[2])
+        gercek = h * h / (zincir(0, k - h) - 2 * zincir(0, k) + zincir(0, k + h))
+        assert sirali == pytest.approx(1.6735, abs=1e-3)
+        assert gercek == pytest.approx(-0.6276, abs=1e-3)
 
 
 def test_gecersiz_girdiler_reddediliyor():
@@ -247,58 +272,293 @@ def test_gecersiz_girdiler_reddediliyor():
         k_path((np.zeros(3),), n_per_segment=5)
 
 
-def test_IKI_BOYUTTA_coklu_baslangic_GEREKLI():
-    """`band_edges`in cok-baslangicli taramasi 1B'de OLU KOD, 2B'de SART.
+def _tek_orbital_uclar(model: TBModel, n: int = 401, aday: int = 10) -> tuple[float, float]:
+    """BAGIMSIZ referans (eigvalsh'siz): tek orbitalde E(f) = eps + sum t
+    cos(2 pi f . c). n^d yogun izgara + en iyi `aday` yerel uctan kompas
+    daraltmasi (adim 1/n -> 1e-16), vektorel."""
+    from itertools import product
 
-    OLCULDU: `minimize_scalar(method="bounded")` baslangic noktasini
-    KULLANMAZ, yalniz `bounds` kullanir. 1B'de tek eksen oldugu icin her
-    baslangic AYNI sonucu verir -- yani coklu baslangic dongusunu silen
-    mutant bu dosyanin 1B testlerinin HEPSINDEN geciyordu.
+    d = model.lattice.dimension
+    C = np.array([h.cell[:d] for h in model.hoppings], dtype=float)
+    t = np.array([h.t for h in model.hoppings])
 
-    2B'de eksen-eksen inis baslangica BAGLI. 25 rastgele 2B model x 2 uc
-    deger = 50 aramada olculdu: TEK baslangic 31/50 basarisiz (en kotu
-    bagil sapma 5.149e-01, yani bant genisliginin yarisi); 5x5 baslangicla
-    8/50. Asagidaki somut modelde tek baslangic bant genisliginin
-    %30.08'i kadar sapiyor.
+    def E(F):
+        return model.onsite[0] + np.cos(2 * np.pi * F @ C.T) @ t
 
-    DURUST OLUMSUZ: coklu baslangic da GARANTI DEGIL, yalniz daha iyi bir
-    SINIR -- 5x5 ile bile 8/50 basarisiz. Cok boyutta `band_edges` bir
-    ust/alt SINIR dondurur, kanitlanmis kuresel uc deger degil.
+    g = np.arange(n) / n
+    F = np.array(np.meshgrid(*([g] * d), indexing="ij")).reshape(d, -1).T
+    deger = E(F)
+    yonler = np.array([v for v in product((-1, 0, 1), repeat=d) if any(v)], dtype=float)
+    uclar = []
+    for isaret in (1.0, -1.0):
+        s = isaret * deger
+        kup = s.reshape([n] * d)
+        yerel = np.ones_like(kup, dtype=bool)
+        for kay in product((-1, 0, 1), repeat=d):
+            if any(kay):
+                yerel &= kup <= np.roll(kup, kay, axis=tuple(range(d)))
+        idx = np.nonzero(yerel.ravel())[0]
+        en_iyi = float(s.min())
+        for i in idx[np.argsort(s[idx])][:aday]:
+            f, e, h = F[i].copy(), float(s[i]), 1.0 / n
+            while h > 1e-16:
+                ey = isaret * E(np.mod(f + yonler * h, 1.0))
+                j = int(np.argmin(ey))
+                if ey[j] < e:
+                    e, f = float(ey[j]), np.mod(f + yonler[j] * h, 1.0)
+                else:
+                    h /= 2.0
+            en_iyi = min(en_iyi, e)
+        uclar.append(isaret * en_iyi)
+    return uclar[0], uclar[1]
 
-    Yan olcum: `band_edges` (0.23 s) 201x201 izgaradan (1.79 s) DAHA
-    DOGRU sonuc veriyor -- izgara -0.323881336'da kalirken surekli arama
-    -0.323908000 buluyor.
+
+def _uzun_menzil_2B(indis: int) -> TBModel:
+    """Egik 2B, |cell| <= 4 butun hucreler, t ~ N(0, 0.05/|c|); default_rng(31)
+    akisinin `indis`. modeli (on olcum E2 suphecisinin kumesi)."""
+    from itertools import product
+
+    rng = np.random.default_rng(31)
+    orgu = Lattice(vectors=np.array([[2.5, 0.0, 0.0], [0.3, 2.4, 0.0]]), basis=np.zeros((1, 3)))
+    hucreler = [c for c in product(range(-4, 5), repeat=2) if c > (0, 0)]
+    for _ in range(indis + 1):
+        ciftler = [(c, rng.normal(0.0, 0.05 / np.hypot(*c))) for c in hucreler]
+    hop = []
+    for (a, b), t in ciftler:
+        hop += [Hopping(0, 0, (a, b, 0), t), Hopping(0, 0, (-a, -b, 0), t)]
+    return TBModel(lattice=orgu, onsite=np.array([0.0]), hoppings=tuple(hop))
+
+
+def _goreli_hatalar(model: TBModel, bulunan: tuple[float, float]) -> tuple[float, float]:
+    alt_ref, ust_ref = _tek_orbital_uclar(model)
+    W = ust_ref - alt_ref
+    return (bulunan[0] - alt_ref) / W, (ust_ref - bulunan[1]) / W
+
+
+def test_band_edges_2B_TRIM_minimumu_ANALITIK():
+    """E2 (04.10.2026): eski eksen-eksen inisin tek baslangicla dustugu
+    tuzak (bant genisliginin %30'u) bu modelde. Minimum TRIM noktasi
+    (0, 1/2)'de ve ANALITIK: 2tx - 2ty - 4td + 2t2x + 2t2y = -0.323908
+    (yuvarlanmis parametrelerde tam). Eski docstring'in "band_edges 201x201
+    izgaradan daha dogru" yan olcumu parite tuzaginin yan urunuydu: (0, 1/2)
+    her CIFT izgarada vardir, 201 tektir. Gamma merkezli tohum (0, 1/2)'yi
+    ICERIR: minimum dogrudan tohumda bulunur (bu test kompasi sinamaz).
     """
-    orgu = Lattice(
-        vectors=np.array([[2.5, 0.0, 0.0], [0.0, 2.5, 0.0]]),
-        basis=np.zeros((1, 3)),
-    )
     tx, ty, td, t2x, t2y = (-0.040377, -0.001626, 0.044219, -0.029180, -0.005585)
+    orgu = Lattice(vectors=np.array([[2.5, 0.0, 0.0], [0.0, 2.5, 0.0]]), basis=np.zeros((1, 3)))
     model = TBModel(
         lattice=orgu,
         onsite=np.array([0.0]),
         hoppings=tuple(
             Hopping(i=0, j=0, cell=c, t=t)
             for c, t in (
-                ((1, 0, 0), tx), ((-1, 0, 0), tx),
-                ((0, 1, 0), ty), ((0, -1, 0), ty),
-                ((1, 1, 0), td), ((-1, -1, 0), td),
-                ((1, -1, 0), td), ((-1, 1, 0), td),
-                ((2, 0, 0), t2x), ((-2, 0, 0), t2x),
-                ((0, 2, 0), t2y), ((0, -2, 0), t2y),
+                ((1, 0, 0), tx), ((-1, 0, 0), tx), ((0, 1, 0), ty), ((0, -1, 0), ty),
+                ((1, 1, 0), td), ((-1, -1, 0), td), ((1, -1, 0), td), ((-1, 1, 0), td),
+                ((2, 0, 0), t2x), ((-2, 0, 0), t2x), ((0, 2, 0), t2y), ((0, -2, 0), t2y),
             )
         ),
     )
     alt, ust = band_edges(model, band_index=0)
-    izgara = band_structure(model, uniform_k_grid(orgu, 61))[:, 0]
+    analitik = 2 * tx - 2 * ty - 4 * td + 2 * t2x + 2 * t2y
+    assert analitik == pytest.approx(-0.323908, abs=1e-15)
+    assert abs(alt - analitik) < 1e-15
+    assert _goreli_hatalar(model, (alt, ust))[1] < 1e-12
 
-    # Surekli arama izgaradan DAHA IYI (ya da esit) olmali -- ayni
-    # fonksiyonun surekli uc degeri, ayrik ornekleminkinden asagida olur.
-    assert alt <= float(izgara.min()) + 1e-9
-    assert ust >= float(izgara.max()) - 1e-9
 
-    # ...ve tek baslangicin dustugu yerel tuzaga DUSMEMELI (o ~%30 yukarida)
-    assert abs(alt - (-0.323908)) < 1e-5
+def test_band_edges_GRAFEN_ANALITIK_UCLAR_kompas_gerekli():
+    """Modul dokstring'inin kendi gerekce ornegi. Onsite 0'da bant 0 =
+    [-3|t|, 0], bant 1 = [0, 3|t|] -- iki ic uc Dirac konisinin TEPESINDE
+    (kink). Eski surum bant 0 max'ini %1.85 kaciriyordu (sahte 0.6 eV
+    aralik); kompassiz L-BFGS-B koni tepesinde 1.6e-9 bagil durur. Kompasli
+    arama yuvarlama duzeyinde (5.8e-17) bulur.
+    """
+    t = -2.7 / HARTREE_TO_EV
+    orgu = Lattice(
+        vectors=np.array([[4.65, 0.0, 0.0], [2.325, 4.027018, 0.0]]),
+        basis=np.array([[0.0, 0.0, 0.0], [2.325, 1.342339, 0.0]]),
+    )
+    hop = (
+        Hopping(0, 1, (0, 0, 0), t), Hopping(0, 1, (-1, 0, 0), t), Hopping(0, 1, (0, -1, 0), t),
+        Hopping(1, 0, (0, 0, 0), t), Hopping(1, 0, (1, 0, 0), t), Hopping(1, 0, (0, 1, 0), t),
+    )
+    grafen = TBModel(lattice=orgu, onsite=np.zeros(2), hoppings=hop)
+    W = 6 * abs(t)
+    alt0, ust0 = band_edges(grafen, 0)
+    alt1, ust1 = band_edges(grafen, 1)
+    for bulunan, gercek in ((alt0, 3 * t), (ust0, 0.0), (alt1, 0.0), (ust1, -3 * t)):
+        assert abs(bulunan - gercek) <= 1e-12 * W, (bulunan, gercek)
+    # Aralik HER ZAMAN icerde: bant 0 max <= 0 <= bant 1 min (yuvarlama payiyla)
+    assert ust0 <= 1e-15 and alt1 >= -1e-15
+
+
+def test_band_edges_UZUN_MENZIL_egik_2B():
+    """Egik 2B, |cell| <= 4, t ~ 1/|c|. Eski surum bu kumede 39/40 arama
+    basarisizdi (en kotu %47); on olcumdeki sabit 8 noktali, esiksiz
+    kompasli Gamma tohumu bu iki modelde %3.06 ve %1.74 kaciriyordu.
+    Model 19'u TEK adayli arama %0.26 kaciriyor (3 aday sart: tek adayla
+    bu kumede 2/40, PT kumesinde 2/40 -- %5). Menzille olceklenen tohum +
+    esikli kompas + 3 aday: yuvarlama duzeyi. Referans
+    eigvalsh'SIZ ve bagimsiz (`_tek_orbital_uclar`).
+    """
+    for indis in (3, 6, 19):
+        model = _uzun_menzil_2B(indis)
+        hatalar = _goreli_hatalar(model, band_edges(model, 0))
+        assert max(hatalar) < 1e-12, (indis, hatalar)
+        assert min(hatalar) > -1e-12, (indis, hatalar)  # aralik icerde
+
+
+def test_band_edges_KOMPAS_GURULTU_ESIGI_tavana_dayanmaz(monkeypatch):
+    """Gerilimli + aralikli grafen (t, 1.05 t, 0.97 t; Delta = 1e-3 |t|), bant
+    1 -- on olcumun "aralik0.001" vakasi. Esiksiz kompas dar ve duzgun
+    vadide yuvarlama gurultusunu iyilesme sayip zikzak ciziyor ve 10 000
+    adimlik tavana dayaniyordu: 81 666 eigvalsh cagrisi (aileye toplam 39 s).
+    "Iyilesme 16 eps * H olcegini asmali" kurali ile 1 882 cagri -- sonuc
+    ayni. Cagri sayisi deterministiktir; sinir genis tutuldu. Bant 1'in
+    minimumu ANALITIK: Delta / 2 (uc t'den biri otekilerin toplamini asmaz).
+    """
+    import qlab.engine.tb.bands as bands_modulu
+
+    t = -2.7 / HARTREE_TO_EV
+    delta = 1e-3 * abs(t)
+    a = 2.68 * np.sqrt(3.0)
+    v = np.array([[a, 0.0, 0.0], [0.5 * a, 0.5 * np.sqrt(3.0) * a, 0.0]])
+    orgu = Lattice(vectors=v, basis=np.array([[0.0, 0.0, 0.0], (v[0] + v[1]) / 3.0]))
+    hop = []
+    for c, tt in (((0, 0, 0), t), ((-1, 0, 0), 1.05 * t), ((0, -1, 0), 0.97 * t)):
+        hop += [Hopping(0, 1, c, tt), Hopping(1, 0, tuple(-x for x in c), tt)]
+    model = TBModel(lattice=orgu, onsite=np.array([delta / 2, -delta / 2]), hoppings=tuple(hop))
+    asil = np.linalg.eigvalsh
+    sayac = [0]
+
+    def sayan(H):
+        sayac[0] += 1
+        return asil(H)
+
+    monkeypatch.setattr(bands_modulu.np.linalg, "eigvalsh", sayan)
+    alt, _ = band_edges(model, 1)
+    assert sayac[0] < 10_000, sayac[0]
+    # Esik bedeli: hassasiyet 1e-16 yerine ~1e-14 bagil (bant genisligi ~0.3).
+    assert alt == pytest.approx(delta / 2, abs=1e-13)
+
+
+def _puruzlu_1B(indis: int) -> TBModel:
+    """ESIT genlikli uzun menzil: |cell| <= 6, her hucre %60 olasilikla
+    t ~ N(0, 0.05); default_rng(4410) akisinin `indis`. modeli (E2 son
+    olcumunun puruzlu 1B kumesi). Gercekci TB'de hoplama mesafeyle soner;
+    bu kume bilerek ZOR kurulmustur."""
+    rng = np.random.default_rng(4410)
+    for _ in range(indis + 1):
+        hop = []
+        for c in range(1, 7):
+            t = rng.normal(0.0, 0.05) * (rng.random() < 0.6)
+            hop += [Hopping(0, 0, (c, 0, 0), t), Hopping(0, 0, (-c, 0, 0), t)]
+    orgu = Lattice(vectors=np.array([[2.5, 0.0, 0.0]]), basis=np.zeros((1, 3)))
+    return TBModel(lattice=orgu, onsite=np.zeros(1), hoppings=tuple(hop))
+
+
+def test_band_edges_PURUZLU_bantta_tohum_MENZILLE_olceklenir():
+    """Gamma merkezli SABIT 8 noktali tohum bu modelde bant genisliginin
+    %39.5'ini kaciriyor: R = 6'da havza basina 3'ten az nokta. Tohum eksen
+    basina 8 R_a'ya olceklenince yuvarlama duzeyi. Olculdu (puruzlu 1B, 149
+    duz olmayan model): sabit 8 ile 22 model basarisiz, 8 R ile 0.
+    """
+    model = _puruzlu_1B(94)
+    hatalar = _goreli_hatalar(model, band_edges(model, 0))
+    assert max(hatalar) < 1e-12 and min(hatalar) > -1e-12, hatalar
+
+
+def test_band_edges_DAR_TEPE_gamma_tohumu_KAYDIRMASIZ():
+    """Puruzlu kumenin bu modelinde (yalniz 4. ve 5. hucre) dar bir tepe
+    var. On olcumdeki 0.381966 adim KAYDIRILMIS tohum onu iki tohum
+    noktasinin arasinda birakip maksimumu bant genisliginin %1.18'i kadar
+    kaciriyordu (30 adayla bile); Gamma merkezli tohum bulur. Kaydirma
+    yeniden eklenirse bu test kirilir. Yine de `band_edges` kuresel ucu
+    KANITLAMAZ -- kesin olan yalniz yondur (aralik icerde).
+    """
+    model = _puruzlu_1B(87)
+    hatalar = _goreli_hatalar(model, band_edges(model, 0))
+    assert max(hatalar) < 1e-12 and min(hatalar) > -1e-12, hatalar
+
+
+def test_band_edges_KOTU_KOSULLU_TABANDA_aralik_ICERDE():
+    """E2 dogrulama turu: indirgenmemis taban a2 = (N a, a) (ayni kare orgu,
+    17 derece dondurulmus). k . R ile kurulan H'de faz buyuk terimlerin
+    birbirini goturmesiyle hesaplaniyordu; N = 1000'de (kosul 1e6) donen
+    minimum gercek minimumun 5.8e-11 W ALTINA iniyordu -- "aralik icerde"
+    garantisi bozuluyordu. H artik kesirli koordinatta kurulur (faz 2 pi f.c):
+    garanti kosuldan bagimsiz. Referans (`_tek_orbital_uclar`) kesirli
+    koordinatta ve orguden bagimsizdir.
+    """
+    aci = np.deg2rad(17.0)
+    donme = np.array([[np.cos(aci), -np.sin(aci), 0], [np.sin(aci), np.cos(aci), 0], [0, 0, 1]])
+    liste = [((1, 0), -0.05), ((0, 1), -0.03), ((1, 1), 0.02), ((2, -1), 0.011), ((1, -2), -0.007)]
+    hop = []
+    for (a, b), t in liste:
+        hop += [Hopping(0, 0, (a, b, 0), t), Hopping(0, 0, (-a, -b, 0), t)]
+    for N in (0, 1000, 30000):
+        vektorler = np.array([[2.5, 0.0, 0.0], [2.5 * N, 2.5, 0.0]]) @ donme.T
+        model = TBModel(
+            lattice=Lattice(vectors=vektorler, basis=np.zeros((1, 3))),
+            onsite=np.array([0.0]),
+            hoppings=tuple(hop),
+        )
+        hatalar = _goreli_hatalar(model, band_edges(model, 0))
+        assert min(hatalar) > -1e-14 and max(hatalar) < 1e-12, (N, hatalar)
+
+
+def _kesisim_2B(indis: int):
+    """Iki ESLESMESIZ orbital, egik 2B: bant 0 = min(eA, eB). default_rng(11)
+    akisinin `indis`. modeli (E2 dogrulama turu, s2_kesisim_sirti.py)."""
+    orgu = Lattice(
+        vectors=np.array([[2.5, 0, 0], [0.4, 2.3, 0]]),
+        basis=np.array([[0.0, 0, 0], [1.2, 1.1, 0]]),
+    )
+    hucreler = [(1, 0), (0, 1), (1, 1), (1, -1)]
+    rng = np.random.default_rng(11)
+    for _ in range(indis + 1):
+        pa = rng.normal(0, 0.05, len(hucreler))
+        pb = rng.normal(0, 0.05, len(hucreler))
+        eb = rng.normal(0, 0.05)
+    hop = []
+    for c, ta, tb in zip(hucreler, pa, pb):
+        c3, m3 = (c[0], c[1], 0), (-c[0], -c[1], 0)
+        hop += [Hopping(0, 0, c3, ta), Hopping(0, 0, m3, ta), Hopping(1, 1, c3, tb), Hopping(1, 1, m3, tb)]
+    return TBModel(lattice=orgu, onsite=np.array([0.0, eb]), hoppings=tuple(hop))
+
+
+def test_band_edges_DURUST_OLUMSUZ_KESISIM_DIKISI_ic_kenar_kacar():
+    """DURUST OLUMSUZ, testle kilitli: 2B'de iki bandin kesistigi DIKIS
+    uzerindeki uc (bant 0 = min(eA, eB)'nin maksimumu) dar bir V tepesidir
+    ve tohum izgarasinda yerel uc olarak gorunmez; aday ya da kompas yonu
+    artirmak cozmuyor (olculdu). Bu modelde bant 0'in maksimumu 0.015
+    hartree KACIRILIYOR (tanik nokta f = (0.85, 0.71125)). Kesin olan tek
+    sey yon: donen max tanigin ALTINDA, yani aralik icerde. Bu sinif
+    duzeltilirse bu test kirilir -- o zaman dokstring ve README guncellenir.
+    """
+    import qlab.engine.tb.bands as bands_modulu
+
+    model = _kesisim_2B(15)
+    tanik = float(np.linalg.eigvalsh(bands_modulu._kesirli_hamiltonyen(model)(np.array([0.85, 0.71125])))[0])
+    _, ust = band_edges(model, 0)
+    assert tanik - ust > 0.01, (tanik, ust)
+
+@pytest.mark.slow
+def test_band_edges_ORIJINAL_KUME_50_ARAMA():
+    """README'nin "tek baslangic 31/50, 5x5 8/50" olcumunun kumesi:
+    default_rng(7).normal(0, 0.05, (25, 5)), 25 model x 2 uc. Eski (8x8
+    baslangicli) surum 1e-9 esiginde 14/50 basarisizdi (en kotu %39.16);
+    yeni surum 0/50, ve her aramada donen deger gercek bandin ICINDE.
+    """
+    orgu = Lattice(vectors=np.array([[2.5, 0.0, 0.0], [0.0, 2.5, 0.0]]), basis=np.zeros((1, 3)))
+    P = np.random.default_rng(7).normal(0.0, 0.05, (25, 5))
+    for i, (tx, ty, td, t2x, t2y) in enumerate(P):
+        hop = []
+        for c, t in (((1, 0, 0), tx), ((0, 1, 0), ty), ((1, 1, 0), td), ((1, -1, 0), td),
+                     ((2, 0, 0), t2x), ((0, 2, 0), t2y)):
+            hop += [Hopping(0, 0, c, t), Hopping(0, 0, tuple(-x for x in c), t)]
+        model = TBModel(lattice=orgu, onsite=np.array([0.0]), hoppings=tuple(hop))
+        hatalar = _goreli_hatalar(model, band_edges(model, 0))
+        assert -1e-12 < min(hatalar) and max(hatalar) < 1e-12, (i, hatalar)
 
 
 def _rastgele_2B(tohum: int) -> TBModel:
@@ -427,3 +687,57 @@ def test_B1_ALT_NORMAL_t_de_SIFIRA_DUSMEZ_ve_H_OLCEGI_formulu():
     )
     beklenen = abs(eps) + 2 * abs(t) * (1 + 2 * np.pi)
     assert hamiltonian_rounding_scale(zincir) == pytest.approx(beklenen, rel=1e-15)
+
+
+def test_band_structure_CAGIRANLARI_KILITLI():
+    """E3 (04.10.2026): `band_structure` sutunlari ve `build_band_payload`un
+    bant ekseni SIRALAMADIR. `src/` icinde bu iki ada yapilan her REFERANS
+    (cagri degil -- `import ... as` takma adi, modul duzeyi, lambda,
+    getattr("...") dizgesi, partial dahil) cevreleyen fonksiyonuyla bu
+    listede kilitlidir. Bugun ikisini de yalniz `run._run_tb` kullanir;
+    sutunlari yalniz `certified_conduction` ve `fermi_level`e (doluluk --
+    dogru tanim siralamadir) ve npz'ye (cizim) verir.
+
+    KAPSAM DURUSTCE: dogrudan `np.linalg.eigvalsh(bloch_hamiltonian(...))[b]`
+    yazan bir yol bu kilidin DISINDADIR (dogrulama turu bunu gosterdi);
+    kilit yalniz bu iki adi izler. Yeni bir referans testi kirar: once
+    sutunlarin bant kimligi tasimadigini dusun (kesisimde etkin kutle isaret
+    degistirir, bkz. `test_band_structure_SIRALAMA_BANT_KIMLIGI_DEGIL`),
+    sonra listeye gerekcesiyle ekle.
+    """
+    import ast
+    import pathlib
+
+    izlenen = {"band_structure", "build_band_payload"}
+    kok = pathlib.Path(__file__).resolve().parents[2] / "src"
+    bulunan = set()
+    for dosya in sorted(kok.rglob("*.py")):
+        agac = ast.parse(dosya.read_text(encoding="utf-8"))
+        tanim_yeri = dosya.relative_to(kok).as_posix()
+        ebeveyn = {}
+        for dugum in ast.walk(agac):
+            for cocuk in ast.iter_child_nodes(dugum):
+                ebeveyn[cocuk] = dugum
+
+        def kapsayan(dugum):
+            while dugum in ebeveyn:
+                dugum = ebeveyn[dugum]
+                if isinstance(dugum, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                    return getattr(dugum, "name", "<lambda>")
+            return "<modul>"
+
+        takma = set(izlenen)
+        for dugum in ast.walk(agac):
+            if isinstance(dugum, ast.ImportFrom):
+                for ad in dugum.names:
+                    if ad.name in izlenen:
+                        takma.add(ad.asname or ad.name)
+                        bulunan.add((tanim_yeri, kapsayan(dugum)))
+        for dugum in ast.walk(agac):
+            if isinstance(dugum, ast.Name) and dugum.id in takma:
+                bulunan.add((tanim_yeri, kapsayan(dugum)))
+            elif isinstance(dugum, ast.Attribute) and dugum.attr in izlenen:
+                bulunan.add((tanim_yeri, kapsayan(dugum)))
+            elif isinstance(dugum, ast.Constant) and dugum.value in izlenen:
+                bulunan.add((tanim_yeri, kapsayan(dugum)))
+    assert bulunan == {("qlab/run.py", "_run_tb")}, sorted(bulunan)

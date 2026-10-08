@@ -1516,9 +1516,12 @@ değil**:
 | 2001 | 1.936e-09 |
 | 20001 | **3.849e-09** (on kat sık ızgara iki kat kötü) |
 
-n=5, n=13'ten ~3000 kat iyi. Bu yüzden `band_edges` ızgarayı **hiç
-kullanmıyor**, sürekli minimizasyon yapıyor — ve ölçüldü, 201×201 ızgaradan
-(1.79 s) hem **daha doğru** hem 8× hızlı (0.23 s).
+n=5, n=13'ten ~3000 kat iyi. Bu yüzden `band_edges` uçları ızgaradan
+**okumuyor**: menzille ölçeklenen kaba tohum ızgarası yalnız başlangıç seçiyor,
+ucu sürekli arama (L-BFGS-B + kompas cilası) buluyor. (Eskiden burada
+"201×201 ızgaradan hem daha doğru hem 8× hızlı" yazıyordu; o tek modelin
+minimumu (0, 1/2) TRIM noktasındaydı ve her çift ızgarada vardı, 201 ise
+tek — yani karşılaştırma parite tuzağının yan ürünüydü.)
 
 Parite kodda **sihirli sayıyla** sabitlenmiyor: ön ölçümde iki ajan iki farklı
 ızgara konvansiyonunda iki farklı "doğru N" ölçtü (601 ve N%3==0), ikisi de
@@ -1527,16 +1530,66 @@ bulunması gerektiğini söylüyor, kod **denetliyor** (`must_include`).
 
 #### Dürüst olumsuzlar
 
-- **`band_structure` çıktısı sıralamadır, bant kimliği değildir.** Ölçüldü:
-  sıralı "bant 0"ın etkin kütlesi −6.42e-05, gerçek bandınki −8.000e-01 —
-  **12457 kat** hata. Çizim için doğru, bant-çözümlü nicelikler için değil.
+- **`band_structure` çıktısı sıralamadır, bant kimliği değildir.** Ölçüldü
+  (iki bağımsız zincir): kesişimin 0.05 bohr⁻¹ sağında sıralı "bant 0"ın
+  etkin kütlesi **+1.6735** (öbür zincirinki), gerçek zincir 0'ınki
+  **−0.6276**. İşaret bile ters ve sonlu fark adımından (1e-3…1e-5)
+  bağımsız. Eski "12457 kat" sayısı **yeniden üretilemedi**: kesişimin tam
+  üzerinde sıralı kütle adım h ile ölçeklenir (oran 1/h), yani sayı büyük
+  olasılıkla orada alınmıştı; ama eski "−0.800" bu modelin kesişimdeki
+  −0.859'uyla tutmuyor (04.10.2026, E3). Çizim için doğru, bant-çözümlü
+  nicelikler için değil. Depo bant
+  çözümlü nicelik (etkin kütle vb.) **üretmez**. Bant takibi bilerek
+  eklenmedi: ön ölçümde kaçınılmaz kesişimde bulunan "kimlik" adım
+  yoğunluğuna bağlıydı.
 - **Dejenere alt uzayda bant başına orbital ağırlığı tanımlı değildir.**
   Doğrudan sergilendi: 2B'de iki bant tam dejenere (E farkı 0.0); numpy
   `[1,0]/[0,1]` döndürüyor ama 45° döndürülmüş çift de aynı ölçüde geçerli ve
-  ağırlıkları `[0.5,0.5]`. Alt uzay toplamı iki tabanda da aynı.
-- **`band_edges` çok boyutta bir SINIRDIR, kanıtlanmış küresel uç değer
-  değil.** Ölçüldü: 50 aramada tek başlangıç 31/50 başarısız (en kötüsü bant
-  genişliğinin **%51.5**'i), 5×5 çoklu başlangıç 8/50.
+  ağırlıkları `[0.5,0.5]`. Alt uzay toplamı iki tabanda da aynı. **E3a,
+  04.10.2026:** bant yükü (ve npz) dejenere kümede artık **alt uzay
+  ortalamasını** yazar ve `degenerate` bayrağıyla işaretler. "Dejenere"
+  ardışık özdeğerlerin 1e3·eps·(|E|max + H ölçeği) içinde kalması demektir;
+  kümeleme geçişlidir. Süreksizlik yok olmaz, ölçeği küçülür: eşiğin hemen
+  altı ve üstü yine farklı ağırlık verir. Sabit 1e-8 Ha eşiği (ön ölçüm)
+  bu süreksizliği fiziksel olarak çözülebilen ayrışmalara taşıyordu.
+  Eşiğin içinde `eigh`in ağırlığı ~1e-3 doğrulukla belirli olabilir; yine
+  de bilerek ortalanır (muhafazakâr seçim). Bağımsız doğrulamada eigh'in
+  gerçek ayrışma kırıntısı en çok 8e-3·eşik çıktı (240 orbital, |E| 300 Ha).
+- **`band_edges` bulunan en iyi uç değerdir, kanıtlanmış küresel uç değer
+  değil; ama dönen aralık HER ZAMAN gerçek bandın İÇİNDEDİR** (her değer
+  gerçek bir k'daki gerçek özdeğer: min üst sınır, max alt sınır). Eski
+  sürüm (8×8 başlangıç, eksen-eksen iniş) ölçüldü: 1e-9 eşiğinde orijinal
+  2B kümede 14/50, 3B'de 8/30, grafende 24/48, uzun menzilli eğik 2B'de
+  39/40 arama başarısız, en kötüsü bant genişliğinin **%47**'si; grafende
+  0.24–0.60 eV sahte aralık. Başlangıçların 7/8'i ölü koddu (bounded Brent
+  ilk ekseni okumuyor). **E2, 04.10.2026:** eksen başına 8·R_a
+  noktalı (R_a: o eksendeki sıfır olmayan hoplama menzili) Γ-merkezli
+  tohum ızgarası, en iyi 3 yerel uçtan sarılı L-BFGS-B ve gürültü eşikli
+  kompas cilası; H(f) kesirli koordinatta kuruluyor. Eski (1e-9) / yeni
+  (1e-12): orijinal 2B 14/50 / 0/50, 3B 8/30 / 0/30, grafen 24/48 / 0/48,
+  PT simetrik iki orbitalli 20/40 / 0/40, uzun menzilli 2B 39/40 / 0/40,
+  eşit genlikli "pürüzlü" 1B (menzil 6) 133/298 / 0/298, pürüzlü 2B
+  153/160 / 0/160, pürüzlü 3B 19/20 / 0/20; eskinin 0.94× ile 176× arası
+  hızında (3B kümede 72×). Kesin olan yön, yuvarlama payı içinde: dönen
+  aralık gerçek bandın içindedir, örgü tabanının koşulundan bağımsız.
+  Bağımsız doğrulama, eski k·R kurulumunun indirgenmemiş tabanda gerçek
+  minimumun 1.9e-8 W altına indiğini gösterdi; bu yüzden kesirli kurucu
+  eklendi. **Küresel uç kanıtlanmaz** ve bilinen başarısızlık sınıfları
+  var:
+  - 2B/3B'de kesişim dikişi olan bantların iç kenarları %6–10
+    kaçabiliyor. Uç tohumda yerel uç olarak görünmüyor. Bu durum testle
+    kilitli bir dürüst olumsuzdur.
+  - Zayıf eşleşmeli kaçınılmış kesişimin dar havzası %7.5'e kadar
+    kaçabiliyor.
+  Kanıtlı bilgi gerekiyorsa B1 / `certified_conduction` kullanılmalı.
+  Ölçümle seçilen ya da atılan parçalar:
+  - Kompassız grafen 20/48 başarısızdı.
+  - Γ-merkezli sabit 8 tohum pürüzlü 1B'de 22/149 modeli bozuyordu.
+  - Tek aday PT'de %5 kaçırıyordu.
+  - Ön ölçümün 0.381966 kaydırması dar bir tepeyi kaçırdığı için
+    kaldırıldı.
+  Hepsi testle kilitli. (İlk ölçümdeki "tek başlangıç 31/50, 5×5 8/50"
+  sayıları kaynak kümesiyle birebir yeniden üretildi.)
 - **`converged` eskiden kandırılıyordu; 04.10.2026'dan beri KANITLI (E1).**
   n vs 2n karşılaştırması n'nin **hatasını** değil n ile 2n arasındaki
   **iyileşmeyi** ölçüyordu. İki ızgara gerçek uca en yakın aynı noktayı

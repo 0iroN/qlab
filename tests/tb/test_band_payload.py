@@ -93,7 +93,8 @@ def test_AGIRLIKLAR_gauge_BAGIMSIZ_ozvektorler_DEGIL():
 
 
 def test_yuk_bayt_ayak_izi_SINIRLI():
-    """OLCULDU (41 k, 2 bant, 2 orbital): toplam 2.312 bayt.
+    """OLCULDU (41 k, 2 bant, 2 orbital): toplam 2.394 bayt -- 2.312'ye E3a'nin
+    `degenerate` bayragi (41 x 2 bool = 82 bayt) eklendi.
 
     Ozvektor saklansaydi agirlik terimi 1.312 -> 2.624 bayta cikardi
     (complex128, tam 2 kat). Kazanc n_orb'dan bagimsiz olarak 2x'tir;
@@ -103,7 +104,8 @@ def test_yuk_bayt_ayak_izi_SINIRLI():
     toplam = sum(
         d.nbytes for d in vars(yuk).values() if isinstance(d, np.ndarray)
     )
-    assert toplam == 2312
+    assert toplam == 2312 + 41 * 2
+    assert yuk.degenerate.dtype == bool and yuk.degenerate.nbytes == 41 * 2
     assert yuk.orbital_weights.nbytes == 41 * 2 * 2 * 8
 
 
@@ -242,3 +244,105 @@ def test_AGIRLIK_EKSENLERI_bant_sonra_orbital():
     # ...ve matris GERCEKTEN asimetrik, yani test bosuna gecmiyor
     w = yuk.orbital_weights[0]
     assert np.abs(w - w.T).max() == pytest.approx(0.017463, abs=1e-6)
+
+
+def _kare_xy(onsite_farki: float = 0.0) -> TBModel:
+    """x-yonlu ve y-yonlu iki orbital: kosegen k'da iki bant TAM dejenere."""
+    orgu = Lattice(
+        vectors=np.array([[2.5, 0.0, 0.0], [0.0, 2.5, 0.0]]),
+        basis=np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]]),
+    )
+    return TBModel(
+        lattice=orgu,
+        onsite=np.array([-0.1, -0.1 + onsite_farki]),
+        hoppings=(
+            Hopping(i=0, j=0, cell=(1, 0, 0), t=-0.05),
+            Hopping(i=0, j=0, cell=(-1, 0, 0), t=-0.05),
+            Hopping(i=1, j=1, cell=(0, 1, 0), t=-0.05),
+            Hopping(i=1, j=1, cell=(0, -1, 0), t=-0.05),
+        ),
+    )
+
+
+def _yuk_yol(model: TBModel, uc: np.ndarray, n: int = 21) -> BandPayload:
+    yol = k_path((np.zeros(3), uc), n_per_segment=n)
+    return build_band_payload(model, yol, tick_labels=("G", "U"), fermi_hartree=-0.1)
+
+
+def test_E3a_DEJENERE_kumede_ALT_UZAY_ORTALAMASI_ve_BAYRAK():
+    """E3a (04.10.2026): dejenere kumede bant basina agirlik keyfi oldugu
+    icin yuk ALT UZAY ORTALAMASINI yazar ve `degenerate` ile isaretler.
+
+    Kare xy modelinde Gamma -> M kosegeni BASTAN SONA dejenere: numpy
+    [1,0]/[0,1] dondurur, yuk [0.5,0.5]/[0.5,0.5] yazar. Gamma -> X'te
+    yalniz Gamma dejeneredir; oteki noktalar HAM agirligi korur.
+    """
+    model = _kare_xy()
+    b = reciprocal_vectors(model.lattice)
+    kosegen = _yuk_yol(model, 0.5 * b[0] + 0.5 * b[1])
+    assert kosegen.degenerate.shape == kosegen.energies_ev.shape
+    assert kosegen.degenerate.all()
+    assert np.allclose(kosegen.orbital_weights, 0.5, atol=1e-15)
+
+    eksen = _yuk_yol(model, 0.5 * b[0])
+    assert eksen.degenerate[0].all() and not eksen.degenerate[1:].any()
+    assert np.allclose(eksen.orbital_weights[0], 0.5, atol=1e-15)
+    assert np.allclose(np.sort(eksen.orbital_weights[1:], axis=2)[..., 1], 1.0, atol=1e-15)
+
+
+def test_E3a_YUVARLAMA_duzeyi_ayrisma_AGIRLIGI_DEGISTIRMEZ_cozulebilen_DEGISTIRIR():
+    """Esik makine hassasiyetinin ~1e3 katidir (1e3 * eps * (|E|max + H
+    olcegi) ~ 2e-13 hartree burada). Onsite farki 1e-15 hartree: esigin
+    ICINDE -- yuk BILEREK ortalar, bayrak acik (eigh'in agirligi burada
+    tam keyfi olmayabilir; ortalama muhafazakar secimdir). 1e-11 hartree:
+    fiziksel olarak cozulebilen ayrisma -- yuk HAM agirligi korur ([1,0]/
+    [0,1]), bayrak kapali. Sabit 1e-8 hartree esik (on olcum) bunu da
+    ortalardi.
+    """
+    b = reciprocal_vectors(_kare_xy().lattice)
+    uc = 0.3 * b[0] + 0.3 * b[1]
+    ince = _yuk_yol(_kare_xy(1e-15), uc, n=5)
+    assert ince.degenerate.all()
+    assert np.allclose(ince.orbital_weights, 0.5, atol=1e-15)
+    kaba = _yuk_yol(_kare_xy(1e-11), uc, n=5)
+    assert not kaba.degenerate[1:].any()
+    assert np.allclose(np.sort(kaba.orbital_weights[1:], axis=2)[..., 1], 1.0, atol=1e-12)
+
+
+def test_E3a_ESIK_H_OLCEGINI_TASIR_birbirini_goturen_hoplama():
+    """Dogrulama turu (04.10.2026): iki orbitalin ikisi de (1.23 + 1.6 - 2.83)
+    eV ile hopluyor (siralar farkli) -- matematikte TAM dejenere DUZ cift.
+    Toplama kirintisi (H00 ~ 1e-17, H11 ~ 2e-17 hartree) |E|max'in kendisi
+    kadardir; esikte H olcegi terimi olmasa 18 bant-noktasinin 8'i bayraksiz
+    kaliyor ve yuvarlamanin sectigi [1,0]/[0,1] agirligini aliyordu.
+    """
+    ev = 1.0 / HARTREE_TO_EV
+    orgu = Lattice(vectors=np.array([[4.0, 0.0, 0.0]]), basis=np.array([[0.0, 0, 0], [0, 3.0, 0]]))
+    hop = []
+    for c in (1, -1):
+        hop += [Hopping(0, 0, (c, 0, 0), t * ev) for t in (1.23, 1.6, -2.83)]
+        hop += [Hopping(1, 1, (c, 0, 0), t * ev) for t in (-2.83, 1.6, 1.23)]
+    model = TBModel(lattice=orgu, onsite=np.zeros(2), hoppings=tuple(hop))
+    yuk = _yuk_yol(model, 0.5 * reciprocal_vectors(orgu)[0], n=9)
+    assert yuk.degenerate.all()
+    assert np.allclose(yuk.orbital_weights, 0.5, atol=1e-15)
+
+
+def test_E3a_KUMELEME_GECISLI_ve_KATSAYI_kilitli():
+    """Esik 1e3 * eps * (|E|max + H olcegi). Hoplamasiz modelde H(k) sabit ve
+    kosegen: |E|max = H olcegi = 0.7, esik = 1e3 * eps * 1.4 (~3.1e-13).
+    Ardisik farklari 0.6 * esik olan uclu ZINCIR tek kume olur (uc farki
+    1.2 * esik olsa da -- kumeleme GECISLIDIR, yayilim esigi asabilir) ve
+    alt uzay ortalamasi 1/3 yazilir. Fark 1.5 * esik iken kume YOK. Katsayi
+    1e3'ten saparsa (30 ya da 1e4) iki hucreden biri kirilir.
+    """
+    esik = 1e3 * np.finfo(float).eps * 1.4
+    orgu = Lattice(vectors=np.array([[2.5, 0.0, 0.0]]), basis=np.zeros((5, 3)) + np.arange(5)[:, None] * [0, 0.5, 0])
+    for adim, beklenen in ((0.6 * esik, [False, True, True, True, False]), (1.5 * esik, [False] * 5)):
+        onsite = np.array([-0.5, 0.1, 0.1 + adim, 0.1 + 2 * adim, 0.7])
+        model = TBModel(lattice=orgu, onsite=onsite, hoppings=())
+        yuk = _yuk_yol(model, 0.5 * reciprocal_vectors(orgu)[0], n=3)
+        assert yuk.degenerate[0].tolist() == beklenen, adim / esik
+        if beklenen[1]:
+            assert np.allclose(yuk.orbital_weights[0, 1:4, 1:4], 1.0 / 3.0, atol=1e-15)
+            assert np.allclose(yuk.orbital_weights[0, 1:4].sum(axis=1), 1.0, atol=1e-15)
