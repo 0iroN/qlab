@@ -239,9 +239,9 @@ Tasarım belgesi: `../docs/superpowers/specs/2026-08-05-qlab-kuantum-cekirdegi-d
   ve benzerleri; tam liste `tests/bridge/test_kenar_tarayici.py` `TUKETICILER`)
   `src/qlab` çapında yasak ve sıfır (testle kilitli). Kilit 2 yalnız tip
   kenarını da kod kenarı sayar; kilit 2'nin çalışma zamanı kenarı isteyip
-  istemeyeceği Osman'ın kararı, varsayılan **hayır**. Evet denirse `tdse → md`
-  bugünkü kaynakla GERÇEK_KÖPRÜ'de **kalamaz**: kova sayımı değişir ve 22.09'un
-  "delik kenar kurularak kapatıldı" hükmü yeniden açılır. Sınıfın anlamı **tek
+  istemeyeceği Osman'ın kararı: **hayır** (08.10.2026; Osman'ın otonom devam yetkisiyle varsayılan uygulandı). Evet denilseydi `tdse → md`
+  bugünkü kaynakla GERÇEK_KÖPRÜ'de **kalamazdı**: kova sayımı değişir, 22.09'un
+  "delik kenar kurularak kapatıldı" hükmü yeniden açılırdı. Sınıfın anlamı **tek
   yönlüdür**: `yalnız tip` yükün yokluğunu iddia eder ve yük taşıma çıpasıyla
   kilitlidir; `çalışma zamanı` muhafazakâr bir statik sınıftır, yükü garanti
   etmez — annotasyonu dizge yazmak, future importunu silmek ya da adı modül

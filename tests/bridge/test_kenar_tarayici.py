@@ -366,8 +366,8 @@ def test_d_KILIT_5_BAGLAYICI(monkeypatch, bozma, parca):
 
 def test_d_KILIT_2_DEGISMEDI_yalniz_tip_kenari_KOD_KENARI_sayilir():
     """`tdse -> md` yalnız tip ve kilit 2 onu yine kod kenarı sayar (kilit
-    2'nin çalışma zamanı kenarı isteyip istemeyeceği Osman'ın kararı;
-    varsayılan hayır). Bağlayıcılık: kenar gerçekten yok olursa kilit 2
+    2'nin çalışma zamanı kenarı isteyip istemeyeceği Osman'ın kararı:
+    HAYIR, 08.10.2026). Bağlayıcılık: kenar gerçekten yok olursa kilit 2
     ateşlenir."""
     kenarlar, siniflar = olculen_kenarlar(), olculen_kenar_siniflari()
     assert siniflar[("tdse", "md")] == YT

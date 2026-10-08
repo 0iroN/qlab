@@ -1116,7 +1116,7 @@ def tablo_tutarsizliklari(
          OLCULMEDI kovasinda OLAMAZ,
       2. GERCEK_KOPRU kovasindaki her ciftin bir kod kenari OLMALI (yalniz
          tip kenari da kod kenari SAYILIR; kilit 2'nin calisma zamani
-         kenari isteyip istemeyecegi Osman'in karari, varsayilan hayir),
+         kenari isteyip istemeyecegi Osman'in karari: HAYIR, 08.10.2026),
       3. kova basina sayim `KOVA_SAYILARI` ile ayni olmali,
       4. `qlab.units` ekseni (dosya sayisi > 0 olan motorlar) kenar
          dugumlerinin ALT KUMESI olmali ve eksensiz kalan kenar dugumleri
@@ -1338,9 +1338,9 @@ _YAPI_BEYANI = (
     "(veri akisi ordek tiplemeyle, import satiri silinince modul bit bit ayni "
     "calisiyor -- olculdu) ve kilit 2 onu yine kod kenari sayar. GERCEK_KOPRU "
     "kenarlarinin sinifi beyanlidir ve kilit 5 onu olcume karsi sinar; kilit "
-    "2'nin calisma zamani kenari isteyip istemeyecegi Osman'in karari, "
-    "varsayilan hayir (evet denirse `tdse -> md` bugunku kaynakla "
-    "GERCEK_KOPRU'da kalamaz)"
+    "2'nin calisma zamani kenari isteyip istemeyecegi Osman'in karari: "
+    "HAYIR, 08.10.2026 (evet denilseydi `tdse -> md` bugunku kaynakla "
+    "GERCEK_KOPRU'da kalamazdi)"
 )
 
 _KENAR_TABANI_BEYANI = (
