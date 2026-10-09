@@ -7,6 +7,11 @@ Uc sinif var ve karistirilmazlar:
 
 On olcumde siniflandirildi ve SAHTE-CIPA SINAVI kosuldu; sonuclar
 dokstringlerde. Tautolojiler gizlenmiyor, SINIFLARIYLA yaziliyorlar.
+
+PROTOKOL ETIKETI (B7, 09.10.2026): dokstringlerdeki mutant/sahte-cipa sinavi
+sayilari ("sekiz mutantin ikisi", "on mutantin yedisi", M9'un delta
+tablosu) B7 ONCESI, IZLEMESIZ search_uhf ile olculdu; varsayilan kararlilik
+izlemesine gecildikten sonra YENIDEN KOSULMADI.
 """
 
 from __future__ import annotations
@@ -25,7 +30,10 @@ from qlab.units import BOHR_TO_ANGSTROM
 E_H_STO3G = -0.466581849557276
 UZAK_A = 20.0 * BOHR_TO_ANGSTROM  # 20 bohr = 10.583544 angstrom
 
-# OLCULDU (cok-baslangicli, 12 tohum; hepsi 12/12 yakinsadi):
+# OLCULDU (cok-baslangicli, 12 tohum; hepsi 12/12 yakinsadi). B7 (09.10.2026):
+# dordunun en iyisi de UHF-kararli (lambda_min H donme yok, Li +0.1700,
+# N +0.9195, F -5.3e-15 = p-deligi sifir modu); izleme hicbirine dokunmuyor
+# (inis 0) ve sayilar izlemeli/izlemesiz BIT BIT ayni.
 _ATOM = {
     "H": (1, -0.466581849557, 0.75),
     "Li": (2, -7.315525981281, 0.75),
@@ -50,7 +58,7 @@ def test_AYRISMA_LIMITI_cipasi():
     -0.933163699115, fark 5.551e-16. Ayni limitte RHF 0.362302972 Ha =
     9.85877 eV sapiyor.
 
-    ZAYIFLIGI da OLCULDU (on olcum): sekiz gercekci mutantin IKISI bu
+    ZAYIFLIGI da OLCULDU (on olcum, izlemesiz protokol): sekiz gercekci mutantin IKISI bu
     denetimi DOGRU KODDAN AYIRT EDILEMEZ sekilde geciyor (K'nin J desenine
     cevrilmesi 4.44e-16, K'nin yariya bolunmesi 1.11e-16). TEK BASINA asla
     yeterli sayilmaz.
@@ -112,33 +120,61 @@ def test_PARCA_TOPLAMI_cipasi(ad, metin, n_alpha, parcalar, beklenen):
 
 
 @pytest.mark.slow
-def test_PARCA_TOPLAMI_cipasinin_SINIRI_HF_molekulunde():
-    """DURUST OLUMSUZ: cipanin gucu KODUN degil ARAMANIN ozelligi.
+def test_PARCA_TOPLAMI_cipasinin_SINIRI_HF_molekulunde_IZLEMESIZ():
+    """DURUST OLUMSUZ, korunur: tohum ailesi TEK BASINA parca toplamini bulmaz.
 
-    OLCULDU: HF (H + F, 20 bohr) icin parca toplami -98.453086808293, ama
-    bu tohum ailesi taban durumu HIC BULMUYOR --
+    OLCULDU (follow_instability=False -- B7 oncesinin protokolu): HF (H + F,
+    20 bohr) icin parca toplami -98.453086808293, ama bu tohum ailesi parca
+    toplamini HIC BULMUYOR --
       seeds=8  -> -97.570681531688  (fark +8.824e-01, 1 ayri cozum)
       seeds=12 -> -97.570681531688  (+8.824e-01)
       seeds=24 -> -97.678222271884  (+7.749e-01, 3 ayri cozum)
       seeds=64 -> -97.678222271884  (+7.749e-01)
     Yani tohum sayisini SEKIZ KAT artirmak farki yalnizca 0.11 Ha
-    kapatiyor ve orada duruyor.
+    kapatiyor ve orada duruyor. Sebep tohum SAYISI degil OLCEGI: ailenin en
+    buyuk |bias|'i 1.3008, H 1s'i doldurmak icin gereken tek bilesenli bias
+    7.33 < B* <= 7.34 (Hcore'da F 2p ile H 1s arasi 7.334 Ha). Iki durum da
+    UHF EYERIdir (lambda_min -1.764811 / -1.549729) ve artik "✗" basilir.
 
-    Bu test cipayi degil, cipanin SINIRINI kilitler. Biri ileride tohum
-    ailesini iyilestirirse bu test kirmizi olur -- ve o zaman bu dokstring
-    guncellenir. Sinir gizlenmiyor, olculuyor.
+    Bu test cipayi degil, IZLEMESIZ yolun SINIRINI kilitler. Varsayilan
+    (izlemeli) arama parca toplamina iniyor -- bir sonraki test.
     """
-    hf = search_uhf(Molecule.from_string(f"H 0 0 0; F 0 0 {UZAK_A:.9f}"), "sto-3g", seeds=24)
+    hf = search_uhf(
+        Molecule.from_string(f"H 0 0 0; F 0 0 {UZAK_A:.9f}"), "sto-3g", seeds=24,
+        follow_instability=False,
+    )
     toplam = _ATOM["H"][1] + _ATOM["F"][1]
     assert hf.energy == pytest.approx(-97.678222271884, abs=1e-9)
     assert (hf.energy - toplam) == pytest.approx(0.7749, abs=1e-3)
+    assert not hf.stability.stable
+
+
+@pytest.mark.slow
+def test_PARCA_TOPLAMI_cipasi_HF_molekulunde_IZLEMEYLE_TUTUYOR():
+    """B7 (09.10.2026): ayni 24 tohum + kararlilik izleme (varsayilan) parca
+    toplamina iniyor. SINIF: DAIRESEL DEGIL -- parcalar AYRI aramalarla.
+
+    OLCULDU: -98.45308680829324, parca toplamina (H ve F search_uhf(12))
+    +1.4e-14 = 1 ulp; seeds = 1 / 8 / 12 / 40 / 64'te 0 ... +1.4e-14 (E_H
+    tam literalle de ayni; duzeltme olcumu f01). Son hane izleme ayrintisina
+    bagli, `==` ile KILITLENMEZ.
+    """
+    hf = search_uhf(Molecule.from_string(f"H 0 0 0; F 0 0 {UZAK_A:.9f}"), "sto-3g", seeds=24)
+    toplam = sum(
+        search_uhf(
+            Molecule.from_string(f"{p} 0 0 0"), "sto-3g", seeds=12, n_alpha=_ATOM[p][0]
+        ).energy
+        for p in ("H", "F")
+    )
+    assert hf.energy == pytest.approx(toplam, abs=1e-11)
+    assert hf.stability.stable and hf.follow_cycles >= 1
 
 
 def test_VARYASYONEL_denetimin_ZAYIFLIGI_belgelenmistir():
     """SINIF: TRANSKRIPSIYON DENETIMI -- ve ZAYIF.
 
     E_UHF <= E_RHF bir teoremdir (RHF, UHF'in Ca = Cb ozel halidir).
-    OLCULDU (on olcum): on gercekci mutantin YEDISI bu denetimi geciyor,
+    OLCULDU (on olcum, izlemesiz protokol): on gercekci mutantin YEDISI bu denetimi geciyor,
     cunku hatalarin cogu enerjiyi DUSURUYOR -- ornegin J'yi spin
     yogunlugundan kurmak H2O'da -53.26 Ha veriyor ve "ihlal yok" diyor.
 
@@ -187,7 +223,8 @@ def test_ENERJI_YOGUNLUKTAN_BAGIMSIZ_yeniden_hesaplaniyor():
     P'den standart ifadeyle yeniden kurulur. M9'un ekledigi terim orada
     YOKTUR.
 
-    DENETIMIN YUK TASIDIGI OLCULDU -- M9 delta ile kucultulerek:
+    DENETIMIN YUK TASIDIGI OLCULDU -- M9 delta ile kucultulerek (izlemesiz
+    protokol, B7 oncesi; "HF siniri" bugunku IZLEMESIZ sinir testidir):
       delta = 1e-3  -> YEDI test kiriliyor (atom enerjileri, parca toplami,
                        HF siniri VE bu denetim)
       delta = 1e-10 -> yalniz IKI test: LiH parca toplami ve bu denetim

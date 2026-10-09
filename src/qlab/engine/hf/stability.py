@@ -64,7 +64,7 @@ bazda tam kosegen olmayabilir. Blok kullanmak bu farki bedelsiz kapsar.
 
 NE SINANIR, NE SINANMAZ
 -----------------------
-Sinanan IKI kanal vardir, ikisi de gercek (reel) isgal-bos dondurmeler:
+Sinanan UC kanal vardir, ucu de gercek (reel) isgal-bos dondurmeler:
 
   IC  (`orbital_hessian`)         tekil/singlet, RHF -> RHF. Negatif ozdeger =
                                   yakinda daha dusuk enerjili baska bir RHF
@@ -72,6 +72,11 @@ Sinanan IKI kanal vardir, ikisi de gercek (reel) isgal-bos dondurmeler:
   DIS (`triplet_orbital_hessian`) uclu/triplet, RHF -> UHF. Negatif ozdeger =
                                   spin simetrisini kiran bir UHF cozumu daha
                                   dusuk enerjili.
+  UHF (`uhf_orbital_hessian`)     UHF -> UHF, alfa ve beta BAGIMSIZ doner (B7,
+                                  09.10.2026). Negatif ozdeger = UHF cozumu bir
+                                  EYER; yakinda daha dusuk bir UHF cozumu var.
+                                  Kapali kabukta ilk iki kanali ozel hal olarak
+                                  icerir (ozdeslik testte kilitli).
 
 Dis kanal Modul 1C'de eklendi. Eklenmeden once depo, spin kanalinda EYER olan
 noktalara "ic minimum" diyordu ve bu sessizlikti: olculmus somut ornek, deponun
@@ -79,8 +84,11 @@ kendi PySCF referans kaydi h2_200'dur (H2, 2.00 A) -- ic kararlilik ozdegeri
 +2.546683038854 ile "kararli" derken triplet ozdegeri -1.599532559297'dir ve
 gercek HF taban durumu 0.153420178832 hartree ASAGIDADIR.
 
-Sinanmayan: kompleks (reel olmayan) orbital kararsizliklari. Iki kanalda da
-"stable=True", cozumun KURESEL minimum oldugunu soylemez. Bu sinir
+Sinanmayan: kompleks (reel olmayan) orbital kararsizliklari. Uc kanalda da
+"stable=True", cozumun KURESEL minimum oldugunu soylemez -- ve UHF kanalinda
+bu OLCULDU: H8 halkasi d = 3.0 bohr STO-3G'de kuresel minimumun 0.0799 ve
+0.0810 Ha ustunde iki YEREL minimum daha var (tests/hf/test_uhf_kararlilik.py,
+T7). Bu sinir
 provenance'in ihmal listesinde de yazilidir (scf.py, _HF_NEGLECTED).
 
 INDEKS SIRASI: dondurmeler (i, a) ciftleriyle numaralanir; satir/sutun
@@ -104,6 +112,22 @@ from qlab.provenance import StabilityVerdict
 # arasinda 14 mertebelik bir bosluk vardir; esik o boslugun ortasina degil
 # gurultu tarafina yakin konur -- amac gercek kararsizligi kacirmamak,
 # sifir cevresindeki yuvarlamayi kararsizlik saymamaktir.
+#
+# DUZELTME (B7, 09.10.2026) -- "14 mertebelik bosluk" CURUDU ve bant olculdu
+# (kamu yolu; `.superpowers/sdd/b7-olcum/uygulama/u05_tol_bandi.log`):
+#   * Gurultu tarafi ~1e-14 DEGIL. Sinirlayan eigvalsh yuvarlamasi degil, SCF
+#     artiginin SIFIR MODLARA bulasmasidir: UHF kanalinda kararli bir cozumde
+#     en buyuk olculen -2.579e-10 (HF/6-31G, 20 bohr). RHF ic kanalinda da:
+#     search_rhf(8) ile N2/STO-3G'nin en iyisinde tek bir sifir civari ozdeger
+#     1.50 A'da -1.913e-9 (esigin 5.2 kat icinde), 1.80 A'da -5.6e-11,
+#     2.00 A'da +8.3e-11. Goldstone modu mu SCF artigi mi AYRISTIRILMADI.
+#   * Kararsizlik tarafi da yalniz H2 12 A'nin -2.92'si degil: FIZIKSEL yumusak
+#     modlar var. Olculen en kucuk GERCEK UHF kararsizligi -2.116e-7 (HF/STO-3G,
+#     8 bohr, pi-delik eyeri; izleme 1.054e-7 Ha asagidaki sigma-delik
+#     minimumuna iniyor).
+# Yani bant [2.6e-10, 2.1e-7]; esik sifir-mod tarafina 39, gercek kararsizlik
+# tarafina 21 kat uzak. Esik DEGISMEDI; |lambda| < 1e-8 yumusak modlar AYIRT
+# EDILEMEZ ve bu bir beyandir (uhf.py, multistart.py).
 EIGENVALUE_TOLERANCE = 1e-8
 
 
@@ -125,7 +149,8 @@ class StabilityResult:
     def verdict(self, channel: str = "ic") -> StabilityVerdict:
         """Provenance'a ilistirilse makine-okunur (JSON'a yazilabilir) ozet.
 
-        `channel` hukmun HANGI kanaldan geldigini tasir ("ic" veya "dis").
+        `channel` hukmun HANGI kanaldan geldigini tasir ("ic", "dis" ya da
+        "uhf").
         StabilityResult'in kendisi kanal tasimaz -- ayni ozdeger analizi iki
         kanal icin de aynen gecerlidir; ayrim yalnizca RAPORLAMADA anlamlidir
         ve panelin dogru cumleyi kurmasi icin gereklidir.
@@ -138,7 +163,11 @@ class StabilityResult:
         )
 
 
-def _transform_eri(eri: np.ndarray, coefficients: np.ndarray) -> np.ndarray:
+def _transform_eri(
+    eri: np.ndarray,
+    coefficients: np.ndarray,
+    coefficients_second: np.ndarray | None = None,
+) -> np.ndarray:
     """AO -> MO iki-elektron integral donusumu, dort adimda (N^5).
 
     Tek bir N^8 einsum yerine dort ardisik N^5 kismi kasilma. Hessian'in
@@ -147,11 +176,17 @@ def _transform_eri(eri: np.ndarray, coefficients: np.ndarray) -> np.ndarray:
     kisa hem karsilastirilabilir maliyettedir. Bellek N^4'tur -- solve()
     zaten AO ERI tensorunu ayni buyuklukte tutuyor, yeni bir asimptotik yuk
     getirmez.
+
+    `coefficients_second` verilirse IKINCI cift (rs) o katsayilarla donusur:
+    (p q | r s) = (C1_p C1_q | C2_r C2_s). UHF Hessian'inin karisik (alfa-beta)
+    blogu tam olarak budur. Verilmezse ikinci cift de `coefficients` ile
+    donusur ve islem bit bit eskisidir (RHF yollari bu dali kullanir).
     """
+    second = coefficients if coefficients_second is None else coefficients_second
     step = np.einsum("uvls,up->pvls", eri, coefficients, optimize=True)
     step = np.einsum("pvls,vq->pqls", step, coefficients, optimize=True)
-    step = np.einsum("pqls,lr->pqrs", step, coefficients, optimize=True)
-    return np.einsum("pqrs,st->pqrt", step, coefficients, optimize=True)
+    step = np.einsum("pqls,lr->pqrs", step, second, optimize=True)
+    return np.einsum("pqrs,st->pqrt", step, second, optimize=True)
 
 
 def orbital_hessian(
@@ -263,6 +298,122 @@ def triplet_orbital_hessian(
     )
     n_rotations = n_occupied * n_virtual
     return 4.0 * hessian.reshape(n_rotations, n_rotations)
+
+
+def _uhf_same_spin_block(
+    eri: np.ndarray,
+    coefficients: np.ndarray,
+    fock: np.ndarray,
+    n_occupied: int,
+) -> np.ndarray:
+    """Ayni-spin blogu H^ss, sekil (n_o n_v, n_o n_v); bos/isgal yoksa 0x0.
+
+    H^ss_[ia],[jb] = 2 [delta_ij f_ab - delta_ab f_ij]
+                     + 4(ai|bj) - 2(ab|ij) - 2(aj|ib)
+
+    Butun integraller AYNI spinin orbitallerindendir; f bu spinin MO Fock'u.
+    """
+    n_orbitals = coefficients.shape[1]
+    n_virtual = n_orbitals - n_occupied
+    if n_occupied == 0 or n_virtual == 0:
+        return np.zeros((0, 0))
+    occupied = slice(0, n_occupied)
+    virtual = slice(n_occupied, n_orbitals)
+
+    fock_mo = coefficients.T @ fock @ coefficients
+    mo_eri = _transform_eri(eri, coefficients)
+    aibj = mo_eri[virtual, occupied, virtual, occupied]
+    abij = mo_eri[virtual, virtual, occupied, occupied]
+    ajib = mo_eri[virtual, occupied, occupied, virtual]
+
+    block = (
+        2.0 * np.einsum("ij,ab->iajb", np.eye(n_occupied), fock_mo[virtual, virtual])
+        - 2.0 * np.einsum("ab,ij->iajb", np.eye(n_virtual), fock_mo[occupied, occupied])
+        + 4.0 * np.einsum("aibj->iajb", aibj)
+        - 2.0 * np.einsum("abij->iajb", abij)
+        - 2.0 * np.einsum("ajib->iajb", ajib)
+    )
+    n_rotations = n_occupied * n_virtual
+    return block.reshape(n_rotations, n_rotations)
+
+
+def uhf_orbital_hessian(
+    core: np.ndarray,
+    eri: np.ndarray,
+    coefficients_alpha: np.ndarray,
+    coefficients_beta: np.ndarray,
+    n_alpha: int,
+    n_beta: int,
+) -> np.ndarray:
+    """UHF orbital dondurme Hessian'i (reel alfa ve beta dondurmeleri).
+
+    UCUNCU KANAL ("uhf", UHF -> UHF). Ic ve dis kanal bir RHF cozumunu
+    sinar; bu, bir UHF cozumunun kendisinin YEREL minimum mu yoksa EYER mi
+    oldugunu sinar. Kanal eklenmeden once depoda UHF -> UHF analizi YOKTU ve
+    `search_uhf` HF molekulunde (H + F, 20 bohr, STO-3G) bir eyeri (S^2 = 1,
+    lambda_min = -1.549729) sessizce "en iyi" diye donduruyordu.
+
+    PARAMETRELENDIRME (sonlu fark testi bununla AYNI olmak zorunda):
+
+        C_s(kappa) = C_s exp(K_s),  K_s[a, i] = kappa_ia,  K_s[i, a] = -kappa_ia
+        s in {alfa, beta}; iki spin BAGIMSIZ doner.
+
+    P_s = C_s,occ C_s,occ^T (spin basina, 2 carpani YOK). Modul dokstringindeki
+    turetmenin aynisi spin basina yapilinca:
+
+        H^ss_[ia],[jb] = 2 [delta_ij f^s_ab - delta_ab f^s_ij]
+                         + 4(ai|bj)_ss - 2(ab|ij)_ss - 2(aj|ib)_ss
+        H^ab_[ia],[jb] = 4 (a_alfa i_alfa | b_beta j_beta)
+
+    Karisik blokta degis-tokus YOKTUR (alfa ve beta orbitalleri arasinda K
+    terimi olmaz); yalniz Coulomb baglar. Karisik blok `_transform_eri`in
+    iki katsayili dalindan gelir.
+
+    INDEKS SIRASI: once alfa blogu (i * n_v_alfa + a), sonra beta blogu.
+    Bir spinde dondurme yoksa (n_s = 0 ya da n_s = baz boyutu) o blok bos
+    kalir; ikisi de bossa 0x0 doner.
+
+    KAPALI KABUK OZDESLIGI (C_alfa = C_beta, n_alfa = n_beta):
+        H^aa + H^bb + H^ab + H^ba = `orbital_hessian`        (singlet)
+        H^aa + H^bb - H^ab - H^ba = `triplet_orbital_hessian` (triplet)
+    -- yani bu fonksiyon iki eski kanali OZEL HAL olarak icerir.
+
+    OLCULDU (tests/hf/test_uhf_kararlilik.py, T1/T2):
+      * analitik gradyanin merkezi farkiyla (h = 1e-4): bes acik kabuk
+        durumunda (HF@20'nin S^2 = 0 ve S^2 = 1 eyerleri, N atomunun zemini ve
+        eyeri, H2 5 bohr kirik simetri) max|An - FD| / max|H| = 6.667e-9;
+        h = 3e-4'te 6.000e-8 -- oran 9 = 3^2, yani fark O(h^2) KESMEDIR,
+        gurultu degil;
+      * kapali kabuk ozdesligi (H2 1.4 / 3.0 bohr, su): bagil <= 3.9e-16;
+      * elle turetilmis bagimsiz bir kopyayla (elestirmen e01) ayni sekiz
+        durumda bagil <= 8.2e-17.
+    MALIYET: HF@20 10 x 10 0.22 ms, H14 halkasi 98 x 98 0.53 ms -- ayni
+    sistemde bir `solve_uhf` kosusunun (30 ms / 284 ms) ~%1'inin altinda.
+    """
+    occupied_alpha = coefficients_alpha[:, :n_alpha]
+    occupied_beta = coefficients_beta[:, :n_beta]
+    density_alpha = occupied_alpha @ occupied_alpha.T
+    density_beta = occupied_beta @ occupied_beta.T
+    coulomb = np.einsum("uvls,ls->uv", eri, density_alpha + density_beta)
+    fock_alpha = core + coulomb - np.einsum("ulvs,ls->uv", eri, density_alpha)
+    fock_beta = core + coulomb - np.einsum("ulvs,ls->uv", eri, density_beta)
+
+    block_alpha = _uhf_same_spin_block(eri, coefficients_alpha, fock_alpha, n_alpha)
+    block_beta = _uhf_same_spin_block(eri, coefficients_beta, fock_beta, n_beta)
+    size_alpha, size_beta = block_alpha.shape[0], block_beta.shape[0]
+
+    hessian = np.zeros((size_alpha + size_beta, size_alpha + size_beta))
+    hessian[:size_alpha, :size_alpha] = block_alpha
+    hessian[size_alpha:, size_alpha:] = block_beta
+    if size_alpha and size_beta:
+        mixed_eri = _transform_eri(eri, coefficients_alpha, coefficients_beta)
+        mixed = 4.0 * np.einsum(
+            "aibj->iajb",
+            mixed_eri[n_alpha:, :n_alpha, n_beta:, :n_beta],
+        ).reshape(size_alpha, size_beta)
+        hessian[:size_alpha, size_alpha:] = mixed
+        hessian[size_alpha:, :size_alpha] = mixed.T
+    return hessian
 
 
 def analyse_stability(

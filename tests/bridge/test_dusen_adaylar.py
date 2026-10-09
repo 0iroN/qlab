@@ -31,8 +31,9 @@ DÖRT TAUTOLOJİ (Task 4'ün ikisi + 27.09.2026 `hf → spin` + 28.09.2026 `tdse
   `hf → spin` (27.09.2026, ÜÇÜNCÜ aday, kenarsız): H2 Yamaguchi `J`sinin
               büyüklüğü aynı oranda sadeleşir; İŞARETİ `h = 0` çift L'de bir
               AYAR ETİKETİDİR — AFM kademeli seri FM tekbiçim seriyle bit
-              bit aynı. İşaret ŞARTLIDIR: `seeds = 1` kırık simetriyi
-              bulamaz ve formül sessizce +J verir.
+              bit aynı. İşaret ŞARTLIDIR: İZLEMESİZ `seeds = 1` kırık
+              simetriyi bulamaz ve formül sessizce +J verir (B7, 09.10.2026:
+              varsayılan kararlılık izlemesi onu buluyor, J < 0).
 
   `tdse → spin` (28.09.2026, kenarsız): 1B soft-Coulomb H2 `J`si GERÇEK ama aynı oranda sadeleşir;
               300 K'de R = 3/4/5 |m| = 1.0 (donar ya da doyar), R = 6 aynı T/|J|'de J = 1'in etiketi.
@@ -726,22 +727,27 @@ HF_R = (5.0, 6.0, 7.0)
 #: (Ångström gidiş-dönüşü R = 5 − 1 ulp üretir, J bağıl 1.22e-9 kayar). 17
 #: hane bu pencerenin kaydıdır; fiziksel olarak ~7 anlamlı hane.
 HF_J = (-0.001308824217584225, -0.00017495439344641936, -1.9411358087445856e-05)
-#: `seeds = 1` kırık simetriyi bulamaz; formül SESSİZCE +J (FM) verir.
+#: İZLEMESİZ `seeds = 1` (`follow_instability=False`) kırık simetriyi bulamaz;
+#: formül SESSİZCE +J (FM) verir. B7 (09.10.2026) öncesinin varsayılanıydı.
 HF_J_SEEDS1 = (0.12292785673387831, 0.14398775927612392, 0.15520099760670322)
+#: İZLEMELİ (varsayılan) `seeds = 1`in HF_J'den bağıl farkı -- ÖLÇÜLDÜ 09.10.2026
+#: 4.71e-10 / 1.02e-9 / 2.04e-11. J1 izlemenin açı ızgarasına bağlı, `==` YAZILMAZ.
+HF_J1_IZLEMELI_BAGIL = 1e-8
 #: `tdse -> spin` (28.09.2026): TDSE TARAFI BURADA KOSMAZ -- on olcumun LITERAL J'leri (1B
 #: soft-Coulomb H2, `Grid2D` sanal zaman, n = 256, L = 40, dt = 0.01, a = b = 1, R = 3/4/5/6).
 TDSE_J = (-0.03679538951052319, -0.010055270069717404, -0.0021743343691629224, -0.00041083190968227434)
-#: "S2_BS > 0" LİTERAL yazılamaz: seeds = 1'in RHF-benzeri çözümü 2.2e-16 /
-#: 2.2e-16 / 1.1e-15 taşıyor ve `> 0`'ı GEÇİYOR. Kapı sayısal sıfırın üstünde.
+#: "S2_BS > 0" LİTERAL yazılamaz: izlemesiz seeds = 1'in RHF-benzeri çözümü
+#: 2.2e-16 / 2.2e-16 / 1.1e-15 taşıyor ve `> 0`'ı GEÇİYOR. Kapı sayısal sıfırın
+#: üstünde -- ve ŞART KALIR: izlemesiz yol ve tek `solve_uhf` o sıfırı hâlâ taşır.
 S2_BS_KAPISI = 1e-8
 ETA = np.where(np.indices((L, L)).sum(axis=0) % 2 == 0, 1.0, -1.0)[..., None]
 NEEL = ETA * SpinState.uniform(L=L, n_component=1).spins
 
 
-def _yamaguchi(R: float, seeds: int) -> tuple[float, float]:
+def _yamaguchi(R: float, seeds: int, *, follow: bool = True) -> tuple[float, float]:
     """J = (E_BS − E_T)/(S2_T − S2_BS) — formül `src/`de YOK, burada elle."""
     mol = Molecule.from_string("H 0 0 0; H 0 0 %.10g" % R, unit="bohr")
-    bs = search_uhf(mol, BAZ, seeds=seeds)
+    bs = search_uhf(mol, BAZ, seeds=seeds, follow_instability=follow)
     uc = search_uhf(mol, BAZ, seeds=SEEDS, n_alpha=2)
     s2 = bs.result.s_squared
     return (bs.energy - uc.energy) / (uc.result.s_squared - s2), s2
@@ -777,25 +783,43 @@ def _zincir(J: float, s0: np.ndarray, *, alan: float = 0.0):
 
 def test_HF_SPIN_J_UC_R_DE_BIT_BIT_BS_KAPISI_ve_seeds1_ISARETI_SESSIZCE_CEVIRIR():
     """İŞARET ŞARTLI. `seeds = 12`de üç J literal ile `==` ve NEGATİF (AFM);
-    `seeds = 1` BS'yi bulamaz, S2_BS sayısal sıfırdır ama `> 0`'ı GEÇER ve
-    formül +J verir. Kapı `S2_BS > 1e-8` o çözümü reddeder. KIRMA: kapı
+    İZLEMESİZ `seeds = 1` BS'yi bulamaz, S2_BS sayısal sıfırdır ama `> 0`'ı
+    GEÇER ve formül +J verir. Kapı `S2_BS > 1e-8` o çözümü reddeder. KIRMA: kapı
     eşiği 0.0 yapılınca bu test kırmızı (seeds = 1 kapıdan geçer); eşik
-    gerekçedeki sayıdan AYRIŞTIRILIR, yani ikisi ayrı kayamaz (1e-10 / 0.5 düşer)."""
+    gerekçedeki sayıdan AYRIŞTIRILIR, yani ikisi ayrı kayamaz (1e-10 / 0.5 düşer).
+    B7 (09.10.2026): izlemesiz yol bit bit eskisi -- J1 literal ile `==`."""
     gerekce = _girdi("hf", "spin").gerekce
     for R, J_lit, J1_lit in zip(HF_R, HF_J, HF_J_SEEDS1):
         J, s2 = _yamaguchi(R, SEEDS)
         assert _bs_kapisi(s2) and 0.99 < s2 < 1.0, (R, s2)
         assert J == J_lit and J < 0.0, (R, J)
         assert repr(J_lit) in gerekce
-        J1, s21 = _yamaguchi(R, 1)
+        J1, s21 = _yamaguchi(R, 1, follow=False)
         assert 0.0 < s21 < 1e-14, "seeds = 1 artık '> 0'ı geçmiyor — kapı gerekçesi bayat"
         assert not _bs_kapisi(s21), f"R={R}: kırık simetrisiz çözüm kapıdan geçti"
-        assert J1 > 0.0 and J1 == pytest.approx(J1_lit, rel=1e-9, abs=0.0)
+        assert J1 > 0.0 and J1 == J1_lit, (R, J1)
         assert f"+{J1_lit:.4f}" in gerekce
     for parca in ("seeds = 12", "%.10g", 'unit="bohr"', "~7 anlamli hane"):
         assert parca in gerekce, parca
     esik = re.search(r"S2_BS > (\S+) olmali", gerekce)
     assert esik and float(esik.group(1)) == S2_BS_KAPISI, "gerekçe eşiği != test kapısı"
+
+
+def test_HF_SPIN_seeds1_IZLEMEYLE_KIRIK_SIMETRIYI_BULUYOR_J_NEGATIF():
+    """B7 (09.10.2026): varsayılan kararlılık izlemesiyle `seeds = 1` RHF eyerinden
+    BS'ye iniyor (her R'de 1 iniş). ÖLÇÜLDÜ: S2_BS 0.9945903905 / 0.9992972155 /
+    0.9999246042 (kapıdan GEÇER), J1 = -0.0013088242182004426 /
+    -0.00017495439362406981 / -1.9411358087049468e-05, `seeds = 12` literalinden
+    bağıl 4.71e-10 / 1.02e-9 / 2.04e-11. `==` KULLANILMAZ: J1 izlemenin açı
+    ızgarasına ve aday sırasına bağlı (eleştirmenin bağımsız izleme kopyası, e04:
+    ön ölçümün uygulamasından 3.4e-13 ... 2.3e-11 farklı J1 verdi)."""
+    gerekce = _girdi("hf", "spin").gerekce
+    for R, J_lit in zip(HF_R, HF_J):
+        J1, s21 = _yamaguchi(R, 1)
+        assert _bs_kapisi(s21) and 0.99 < s21 < 1.0, (R, s21)
+        assert J1 < 0.0, (R, J1)
+        assert abs(J1 - J_lit) / abs(J_lit) < HF_J1_IZLEMELI_BAGIL, (R, J1)
+    assert "izlemeli (varsayilan) `search_uhf(seeds = 1)`" in gerekce
 
 
 def test_HF_SPIN_BUYUKLUK_PROTOKOL_A_BIT_BIT_SADELESIR():

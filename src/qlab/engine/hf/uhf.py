@@ -22,8 +22,19 @@ ALTI SESSIZ TUZAK (hepsi asagidaki dort satirdadir):
 6. BASLANGIC TAHMINI kritiktir: bias olmadan UHF, RHF'e COKER. Olculdu,
    H2 R = 2.00 A'da bias=None ile UHF tam olarak RHF enerjisini veriyor
    (fark < 1e-12, <S^2> = 0). Bu bir kusur DEGIL, dogru davranistir --
-   ama dondurulen sayinin bir MINIMUM oldugu iddiasi ancak cok-baslangicli
-   arama (`multistart`) ile yapilabilir.
+   tek `solve_uhf` bir DURAGAN NOKTA dondurur. Minimum mu eyer mi oldugunu
+   `stability=True` SOYLER (UHF orbital Hessian'i, `stability.py`); daha
+   dusuge INMEK ise `multistart.search_uhf`in isidir (tohum ailesi + en
+   iyiye kararlilik izleme). Olculdu: N atomu (n_alpha=5) alternan bias
+   0.35 ile -53.259271159'a iner ve `stability=True` onu EYER diye basar
+   (lambda_min -0.919478); `search_uhf(12)` -53.719010162594 (YEREL
+   minimum, lambda_min +0.919478) dondurur.
+
+`initial_orbitals=(C_alfa, C_beta)` SCF'i bias yerine VERILEN orbitallerden
+baslatir; kararlilik izleme (multistart) eyerden dondurulmus orbitallerle
+yeniden baslatmak icin bunu kullanir. `initial_bias` ile birlikte verilemez.
+Iki parametre de verilmezse ve `stability=False` ise sayilar B7 oncesiyle bit
+bit aynidir ve provenance'ta hukum satiri YOKTUR (yalniz beyan metni guncellendi).
 
 DIIS BIRLESIK UYGULANIR: alfa ve beta hata vektorleri ust uste yigilir ve
 tek bir ekstrapolasyon yapilir. Ayri ayri genisletmek iki kanalin farkli
@@ -44,8 +55,9 @@ from qlab.engine.hf.scf import (
     _DIIS_MAX_HISTORY,
     _orthogonalisation_matrix,
 )
+from qlab.engine.hf.stability import analyse_stability, uhf_orbital_hessian
 from qlab.errors import InvalidInputError, SCFConvergenceError
-from qlab.provenance import Provenance
+from qlab.provenance import Provenance, StabilityVerdict
 from qlab.types import Molecule
 
 _UHF_YAKLASIMLAR: tuple[str, ...] = (
@@ -54,9 +66,17 @@ _UHF_YAKLASIMLAR: tuple[str, ...] = (
     "sonlu baz seti",
     "SPIN OZDURUMU DEGILDIR: <S^2> beklenen S(S+1) degerinden sapar (spin "
     "kirlenmesi) ve bu sapma sonucla birlikte raporlanir",
-    "dondurulen deger bir MINIMUM DEGIL bir DURAGAN NOKTADIR; minimum "
-    "iddiasi ancak cok-baslangicli arama (multistart) ile yapilabilir "
-    "-- olculdu, baslangic sapmasi olmadan UHF RHF'e coker",
+    "tek solve_uhf'in dondurdugu deger bir DURAGAN NOKTADIR, minimum olmak "
+    "zorunda degil (olculdu, baslangic sapmasi olmadan UHF RHF'e coker); "
+    "multistart.search_uhf tohumlarin en iyisine kararlilik izleme uygular "
+    "(varsayilan). Donen cozumun minimum mu eyer mi oldugunu YALNIZ panelin "
+    "Kararlilik satiri soyler (search_uhf ya da solve_uhf(stability=True); "
+    "satir yoksa BAKILMADI): kararli diyorsa reel alfa/beta donmelerine karsi "
+    "yerel minimum, eyer diyorsa UHF eyeri (izleme kapali ya da inemedi). "
+    "KURESEL minimum oldugu hicbir durumda iddia EDILMEZ -- olculdu, H8 "
+    "halkasi d = 3.0 bohr'da kuresel minimumun 0.0799 ve 0.0810 Ha ustunde "
+    "iki yerel minimum daha var -- ve |lambda| < 1e-8 yumusak modlar ayirt "
+    "edilmez",
 )
 
 _UHF_IHMAL_EDILEN: tuple[str, ...] = (
@@ -88,6 +108,10 @@ class UHFResult:
     n_alpha: int
     n_beta: int
     provenance: Provenance
+    # UHF -> UHF kararlilik hukmu (kanal "uhf"); yalniz analiz GERCEKTEN
+    # kosulduysa dolu (`solve_uhf(stability=True)` ya da `search_uhf`). None
+    # "sorun yok" DEMEK DEGILDIR, "bakilmadi" demektir.
+    stability: StabilityVerdict | None = None
 
 
 def spin_squared(
@@ -117,8 +141,25 @@ def solve_uhf(
     energy_tolerance: float = 1e-12,
     residual_tolerance: float = 1e-8,
     use_diis: bool = True,
+    initial_orbitals: tuple[np.ndarray, np.ndarray] | None = None,
+    stability: bool = False,
 ) -> UHFResult:
-    """UHF enerjisini alfa/beta Roothaan-Hall dongusuyle cozer."""
+    """UHF enerjisini alfa/beta Roothaan-Hall dongusuyle cozer.
+
+    `initial_orbitals=(C_alfa, C_beta)`: SCF bu orbitallerin isgal
+    sutunlarindan kurulan yogunluklarla baslar (bias yerine). Orbitaller
+    ortusme metriginde ortonormal olmak ZORUNDADIR (C^T S C = I); degilse
+    yogunluk idempotent olmaz ve baslangic gecersizdir -> InvalidInputError.
+
+    `stability=True`: yakinsamis cozumde UHF orbital Hessian'i kurulur ve
+    hukum (kanal "uhf") hem `UHFResult.stability`ye hem provenance'a yazilir.
+    Hukum sonucu DEGISTIRMEZ -- eyer de gecerli bir duragan noktadir.
+    """
+    if initial_orbitals is not None and initial_bias is not None:
+        raise InvalidInputError(
+            "initial_orbitals ve initial_bias birlikte verilemez: SCF ya bias'li "
+            "cekirdek Hamiltonyeninden ya da verilen orbitallerden baslar"
+        )
     basis = build_basis(molecule, basis_name)
     S = overlap_matrix(basis)
     Hc = core_hamiltonian(basis, molecule)
@@ -151,8 +192,29 @@ def solve_uhf(
         C = X @ c
         return C, C[:, :k] @ C[:, :k].T, e
 
-    Ca, Pa, ea = coz(Hc + np.diag(bias), na)
-    Cb, Pb, eb = coz(Hc - np.diag(bias), nb)
+    if initial_orbitals is None:
+        Ca, Pa, ea = coz(Hc + np.diag(bias), na)
+        Cb, Pb, eb = coz(Hc - np.diag(bias), nb)
+    else:
+        Ca, Cb = (np.array(c, dtype=float) for c in initial_orbitals)
+        n_orbital = X.shape[1]
+        for ad, c in (("alfa", Ca), ("beta", Cb)):
+            if c.shape != (n_basis, n_orbital):
+                raise InvalidInputError(
+                    f"initial_orbitals {ad} ({n_basis}, {n_orbital}) olmali, "
+                    f"verilen: {c.shape}"
+                )
+            sapma = float(np.abs(c.T @ S @ c - np.eye(n_orbital)).max())
+            if sapma > 1e-8:
+                raise InvalidInputError(
+                    f"initial_orbitals {ad} ortonormal degil: max|C^T S C - I| "
+                    f"= {sapma:.2e}"
+                )
+        Pa = Ca[:, :na] @ Ca[:, :na].T
+        Pb = Cb[:, :nb] @ Cb[:, :nb].T
+        # Ilk iterasyonda durulamaz (adim > 1 sarti), yani ea/eb her basarili
+        # donuste en az bir kez kosegenlestirmeden gelir.
+        ea = eb = np.zeros(0)
 
     enerji = 0.0
     gecmis: list[float] = []
@@ -210,6 +272,11 @@ def solve_uhf(
         )
 
     s2 = spin_squared(Ca, Cb, S, na, nb)
+    hukum = None
+    if stability:
+        hukum = analyse_stability(
+            uhf_orbital_hessian(Hc, eri, Ca, Cb, na, nb)
+        ).verdict(channel="uhf")
     kaynak = Provenance(
         method=f"UHF/{basis_name}",
         approximations=_UHF_YAKLASIMLAR,
@@ -223,6 +290,7 @@ def solve_uhf(
             "n_alpha": float(na),
             "n_beta": float(nb),
         },
+        stability=hukum,
     )
     return UHFResult(
         energy_total=enerji,
@@ -236,6 +304,7 @@ def solve_uhf(
         n_alpha=na,
         n_beta=nb,
         provenance=kaynak,
+        stability=hukum,
     )
 
 

@@ -74,8 +74,8 @@ NE SINANMAZ / NE IDDIA EDILMEZ
   * UHF bir spin ozdurumu DEGILDIR; <S^2> sonuca ilistirilir ama
     DUZELTILMEZ (spin projeksiyonu yoktur). OLCULDU: N=8 d=2.0'da
     <S^2> = 1.220731, yani cozum ne singlet ne triplet.
-  * Parametreler bir ARAMA protokolunden gelir (`search_uhf`), tek bir
-    SCF'ten degil; arama ozeti `search_line` alaninda tasinir.
+  * Parametreler bir ARAMA protokolunden gelir (`search_uhf`, B7'den beri
+    izlemeli), tek SCF'ten degil; `search_line` aramayi VE donen cozumun UHF hukmunu tasir.
 
 MESAFE YASALARI (`DistanceLaws`) -- SINIRLARI OLCULMUSTUR
 ---------------------------------------------------------

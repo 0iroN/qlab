@@ -44,10 +44,20 @@ Fock bloklarinin isareti takas edilirse yine kok yok; (ab|ij) terimi
 duserse kok 4.570719109 bohr'a kayiyor (2.39 bohr hata, ama VAR).
 
 OLCULMUS DURUST OLUMSUZ -- catallanma usleri ARAMAYA baglidir, koda degil:
-tek sabit bias (0.35) ile olculdugunde UHF d = 3e-3 ve d = 1e-1'de RHF'e GERI
-COKUYOR (fark tam 0, spin ~1e-9) ve us "nan" cikiyor. Ayni olcum search_uhf
-(12 tohum) ile temiz. Bu, Task 3'te ilk kez olculen desendir: cipanin gucu
-kodun degil ARAMANIN ozelligi.
+tek sabit bias (0.35) ile olculdugunde UHF bazi noktalarda RHF'e GERI COKUYOR
+(fark tam 0) ve us "nan" cikiyor. Ayni olcum search_uhf (12 tohum) ile temiz.
+Bu, Task 3'te ilk kez olculen desendir: cipanin gucu kodun degil ARAMANIN
+ozelligi. COKUS YERI MAKINEYE BAGLI ve KILITLENMEZ: ilk kayit d = 3e-3 ve
+d = 1e-1 diyordu; 09.10.2026'da bu makinede (numpy 2.5.1, OpenBLAS 0.3.33)
+yedi noktali izgarada (d = 1e-3 ... 2e-1) YALNIZ d = 1e-2'de, bu dosyanin bes
+noktali izgarasinda YALNIZ d = 4e-3'te cokuyor; BLAS mi surum mu ayristirilmadi.
+B7'den beri cokus SESSIZ DEGIL: solve_uhf(stability=True) tam o noktalarda
+UHF EYERI (✗) basar, ve kararlilik izlemesi (search_uhf varsayilani, seeds = 1;
+sabit bias + depodaki ozel `_follow_instability` de) bu iki izgaranin hicbir
+noktasinda cokmuyor. Izgaralar d >= 1e-3: Rc'ye d <= 6e-5 yakinlikta izlemenin
+kabul esiginin kor bolgesi var, orada izlemeli seeds = 1 de RHF eyerinde kalir
+(✗) -- bkz. tests/hf/test_uhf_kararlilik.py (T6, KOR_BOLGE). Asagidaki
+pitchfork testinin 12 tohumlu sayilari izlemeyle BIT BIT ayni.
 """
 
 from __future__ import annotations

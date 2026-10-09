@@ -11,6 +11,10 @@ from dataclasses import dataclass, field
 
 SEPARATOR = " · "
 
+# Kararlılık hükmünün tanınan kanalları: iç (RHF→RHF), dış (RHF→UHF), uhf
+# (UHF→UHF). Bu kümenin dışındaki bir ad `StabilityVerdict.as_line`da hata verir.
+_KANALLAR = ("ic", "dis", "uhf")
+
 
 @dataclass(frozen=True)
 class StabilityVerdict:
@@ -40,15 +44,38 @@ class StabilityVerdict:
     # H2 @ 2.00 Å, iç +2.5467 "kararlı", dış −1.5995 eyer). Alan varsayılanla
     # "ic"tir; Modül 1C'den önce tek kanal vardı ve o kanal buydu, dolayısıyla
     # eski kayıtlar doğru okunur.
+    #
+    # ÜÇÜNCÜ kanal "uhf" (UHF→UHF, reel α/β dönmeleri) — B7'de eklendi
+    # (09.10.2026). İç ve dış kanal bir RHF çözümünü sınar; bu kanal bir UHF
+    # çözümünün KENDİSİNİ sınar. Bilinmeyen bir kanal adı artık ValueError
+    # verir: B7'den önce bilinmeyen her ad sessizce iç kanalın "iç (RHF->RHF)
+    # minimum" cümlesine düşüyordu — bir UHF hükmü RHF cümlesiyle basılırdı.
     channel: str = "ic"
 
     def as_line(self) -> str:
         """Şeffaflık panelinin bastığı tek satırlık hüküm."""
+        if self.channel not in _KANALLAR:
+            raise ValueError(
+                f"bilinmeyen kararlılık kanalı {self.channel!r}; "
+                f"tanınanlar: {', '.join(_KANALLAR)}"
+            )
         mark = "✓" if self.stable else "✗"
         if self.lowest_eigenvalue is None:
             return f"{mark} işgal-boş dönme yok, sınanacak yön yok"
         eigenvalue = f"{self.lowest_eigenvalue:.3e}"
         nicelik = f"(en düşük {eigenvalue}, {self.n_rotations} dönme)"
+        if self.channel == "uhf":
+            if self.stable:
+                return (
+                    f"{mark} UHF YEREL minimum: reel α/β dönmelerinde negatif "
+                    f"Hessian özdeğeri yok {nicelik} — küresel minimum iddia "
+                    f"EDİLMEZ, |λ| < 1e-8 yumuşak modlar ayırt edilmez"
+                )
+            return (
+                f"{mark} UHF EYERİ: reel α/β dönmelerinde negatif Hessian "
+                f"özdeğeri var {nicelik} — yakınında daha düşük enerjili bir "
+                f"UHF çözümü var"
+            )
         if self.channel == "dis":
             if self.stable:
                 return (

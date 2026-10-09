@@ -182,7 +182,9 @@ Tasarım belgesi: `../docs/superpowers/specs/2026-08-05-qlab-kuantum-cekirdegi-d
   verilerek** `OLCULMEDI`den `TAUTOLOJI`ye geçti: H2 Yamaguchi `J`sinin
   büyüklüğü oran protokolünde bit bit sadeleşir, işareti `h = 0` çift L'de bir
   **ayar etiketidir** (AFM kademeli seri FM tekbiçim seriyle bit bit aynı) ve
-  şartlıdır (`search_uhf(seeds=1)` kırık simetriyi bulamaz, sessizce +J verir);
+  şartlıdır (izlemesiz `search_uhf(seeds=1, follow_instability=False)` kırık
+  simetriyi bulamaz, sessizce +J verir; 09.10.2026'dan beri varsayılan
+  kararlılık izlemesi onu buluyor, J < 0);
   yeni kova açılmadı. 28.09.2026'da `tdse → spin`, `md → em` ve `tb → em` de
   kenarsız, hükümle `TAUTOLOJI`ye geçti (TDSE'nin 1B soft-Coulomb H2 `J`si gerçek
   ama spin hedefi büyüklüğü siler, 300 K'de R = 3/4/5 donar ya da doyar; EM çiftlerinde
@@ -1042,6 +1044,10 @@ küçültülerek kanıtlandı:
 | **1e-12** | **yalnız muhafız** |
 | 1e-13 | hiçbiri (eşiğin altında) |
 
+*(Protokol etiketi: bu tablo B7 öncesi, **izlemesiz** `search_uhf` ile
+ölçüldü; 09.10.2026'da varsayılan kararlılık izlemesine geçildikten sonra
+yeniden koşulmadı. "HF sınırı" bugünkü izlemesiz sınır testidir.)*
+
 **Ders:** bir mutantın ölmesi, onu öldürmek için yazdığın testin çalıştığı
 anlamına gelmez. *Hangi* testin öldürdüğünü sor.
 
@@ -1082,14 +1088,80 @@ diye soran bir test bunu kaçırırdı).
   **0.945862370628**, oysa bir singlet için 0 olmalıdır. Bu spin kirlenmesi
   ölçülüp raporlanıyor ama **düzeltilmiyor**: spin projeksiyonu (PUHF) yok.
 - **Her UHF enerjisi bir ARAMA protokolüyle gelir** ve çıpanın gücü kodun
-  değil aramanın özelliğidir. HF molekülünde (H + F, 20 bohr) parça toplamı
-  −98.453086808293 ama bu tohum ailesi taban durumu **hiç bulmuyor**:
-  8/12 tohum → +0.8824 Ha, 24/40/64 tohum → **+0.7749 Ha** ıskalıyor. Sekiz
-  kat tohum farkın yalnız 0.11 Ha'ını kapatıyor. Ayrıca N atomunun UHF
-  enerjisi tohuma bağlıdır: tekbiçim bias −53.719010163, alternan bias
-  −53.259271159 (**0.46 Ha** fark). Aynı kırılganlık çatallanma üslerinde de
-  görüldü — tek sabit bias ile UHF bazı R'lerde RHF'e geri çöküyor ve üs
-  `nan` çıkıyor; yukarıdaki tablo `search_uhf` (12 tohum) ile ölçülmüştür.
+  değil aramanın özelliğidir. B7 (09.10.2026) bunu **kararlılık izleyen
+  aramayla** kapattı: `search_uhf`in tohum ailesi aynen kaldı, tohumların en
+  iyisine analitik UHF orbital Hessian'ıyla (`uhf_orbital_hessian`, reel α/β
+  dönmeleri) kararlılık izleme uygulanıyor ve **varsayılan** budur
+  (`follow_instability=True`). HF molekülünde (H + F, 20 bohr, STO-3G) parça
+  toplamı −98.453086808293:
+
+  | tohum | izlemesiz (`follow_instability=False`) | izlemeli (varsayılan) |
+  |---|---|---|
+  | 1 | −97.570681531688 (+0.8824, ✗ eyer) | −98.453086808293 (1 iniş) |
+  | 8 / 12 | −97.570681531688 (**+0.8824**, ✗ λ −1.764811) | −98.453086808293 (1 iniş) |
+  | 24 / 40 / 64 | −97.678222271884 (**+0.7749**, ✗ λ −1.549729, 3 ayrı çözüm) | −98.453086808293 (1 iniş) |
+
+  İzlemeli sütunun parça toplamına uzaklığı 0 … +1.4e-14 (≤ 1 ulp; son hane
+  izleme ayrıntısına bağlı, `==` ile kilitlenmez). **Kök neden tohum SAYISI
+  değil ÖLÇEĞİ:** ailenin en büyük |bias|'ı 1.3008, H 1s'i doldurmak için
+  gereken tek bileşenli bias ise 7.33 < B* ≤ 7.34 (Hcore köşegeninde F 2p ile
+  H 1s arası 7.334 Ha). Ailenin bulduğu iki durum da UHF **eyeridir** ve depo
+  bunu görmüyordu — UHF → UHF kararlılık analizi yoktu; izlemesiz yol bugün
+  aynı sayıları bit bit verir ama panelde "✗ dönen çözüm UHF EYERİ" basar.
+  **N atomu:** tek `solve_uhf` bir durağan nokta döndürür ve bias'a bağlıdır
+  (tekbiçim −53.719010163, alternan −53.259271159, **0.46 Ha** fark) — bu
+  tasarım gereğidir ama artık sessiz değildir: `stability=True` alternan
+  sonucu ✗ λ −0.919478 diye basar; `search_uhf(12)` −53.719010162594 (✓ λ
+  +0.919478, iniş 0) döndürür. **Çatallanma:** tek sabit bias (0.35) ile UHF
+  bu makinede 7 noktalı ızgarada d = 1e-2'de, 5 noktalıda d = 4e-3'te RHF'e
+  geri çöküyor ve |ΔE| üssü `nan` çıkıyor (çöküş yeri makineye bağlı,
+  kilitlenmez); `stability=True` tam o noktalarda ✗ basar. 5 noktalı
+  ızgarada (d = 1e-3 … 1.6e-2) izlemesiz `seeds=1` her noktada çöküyor,
+  izlemeli `seeds=1` hiçbir noktada çökmüyor (1.996042 / 0.497009 /
+  0.995426); Rc'ye daha yakında (d ≤ 6e-5) izlemeli `seeds=1` de eyerde
+  kalıyor — aşağıdaki kör bölge maddesi. Yukarıdaki tablo `search_uhf`
+  (12 tohum) ile ölçülmüştür ve izleme ona dokunmaz (bit bit aynı). ⟨S²⟩
+  üssünün 4. hanesi protokole bağlıdır: 12 tohum 0.995332, `seeds=1` +
+  izleme 0.995426. Sabit bias 0.35'in izlemesiz üssü (0.995360) ise çöküşe
+  **duyarsızdır**: çöken d = 4e-3 log-ızgaranın tam ortasında, en-küçük-kareler
+  eğiminde ağırlığı sıfır — ⟨S²⟩ orada 1.3e-15'e düştüğü hâlde üs aynı
+  çıkıyor (orta nokta atılınca da 0.995360). Çöküşü üs değil ayrı |ΔE|
+  denetimi yakalar.
+- **"UHF-kararlı" YEREL minimum demektir, KÜRESEL değil — ölçüldü.** H8
+  halkası d = 3.0 bohr STO-3G'de Haar-rastgele başlangıçlardan (kamu
+  `solve_uhf(initial_orbitals=…, stability=True)`, 20 başlangıç × DIIS'li /
+  DIIS'siz) 8 ayrı durağan nokta, **3 yerel minimum** bulundu: −3.8572719930
+  (küresel), −3.7773306557 (+0.0799) ve −3.7762350559 (+0.0810); izleme
+  (depodaki özel `_follow_instability` ile, eyerlerden doğrudan) beş eyerin
+  ikisinden küresel olmayan minimuma iniyor. `search_uhf(≥ 4)` bugün
+  küreseli buluyor ama bu bir garanti değildir; panel "UHF YEREL minimum —
+  küresel minimum iddia EDİLMEZ" der.
+- **Yumuşak mod bandı: |λ| < 1e-8'de kararlılık ayırt edilmez.** Ölçülen
+  bant [2.6e-10, 2.1e-7]: kararlı bir çözümde sıfır moda bulaşan SCF artığı
+  en çok −2.579e-10 (HF/6-31G, 20 bohr), en küçük gerçek kararsızlık
+  −2.116e-7 (HF/STO-3G, 8 bohr, π-delik eyeri: izlemesiz `search_uhf(12)`'nin
+  en iyisi; varsayılan izlemeli arama 1.054e-7 Ha aşağıdaki σ-delik
+  minimumuna iniyor, λ +2.099e-7). Daha büyük R'de λ bandın içine giriyor:
+  R = 9 bohr'da `search_uhf(12)`'nin en iyisi λ = −5.189e-9 ile **zaten bant
+  içinde** ve ✓ basılıyor (izleme dokunmuyor, iniş 0), R = 10'da −7.571e-11.
+  R = 9 noktasının gerçekten bir eyer olup olmadığı (altında σ-delik minimumu
+  var mı) ölçülmedi. İzlemesiz `search_uhf(12)`'nin 12 tohumundan R = 8'de
+  yalnız 1'i, R = 9'da 3'ü, R = 10'da 4'ü yakınsıyor ve raporda bunun için
+  bir uyarı yok.
+- **Kabul eşiğinin kör bölgesi: izleme her eyerden inmez — ölçüldü.** İzleme
+  yeni çözümü yalnız `_IZLEME_KABUL` = 1e-9 Ha'dan fazla inerse kabul eder;
+  bir çatallanmanın hemen yanında gerçek iniş ΔE ∝ d² ile keyfi küçüktür.
+  H2/STO-3G, R = Rc + d, varsayılan `search_uhf(seeds=1)`: d ≤ 6e-5'te (λ =
+  −7.7e-7 … −4.6e-5, yumuşak mod bandının 77–4600 katı **dışında**) kırık
+  simetrili minimum RHF eyerinin yalnız 1.7e-13 … 6.3e-10 Ha altında; izleme
+  bu inişi reddediyor (iniş 0) ve panel "✗ dönen çözüm UHF EYERİ" basıyor.
+  Aynı noktalarda `search_uhf(12)` minimumu buluyor (✓); d = 8e-5'te iniş
+  1.12e-9 ve kabul ediliyor. Engel SCF değil eşiktir: depodaki özel yolda
+  eşik 1e-13'e indirilince d = 1e-6 / 1e-5 / 6e-5'te tek inişle minimuma
+  iniliyor. Eşik düşürülmedi — alt sınırı yumuşak yüzeyde SCF durma
+  ölçütünün enerji izi (kuramsal ≈2.5e-10) ve geri çöküşü iniş saymama
+  görevi. Hüküm dürüst (sessizlik yok) ama sınır açıktır; genişliği yalnız
+  H2 çatallanmasında ölçüldü (halkalar, LiF, 6-31G ölçülmedi).
 - **PySCF bu makinede kurulu değil** (yalnız kaynak tarball); `reference/`
   kayıtları PySCF **2.14.0** ile başka bir yerde üretilmiştir. Dahası 11
   referans kaydının **hepsi kapalı kabuktur**, yani UHF'in **spin kırılan
@@ -1097,9 +1169,9 @@ diye soran bir test bunu kaçırırdı).
   (ayrışma limiti, boyut tutarlılığı, çatallanma) üzerinden yapılır.
 - **Deneysel bağ uzunluğu hiçbir yerde girdi değildir.** F₂ için yapılan
   taramada yöntemin kendi dengesi (1.30 Å) kullanılmıştır.
-- **Kompleks (reel olmayan) orbital kanalı hâlâ sınanmıyor.** İç ve dış
-  kanalın ikisinde de "kararlı" hükmü, çözümün **küresel minimum** olduğunu
-  söylemez.
+- **Kompleks (reel olmayan) orbital kanalı hâlâ sınanmıyor.** İç, dış ve
+  UHF kanalının üçünde de "kararlı" hükmü, çözümün **küresel minimum**
+  olduğunu söylemez; UHF Hessian'ı yalnız reel α/β dönmelerini içerir.
 
 ### Modül 2 — klasik moleküler dinamik
 
