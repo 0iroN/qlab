@@ -741,6 +741,21 @@ varsayılan şeride yalnız saniye altı çıpalar konur; çünkü hızlı şeri
 değerlidir. Kural Modül 2E'de iki kez iş gördü: plan dört testi yavaş
 işaretlemişti, ölçüm dördünü de hızlı şeride geri gönderdi.
 
+**Hızlı şeridin fizik ısırığı ölçülüdür (G7, 09.10.2026).** Envanterin "hızlı
+şerit bütün modüllerde fizik çıpalarını atlıyor" iddiası ölçümle çöktü: her
+modülün hızlı şeridinde bağımsız referanslı çıpalar vardı (HF'de hiç açık
+yoktu). Ama modül başına fizik mutantları iki şeritte ayrı koşulunca dar
+açıklar çıktı — yalnız yavaş şeridin yakaladığı, HİÇBİR şeridin
+yakalamadığı ya da hızlı şeritte yalnız regresyon iğnesiyle (kendi önceki
+çıktısına rel 1e-9) ölen mutantlar: tdse 2B dinamik ve m ≠ 1, md Nose-Hoover ve termostat
+tekmelerinde kütle, em 2B kırılma indisi, spin M13, tb UHF spin takası ve
+Δ işareti, grav sekiz BVP, bridge anharmonik A² yolu. Her biri için
+`tests/<modül>/test_g7_hizli_cipa.py` (7 dosya, 18 test, tek başına 1.73 s,
+en yavaşı 0.17 s) kapalı form referanslı ucuz bir ısırık taşır; her dosya bir
+şüpheci denetiminden geçti ve hedef mutantları öldürdüğü ölçüldü. Bu dosyalar
+yavaş şeridin doğa çıpalarının YERİNİ TUTMAZ; hızlı şeridin neyi
+göremeyeceğini daraltır.
+
 ## Doğrulama
 
 Her fizik iddiası bilinen bir referansa karşı test edilir.
@@ -2673,9 +2688,14 @@ edilince sınanabilir hâle gelen iddialardı**:
 - **`oblique.py` TAM 2B İLE KARŞILAŞTIRILMADI.** 1B-açılı indirgeme devralınmış
   bir modelleme seçimidir (`k_y` analitik dayatılıyor) ve bedeli ölçülmedi.
   Task 3'ten kalan bu açık **hâlâ açıktır**.
-- **`-m "not slow"` koşumunda fizik çıpalarının TAMAMI atlanıyor.** İşaret
-  fixture yüzünden geniş (Bessel tarafında `kayitlar`ı tüketen 11 test), ve
-  Rayleigh/yarık tarafı da `slow`. Karşılığında aletin kendi kapıları ucuz
+- **`-m "not slow"` koşumunda modülün doğa çıpalarının TAMAMI atlanıyor.**
+  İşaret fixture yüzünden geniş (Bessel tarafında `kayitlar`ı tüketen 11
+  test), ve Rayleigh/yarık tarafı da `slow`. G7 (09.10.2026) hızlı şeride
+  kapalı form referanslı iki ucuz ısırık ekledi (`tests/em/test_g7_hizli_cipa.py`:
+  dielektrik dolu dikdörtgen kovuk ve dik geliş Fresnel |r| + işareti); bütün
+  hızlı 2B koşumları eps_r = 1'de olduğu için 2B kırılma indisi mutantı
+  (eps → √eps) ancak böyle görünür. Modül 5'in sözlüğünde bunlar şema çıpası /
+  çeviri denetimidir, doğa çıpalarının yerini TUTMAZ. Karşılığında aletin kendi kapıları ucuz
   fixture'lara ayrıldı ve `kind: em` senaryosunun uçtan uca dalı **bilinçli
   olarak `slow` bırakılmadı** — yoksa "not slow" koşumu senaryo sınırını hiç
   sınamazdı.

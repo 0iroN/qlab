@@ -282,6 +282,11 @@ ile geri yükleme. Kontrol koşumu: 18 passed / 110.04 s.
     yalnız `BINDER_MOMENT_YOLU_ILE_KAYNAK_YOLU_AYNI` yakalıyor; ikisi de
     pahalı fixture'ın arkasında. Yani `-m "not slow"` koşan biri bu iki
     bozulmayı GÖREMEZ ve bu, hızlı şeridin kapsamı hakkında bir beyandır.
+    G7 (09.10.2026) BU BEYANI DARALTTI: tablo YALNIZ BU DOSYANIN testleriyle
+    ölçülmüştü. Modülün TÜM hızlı şeridinde M4'ü (naif SEM) öteki
+    dosyaların AR(1) kapalı form çıpaları zaten öldürüyor (10 test); M13'ü
+    `tests/spin/test_g7_hizli_cipa.py` öldürüyor (`.superpowers/sdd/
+    g7-olcum/spin/`).
 
 ÜÇ SONUÇ AYRICA KAYDEDİLDİ:
 
