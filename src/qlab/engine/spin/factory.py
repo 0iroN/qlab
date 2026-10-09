@@ -63,7 +63,9 @@ _SPIN_YAKLASIMLAR: tuple[str, ...] = (
     "Binder U ve C degismez (l ikinin kuvvetiyken bit bit), chi 1/l ile "
     "olceklenir, coupling'ler arasi karsilastirilacak sayi J*chi'dir",
     "denge ornekleme: raporlanan her sayi bir DENGE ortalamasidir; "
-    "histerezis, tavlama ve butun denge-disi surecler kapsam disindadir",
+    "histerezis, tavlama ve butun denge-disi surecler kapsam disindadir; "
+    "baslangic alanla hizali tekbicimdir (h < 0'da tumu -1) ve kamu "
+    "yolunda baska baslangic YOKTUR",
     "Ising checkerboard Metropolis T/J -> sonsuzda DONAR, iliskisiz tabana "
     "gitmez: kabul ~1 olunca her yari-adim bir alt-orguyu butunuyle cevirir, "
     "<|m|> baslangici okur ve karisma suresi T/J ile buyur. O rejimde binning "
@@ -171,6 +173,52 @@ def build_spin(scenario: SpinScenario) -> SpinScanResult:
     noktanin farki kendi gurultusunden kucuk gorunurdu. `SeedSequence.spawn`
     tek bir tohumdan bagimsiz akislar uretir ve tekrarlanabilirligi bozmaz --
     ayni `seed` her zaman ayni akis listesini verir.
+
+    BASLANGIC ALANLA HIZALIDIR -- F7 KARARI BUNA DAYANIR (09.10.2026). Son
+    bilesen (s^z, alanin baglandigi bilesen) alanin isaretini alir: h < 0'da
+    tekbicim durum aynalanir (tumu -1; Heisenberg x/y -0.0 olur, olculdu
+    zararsiz: -1'e yazan bicimle kamu ciktisi 15/15 bit bit ayni), aksi
+    halde +1. Kamu yolunda (YAML -> `qlab.run`) BASKA BASLANGIC YOKTUR ve F7
+    ("dusuk T burn-in tohuma bagli -> pencere uyarisi?") bu onculle UYARISIZ
+    kapandi: soguk kamu yolunda takilma OLCULDU SIFIR (5 hucre x 20 tohum
+    0/100, on olcum 0/480). Hizalamadan onceki acik kapi OLCULDU: hep +1
+    baslangicla h < 0'da Ising + Metropolis alana ters metastabil kalir ve
+    panel yakinsadi der -- L = 32, T = 1, h = -0.2'de 5/5 tohumda <|m|>
+    9.4 ... 11.7 sigma yanlis; `spin_tarama.yaml`a yalniz `field: -0.1`
+    yazmak T = 1.6'yi 7.64 sigma yanlis bir plato yapiyordu. Simdi Ising'de
+    h < 0 ciktisi h > 0'inkinin bit bit aynasi (L = 16: 11/11 tohum, L = 32:
+    5/5) ve h >= 0 ciktisi degismedi (11/11; dogrulamada 17/17 senaryo npz
+    duzeyinde, sevk dosyasi dahil). Esik kilidi en kucuk alt-normal negatif
+    alani da sinar (`field < -0.1` gibi bir esik mutanti kucuk |h|'de kapiyi
+    yeniden acardi -- dogrulama X1).
+
+    BINNING PLATOSU METASTABILITEYI DISLAMAZ: kapi tanidan degil
+    baslangictan kapanir. Enjekte capraz serit (kamudan ulasilamaz)
+    checkerboard'da dE = 0 ile kati otelenir, |m| sabit kalir: 658
+    takilmanin 68'inde panel yakinsadi der; L/4 seridinde (L = 32, T = 0.6)
+    <|m|> = 0.499998 +- 1.969e-06, U = +0.666667, plato var (denge ~1.0).
+    235 enjekte kosuda |m| serisi tumuyle sifir -> Binder hatasi, `run.main`
+    cikis 1 (gurultulu, sahte degil). Baslangic secenegi eklenirse F7
+    YENIDEN ACILIR -- kilit `test_KAMU_BASLANGICI_ALANLA_HIZALI_ve_TEK`,
+    karsi ornek `test_BINNING_PLATOSU_METASTABILITEYI_DISLAMAZ`
+    (tests/spin/test_spin_senaryo.py).
+
+    ESDEGER MUTANT (beyan): `field <= 0`'da -1 (h = 0'da -1) OLCULMUS
+    ESDEGERDIR -- Ising'de h = 0 kamu ciktisi Z2 ile 11/11 tohumda bit bit
+    ayni; Heisenberg'de bit duzeyinde DEGIL (h = 0 npz'si 2/2 tohumda
+    degisiyor, fark ~1-1.5 sigma: O(3) simetrisiyle dagilimca esdeger,
+    istatistigi olculmedi). h = 0'da +1 bir KONVANSIYONDUR ve onu yalniz
+    kilit yakalar. Heisenberg'de h < 0 hizalamasi da davranisca neredeyse
+    esdegerdir (+z baslangic h < 0'da 6/6 gevsiyor); onu da yalniz kilit
+    yakalar.
+
+    OLCULMEDI: sicak baslangiclarin capraz seride kaba-tanelenme sikligi;
+    T < 0.4 ve L > 32'de serit; Heisenberg'de h < 0 disi metastabilite ve
+    h != 0 Heisenberg panelinin genel yakinsama orani (tek olculen pencere
+    L = 16, T = 0.5/1.0, h = +-0.2: 12/12 yakinsamadi); alan esigi bandinin
+    L = 16, T = 1.0/1.5, h = +-0.2 disi. Kayitlar depo disinda:
+    `.superpowers/sdd/f7-olcum/` (elestirmen/ e1-e6, uygulama/ u0-u6,
+    dogrulama/ v_*).
     """
     _coupling_kapisi(scenario)
     model = _model_kur(scenario)
@@ -184,6 +232,8 @@ def build_spin(scenario: SpinScenario) -> SpinScanResult:
         durum = SpinState.uniform(
             L=scenario.lattice_size, n_component=model.n_component
         )
+        if scenario.field < 0.0:  # F7: baslangic alanla HIZALI (dokstring)
+            durum = SpinState(-durum.spins)
         if scenario.algorithm == "wolff":
             sonuclar.append(
                 run_wolff(

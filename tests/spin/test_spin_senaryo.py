@@ -7,10 +7,16 @@ Modülün fiziksel çıpaları başka yerdedir: Onsager ve kritik üs
 `test_cipalar.py`de, Mermin-Wagner `test_mermin_wagner.py`de, çapraz kontrol
 `test_wolff.py`de.
 
-TEK İSTİSNA — VE O DA FİZİK DEĞİL, KOŞUM ÖZELLİĞİ: plato bayrağının sevk
+BİRİNCİ İSTİSNA — VE O DA FİZİK DEĞİL, KOŞUM ÖZELLİĞİ: plato bayrağının sevk
 edilen senaryoda **hangi sıcaklıklarda** düştüğü. O bir Ising iddiası değil,
 "bu koşum kendi otokorelasyonunu çözecek kadar uzun mu" sorusunun cevabıdır
 ve aşağıda 24 tohumla ölçülmüştür.
+
+İKİNCİ İSTİSNA (09.10.2026, F7 kapanışı): `test_ALAN_MIKNATISLANMAYI_AZALTAMAZ`
+bir fizik iddiası taşır (alan ⟨|m|⟩'yi `h = 0`'ın altına indiremez; eşik 11
+tohumla ölçülmüş bandın içinde) ve `test_BINNING_PLATOSU_METASTABILITEYI_DISLAMAZ`
+bir tanının SINIRINI, yani karşı örneğini kilitler. İkisi de kamu yolundan
+koşar; ölçümler kendi dokstringlerindedir.
 
 BU DOSYANIN EN ÖNEMLİ TESTİ BİR SAYI DEĞİL BİR SAYIM DENETLER:
 `test_BEYAN_TEK_KAYNAKTAN_geliyor`. Ölçülmüş gerekçe bu depodadır — aynı
@@ -61,6 +67,7 @@ kilitlenebilir.
 from __future__ import annotations
 
 import dataclasses
+import inspect
 import json
 import re
 import subprocess
@@ -386,12 +393,16 @@ def test_MODULUN_ETIK_CEKIRDEGI_metinde_YAZILI():
 
     Gerekçesi `test_tb_scenario.py`de ölçüldü: kelime bazlı bir test,
     bitişik dize sabitlerinin yalnızca İLK satırını değiştiren mutantları
-    kaçırıyor. Aşağıdaki on parça bu modülün etik çekirdeğidir ve
+    kaçırıyor. Aşağıdaki on bir parça bu modülün etik çekirdeğidir ve
     sessizce yeniden yazılmamalıdır: ikisi birim seçimini ve sonlu kafesi
     (yani "burada keskin bir geçiş yok"u), ikisi 3B ile ξ'nin neden
     kapsam dışı olduğunu, ikisi kritik üsün sonlu-boyut kalıntısını, ikisi
     de daireselliğin kendisini yazıyor. 27.09.2026'da iki parça eklendi:
     kT/J = T/coupling (J bir girdidir) ve Ising'in T/J -> sonsuz donması.
+    09.10.2026'da (F7) bir parça daha: başlangıç alanla hizalı tekbiçimdir —
+    F7'nin "pencere uyarısı YOK" hükmü bu öncüle dayanır
+    (`test_KAMU_BASLANGICI_ALANLA_HIZALI_ve_TEK`). Cümle sayısı DEĞİŞMEDİ
+    (12): parça mevcut "denge ornekleme" cümlesine eklendi.
 
     Bu test bir totoloji DEĞİLDİR: sağ taraf `factory` modülünden okunur,
     sol taraftaki cümleler burada BAĞIMSIZ olarak yazılmıştır.
@@ -417,6 +428,7 @@ def test_MODULUN_ETIK_CEKIRDEGI_metinde_YAZILI():
         "ORTALAMA ALAN (beta/nu = 1.0) 272.0 kat marjla dislandi",
         "T_c'nin SI birimlerindeki degeri bir tahmin DEGILDIR",
         "BU MODUL HICBIR MALZEMENIN T_c'sini IDDIA ETMEZ",
+        "baslangic alanla hizali tekbicimdir",
     ):
         assert cumle in metin, f"beyan kayip: {cumle!r}"
 
@@ -954,6 +966,237 @@ def test_KHI_ENERJI_EKSI_BIR_BIRIMINDE_ve_NPZ_coupling_TASIYOR(tmp_path, capsys)
         assert np.array_equal(0.5 * v["susceptibility"], bir.susceptibility)
         yaklasim = json.loads(str(v["provenance_json"]))["approximations"]
     assert any("chi 1/l ile olceklenir, coupling'ler arasi karsilastirilacak sayi J*chi'dir" in a for a in yaklasim)
+
+
+# ---------------------------------------------------------------------------
+# F7 KAPANIŞI (09.10.2026): BAŞLANGIÇ ALANLA HİZALI. Ölçüm kayıtları depo dışında (gitignore):
+# `.superpowers/sdd/f7-olcum/` (olcum/ ön ölçüm, elestirmen/ e1-e6; uygulama/ u0 düzeltme öncesi
+# kırmızı, u1-u2 e-sayılarının kamu yolundan yeniden üretimi, u3 mutantlar).
+# HEPSİ KAMU YOLUNDAN: YAML -> `qlab.run.main` -> `.npz`.
+# Ortak pencere: Ising · Metropolis · L = 16 · T = (1.0, 1.5) · 200 + 1000 sweep · tohum 20260823.
+# ---------------------------------------------------------------------------
+
+F7_ANAHTARLAR = ("magnetisation", "magnetisation_error", "tau_int", "binder", "susceptibility", "heat_capacity")
+
+F7_MESAJ = (
+    "F7 (pencere uyarisi YOK) bu onculle duruyor; baslangic secenegi eklenirse F7'yi yeniden ac: "
+    "capraz serit ✓ veriyor (.superpowers/sdd/f7-olcum/elestirmen/e2, e6)"
+)
+
+
+def _f7_kos(tmp_path, field, *, model="ising", algoritma="metropolis", L=16, sicakliklar=(1.0, 1.5),
+            n_sweep=1000, n_burn=200, tohum=20260823) -> dict:
+    """Kamu yolu: YAML yaz, `qlab.run.main([yaml, '-o', npz]) == 0`, `.npz`yi sözlük olarak döndür.
+
+    Sözlükte `.npz` anahtarlarının kopyası, `kaynak` (çözülmüş `provenance_json`) ve `yaml` (yol) var.
+    """
+    from qlab import run
+
+    ad = f"f7_{model}_{algoritma}_L{L}_h{float(field):+.3f}_t{tohum}"
+    yaml_yolu = tmp_path / f"{ad}.yaml"
+    yaml_yolu.write_text(
+        f"kind: spin\nname: f7 kapanis\nmodel: {model}\nalgorithm: {algoritma}\n"
+        f"lattice_size: {L}\ntemperatures: [{', '.join(repr(float(t)) for t in sicakliklar)}]\n"
+        f"n_sweep: {n_sweep}\nn_burn: {n_burn}\nseed: {tohum}\nfield: {float(field)!r}\n",
+        encoding="utf-8",
+    )
+    npz = tmp_path / f"{ad}.npz"
+    assert run.main([str(yaml_yolu), "-o", str(npz)]) == 0, f"kamu yolu cikis != 0: {ad}"
+    with np.load(npz, allow_pickle=False) as v:
+        sonuc = {k: v[k].copy() for k in v.files}
+    sonuc["kaynak"] = json.loads(str(sonuc["provenance_json"]))
+    sonuc["yaml"] = yaml_yolu
+    return sonuc
+
+
+def test_NEGATIF_ALAN_kamu_yolunda_AYNA_bit_bit(tmp_path):
+    """`h → −h` altında kamu çıktısı BİT BİT aynı olmalı (Z2 aynası).
+
+    Ising'de `(s, h) → (−s, −h)` enerjiyi ve her Metropolis kabul kararını
+    değiştirmez; aynı tohum akışıyla, BAŞLANGIÇ DA AYNALANIRSA, `h < 0` koşumu
+    `h > 0` koşumunun bit bit aynasıdır (eleştirmen e1 B: `|m|`, E ve son durum
+    3/3 tohumda ayna). 09.10.2026'ya kadar başlangıç HEP +1'di: `h < 0` alana
+    TERS başlıyor, Ising metastabil kalıyor ve panel ✓ basıyordu. ÖLÇÜLDÜ (e5,
+    bu pencere, tohum 20260823 + 1..10): düzeltmesiz 0/11, düzeltmeyle 11/11.
+
+    Yöntem satırı GİRDİYİ basmalı: `|h|`yi motora geçirip aynalığı "kazanan"
+    bir mutantın senaryosu da `h = 0.2` derdi.
+
+    TEK BAŞINA YETMEZ: işareti TERS çeviren mutant (`h < 0 → +1`, `h ≥ 0 → −1`)
+    aynayı da korur ve bu testi 11/11 GEÇER (e5 "ters"); onu
+    `test_ALAN_MIKNATISLANMAYI_AZALTAMAZ` ile `test_POZITIF_VE_SIFIR_ALAN_DEGISMEDI` öldürür.
+    """
+    eksi = _f7_kos(tmp_path, -0.2)
+    arti = _f7_kos(tmp_path, +0.2)
+    for ad in F7_ANAHTARLAR:
+        assert np.array_equal(eksi[ad], arti[ad]), f"{ad}: h = -0.2 ile +0.2 bit bit ayna DEGIL"
+    assert "h = -0.2;" in eksi["kaynak"]["method"]
+    assert "h = 0.2;" in arti["kaynak"]["method"]
+
+
+def test_ALAN_MIKNATISLANMAYI_AZALTAMAZ(tmp_path):
+    """`|h| = 0.2` her sıcaklıkta ve HER İŞARETTE `⟨|m|⟩`yi `h = 0`ın ÜSTÜNE çıkarır.
+
+    Eşik 0'dır ve ÖLÇÜLMÜŞ bandın içindedir (eleştirmen e5b, bu pencere, 11
+    tohum 20260823 + 1..10; z = (⟨|m|⟩(h) − ⟨|m|⟩(0)) / hypot(hata çubukları)):
+
+        h = −0.2     düzeltmesiz (+1 başlangıç)    düzeltmeyle (−1 başlangıç)
+        T = 1.0      z ∈ [−3.37, −2.54]            z ∈ [+1.80, +2.97]
+        T = 1.5      z ∈ [−8.81, −1.39]            z ∈ [+6.17, +7.93]
+
+    `h = +0.2` iki kuralda da düzeltilmiş sütunla aynıdır. Yani 0 eşiği iki
+    bandın ARASINDA kalır: düzeltmesiz kod 11/11 tohumda kırmızı, düzeltme
+    11/11'de yeşil. 3σ eşiği SEÇİLMEDİ: T = 1.0'da düzeltilmiş bant +1.80'de
+    başlıyor ve 3σ doğru kodu 11'in 11'inde kırmızı yapardı (e5 K2 0/11).
+    """
+    sifir = _f7_kos(tmp_path, 0.0)["magnetisation"]
+    for h in (-0.2, +0.2):
+        m = _f7_kos(tmp_path, h)["magnetisation"]
+        for i, T in enumerate((1.0, 1.5)):
+            assert m[i] > sifir[i], f"T = {T}, h = {h}: <|m|> {m[i]!r} <= h = 0'daki {sifir[i]!r}"
+
+
+@pytest.mark.parametrize("h", [0.2, 0.0], ids=["h+0.2", "h0"])
+def test_POZITIF_VE_SIFIR_ALAN_DEGISMEDI(tmp_path, h):
+    """`h ≥ 0`'da düzeltme kamu çıktısını BİT BİT değiştirmez.
+
+    `test_FABRIKA_IKINCI_BIR_FIZIK_YOLU_ACMIYOR`in `h = +0.2` ve `0`a
+    genişletilmiş hâli, kamu yolundan: beklenen değer, motoru `+1` tekbiçim
+    başlangıçla, AYNI `SeedSequence.spawn` akışlarıyla doğrudan koşup aynı
+    `build_spin_payload`dan geçirmektir. Literal YOK; kıyas birebir `==`.
+    ÖLÇÜLDÜ (e5 K3): düzeltme `h ≥ 0` çıktılarını 11/11 tohumda bit bit korur;
+    işareti TERS çeviren mutant `h = +0.2`'de 0/11 (alana ters başlar).
+    """
+    from qlab.engine.spin.lattice import SpinState
+    from qlab.engine.spin.metropolis import run_metropolis
+    from qlab.engine.spin.models import IsingModel
+
+    kamu = _f7_kos(tmp_path, h)
+    senaryo = load_scenario(kamu["yaml"])
+    assert senaryo.field == h
+    akislar = np.random.SeedSequence(senaryo.seed).spawn(len(senaryo.temperatures))
+    dogrudan = tuple(
+        run_metropolis(
+            SpinState.uniform(L=senaryo.lattice_size, n_component=1),
+            IsingModel(),
+            temperature=T,
+            coupling=senaryo.coupling,
+            field=senaryo.field,
+            rng=np.random.default_rng(akis),
+            n_sweep=senaryo.n_sweep,
+            n_burn=senaryo.n_burn,
+        )
+        for T, akis in zip(senaryo.temperatures, akislar)
+    )
+    beklenen = build_spin_payload(fabrika.SpinScanResult(scenario=senaryo, samples=dogrudan))
+    for ad in F7_ANAHTARLAR:
+        assert np.array_equal(kamu[ad], getattr(beklenen, ad)), f"{ad}: h = {h} ciktisi degisti"
+    for olculen, ref in zip(build_spin(senaryo).samples, dogrudan, strict=True):
+        assert np.array_equal(olculen.magnetisation_series, ref.magnetisation_series)
+        assert np.array_equal(olculen.energy_series, ref.energy_series)
+
+
+def test_KAMU_BASLANGICI_ALANLA_HIZALI_ve_TEK(tmp_path, monkeypatch):
+    """F7 KAPSAM KİLİDİ: kamu yolunun TEK başlangıcı alanla hizalı tekbiçimdir.
+
+    F7'nin hükmü ("düşük T burn-in tohuma bağlı → panele pencere uyarısı?"
+    sorusu UYARISIZ kapanır) bir tanıya değil bu öncüle dayanır: binning
+    platosu metastabiliteyi DIŞLAMAZ (karşı örnek
+    `test_BINNING_PLATOSU_METASTABILITEYI_DISLAMAZ`), ama kamu yolunda metastabil
+    bir başlangıç YOKTUR — soğuk kamu yolunda takılma ÖLÇÜLDÜ SIFIR (eleştirmen
+    e3 C 0/100, ön ölçüm 0/480). Öncül üç parçadır ve üçü de burada kilitli:
+
+      * motora giden HER durum tekbiçimdir: son bileşen `h < 0`'da tümü −1,
+        aksi hâlde +1, diğer bileşenler 0 — Ising/Heisenberg × Metropolis,
+        Ising × Wolff; motora giden alan GİRDİNİN kendisidir;
+      * başlangıç SEÇENEĞİ yoktur: `SpinScenario` alan kümesi ve `build_spin`
+        imzası sabit (bir seçenek eklemek ikisinden birini değiştirir);
+      * öncül yazılı: `build_spin` ve `SpinState.uniform` dokstringleri.
+
+    `h = 0`'da +1 bir KONVANSİYONDUR: `field <= 0 → −1` mutantı ölçülmüş
+    eşdeğerdir (Ising'de Z2; e5 "h0eksi" 11/11 bit bit aynı; Heisenberg'de bit
+    düzeyinde değil, O(3) ile dağılımca -- doğrulama, 2 tohum ~1-1.5σ) ve
+    yalnız bu kilit yakalar. Eşik mutantlarına karşı tablo en küçük alt-normal
+    negatif alanı da içerir (doğrulama X1: `field < -0.1`).
+    Heisenberg'de hizalama davranışça neredeyse eşdeğerdir (`+z` başlangıç
+    `h < 0`'da 6/6 gevşiyor, e4 H); onu da yalnız bu kilit yakalar.
+    """
+    from qlab.engine.spin.lattice import SpinState
+
+    kayit: list[tuple[str, np.ndarray, float]] = []
+    asil_metro, asil_wolff = fabrika.run_metropolis, fabrika.run_wolff
+
+    def casus_metro(state, model, **kw):
+        kayit.append(("metropolis", state.spins.copy(), kw["field"]))
+        return asil_metro(state, model, **kw)
+
+    def casus_wolff(state, **kw):
+        kayit.append(("wolff", state.spins.copy(), kw["field"]))
+        return asil_wolff(state, **kw)
+
+    monkeypatch.setattr(fabrika, "run_metropolis", casus_metro)
+    monkeypatch.setattr(fabrika, "run_wolff", casus_wolff)
+
+    for model, algoritma, h in (
+        ("ising", "metropolis", -0.2),
+        # EN KÜÇÜK alt-normal negatif alan: `< 0.0` dışındaki HER eşik mutantı
+        # (ör. `field < -0.1`, doğrulama X1 -- küçük |h|'de sahte ✓ kanalını
+        # yeniden açıyordu) burada +1 başlatır ve ölür; `<= 0.0` M4'tür.
+        ("ising", "metropolis", -5e-324),
+        ("ising", "metropolis", 0.0),
+        ("ising", "metropolis", 0.2),
+        ("heisenberg", "metropolis", -0.2),
+        ("heisenberg", "metropolis", 0.2),
+        ("ising", "wolff", 0.0),
+    ):
+        kayit.clear()
+        _f7_kos(tmp_path, h, model=model, algoritma=algoritma, L=8, sicakliklar=(3.0, 4.0), n_sweep=200, n_burn=0)
+        assert [k[0] for k in kayit] == [algoritma, algoritma], F7_MESAJ
+        beklenen = np.zeros((8, 8, 3 if model == "heisenberg" else 1))
+        beklenen[..., -1] = -1.0 if h < 0 else 1.0
+        for _, spins, alan in kayit:
+            assert np.array_equal(spins, beklenen), f"{model}/{algoritma} h = {h}: {F7_MESAJ}"
+            assert alan == h, f"{model}/{algoritma}: motora giden alan {alan!r}, girdi {h!r}"
+
+    assert {f.name for f in dataclasses.fields(SpinScenario)} == {
+        "name", "model", "algorithm", "lattice_size", "temperatures", "n_sweep", "n_burn", "seed",
+        "coupling", "field", "heisenberg_step",
+    }, F7_MESAJ
+    assert list(inspect.signature(build_spin).parameters) == ["scenario"], F7_MESAJ
+    assert "BASLANGIC ALANLA HIZALIDIR -- F7 KARARI BUNA DAYANIR" in " ".join(build_spin.__doc__.split()), F7_MESAJ
+    assert "h < 0'da alana TERS olur ve hizalama cagiranin isidir" in " ".join(
+        SpinState.uniform.__doc__.split()
+    ), F7_MESAJ
+
+
+def test_BINNING_PLATOSU_METASTABILITEYI_DISLAMAZ(tmp_path, monkeypatch):
+    """Beyanın KARŞI ÖRNEĞİ kilitli: plato ✓ ile yanlış `⟨|m|⟩` AYNI satırda.
+
+    Kamu başlangıcı yerine `L/4` genişliğinde çapraz şerit (`(i + j) mod L <
+    L/4` → +1, aksi −1) konur. Checkerboard Metropolis çapraz şeridi ΔE = 0
+    kabulüyle KATI öteler (eleştirmen e3 A: her sweep'te 2 satır kayma), `|m|`
+    sabit kalır ve seri plato yapar. ÖLÇÜLDÜ (e6, bu pencere): ⟨|m|⟩ = 0.499998
+    ± 1.969e-06, U = +0.666667, Yakınsama ✓ — denge ⟨|m|⟩ ise ~1.0 (e2 REF,
+    soğuk kamu, T = 0.6). Genel sayım (e2): 658 takılmanın 68'inde panel ✓.
+
+    Bu yüzden F7 bir tanıya değil başlangıca dayanır
+    (`test_KAMU_BASLANGICI_ALANLA_HIZALI_ve_TEK`). Binning ileride bunu
+    yakalayacak biçimde değişirse bu test KIRMIZI olur ve `build_spin`
+    dokstringindeki "binning platosu metastabiliteyi DISLAMAZ" beyanı
+    güncellenir — sessizce eskimez.
+    """
+
+    class CaprazSerit(fabrika.SpinState):
+        @classmethod
+        def uniform(cls, L, n_component):
+            i, j = np.indices((L, L))
+            return cls(np.where(((i + j) % L) < L // 4, 1.0, -1.0)[..., None])
+
+    monkeypatch.setattr(fabrika, "SpinState", CaprazSerit)
+    v = _f7_kos(tmp_path, 0.0, L=32, sicakliklar=(0.6,), n_sweep=1000, n_burn=0, tohum=1)
+    assert v["plateau_reached"][0]
+    assert v["kaynak"]["converged"] is True
+    assert v["magnetisation"][0] < 0.51
 
 
 # ---------------------------------------------------------------------------

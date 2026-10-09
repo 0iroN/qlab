@@ -66,9 +66,14 @@ class SpinState:
         """Hepsi ayni yone bakan durum -- son bilesen 1, digerleri 0.
 
         SON bilesen bilincli: alan terimi de son bilesene (s^z) baglanir, yani
-        tekbicim durum her zaman alanla HIZALIDIR. Ilk bilesen secilseydi
-        n_component = 1'de fark gorunmez, n_component = 3'te alan terimi
-        sessizce sifirlanirdi.
+        tekbicim durum alan ekseni boyunca +1 yonundedir; h < 0'da alana TERS
+        olur ve hizalama cagiranin isidir (`build_spin` yapar). OLCULDU
+        (09.10.2026, F7, kamu yolu): hizalama yokken h = -0.2, T = 1, L = 32
+        Ising + Metropolis metastabil kaliyor ve panel 5/5 tohumda <|m|>'yi
+        9.4 ... 11.7 sigma yanlis basarken 'yakinsadi' diyordu
+        (`.superpowers/sdd/f7-olcum/uygulama/u1_yeniden.out`, A bolumu).
+        Ilk bilesen secilseydi n_component = 1'de fark gorunmez,
+        n_component = 3'te alan terimi sessizce sifirlanirdi.
         """
         if L < 2:
             raise InvalidInputError(f"L en az 2 olmali, verilen: {L}")
