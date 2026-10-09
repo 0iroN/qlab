@@ -55,7 +55,13 @@ from scipy.optimize import minimize
 import qlab.engine.hf.scf as hf_scf
 import qlab.engine.md.forcefields as forcefields_modulu
 import qlab.engine.md.tb_kuvvet as tb_kuvvet_modulu
-from qlab.engine.md.factory import build, energy_drift, energy_oscillation, provenance_for
+from qlab.engine.md.factory import (
+    build,
+    energy_drift,
+    energy_oscillation,
+    omega_max_frame0,
+    provenance_for,
+)
 from qlab.engine.md.integrator import run, velocity_verlet_step
 from qlab.engine.md.state import MDState
 from qlab.engine.md.tb_kuvvet import SsSigmaTBKuvveti
@@ -738,23 +744,26 @@ def _ortak(senaryo: MDScenario) -> MDScenario:
     return dataclasses.replace(senaryo, force_field={"kind": "morse", "params": {}})
 
 
-def _hukum(senaryo: MDScenario, yorunge) -> tuple[float, bool]:
-    """Sürüklenme oranı ve panelin BİRLEŞİK hükmü (D2: TB NVE'de S de girer)."""
+def _hukum(senaryo: MDScenario, yorunge, omega0: float | None) -> tuple[float, bool]:
+    """Sürüklenme oranı ve panelin BİRLEŞİK hükmü (D2: TB NVE'de S de girer;
+    D2-i: kare-0 omega0*dt de -- `omega0` = `omega_max_frame0`, ortak dalda None)."""
     oran = energy_drift(senaryo, yorunge.kinetic, yorunge.potential)
     salinim = energy_oscillation(senaryo, yorunge)
     return oran, provenance_for(
-        senaryo, energy_drift=oran, energy_oscillation=salinim
+        senaryo, energy_drift=oran, energy_oscillation=salinim, omega_max_frame0=omega0
     ).converged
 
 
 def _suruklenme_hukmu(senaryo: MDScenario, oran: float) -> bool:
-    """YALNIZ sürüklenme hükmü: S eşiğin altında (0.0) sabitlenir.
+    """YALNIZ sürüklenme hükmü: S ve omega0 eşiğin altında (0.0) sabitlenir.
 
-    D2'den beri birleşik hüküm iki ölçütün VE'sidir; bir pencerede ikisi de
+    D2'den beri birleşik hüküm ölçütlerin VE'sidir; bir pencerede ikisi de
     ✗ derse birleşik hükme bakan test sürüklenme eşiğinin mutantına kör
     kalır (Fermi penceresinde 3.16 K: sürüklenme 5.48e-02, S 7.30e-02).
     """
-    return provenance_for(senaryo, energy_drift=oran, energy_oscillation=0.0).converged
+    return provenance_for(
+        senaryo, energy_drift=oran, energy_oscillation=0.0, omega_max_frame0=0.0
+    ).converged
 
 
 def test_G5_SURUKLENME_HUKMU_ENERJI_SIFIRINDAN_BAGIMSIZ():
@@ -787,24 +796,28 @@ def test_G5_SURUKLENME_HUKMU_ENERJI_SIFIRINDAN_BAGIMSIZ():
     senaryo = _tb_senaryo(631.6)
     durum, alan, _ = build(senaryo)
     omega0 = alan(durum.positions)[0]
+    # D2-i: kare-0 omega0 KUVVETTEN gelir, c'den bagimsizdir (dt 15'te
+    # omega0*dt 0.383, dt 40'ta 1.02); birlesik hukum onu da tasir.
+    w0 = omega_max_frame0(senaryo, durum, alan)
+    assert abs(omega_max_frame0(senaryo, durum, _Kaydirilmis(alan, -omega0)) - w0) < 1e-12 * w0
     for dt, n, beklenen in ((15.0, 267, True), (40.0, 100, False)):
         ref = run(durum, alan, dt=dt, n_steps=n)
-        ref_oran, ref_hukum = _hukum(senaryo, ref)
+        ref_oran, ref_hukum = _hukum(senaryo, ref, w0)
         ref_salinim = energy_oscillation(senaryo, ref)
         assert ref_hukum is beklenen, (dt, ref_oran, ref_salinim)
-        _, eski_c0 = _hukum(_ortak(senaryo), ref)
+        _, eski_c0 = _hukum(_ortak(senaryo), ref, None)
         eski = {eski_c0}
         for c in (-omega0, 16.0):
             yor = run(durum, _Kaydirilmis(alan, c), dt=dt, n_steps=n)
             assert np.array_equal(yor.positions, ref.positions)
             assert np.array_equal(yor.kinetic, ref.kinetic)
             assert not np.array_equal(yor.potential, ref.potential)
-            oran, hukum = _hukum(senaryo, yor)
+            oran, hukum = _hukum(senaryo, yor, w0)
             assert abs(oran - ref_oran) < 1e-9 * ref_oran, (dt, c, oran, ref_oran)
             salinim = energy_oscillation(senaryo, yor)
             assert abs(salinim - ref_salinim) < 1e-9 * ref_salinim, (dt, c, salinim)
             assert hukum is beklenen
-            eski.add(_hukum(_ortak(senaryo), yor)[1])
+            eski.add(_hukum(_ortak(senaryo), yor, None)[1])
         # Pozitif kontrol: AYNI kayitlarda eski olcutun hukmu c ile DEGISIYOR,
         # yani pencere sifir-bagimliligini gercekten gosterebiliyor.
         assert eski == {True, False}, (dt, eski)
@@ -838,10 +851,10 @@ def test_G5_ESIK_TB_OZGU_SURUKLENMEYI_YAKALAR_FERMI_GECISI():
         senaryo = _tb_senaryo(kelvin, n_electron=15)
         durum, alan, _ = build(senaryo)
         yorunge = run(durum, alan, dt=10.0, n_steps=400)
-        oran, hukum = _hukum(senaryo, yorunge)
+        oran, hukum = _hukum(senaryo, yorunge, omega_max_frame0(senaryo, durum, alan))
         assert _suruklenme_hukmu(senaryo, oran) is beklenen, (kelvin, oran)
         assert hukum is beklenen, (kelvin, oran)
-        assert _hukum(_ortak(senaryo), yorunge)[1] is True, kelvin
+        assert _hukum(_ortak(senaryo), yorunge, None)[1] is True, kelvin
 
 
 def test_G5_DURAGAN_OLMAYAN_KOSU_max_KE_ORTALAMA_KE_DEGIL():
@@ -866,11 +879,11 @@ def test_G5_DURAGAN_OLMAYAN_KOSU_max_KE_ORTALAMA_KE_DEGIL():
     )
     durum, alan, _ = build(senaryo)
     yorunge = run(durum, alan, dt=10.0, n_steps=100)
-    oran, hukum = _hukum(senaryo, yorunge)
+    oran, hukum = _hukum(senaryo, yorunge, omega_max_frame0(senaryo, durum, alan))
     assert yorunge.kinetic[0] == 0.0 and yorunge.kinetic.max() > 1e-2
     ortalama_ile = oran * float(yorunge.kinetic.max()) / float(yorunge.kinetic.mean())
     tolerans = provenance_for(
-        senaryo, energy_drift=oran, energy_oscillation=0.0
+        senaryo, energy_drift=oran, energy_oscillation=0.0, omega_max_frame0=0.0
     ).diagnostics["energy_drift_tolerance"]
     assert ortalama_ile > tolerans, ortalama_ile
     # D2: birlesik hukum de GECER (S 1.3672e-02, buyume evresine ragmen).
@@ -912,9 +925,11 @@ def test_G5_SEVK_EDILEN_TB_SENARYOSU_CLI_UCTAN_UCA(tmp_path, capsys):
     for parca in (
         "energy_oscillation=1.005e-02", "energy_oscillation_scale=max_kinetic_all_steps",
         "energy_oscillation_tolerance=5.000e-02",
+        # D2-i: kare-0 omega0*dt = 2.555e-01 (esigin 2.1x alti), esik 0.54.
+        "omega_dt_frame0=2.555e-01", "omega_dt_frame0_tolerance=5.400e-01",
     ):
         assert parca in yakinsama, parca
-    assert "ikisi de e\u015fi\u011fin alt\u0131nda" in satirlar["Yak\u0131nsama tan\u0131s\u0131"]
+    assert "\xfc\xe7\xfc de e\u015fi\u011fin alt\u0131nda" in satirlar["Yak\u0131nsama tan\u0131s\u0131"]
     assert "elektron yok" not in ekran and "analitik bir model" not in ekran
 
 

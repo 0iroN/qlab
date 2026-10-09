@@ -706,12 +706,17 @@ def _run_md(scenario: MDScenario, output: str | None) -> int:
         build,
         energy_drift,
         energy_oscillation,
+        omega_max_frame0,
         provenance_for,
     )
     from qlab.engine.md.integrator import Trajectory, run
 
     durum, alan, termostat = build(scenario)
     durum = durum.remove_center_of_mass_motion()
+    # A PRIORI TANI (D2-i, 10.10.2026): koşudan ÖNCE, kare-0 geometrisinin en
+    # hızlı kütle ağırlıklı modu (TB NVE; öteki koşularda None). S'nin paydası
+    # tüm KE'dir ve titreşime katılmayan KE onu seyreltir; omega0*dt bakmaz.
+    omega0 = omega_max_frame0(scenario, durum, alan)
 
     if termostat is None:
         yorunge = run(
@@ -771,7 +776,7 @@ def _run_md(scenario: MDScenario, output: str | None) -> int:
         }
     provenance = provenance_for(
         scenario, energy_drift=suruklenme, energy_oscillation=salinim,
-        n_constraints=kisit, **kararlilik
+        omega_max_frame0=omega0, n_constraints=kisit, **kararlilik
     )
     for etiket, deger in provenance.as_lines():
         print(f"{etiket:<14}: {deger}")

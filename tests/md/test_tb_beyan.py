@@ -137,7 +137,9 @@ def _tb_senaryo(thermostat: dict | None = None) -> MDScenario:
 
 def _panel_satirlari() -> dict[str, str]:
     return dict(
-        provenance_for(_tb_senaryo(), energy_drift=1e-9, energy_oscillation=1e-9).as_lines()
+        provenance_for(
+            _tb_senaryo(), energy_drift=1e-9, energy_oscillation=1e-9, omega_max_frame0=1e-9
+        ).as_lines()
     )
 
 
@@ -282,9 +284,11 @@ BEYANLAR: dict[str, tuple[tuple[tuple[str, str], ...], tuple[str, ...]]] = {
     "B10": (
         (
             (YAK, "dt kararlılık denetimi TB dalında yapılmaz"),
-            (YAK, "dt'yi kullanıcı seçer"),
-            # D2 (09.10.2026): a priori denetim yok, a posteriori hüküm var.
+            (YAK, "dt'yi kullanıcı seçer, koşu reddedilmez"),
+            # D2 (09.10.2026): koşuyu reddeden denetim yok, a posteriori hüküm var.
             (YAK, "seçilen dt'yi koşudan SONRA NVE'nin salınım hükmü yargılar"),
+            # D2-i (10.10.2026): koşudan önce kare-0 omega0*dt de hükme girer.
+            (YAK, "koşudan ÖNCE de kare-0 geometrisinin sayısal Hessian'ından ölçülen omega0*dt"),
         ),
         ("dt'yi kullanici secer (spec B10)",),
     ),

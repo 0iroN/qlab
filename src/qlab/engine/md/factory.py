@@ -107,8 +107,10 @@ _TB_YAKLASIMLAR = (
     "max(r_cut) < L/2 kesin koşul",
     "dt kararlılık denetimi TB dalında yapılmaz: omega analitik değildir ve "
     "O(dt^2) davranış ancak bir adımdaki aralık değişimi / kT küçükken geri "
-    "gelir -- dt'yi kullanıcı seçer; seçilen dt'yi koşudan SONRA NVE'nin "
-    "salınım hükmü yargılar (energy_oscillation)",
+    "gelir -- dt'yi kullanıcı seçer, koşu reddedilmez; seçilen dt'yi koşudan "
+    "SONRA NVE'nin salınım hükmü yargılar (energy_oscillation), koşudan ÖNCE "
+    "de kare-0 geometrisinin sayısal Hessian'ından ölçülen omega0*dt hükme "
+    "girer (omega_dt_frame0; yol boyu omega'yı görmez)",
 )
 _TB_IHMALLER = (
     "çekirdeklerin kuantum istatistiği (Maxwell-Boltzmann klasik limittir), "
@@ -140,8 +142,11 @@ _TB_BEKLENEN = (
     "değişimi / kT büyük) doğan enerji sıçramalarını -- yakalar; iri dt'nin "
     "SALINIMINI ise ayrı ölçüt yargılar: energy_oscillation = tepe-tepe(KE + "
     "Omega) / max(KE), uçlar kayıtlardan değil her adımdan, eşiği "
-    "energy_oscillation_tolerance. Yakınsama ikisinin VE'sidir. Hareketsiz "
-    "koşu (max KE = 0) YARGILANAMAZ ve ✗ basılır."
+    "energy_oscillation_tolerance. S'nin paydası tüm KE'dir ve titreşime "
+    "katılmayan KE onu seyreltir; onu koşudan ÖNCE ölçülen a priori tanı "
+    "yakalar: omega_dt_frame0 = kare-0 geometrisinin en hızlı kütle ağırlıklı "
+    "modu omega0 x dt, eşiği omega_dt_frame0_tolerance. Yakınsama üçünün "
+    "VE'sidir. Hareketsiz koşu (max KE = 0) YARGILANAMAZ ve ✗ basılır."
 )
 
 
@@ -270,7 +275,8 @@ def build(scenario: MDScenario):
         alan = HartreeFockGradient(**p)
     elif tur == "tb_ss_sigma":
         # dt kararlılık denetimi BU DALDA DA YOK (spec B10): omega analitik
-        # değil. Atlandığı _TB_YAKLASIMLAR'da beyan edilir.
+        # değil. Atlandığı _TB_YAKLASIMLAR'da beyan edilir. Koşu reddedilmez;
+        # kare-0 omega0*dt NVE panelinin hükmüne girer (D2-i, omega_max_frame0).
         alan = _tb_ss_sigma_alani(p)
     else:
         raise ScenarioError(f"bilinmeyen kuvvet alanı: {tur!r}")
@@ -319,8 +325,9 @@ _MD_DRIFT_TOLERANCE: float = 5.0e-03
 #:   orada hâlâ kararlı ve simplektik: enerji büyük salınır, sürüklenmez.
 #:   Bu eşik TEK BAŞINA dt'nin yeterince küçük olduğunu ONAYLAMAZ (spec
 #:   B10: dt'yi kullanıcı seçer). D2 (09.10.2026): o yarıyı
-#:   `_TB_OSCILLATION_TOLERANCE` yargılar; TB NVE'de Yakınsama ikisinin
-#:   VE'sidir. (Bu 33 hücrenin ekseni M11 minimumunun omega_max'ıdır; D2
+#:   `_TB_OSCILLATION_TOLERANCE` yargılar, S'nin seyreltildiği koşuları
+#:   `_TB_OMEGA_DT_TOLERANCE` (D2-i); TB NVE'de Yakınsama üçünün VE'sidir.
+#:   (Bu 33 hücrenin ekseni M11 minimumunun omega_max'ıdır; D2
 #:   ön ölçümünde pencerelerin kendi yol boyu omega_max'ı D ve Q
 #:   ailelerinde 1.2-1.6 kat büyük, U/U2'de 0.86-1.20, metalik W3'te
 #:   0.87-0.88 kat -- yani "33 hücre" ile salınım eşiğinin sınıfları AYNI
@@ -353,7 +360,53 @@ _TB_DRIFT_TOLERANCE: float = 1.0e-02
 #: hangi omega*dt'ye düştüğü pencereye ve tohuma bağlıdır (S/(omega*dt)^2
 #: küçük sınıfta 0.074-0.20); hükmü tohum, aile, başlangıç ve koşu uzunluğu
 #: değiştirir. Eşik orada bir sınırın yeri DEĞİLDİR.
+#:
+#: SEYRELME: payda TÜM kinetik enerjidir; titreşime katılmayan ya da az
+#: katılan KE S'yi seyreltir (`energy_oscillation`, KÖR AİLELER). Onu S
+#: değil, KE'nin dağılımına bakmayan a priori tanı yakalar
+#: (`_TB_OMEGA_DT_TOLERANCE`, D2-i).
 _TB_OSCILLATION_TOLERANCE: float = 5.0e-02
+
+#: TB NVE'nin A PRIORI dt tanısının eşiği (D2-i, 10.10.2026). Ölçüt
+#: `omega_max_frame0`: kare-0 geometrisinin TAM 3N kütle ağırlıklı
+#: Hessian'ının (kuvvetin merkezi farkı, h = 1e-4) en büyük özdeğerinden
+#: omega0; tanı omega0*dt. NEDEN: S'nin paydası tüm KE'dir ve titreşime
+#: katılmayan KE onu seyreltir -- kamu yolunda ayrışan iki zincir (yol
+#: omega_max*dt 1.09) S 0.021 ✓, kütle safsızlığı (omega*dt 1.0) S 0.036 ✓
+#: basıyordu. omega0*dt KE'nin nereye dağıldığına bakmaz.
+#:
+#: ÖLÇÜLDÜ (D2-i ön ölçümü, bu makine; D2 bandının 1170 hücresi S'leri bit
+#: bit aynı yeniden üretilerek; sınıf ekseni yine her pencerenin yol boyu
+#: omega_ref'i): düz 871 hücrede küçük-dt sınıfının (omega_ref*dt <= 0.463)
+#: en büyük omega0*dt'si 0.430, iri sınıfın (>= 0.925) en küçüğü 0.682 --
+#: 1.59 katlık bir ayırma bandı; 0.54 onun geometrik ortası (0.542). Kare 0
+#: yolun bir karesidir, yani omega0 <= yol boyu omega_max: eşik 0.463'ün
+#: üstünde olduğundan tanı küçük-dt sınıfında HİÇBİR ailede ✗ vermez
+#: (ölçülen 0/405); iri sınıfın 235'inin 235'ini TEK BAŞINA yakalar. Bilinen
+#: kör ailelerde (D2 şüphecisi, D2 doğrulaması, D2-i eleştirmeni; kamu
+#: yolunun `_run_md`ıyla) D2 panelinin sahte ✓ verdiği 24 iri-dt hücresinin
+#: 19'u ✗ olur: ayrışan parçalar (omega0*dt 0.945), kütle safsızlığı
+#: (0.927), yalnız düşük mod, zikzak. Sayı eşiğe duyarlıdır: iki hücre
+#: eşiğin %1.5 yakınında (0.533 ve 0.542); kendi bandının iki kenarı da
+#: sürekli dt'de alınırsa orta 0.5475 olurdu. BEDELİ: gri bölgede S'nin
+#: ✓ verdiği 53 hücrenin 9'u ✗ olur (gri ✗ 178/231 -> 187/231; hepsi
+#: omega0*dt 0.545-0.579). "Hiçbir hücrede hüküm değiştirmeyen" bir eşik
+#: aralığı yoktur: ızgarada 0.579-0.682 görünür ama sürekli dt'de
+#: 0.630-0.647'ye daralır. Parça başına COM paydası (öteki aday) ölçüldü:
+#: yalnız öteleme ailesini yakalar, onları bu tanı zaten yakalıyor;
+#: uygulanmadı. (Bant 1B zincirlerdir: orada 3N omega0 x altuzayınınkine
+#: eşit; zikzakta 3N/x 1.048.)
+#:
+#: KÖRLÜĞÜ: kare 0 yolun en hızlı modunu temsil etmezse (omega0/omega_yol <
+#: 0.54/0.925 = 0.58) VE S seyreltilmişse ✓ yine dt'yi kanıtlamaz. Ölçülen
+#: kalan 5 hücre: Peierls minimumu + 6000 K ısıl hız (omega0*dt 0.533, yol
+#: boyu 0.930, S 0.045) ve ÇARPIŞAN PARÇALAR -- kare 0'da 10 bohr ayrı iki
+#: 8'li zincir birbirine koşar, kare 0 yalnız parça içi modları görür
+#: (omega0*dt 0.405-0.470, yol boyu 0.93-1.0, S 0.040-0.048; 4 hücre).
+#: Yalnız serbest atomlardan oluşan bir başlangıçta omega0 = 0'dır.
+#: (`_TB_SALINIM_BEYANI`, KALAN KÖRLÜK.) BEDEL: 6N kuvvet çağrısı (N 16'da
+#: ~98 MD adımı, N 32'de ~190, N 64'te ~400).
+_TB_OMEGA_DT_TOLERANCE: float = 0.54
 
 #: TB NVE "Yakınsama tanısı" satırının SABİT yarısı (D2). Canlı yarı
 #: (`_tb_yakinsama_tanisi`) iki ölçütün bu koşudaki hükmünü söyler; bu yarı
@@ -370,25 +423,37 @@ _TB_SALINIM_BEYANI = (
     "AİLELER: payda TÜM kinetik enerjidir; titreşime katılmayan ya da az "
     "katılan her KE S'yi seyreltir -- ayrışan parçaların ötelemesi, kütle "
     "safsızlığı, yalnız düşük modun uyarıldığı koşu, yüksek T_ion (ön ölçümde "
-    "3000-6000 K), enine yumuşak modlu geometri; liste kapsayıcı değildir. "
-    "Bunlarda S iri dt'ye rağmen eşiğin altında kalabilir; ✓ orada dt'nin "
-    "yeterince küçük olduğunu kanıtlamaz."
+    "3000-6000 K), enine yumuşak modlu geometri. A PRIORI TANI onları kare "
+    "0'da yakalar: başlangıç geometrisinin en hızlı kütle ağırlıklı modu için "
+    "omega0*dt eşiğin üstündeyse ✗ (panelin sahte ✓ verdiği 24 ölçülmüş "
+    "iri-dt hücresinin 19'u; sayı eşiğe duyarlı). KALAN KÖRLÜK: kare 0 yolun "
+    "en hızlı modunu temsil etmiyorsa VE S seyreltilmişse ✓ dt'nin yeterince "
+    "küçük olduğunu kanıtlamaz -- kare 0'da ayrı duran parçaların sonradan "
+    "çarpışması (kare 0 yalnız parça içi modları görür; ölçülen 4 hücre), "
+    "yüksek T_ion'da anharmonik keşif (6000 K'de omega0*dt 0.533, yol boyu "
+    "0.930), gürültülü başlangıçta ağır kütleler; yalnız serbest atomlardan "
+    "oluşan başlangıçta omega0 = 0'dır. Liste kapsayıcı değildir."
 )
 
 
 def _tb_yakinsama_tanisi(
-    suruklenme_gecti: bool, salinim_gecti: bool, salinim_sonlu: bool
+    suruklenme_gecti: bool,
+    salinim_gecti: bool,
+    salinim_sonlu: bool,
+    a_priori_gecti: bool,
+    a_priori_sonlu: bool,
 ) -> str:
-    """TB NVE "Yakınsama tanısı": iki ölçütün AYRI hükmü + sabit beyan.
+    """TB NVE "Yakınsama tanısı": üç ölçütün AYRI hükmü + sabit beyan.
 
     Hükümler `provenance_for`da BİR KEZ hesaplanır ve buraya geçer -- eşik
     karşılaştırması iki yerde yazılsaydı biri kayınca panel hükmüyle
     açıklaması ayrışırdı.
     """
-    if suruklenme_gecti and salinim_gecti:
+    if suruklenme_gecti and salinim_gecti and a_priori_gecti:
         canli = (
-            "sürüklenme ve salınım ikisi de eşiğin altında: KE + Omega bu "
-            "koşuda ne sürükleniyor ne iri salınıyor."
+            "sürüklenme, salınım ve kare-0 omega0*dt üçü de eşiğin altında: "
+            "KE + Omega bu koşuda ne sürükleniyor ne iri salınıyor; dt "
+            "başlangıç geometrisinin en hızlı modu için de eşiğin altında."
         )
     else:
         parcalar = []
@@ -403,6 +468,16 @@ def _tb_yakinsama_tanisi(
                 "yörünge bir büyüme evresinde olabilir ya da max KE yuvarlama "
                 "düzeyindedir -- dt'yi küçültüp yeniden koşun; S dt^2 ile "
                 "küçülmüyorsa sebep dt değildir"
+            )
+        if not a_priori_sonlu:
+            parcalar.append(
+                "a priori tanı YARGILANAMAZ (kare-0 Hessian'ı sonlu değil)"
+            )
+        elif not a_priori_gecti:
+            parcalar.append(
+                "kare-0 omega0*dt eşiğin üstünde: dt başlangıç geometrisinin "
+                "en hızlı titreşimini çözmüyor -- S eşiğin altında olsa bile "
+                "(titreşime katılmayan KE onu seyreltir) dt'yi küçültün"
             )
         if not suruklenme_gecti:
             parcalar.append(
@@ -555,6 +630,10 @@ def energy_oscillation(scenario: MDScenario, trajectory: Trajectory) -> float | 
     09.10.2026); kütle safsızlığı (15 x 12 amu + tek H) omega*dt = 1.0'da
     S = 0.036 ✓; ön ölçümde yalnız en düşük mod uyarılmışken omega*dt
     1.5'te S 0.0425, T_ion 3000-6000 K'de 0.045-0.050. Liste kapsayıcı değil.
+    D2-i (10.10.2026): bu seyrelmeyi S DÜZELTMEZ -- payda değişmedi; panel
+    onu `omega_max_frame0`ın a priori tanısıyla yakalar (D2 panelinin sahte
+    ✓ verdiği 24 ölçülmüş iri-dt hücresinin 19'u). Kalan körlük (çarpışan
+    parçalar, yüksek T_ion) `_TB_OMEGA_DT_TOLERANCE`ta.
 
     Hareketsiz koşu (max KE = 0) ve uçları biriktirmeyen bir kurucu (`nan`,
     ör. `run.py`nin termostat döngüsü) `nan` döner, panel ✗ basar.
@@ -573,11 +652,64 @@ def energy_oscillation(scenario: MDScenario, trajectory: Trajectory) -> float | 
     return None
 
 
+def omega_max_frame0(
+    scenario: MDScenario, state: MDState, force_field, step: float = 1.0e-4
+) -> float | None:
+    """TB NVE'de kare-0 geometrisinin en hızlı kütle ağırlıklı modu omega0;
+    öteki koşularda `None` (hesaplanmaz).
+
+    omega0 = sqrt(max(lambda_max, 0)), lambda_max = M^-1/2 H M^-1/2'nin en
+    büyük özdeğeri; H TAM 3N Hessian, kuvvetin merkezi farkından (6N kuvvet
+    çağrısı, adım `step` bohr) ve simetrikleştirilmiş. Panelin tanısı
+    omega0*dt; eşik ve ölçüm `_TB_OMEGA_DT_TOLERANCE`ta.
+
+    NE YARGILAR: S'nin seyreltildiği koşuları (envanter D2-i): S'nin paydası
+    tüm KE'dir, omega0 ise KE'nin nereye dağıldığına bakmaz -- dt'nin
+    başlangıç geometrisinin en hızlı titreşimini çözüp çözmediğini söyler.
+    KOŞUDAN ÖNCE, `state`in konumlarında hesaplanır (COM hızı çıkarılmış ya
+    da çıkarılmamış: konum aynı). Koşuyu REDDETMEZ: dt'yi kullanıcı seçer
+    (spec B10); hüküm panelde.
+
+    TAM 3N, kütle ağırlıklı: 1B zincirde enine modlar daha yumuşak olsa da
+    zincir y ya da z boyunca uzanırsa yalnız x altuzayı en hızlı modu
+    göremezdi; karışık kütlede tek bir kütleye bölmek safsızlığın yerel
+    modunu yanlış ölçerdi. Negatif özdeğer (eyer) omega0'a girmez.
+
+    KÖR: yol boyu omega'yı görmez -- kare 0 yolun en hızlı modunu temsil
+    etmiyorsa (sonradan çarpışan parçalar, yüksek T_ion, gürültülü
+    başlangıçta ağır kütleler) tanı geçer; o koşularda S de seyreltilmişse ✓
+    dt'yi kanıtlamaz (beyan). Yalnız serbest atomlardan oluşan bir başlangıç
+    omega0 = 0 verir. Hessian sonlu değilse `nan` döner, panel ✗ basar
+    (YARGILANAMAZ).
+    """
+    tur = scenario.force_field["kind"]
+    if tur == "tb_ss_sigma" and scenario.thermostat is None:
+        konum = np.asarray(state.positions, dtype=float)
+        n3 = konum.size
+        hessian = np.empty((n3, n3))
+        for k in range(n3):
+            arti = konum.copy().ravel()
+            arti[k] += step
+            eksi = konum.copy().ravel()
+            eksi[k] -= step
+            kuvvet_arti = force_field(arti.reshape(konum.shape))[1].ravel()
+            kuvvet_eksi = force_field(eksi.reshape(konum.shape))[1].ravel()
+            hessian[:, k] = -(kuvvet_arti - kuvvet_eksi) / (2.0 * step)
+        hessian = 0.5 * (hessian + hessian.T)
+        olcek = 1.0 / np.sqrt(np.repeat(np.asarray(state.masses, dtype=float), 3))
+        agirlikli = hessian * olcek[:, None] * olcek[None, :]
+        if not np.all(np.isfinite(agirlikli)):
+            return float("nan")
+        return float(np.sqrt(max(float(np.linalg.eigvalsh(agirlikli)[-1]), 0.0)))
+    return None
+
+
 def provenance_for(
     scenario: MDScenario,
     *,
     energy_drift: float,
     energy_oscillation: float | None = None,
+    omega_max_frame0: float | None = None,
     n_constraints: int = 3,
     stability: StabilityVerdict | None = None,
     external_stability: StabilityVerdict | None = None,
@@ -587,10 +719,15 @@ def provenance_for(
 
     `energy_oscillation` (D2, 09.10.2026): `energy_oscillation()`ın S'i.
     TB NVE'de ZORUNLUDUR ve Yakınsama = (sürüklenme eşik altı) VE (S eşik
-    altı); verilmezse InvalidInputError -- "yok say" sürüklenmenin kör
-    olduğu iri-dt salınımına yeni bir sahte ✓ kapısı açardı. Öteki
-    koşularda (NVT, HF, klasik) S hesaplanmaz ve verilirse yine hata:
-    hükme girmeyen bir sayının panelde hüküm gibi durmaması için.
+    altı) VE (kare-0 omega0*dt eşik altı); verilmezse InvalidInputError --
+    "yok say" sürüklenmenin kör olduğu iri-dt salınımına yeni bir sahte ✓
+    kapısı açardı. Öteki koşularda (NVT, HF, klasik) S hesaplanmaz ve
+    verilirse yine hata: hükme girmeyen bir sayının panelde hüküm gibi
+    durmaması için.
+
+    `omega_max_frame0` (D2-i, 10.10.2026): `omega_max_frame0()`ın omega0'ı;
+    S'yle AYNI kapı (TB NVE'de zorunlu, öteki koşularda yasak, negatif
+    hata). Verilmezse S'nin seyreltildiği iri-dt koşusu yine ✓ alırdı.
 
     `stability` / `external_stability` (B10, 03.10.2026): HF kuvvet alanının
     koşu boyunca biriktirdiği EN KÖTÜ iç / dış kararlılık hükmü
@@ -631,6 +768,23 @@ def provenance_for(
         # Tepe-tepe farkı negatif olamaz; `energy_oscillation()` bunu üretmez.
         # Kapı yoksa doğrudan API çağrısında negatif sayı ✓ alırdı (doğrulama).
         raise InvalidInputError(f"energy_oscillation negatif olamaz: {energy_oscillation}")
+    # D2-i: a priori tanı S'yle AYNI kapıdan geçer -- verilmezse seyreltilmiş
+    # S'nin iri-dt koşusu yine ✓ alırdı; hükme girmediği yerde verilirse hata.
+    if salinim_hukme_girer and omega_max_frame0 is None:
+        raise InvalidInputError(
+            "TB NVE koşusunda a priori tanı zorunludur: provenance_for(..., "
+            "omega_max_frame0=omega_max_frame0(scenario, durum, alan)); S'nin "
+            "paydası tüm KE'dir ve titreşime katılmayan KE onu seyreltir (D2-i)"
+        )
+    if not salinim_hukme_girer and omega_max_frame0 is not None:
+        raise InvalidInputError(
+            "omega_max_frame0 yalnız TB NVE koşusunda hükme girer; bu koşu "
+            f"({tur}, termostat {termostat['kind'] if termostat else None}) için None verin"
+        )
+    if omega_max_frame0 is not None and omega_max_frame0 < 0.0:
+        # sqrt(max(lambda, 0)) negatif olamaz; `omega_max_frame0()` bunu üretmez.
+        raise InvalidInputError(f"omega_max_frame0 negatif olamaz: {omega_max_frame0}")
+    omega_dt = omega_esigi = None  # NVT'de ve TB dışında hükme girmez (0.0 DEĞİL)
     salinim_esigi = None  # NVT'de ve TB dışında salınım hükme girmez (0.0 DEĞİL)
     yakinsama_tanisi = None
     if termostat is None:
@@ -651,10 +805,16 @@ def provenance_for(
             salinim_esigi = _TB_OSCILLATION_TOLERANCE
             salinim_sonlu = bool(np.isfinite(energy_oscillation))
             salinim_gecti = salinim_sonlu and energy_oscillation <= salinim_esigi
+            # D2-i: S seyreltilebilir (payda tüm KE); omega0*dt KE'nin
+            # dağılımına bakmaz. `nan` (Hessian sonlu değil) -> ✗, YARGILANAMAZ.
+            omega_esigi = _TB_OMEGA_DT_TOLERANCE
+            omega_dt = float(omega_max_frame0 * scenario.dt)
+            a_priori_sonlu = bool(np.isfinite(omega_dt))
+            a_priori_gecti = a_priori_sonlu and omega_dt <= omega_esigi
             yakinsama_tanisi = _tb_yakinsama_tanisi(
-                yakinsadi, salinim_gecti, salinim_sonlu
+                yakinsadi, salinim_gecti, salinim_sonlu, a_priori_gecti, a_priori_sonlu
             )
-            yakinsadi = yakinsadi and salinim_gecti
+            yakinsadi = yakinsadi and salinim_gecti and a_priori_gecti
     else:
         parametreler = ", ".join(
             f"{ad}={deger}" for ad, deger in sorted(termostat["params"].items())
@@ -715,6 +875,11 @@ def provenance_for(
             energy_oscillation=energy_oscillation,
             energy_oscillation_scale="max_kinetic_all_steps" if salinim_hukme_girer else None,
             energy_oscillation_tolerance=salinim_esigi,
+            # D2-i: a priori tanı; omega0 a.u. (1/zaman), hükme giren omega0*dt.
+            # NVT'de hesaplanmaz: üçü de None (S'nin anahtarlarıyla aynı kural).
+            omega_max_frame0=omega_max_frame0,
+            omega_dt_frame0=omega_dt,
+            omega_dt_frame0_tolerance=omega_esigi,
         )
     if kararlilik_tanisi:
         tanilar.update(kararlilik_tanisi)
