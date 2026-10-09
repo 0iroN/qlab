@@ -2,9 +2,47 @@
 
 MODELLEME SECIMI, BEYAN EDILIR: enine dalga sayisi `ky` ANALITIK olarak
 dayatilir; y yonunde izgara YOKTUR. x yonundeki cozum tam Yee'dir ve yansima
-katsayisi COZULUR, yazilmaz. Bedeli acikca yazilir: y yonunde izgara
-dispersiyonu bulunmadigi icin tam 2B kosumundan farklidir, ve bu fark bu
-modulde OLCULMEDI (tam 2B ile karsilastirma yapilmadi).
+katsayisi COZULUR, yazilmaz. Bedeli tam 2B ile OLCULDU (G1, 09.10.2026;
+yalniz s / TM_z kolu, kod DUZELTILMEDI):
+
+  * KIMLIK: y-degismez ortamda motorun 2B TM_z Yee'si (`yee.run_2d`) bu
+    modulun s cozumunun `ky -> 2 sin(ky/2)` konmus halidir, BIT-YAKIN.
+    Yayilan kiplerde (tasiyicida K < sqrt(eps_kaynak) Om) zaman kaydinda
+    tepeye gore <= 1.5e-14: eps 1->2.25, S 0.4 en buyuk 1.414e-14; 4->1,
+    S 0.6, m = 1, 2'de 5.64e-15. eps 1->4 (S 0.5, 50 der) yalniz TEK
+    FREKANSTA olculdu: |rho_2B - rho_egik(K)| = 6.6e-16 (tepeye gore
+    degil). 4->1'de m = 3 kismen sonumlu (tasiyicida K 1.111 > 0.895, ama
+    genis bantli darbenin ust kuyrugu yayilir; tepe 1.5e-4): 2.9e-13; tam
+    sonumlu m >= 4 (tepe ~1e-8) bagil 2.8e-9.
+  * GENLIK BEDELI, ayni omega ve ayni ANALITIK ky ile: |r(ky)| -
+    |r(2 sin(ky/2))|. Karmasik fark DEGILDIR (kismi yansimada isareti ters,
+    bantta buyuklugu farkli); FAZ BEDELI ayri bir buyukluktur ve yalniz
+    referans duzlemiyle yazilir (asagida TIY maddesi). Kapali form, arayuz
+    yuzune (I-1/2) referansli: r_s = sin((k1-k2)/2) / sin((k1+k2)/2),
+    sin(k_j/2) = sqrt(eps_j Om^2 - K^2)/2, Om = 2 sin(omega S/2)/S. Sabit
+    acida O(dx^2); sevk edilen aletle (eps 1 -> 2.25, lam 20, S 0.4)
+    30/45/60 der: 1.00e-4 / 6.62e-4 / 3.13e-3.
+  * KRITIK ACI BANDI (n1 > n2): iki semanin kritik acisi AYRILIR; bantta bu
+    modul |r| = 1, 2B kismi yansima verir. 2.25 -> 1, lam 20: bant 0.21 der,
+    bedel kapali formda 0.147'ye kadar (cozucuyle 41.8 der'de 0.140), yalniz
+    O(dx) (lam 10 -> 160 usler 0.82 -> 0.98). "O(dx^2)" noktasaldir.
+  * TIY FAZ BEDELI yalniz REFERANS DUZLEMIYLE yazilir (iki semanin k1'i
+    farkli): 2.25 -> 1, 60 der, lam 20.78'de |arg(r/r_2B)| arayuz yuzunde
+    1.99 der, prob duzleminde 4.73 der; `reflection_coefficient` prob
+    referansli okur.
+  * Surekli Fresnel'e hangi semanin yakin oldugu aciya gore isaret
+    degistirir (kapali form: 1 -> 2.25'te ~75, 1 -> 4'te ~80 der); bir
+    "daha dogru sema" hukmu VERILMEZ.
+  * p (TE_z) icin tam 2B OLCULMEDI (2B yolu yalniz TM_z).
+  * KILIT, `tests/em/test_g1_egik_2b.py`:
+    `test_2B_YEE_y_KIPI_EGIK_s_NIN_K_2SIN_HALI_BIT_YAKIN` (T1, kimlik,
+    zaman kaydi), `test_EGIK_BEDELI_AYRIK_FRESNEL_KAPALI_FORMUNA_OTURUR`
+    (T2, genlik bedeli) ve
+    `test_KRITIK_ACI_BANDINDA_SEMALAR_AYRI_TARAFTA_ve_BEDEL_O_dx` (T3,
+    kritik bant, `slow`). r uzerindeki kilit (T2, T3) YALNIZ |r|'dir: faz
+    sayilari (TIY maddesi) ve kapali formun isareti KILITSIZDIR (kapali
+    formun payinda isaret cevrilince uc test de gecer; dogrulayici olctu).
+    Faz kapisi eklenmedi: T2 penceresinde faz protokol hatasi olculmedi.
 
     s-kutuplanma (TM_z) : Ez, Hy, Hx   -- E gelis duzlemine DIK
     p-kutuplanma (TE_z) : Hz, Ey, Ex   -- E gelis duzlemi ICINDE

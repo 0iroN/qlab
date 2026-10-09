@@ -730,6 +730,23 @@ def reflection_coefficient(
     MALIYET (olculdu, sevk penceresi): theta = 45, lam = 40'ta cagri basina
     1.07 s; theta = 70'te 1.543 s; theta = 80'de 2.416 s (kayit uzunlugu
     1/cos(theta) ile buyudugu icin).
+
+    FAZ REFERANSI, BEYAN EDILIR (G1, 09.10.2026): donen `rho`nun fazi PROB
+    duzlemine (`iface - probe_offset`) referanslidir ve klasik Fresnel
+    uzlasiminin ESLENIGIDIR (bkz. `fresnel_phase_difference`). Kapali
+    formla `rho = conj(r(I-1/2) * exp(-2 i k1 (prob - (iface - 1/2))))`;
+    k1 semanin KENDI ayrik dalga sayisidir. |rho| duzlemden bagimsizdir,
+    faz degildir: iki semanin (egik `ky` ile 2B esdegeri `2 sin(ky/2)`)
+    fazini karsilastiran biri duzlemi beyan etmek ZORUNDADIR, cunku
+    k1'leri farkli oldugundan her duzlem kaymasi ikisine farkli faz ekler.
+    OLCULDU (eps 2.25 -> 1, theta 60, lam 20, sevk penceresi; 2B esdegeri
+    theta' = 59.31973 ile okundu): arg(rho(theta)/rho(theta')) = +5.2266
+    der. Kapali form AYNI (rho, eslenik) uzlasimda: prob duzleminde
+    +5.2218, arayuz yuzunde (I-1/2) +2.1489 der; klasik uzlasimda ikisi de
+    eksi (-5.2218 / -2.1489). Bu iki duzlemde isaret ayni, buyukluk
+    farkli. Kapali formda lam 20.78'de ayni fark I-1/2'de 1.99, prob
+    duzleminde 4.73 der (mutlak deger). Bu aletle okunan egik/2B faz
+    bedeli I-1/2'de yazilanin ~2.4 katidir.
     """
     if polarization not in POLARIZATIONS:
         raise InvalidInputError(

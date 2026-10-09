@@ -2685,9 +2685,50 @@ edilince sınanabilir hâle gelen iddialardı**:
   (`grid.courant_limit`in izotropik ölçümüyle aynı: 5× adımda 28.2×).
   Not: kapalı formun etiketi bir zamanlar `k_y Δx` idi — `Δx` o terime hiç
   girmez, `k_y` **radyan/hücre**dir.
-- **`oblique.py` TAM 2B İLE KARŞILAŞTIRILMADI.** 1B-açılı indirgeme devralınmış
-  bir modelleme seçimidir (`k_y` analitik dayatılıyor) ve bedeli ölçülmedi.
-  Task 3'ten kalan bu açık **hâlâ açıktır**.
+- ~~**`oblique.py` TAM 2B İLE KARŞILAŞTIRILMADI.**~~ **s (TM_z) kolu KAPANDI
+  09.10.2026** — kod düzeltmesi yok; ölçülmüş bedel beyanı (`oblique.py` modül
+  dokstringi) ve üç kilit testi (`tests/em/test_g1_egik_2b.py`: T1 kimlik ve T2
+  kapalı-form bedel hızlı şeritte, T3 kritik bant `slow`). 1B-açılı indirgeme
+  bir modelleme seçimi olarak kalıyor (`k_y` analitik dayatılıyor); bedel
+  tanımı: aynı `ω`, aynı ANALİTİK `k_y = k0·n1·sin θ`. Ölçülen:
+  - **Kimlik:** y-değişmez ortamda motorun 2B TM_z Yee'si, eğik s'nin
+    `k_y → 2 sin(k_y/2)` konmuş hâlidir, bit-yakın. Yayılan kiplerde
+    (taşıyıcıda `K < √ε_kaynak·Ω`) zaman kaydında tepeye göre ≤ 1.5e-14:
+    ε 1→2.25, S 0.4 en büyük 1.414e-14; 4→1, S 0.6, m = 1, 2'de 5.64e-15.
+    ε 1→4 (S 0.5, 50°) yalnız **tek frekansta** ölçüldü:
+    `|ρ_2B − ρ_eğik(K)|` = 6.6e-16 (tepeye göre değil). 4→1'de m = 3 kısmen
+    sönümlü (taşıyıcıda K 1.111 > 0.895, ama geniş bantlı darbenin üst
+    kuyruğu yayılıyor; tepe 1.5e-4): 2.9e-13; tam sönümlü m ≥ 4 (tepe ~1e-8)
+    bağıl 2.8e-9.
+  - **Kapalı form:** genlik bedeli = `|r(k_y)| − |r(2 sin(k_y/2))|` (karmaşık
+    fark değil; faz bedeli ayrı bir büyüklüktür ve yalnız referans düzlemiyle
+    yazılır, aşağıda TİY maddesi), arayüz yüzüne (I−½)
+    referanslı ayrık Fresnel `r_s = sin((k1−k2)/2) / sin((k1+k2)/2)`. Sabit
+    açıda O(Δx²); sevk edilen aletle (ε 1→2.25, λ = 20, S 0.4) 30/45/60°:
+    **1.00e-4 / 6.62e-4 / 3.13e-3** (kapalı formla ≤ 1.7e-6 içinde). 75°'de
+    aletin kendi protokol hatası (2.0e-2) bedelden (1.47e-2) büyük; orada
+    bedeli bu alet çözemiyor.
+  - **Kritik açı bandı (n1 > n2):** iki şemanın kritik açısı ayrılıyor; bantta
+    eğik `|r| = 1`, 2B kısmi yansıma veriyor. ε 2.25→1, λ = 20'de bant
+    **0.21°**, bedel kapalı formda **0.147**'ye kadar (çözücüyle 41.8°'de
+    0.140) ve yalnız **O(Δx)** iniyor (λ 10→160 üsleri 0.82→0.98). "O(Δx²)"
+    noktasaldır, açıda düzgün değildir.
+  - **TİY faz bedeli yalnız referans düzlemiyle yazılır:** ε 2.25→1, 60°,
+    λ = 20.78'de `|arg(r_eğik / r_2B)|` I−½'de **1.99°**, prob düzleminde
+    **4.73°**. `reflection_coefficient` prob referanslı okuyor (dokstringinde
+    beyan edildi). **Faz sayıları kilitsiz:** T2 ve T3 yalnız `|r|`'ye bakıyor;
+    kapalı formun işareti de kilitsiz (kapalı formun payında işaret
+    çevrilince üç test de geçiyor, doğrulayıcı ölçtü).
+  - Sürekli Fresnel'e hangi şemanın daha yakın olduğu açıyla işaret
+    değiştiriyor (kapalı form: 1→2.25'te ~75°, 1→4'te ~80°); bu yüzden bir
+    "daha doğru şema" hükmü verilmiyor.
+  - Beş mutantın (A eğik→`2 sin(k_y/2)`, B yardımcı alan sırası, C yardımcı
+    alanın PML kaybı, D 2B Hx işareti, G enine terimde komşu `cb`) hepsini T1
+    öldürüyor (A, B, G'yi T2 ve T3 de). G1'den önce G'yi hızlı şeritte yalnız
+    bir kararlılık kapısı görüyordu; fizik referanslı hızlı test yoktu.
+  - **AÇIK ALT MADDE — p (TE_z) tam 2B ile KARŞILAŞTIRILMADI.** Motorun 2B
+    yolu yalnız TM_z (`yee._adim_2d`: Ez, Hx, Hy); G1'in p kolu açıktır.
+    Kontrast 1↔2.25, 1→4, 4→1 ve S 0.4/0.5/0.6 dışı da ölçülmedi.
 - **`-m "not slow"` koşumunda modülün doğa çıpalarının TAMAMI atlanıyor.**
   İşaret fixture yüzünden geniş (Bessel tarafında `kayitlar`ı tüketen 11
   test), ve Rayleigh/yarık tarafı da `slow`. G7 (09.10.2026) hızlı şeride
