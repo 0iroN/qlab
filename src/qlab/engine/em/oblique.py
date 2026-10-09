@@ -491,7 +491,10 @@ def run_oblique_1d(
     ||rho|-1| = 0.5237 ile 1.0321'i ikisini de KESER, yani `None` doner.
     Kapi yalniz TIY'de ve aynada kosar: KISMI YANSIMADA (ornegin ayni
     ortamlarda beyan edilen theta = 20 der, `total_internal_reflection`
-    False) hicbir kapi yoktur ve yanlis sayi SESSIZCE geri doner. Ustelik
+    False) hicbir kapi yoktur ve yanlis sayi SESSIZCE geri doner. (10.10.2026:
+    `reflection_coefficient`in kuyruk kapisi kismi yansimada da kosar, ama
+    KAYDIN TAMLIGINI sinar, cevaplanan acinin dogrulugunu degil; bu yol icin
+    olculmedi.) Ustelik
     `em_obs` cozucuye `dx` HIC gecirmez -- yani bu yol pratikte de hic
     acilmamisti. Kapinin gerekcesi bu satirlar degil, `grid.dx_kapisi`daki
     BIT BIT cokme olcumudur.

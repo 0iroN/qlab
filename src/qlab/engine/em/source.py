@@ -50,6 +50,14 @@ def gauss_cos(
     BINLERIN farkli acilarinin r'sini hedef bine karistirir. Bu, olcum
     aletinin buyuk acilarda `R > 1` (fiziksel olarak imkansiz) dondurmesinin
     SEBEBIDIR -- bir sinir kusuru degil, bant genisligi arizasi.
+    INCELTME (10.10.2026, olculdu): karisim yalniz KESIK KAYITTA olur. Ayni
+    kayitta FFT bini ile tam-f DTFT farki <= 2.9e-15 ve kayit uzatilinca
+    (2.25 -> 1, 60 der, lam 20, sevk penceresi) hata T_min = 4520'de
+    2.96e-04'ten T = 5680'de 2.2e-08'e iner (daha uzun kayda kaynagin sol
+    PML yankisi girer: 6840'ta 4.1e-05); dogrusal
+    bir sistemin TAM kayit oraninda komsu bin yoktur. Genis bant kaydi
+    kesik birakir (grup hizi dagilimi, kesim frekansina yakinlik); kesik
+    kaydi `reflection_coefficient`in kuyruk kapisi yakalar.
 
     BU DOKSTRING BIR ZAMANLAR *"theta >= 75 derecede R > 1"* DIYORDU ve o
     CUMLE, egik cozucu SEVK EDILINCE (Task 3) OLCULEREK CURUDU. Sevk edilen

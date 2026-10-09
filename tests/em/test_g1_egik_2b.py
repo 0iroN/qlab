@@ -224,6 +224,7 @@ T2_PENCERE = ObliqueWindow(
     ey_kural="aritmetik",
     unity_gate=1e-2,
     pml_m=3.0,
+    tail_gate=1.6e-3,
 )
 
 
@@ -297,6 +298,12 @@ def _dtft_r(eps1, eps2, th, kk, lam, *, cells, iface, isrc, sgf, S, npml):
     döndürüyor, kuram 1 — ve sürekli Fresnel'e göre orada TİY olmadığı için
     `|rho| = 1` kapısı KOŞMUYOR, sayı sessizce dönüyor; θ = 41.9'da kapı
     koşuyor ve `None` dönüyor. Sebebi bu turda kovalanmadı.
+    SEBEP (10.10.2026, `rc-olcum/`): kayıt KESİK — dal noktasının uzun
+    yansıma kuyruğu kayıt bittiğinde sürüyor (son periyotta tepenin
+    2.68e-02'si). Sevk edilen alet artık iki açıda da kuyruk kapısında
+    `None` döndürür (`test_kayit_tamligi.py`). Bu yardımcı `hi`ya kadar
+    uzun kayıt kullanır; T3'ün |r_eg| kapısı (5e-3) onun kalan hatasını
+    (41.9'da 1.97e-03) kapsar.
     """
     probe = iface - 6
     sg = sgf * lam

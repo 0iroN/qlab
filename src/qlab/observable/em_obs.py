@@ -464,6 +464,18 @@ def convergence_ladder(
 #: kapisi -- bkz. `reflection_coefficient` dokstringi.
 DEFAULT_UNITY_GATE: float = 1e-2
 
+#: KAYIT TAMLIGI kapisinin esigi: kaydin SON PERIYODUNDAKI en buyuk genligin
+#: kaydin tepesine orani, gelen ve yansiyan seri icin (buyugu). Tolerans
+#: degil IMKAN kapisi: kayit bittiginde darbe hala geliyorsa olculen sey
+#: kesik bir kaydin spektrumudur, yansima katsayisi DEGILDIR. Esik OLCULEN
+#: BANTTAN secildi (10.10.2026, sevk penceresi, 4 kontrast x 56 aci x
+#: lam 10/20/40 x s/p, ayrik-tam referansa karsi): depodaki sabitlenmis
+#: cagrilarin en buyuk kuyrugu 9.44e-04 (eps 4 -> 1.8225, theta 45, lam 40,
+#: p), eski aletin sessizce dondurdugu hatasi > 1e-4 olan sayilarin en
+#: kucuk kuyrugu 2.78e-03; esik ikisinin geometrik ortasi (1.6e-3, iki
+#: yana 1.7 kat pay). Ayrinti: `reflection_coefficient`.
+DEFAULT_TAIL_GATE: float = 1.6e-3
+
 
 @dataclass(frozen=True)
 class ObliqueWindow:
@@ -494,6 +506,7 @@ class ObliqueWindow:
     ey_kural: str = "aritmetik"
     unity_gate: float = DEFAULT_UNITY_GATE
     pml_m: float = 3.0
+    tail_gate: float = DEFAULT_TAIL_GATE
 
     @property
     def probe(self) -> int:
@@ -510,6 +523,7 @@ class ObliqueWindow:
             f"FFT penceresi: {self.window_fn}",
             f"ey_kural    : {self.ey_kural}",
             f"|rho|=1 kapisi: {self.unity_gate:g}",
+            f"kuyruk kapisi : {self.tail_gate:g}",
         ]
 
 
@@ -609,6 +623,18 @@ def _record_steps(
     aslinda biraz DAHA ERKEN gelir ve formul o kadar temkinsizdir. Sogurucu
     onu zayiflattigi icin sevk penceresinde olculen ||rho|-1| yine de 1e-8
     civarindadir.
+
+    IKINCI DURUST OLUMSUZ (10.10.2026, olculdu): zamanlar SUREKLI ortamin
+    `vx`'iyle ve DAGILMAMIS darbe genisligiyle (`sg`) hesaplanir; ikisi de
+    yanlis olabilir ve o zaman `lo` darbe BITMEDEN gelir. (a) Sabit `ky`'li
+    indirgeme dagitkandir (eps w^2 = kx^2 + ky^2): grup hizi dagilimi
+    k'' = -sqrt(eps1) sin^2(theta) / (w cos^3(theta)), darbe prob'a
+    sg * sqrt(1 + (k'' L / sg^2)^2) genisliginde varir -- 1 -> 2.25, lam 20,
+    theta 75'te 4.9 kat; kesim frekansi f sin(theta) bandin icine girer.
+    (b) Kaba izgarada semanin KENDI grup hizi sureklininkinden kucuktur:
+    eps 4, lam 10'da (ortamda 5 hucre/dalgaboyu) 0.393, surekli 0.5; darbe
+    `lo`ya TEPESIYLE varir. Bu fonksiyon bunlari DUZELTMEZ; kesik kaydi
+    `reflection_coefficient`in kuyruk kapisi yakalar.
     """
     S = window.courant
     sg = window.sgf * wavelength
@@ -626,6 +652,21 @@ def _record_steps(
     if T > hi:
         return None
     return int(round(T / S))
+
+
+def _kuyruk(seri: np.ndarray, *, wavelength: float, courant: float) -> float:
+    """Kaydin SON PERIYODUNDAKI en buyuk |deger| / kaydin tepesi.
+
+    Bir periyot = ceil(lam / S) ornek. Tepe sifirsa (hic sinyal yok) kayit
+    tamdir ve 0 doner. Rampa hep 1 verir: hala buyuyen bir sinyal tam
+    sayilamaz.
+    """
+    a = np.abs(seri)
+    tepe = float(np.max(a))
+    if tepe == 0.0:
+        return 0.0
+    p = int(np.ceil(wavelength / courant))
+    return float(np.max(a[-p:])) / tepe
 
 
 def _spektrum(seri: np.ndarray, courant: float, f: float) -> tuple[complex, float]:
@@ -708,15 +749,22 @@ def reflection_coefficient(
     `None` DONER ve sessizce imkansiz bir sayi basmaz:
       * guvenli bir kayit uzunlugu yoksa (bkz. `_record_steps`),
       * kosum sonlu kalmadiysa,
+      * kayit TAM degilse -- kaydin son periyodundaki genlik, gelen ya da
+        yansiyan seride, tepenin `tail_gate` katini asiyorsa (KUYRUK KAPISI,
+        asagida),
       * ve `|rho| = 1`in ZORUNLU oldugu yerde (TIY ya da ayna) `||rho| - 1|`
         kapiyi geciyorsa.
 
-    UCUNCU MADDE OLCUM ALETININ TAVANIDIR ve bir DUGMEDIR: `sgf`
+    DORDUNCU MADDE OLCUM ALETININ TAVANIDIR ve bir DUGMEDIR: `sgf`
     (darbe bant genisligi) yeterince buyuk degilken genis bant KOMSU
     BINLERIN farkli acilarinin `r`sini hedef bine karistirir ve `|rho|`
     1'den sapar. Sebep `source.gauss_cos`ta olculu; buradaki kapi onun
     sonucudur. Kismi yansimada (TIY yok, ayna yok) kapi KOSMAZ -- orada
-    |r| < 1 fizigin kendisidir.
+    |r| < 1 fizigin kendisidir. KARISIM YALNIZ KESIK KAYITTA OLUR (10.10.2026,
+    olculdu): ayni kayitta FFT bini ile tam f = 1/lam'da DTFT arasindaki fark
+    <= 2.9e-15; kayit tamsa dogrusal bir sistemin oraninda komsu bin
+    YOKTUR. `sgf`in etkisi kayit tamligi uzerindendir (dar bant -> az grup
+    hizi dagilimi, kesim frekansina daha cok sigma).
 
     KAPI BIR ACI ESIGI DEGILDIR, ve bu bir SECIM degil bir OLCUMDUR.
     Sevk penceresinde (eps1 = 4, eps2 = 1, lam = 40) kapi KAPALIYKEN olculen
@@ -726,6 +774,79 @@ def reflection_coefficient(
     (KESER). DURUST OLUMSUZ: bozulma theta ile MONOTON DEGILDIR -- theta =
     75 iki kesilen bolgenin ARASINDAN geciyor. Bir "theta >= 75 tavani"
     yazilamaz; yazilabilecek olan nokta nokta bir imkan kapisidir.
+    KUYRUK KAPISIYLA (10.10.2026) ayni tablo: 45 ve 55 gecer (ayrik-tam
+    referansa hata 1.2e-07 / 3.4e-07, kuyruk 5.2e-06 / 1.2e-05); 65..85'in
+    HEPSI `None` (kuyruk 2.35e-02 .. 0.99; kapi kapaliyken hata 1.6e-03 ..
+    7.4e-02). theta = 75'in `|rho| = 1` kapisindan GECMESI bir rastlantiydi:
+    hatasi 4.7e-02, kaydin sonunda genlik tepenin 0.69'u.
+
+    KUYRUK KAPISI -- SESSIZ PROTOKOL HATASININ KAPISI (10.10.2026). G1 on
+    olcumu (09.10.2026) kismi yansimada `|rho| = 1` kapisinin hic kosmadigi
+    yerde sessiz hata buldu: 1 -> 2.25, lam 20, theta 75'te |rho - r| =
+    2.01e-02, G1 bedelinden (1.47e-02) buyuk; 2.25 -> 1, theta 41.80'de
+    (surekli olcute gore TIY degil, semaninkine gore TIY) 5.47e-02.
+    Referans AYRIK-TAM r'dir (kesilmemis kayit, sonsuz izgara; s ve p icin
+    transfer ozyinelemesi, s'te G1 kapali formuna 1e-15'te oturur).
+    KAYNAK AYRILDI (G1'in iki durumunda): FFT bini / pencere SUCSUZ (bin =
+    DTFT, 2.9e-15; Hann her yerde DAHA KOTU); PML SUCSUZ (npml 60 -> 200, r0
+    1e-6 -> 1e-12 T_min'de rho'yu <= 2.3e-07 oynatir); suc KAYIT UZUNLUGUNDA:
+    darbe kayit bittiginde hala gelmektedir. Uc fiziksel sebep (bkz. `_record_steps` ikinci durust
+    olumsuz): sabit-`ky` indirgemesinin grup hizi dagilimi ve kesim
+    frekansina yakinlik (siyirma), dal noktasinin uzun yansima kuyrugu
+    (kritik aci), kaba izgarada semanin yavas grup hizi (yogun ortam,
+    theta = 0'da bile: eps 4 -> 1, lam 10'da hata 1.09e-01). Ek olarak
+    bir sogurucu yankisi (kaynagin SOLA giden dalgasinin sol PML'den, gecen
+    dalganin sag PML'den donusu) kayda yarim ya da TAM girebilir (asagida
+    KOR NOKTA).
+    OLCULDU (sevk penceresi, eps 1 -> 2.25, 2.25 -> 1, 4 -> 1, 1 -> 4 x 56
+    aci x lam 10/20/40 x s/p = 336 durum, 10 kayit yok): ESKI ALET 253 sayi
+    dondururdu, 157'sinin hatasi > 1e-4, 136'sinin > 1e-3, 99'unun > 1e-2.
+    KAPIYLA 89 sayi doner ve en kotusunun hatasi 8.28e-05 (izgara
+    noktalarinda; ayni pencerede izgara DISINDA 1.49e-04 olculdu: 2.25 -> 1,
+    44 der, lam 30, s, kuyruk 9.8e-04, oran 0.15). Kapinin 164 YENI
+    `None`unun bir kismi aslinda temizdi (eski hata 2.96e-06'ya kadar):
+    bedeli YANLIS ALARMDIR, sessiz hata degil.
+    ESIK BANTTAN SECILDI: depodaki sabitlenmis cagrilarin en buyuk kuyrugu
+    9.44e-04, sessiz hatasi > 1e-4 olan sayilarin en kucuk kuyrugu 2.78e-03;
+    `DEFAULT_TAIL_GATE` = 1.6e-3 ikisinin geometrik ortasi.
+    HATA SINIRI, BEYAN -- YALNIZ PROB ARAYUZE YAKINKEN (sevk ofseti 6):
+    kuyruk <= 1e-3 olan izgara durumlarinda hata/kuyruk <= 0.11 (izgara
+    disinda 0.15); depoda en kotusu 0.54 (`probe_offset` 300, eps 4 -> 1,
+    theta 45, lam 40: kaynak yankisi kayda TEPESINDEN girer, eksik kalan yari
+    yaklasik yarim genlik eder; hata 2.02e-04, kuyruk 3.76e-04). Yani orada
+    gecen bir sayinin protokol hatasi ~0.54 * `tail_gate` = 8.6e-04'u
+    asmaz diye OKUNUR -- olculen bir oran, kanit degil.
+    KOR NOKTA -- KAYIT ICI YANKI (bagimsiz dogrulayici buldu, 10.10.2026):
+    prob arayuzden uzaksa bir sogurucu yankisi GELEN kaydina TAMAMEN girer,
+    yansimasi ise kayit bitmeden YANSIYANA varmaz; kaydin sonu sessizdir ve
+    kapi sayiyi GECIRIR. Olculen (9 -> 1, theta 30, lam 40, s): sevk
+    penceresinde `probe_offset` 590'da hata 5.45e-03 (kuyruk 1.42e-05),
+    T2 penceresinde (1800 hucre, sgf 6) ofset 400'de 6.20e-03; r0 1e-6 ->
+    1e-12 ile 8.1e-05'e iner. Sag taraf kisaysa gecen dalganin sag PML
+    yankisi da ayni sekilde girer (cells 1600, 2.25 -> 9, theta 30, lam 40,
+    p: 8.21e-03). OLCULMUS ADAY, UYGULANMADI: gelen kaydinda ana darbeden
+    5 sg sonra kalan en buyuk genlik / tepe -- 6.19e-03 iken hata 6.20e-03,
+    1.02e-03 iken 3.56e-04 (4 -> 1, theta 0, lam 20, T2 ofset 400).
+    ACI VE COZUNURLUK BAGIMLILIGI (kapi `None` der; olculen acilar 0..85):
+    SIYIRMA -- n1 = 1, lam 10: theta >= 60 (1 -> 2.25, p'de 55 de: Brewster
+    yakininda yanlis alarm, eski hata 2.96e-06); lam 20: 1 -> 2.25'te >= 65,
+    1 -> 4'te 60 gecer, 70 gecmez; eps1 2.25: lam 20'de >= 60, lam 40'ta
+    >= 70; eps1 4: lam 20'de >= 60, lam 40'ta >= 65. KRITIK BANT -- 2.25 ->
+    1: 40..43 (35 ve 45 gecer), 4 -> 1: 29.5..30.5 (28 ve 32 gecer), lam 20
+    ve 40'ta. KABA IZGARA -- eps1 4, lam 10'da HER aci; eps1 2.25, lam
+    10'da 45 disinda her aci (ortamda <= 7 hucre/dalgaboyu). UZUN DARBE --
+    n1 = 1, lam 40'ta theta <= 30 guvenli kayit yok (`_record_steps`),
+    theta >= 45 kaynak yankisi. Bu tablo SEVK PENCERESININDIR: geometri
+    (iface, kaynak, prob) ve `sgf` degisince sinirlar kayar.
+    ELENEN DUZELTME ADAYI (olculdu): yankiya kadar uzun kosup kuyrugu
+    esigin altina inen ILK kaydi kullanmak. Civilti (chirp) ve dal noktasi
+    kuyruklarinda kuyruk bir periyot susup geri gelir: tau = 3e-4'te kabul
+    edilen bir kaydin hatasi 3.35e-03 (eps 4 -> 1, theta 29.9, lam 10,
+    kuyruk 2.99e-04). Kaydin SONU T_min'de bilgi tasir cunku darbe orada
+    yeni bitmis olmalidir; uzun kaydin ilk sessiz ani tasimaz. Kapi bu
+    yuzden YENI KOSUM EKLEMEZ ve gectigi her sayi eski sayinin BIT BIT
+    aynisidir. ACIK: `vx` ve darbe genisligini dagilim/ayrik grup hiziyla
+    duzelten bir `_record_steps` OLCULMEDI.
 
     MALIYET (olculdu, sevk penceresi): theta = 45, lam = 40'ta cagri basina
     1.07 s; theta = 70'te 1.543 s; theta = 80'de 2.416 s (kayit uzunlugu
@@ -747,6 +868,11 @@ def reflection_coefficient(
     farkli. Kapali formda lam 20.78'de ayni fark I-1/2'de 1.99, prob
     duzleminde 4.73 der (mutlak deger). Bu aletle okunan egik/2B faz
     bedeli I-1/2'de yazilanin ~2.4 katidir.
+    KUYRUK KAPISINDAN SONRA (10.10.2026): yukaridaki +5.2266 ancak kapi
+    KAPALIYKEN (`tail_gate` = 1) uretilir; varsayilan pencerede iki cagri da
+    `None` doner (kuyruk 4.63e-03 ve 2.13e-03; ayrik-tam referansa hata
+    2.96e-04 ve 1.39e-04). Kapali formla fark (+5.2266 - 5.2218 = 0.0048
+    der) o protokol hatasidir.
     """
     if polarization not in POLARIZATIONS:
         raise InvalidInputError(
@@ -797,6 +923,12 @@ def reflection_coefficient(
     gelen = arka.probes[0]
     yansiyan = on.probes[0] - gelen
     if not (np.all(np.isfinite(gelen)) and np.all(np.isfinite(yansiyan))):
+        return None
+    kuyruk = max(
+        _kuyruk(gelen, wavelength=wavelength, courant=w.courant),
+        _kuyruk(yansiyan, wavelength=wavelength, courant=w.courant),
+    )
+    if kuyruk > w.tail_gate:
         return None
 
     pen = _FFT_PENCERELERI[w.window_fn](steps)

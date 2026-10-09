@@ -28,7 +28,8 @@ PENCERE (aksi yazılmadıkça bu dosyadaki her koşum): `eps1 = 4` (n1 = 2),
 `S = 0.4`, `N = 3600`, `npml = 60` (`m = 3`, `r0 = 1e-6`), `iface = 1500`,
 `isrc = 600`, `probe_offset = 6`, **`sgf = 9`**, `t0 = 5 sg`, FFT penceresi
 DİKDÖRTGEN, kayıt uzunluğu açıya göre seçilir (yankı-dışı kapı), kapı
-`||rho| - 1| <= 1e-2`. Tohum YOK: FDTD deterministtir ve tekrarlanabilirliğin
+`||rho| - 1| <= 1e-2`, kuyruk kapısı 1.6e-3 (kaydın son periyodundaki
+genlik / tepe; 10.10.2026, bkz. `test_kayit_tamligi.py`). Tohum YOK: FDTD deterministtir ve tekrarlanabilirliğin
 karşılığı pencerenin tam beyanıdır.
 
 `sigma_analiz = 0.002187°` — 15 analiz/ayrıklaştırma ekseninin standart
@@ -461,6 +462,14 @@ def test_KORLUK_2_SOGURUCU_TEK_IZGARADA_KOR_MERDIVENDE_DEGIL():
     yayılımının standart sapması 2.8e-05'tir, yani 3.17e-06 o ölçekte
     **0.11 sigma**'dır. Planın "4.2 sigma" sayısı bu pencerede YENİDEN
     ÜRETİLEMEDİ ve yazılmıyor.
+
+    KUYRUK KAPISI (10.10.2026) körlüğü YARIYA İNDİRİYOR: `lambda` = 54'te
+    soğurucusuz kayıt TAM DEĞİL — PEC yankısı kayda giriyor, kaydın son
+    periyodunda genlik tepenin 1.75e-01'i — ve alet artık `None` döndürüyor;
+    yani bozma orada TEK IZGARADA görünür. 13.9 sigma sayısı ve merdivenin
+    YARGILANAMAZ hükmü kuyruk kapısı KAPALIYKEN (`tail_gate` 1) üretilir.
+    `lambda` = 40'ta soğurucusuz kuyruk 1.97e-04 (eşiğin altında) ve körlük
+    orada SÜRÜYOR.
     """
     cipsiz = dataclasses.replace(SEVK, npml=0)
 
@@ -470,7 +479,8 @@ def test_KORLUK_2_SOGURUCU_TEK_IZGARADA_KOR_MERDIVENDE_DEGIL():
     assert abs(d40p - d40) / SIGMA_ANALIZ < 0.1  # tek ızgarada KÖR
 
     d54 = _delta(lam=54.0)
-    d54p = _delta(lam=54.0, window=cipsiz)
+    assert _delta(lam=54.0, window=cipsiz) is None  # kuyruk kapısı görüyor
+    d54p = _delta(lam=54.0, window=dataclasses.replace(cipsiz, tail_gate=1.0))
     assert abs(d54p - d54) == pytest.approx(3.04e-02, rel=0.2)
     assert abs(d54p - d54) / SIGMA_ANALIZ > 10.0  # daha ince ızgarada GÖRÜNÜR
 
@@ -542,13 +552,20 @@ def test_OLCUM_ALETININ_TAVANI_VAR_ve_KAPI_ONU_KESIYOR():
        nokta nokta bir imkan kapısıdır. (Aynı cümle Task 1'in
        `source.gauss_cos` ve `boundary.PML` dokstringlerinde de vardı ve
        Task 3'te düzeltildi.)
+
+    KUYRUK KAPISI (10.10.2026): yukarıdaki tablo İKİ KAPI DA KAPALIYKEN
+    (`unity_gate` 1e9, `tail_gate` 1) okunur. Kuyruk kapısı açıkken 65..85
+    hepsi `None` (kaydın son periyodunda genlik tepenin 2.35e-02 .. 0.99'u;
+    ayrık-tam referansa hata 1.6e-03 .. 7.4e-02); theta = 75'in `|rho| = 1`
+    kapısından geçmesi bir rastlantıydı (hata 4.7e-02). Mekanizma kesik
+    kayıttır: bkz. `reflection_coefficient` ve `test_kayit_tamligi.py`.
     """
     # theta = 80: kapı kesiyor.
     assert _rho("s", theta=80.0) is None
     assert tir_phase_difference(
         eps1=EPS1, eps2=EPS2, theta_deg=80.0, wavelength=LAM) is None
 
-    acik = dataclasses.replace(SEVK, unity_gate=1e9)
+    acik = dataclasses.replace(SEVK, unity_gate=1e9, tail_gate=1.0)
     r80 = _rho("s", theta=80.0, window=acik)
     assert abs(r80) == pytest.approx(0.941959, abs=1e-4)
     assert abs(abs(r80) - 1.0) > SEVK.unity_gate
@@ -589,8 +606,12 @@ def test_TAVANIN_SEBEBI_sgf_ve_TASK1_DOKSTRINGI_HALA_DOGRU():
     O ölçüm sevk edilmemiş bir prototiple yapılmıştı. SEVK EDİLEN boruyla
     yeniden ölçüldü ve **birebir tuttu**: 4.2533e-02 / 2.7313e-05 /
     7.4694e-08 (sgf = 9), ve npml 200'de yine 4.2533e-02.
+
+    İki kapı da kapalı (`unity_gate` 1e9, `tail_gate` 1): sgf = 3 ve 6'da
+    kayıt TAM DEĞİL (kuyruk 4.75e-01 ve 2.96e-03, 10.10.2026) ve kuyruk
+    kapısı açıkken ikisi de `None` dönerdi.
     """
-    acik = dataclasses.replace(SEVK, unity_gate=1e9)
+    acik = dataclasses.replace(SEVK, unity_gate=1e9, tail_gate=1.0)
     w3 = dataclasses.replace(acik, sgf=3.0)
     w6 = dataclasses.replace(acik, sgf=6.0)
     w3n = dataclasses.replace(acik, sgf=3.0, npml=200)
@@ -1196,7 +1217,7 @@ def test_PENCERE_BEYANI_TAM():
     satirlar = SEVK.as_lines()
     metin = " ".join(satirlar)
     for parca in ("3600", "0.4", "1500", "600", "1494", "60", "m = 3", "9",
-                  "dikdortgen", "aritmetik", "0.01"):
+                  "dikdortgen", "aritmetik", "0.01", "0.0016"):
         assert parca in metin
     assert SEVK.probe == SEVK.interface - SEVK.probe_offset
     assert dataclasses.replace(SEVK, probe_offset=300).probe == 1200
