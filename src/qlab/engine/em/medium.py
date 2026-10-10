@@ -183,6 +183,16 @@ class Medium:
         1B'deki `mu_yari` gibi HER ZAMAN ARITMETIKTIR ve `ey_kural`a bagli
         DEGILDIR; gerekce `mu_yari`nin dokstringindedir ve burada tekrar
         edilmiyor.
+
+        DUAL TE_z'DE (G1-p, 10.10.2026; mu' = eps) bu dizi Ex/Ey'nin gordugu
+        eps'tir: aritmetik = teget E'nin kurali = egik p'nin sevk `ey_kural`i.
+        x ekseninde (axis = 0) harmonik yapildiginda hizli EM seridinin 246
+        testinin HEPSI geciyordu (olculdu, elestirmen; dogrulayici yeniden
+        olctu); artik `tests/em/test_g1p_egik_2b_te.py`de yerli TE_z ve kimlik
+        testleri (yavas seritte dogrudan 2B delta_ps testi de) duser. y
+        ekseninde (axis = 1) harmonik ve 2B `dbx`te sol hucre mu'su da hizli
+        seridin 246 testinden geciyor; onlari YALNIZ yerli TE_z testi (tam 2B
+        rastgele eps) dusurur -- y-degismez duzenekler bu eksene kordur.
         """
         if self.mu_r.ndim != 2:
             raise InvalidInputError(

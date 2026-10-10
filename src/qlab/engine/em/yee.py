@@ -495,6 +495,17 @@ def run_2d(
     ucunde de lambda'yi 7.257613 HUCRE diye basiyordu. O yuzden `dx`
     `EMScenario` icinde de bir alan DEGILDIR -- ama senaryodan cikarmak
     MOTORU kapatmiyordu; bu kapi onu kapatiyor.
+
+    TE_z AYRI BIR YOL DEGILDIR (G1-p, 10.10.2026): bu cekirdek DUAL ortamla
+    (eps_r = 1, mu_r = eps, sogurucuda sigma/eps) kosulunca dual izgarada bir
+    2B TE_z Yee'dir -- kayit Hz, `final.hx`/`final.hy` = -Ex/-Ey. Dort kenar
+    ve `pec_mask` o zaman PMC'dir (TE_z'de PEC cisim bu yolla kurulamaz).
+    Sevk edilen `PML` sigma/eps olcegini VERMEZ ve dort kenara koyar: egik p
+    ile BIT-YAKIN kimlik icin sinir nesnesi kullanicidadir (testte yerel).
+    Olceksiz sigma da dualde eslesmis bir sogurucudur (H kaybi sigma'/eps'
+    ile kurulur); olcek fizik icin degil kimlik icin gerekir.
+    Olcum ve kosullar: `oblique` modul dokstringi; kilit
+    `tests/em/test_g1p_egik_2b_te.py`.
     """
     dx_kapisi(dx)
     if steps < 0:

@@ -2,8 +2,8 @@
 
 MODELLEME SECIMI, BEYAN EDILIR: enine dalga sayisi `ky` ANALITIK olarak
 dayatilir; y yonunde izgara YOKTUR. x yonundeki cozum tam Yee'dir ve yansima
-katsayisi COZULUR, yazilmaz. Bedeli tam 2B ile OLCULDU (G1, 09.10.2026;
-yalniz s / TM_z kolu, kod DUZELTILMEDI):
+katsayisi COZULUR, yazilmaz. Bedeli tam 2B ile OLCULDU (G1: s / TM_z kolu
+09.10.2026, p / TE_z kolu 10.10.2026 dualite yoluyla; kod DUZELTILMEDI):
 
   * KIMLIK: y-degismez ortamda motorun 2B TM_z Yee'si (`yee.run_2d`) bu
     modulun s cozumunun `ky -> 2 sin(ky/2)` konmus halidir, BIT-YAKIN.
@@ -33,7 +33,30 @@ yalniz s / TM_z kolu, kod DUZELTILMEDI):
   * Surekli Fresnel'e hangi semanin yakin oldugu aciya gore isaret
     degistirir (kapali form: 1 -> 2.25'te ~75, 1 -> 4'te ~80 der); bir
     "daha dogru sema" hukmu VERILMEZ.
-  * p (TE_z) icin tam 2B OLCULMEDI (2B yolu yalniz TM_z).
+  * p (TE_z) KOLU (G1-p, 10.10.2026): motorun 2B yolu yalniz TM_z'dir;
+    TE_z ona DUAL ORTAM verilerek kosulur -- eps' = 1, mu' = eps,
+    sogurucuda sigma' = sigma/eps, (e, hx, hy) = (Hz, -Ex, -Ey). Bu, dual
+    izgarada bir 2B TE_z Yee'dir (Ex/Ey'nin eps'i `Medium.mu_yari_2d`, hep
+    aritmetik; testte elle yazilmis yerli TE_z ile tam 2B rastgele eps'te
+    bit bit ayni). KIMLIK: y-degismez ortamda dual 2B, bu modulun p
+    cozumunun `ky -> 2 sin(ky/2)` halidir; yayilan kiplerde tepeye gore
+    <= 2.3e-14 (yedi duzenek, eps 1..9, S 0.3-0.6, PML ve PEC). Egik p ile
+    kimligin kosullari (TE_z olmanin degil):
+    mu = 1; `ey_kural` = `mu_yari_2d`nin kurali (sevk: aritmetik;
+    harmonik/sol/sag ile >= 2.7e-2 kirilir); sogurucu icinde eps sabit
+    (rampada 9e-7..6e-5 sapar); duvar ve ic maske PMC -- TE_z'de PEC cisim
+    bu yolla KURULAMAZ. Kapali form (aritmetik Ey, I-1/2 referansli):
+    r_p = (eps2 a1 c2 - eps1 a2 c1) / (eps2 a1 c2 + eps1 a2 c1), a_j ve
+    c_j = cos(k_j/2) s'tekiyle ayni. Genlik bedelinin ISARETI Brewster'de
+    doner (sevk aleti, 1 -> 2.25, lam 20, 30/45/60 der: -1.05e-4 /
+    -7.28e-4 / +3.82e-3; s'de hep pozitif). Kritik aci bandi s ile ORTAK
+    (dispersiyon ayni); bantta p'nin bedel tepesi 0.303 (2.25 -> 1, lam 20;
+    s'de 0.147; lam -> sonsuzda oran eps1/eps2), yalniz O(dx). TIY'de
+    delta_ps bedeli referans duzleminden BAGIMSIZDIR (iki kutuplanma ayni
+    semada ayni k1): 4 -> 1, 45 der, lam 20'de -0.390 der (boru hatti
+    uzlasimi). KILIT: `tests/em/test_g1p_egik_2b_te.py` -- T0p yerli TE_z,
+    T1p kimlik, T2p kapali form + isaret (hizli); T3p dogrudan 2B TIY
+    delta_ps sureklige O(dx^2), 2B TE_z yolunun FIZIK CIPASI (`slow`).
   * KILIT, `tests/em/test_g1_egik_2b.py`:
     `test_2B_YEE_y_KIPI_EGIK_s_NIN_K_2SIN_HALI_BIT_YAKIN` (T1, kimlik,
     zaman kaydi), `test_EGIK_BEDELI_AYRIK_FRESNEL_KAPALI_FORMUNA_OTURUR`

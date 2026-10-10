@@ -2790,8 +2790,8 @@ edilince sınanabilir hâle gelen iddialardı**:
   Not: kapalı formun etiketi bir zamanlar `k_y Δx` idi — `Δx` o terime hiç
   girmez, `k_y` **radyan/hücre**dir.
 - ~~**`oblique.py` TAM 2B İLE KARŞILAŞTIRILMADI.**~~ **s (TM_z) kolu KAPANDI
-  09.10.2026** — kod düzeltmesi yok; ölçülmüş bedel beyanı (`oblique.py` modül
-  dokstringi) ve üç kilit testi (`tests/em/test_g1_egik_2b.py`: T1 kimlik ve T2
+  09.10.2026**, **p (TE_z) kolu 10.10.2026** (aşağıda) — kod düzeltmesi yok; ölçülmüş bedel beyanı (`oblique.py` modül
+  dokstringi) ve s kolunun üç kilit testi (`tests/em/test_g1_egik_2b.py`: T1 kimlik ve T2
   kapalı-form bedel hızlı şeritte, T3 kritik bant `slow`). 1B-açılı indirgeme
   bir modelleme seçimi olarak kalıyor (`k_y` analitik dayatılıyor); bedel
   tanımı: aynı `ω`, aynı ANALİTİK `k_y = k0·n1·sin θ`. Ölçülen:
@@ -2831,9 +2831,54 @@ edilince sınanabilir hâle gelen iddialardı**:
     alanın PML kaybı, D 2B Hx işareti, G enine terimde komşu `cb`) hepsini T1
     öldürüyor (A, B, G'yi T2 ve T3 de). G1'den önce G'yi hızlı şeritte yalnız
     bir kararlılık kapısı görüyordu; fizik referanslı hızlı test yoktu.
-  - **AÇIK ALT MADDE — p (TE_z) tam 2B ile KARŞILAŞTIRILMADI.** Motorun 2B
-    yolu yalnız TM_z (`yee._adim_2d`: Ez, Hx, Hy); G1'in p kolu açıktır.
-    Kontrast 1↔2.25, 1→4, 4→1 ve S 0.4/0.5/0.6 dışı da ölçülmedi.
+  - s kolunda kontrast 1↔2.25, 1→4, 4→1 ve S 0.4/0.5/0.6 dışı ölçülmedi.
+  - ~~**AÇIK ALT MADDE — p (TE_z) tam 2B ile KARŞILAŞTIRILMADI.**~~ **p (TE_z)
+    kolu KAPANDI 10.10.2026 — dualite yoluyla; motor kodu değişmedi.** Motorun
+    2B yolu yalnız TM_z'dir; TE_z ona **dual ortam** verilerek koşulur:
+    ε' = 1, μ' = ε, soğurucuda σ' = σ/ε, `(e, hx, hy) = (Hz, −Ex, −Ey)`. Bu
+    koşum dual ızgarada bir 2B TE_z Yee'dir (Hz düğümde, Ex (i, j+½),
+    Ey (i+½, j); teğet E'nin ε'si `mu_yari_2d`, hep aritmetik): testte elle
+    yazılmış yerli TE_z ile TAM 2B rastgele ε(x, y)'de bit bit aynı.
+    Eğik p ile kimliğin koşulları: μ = 1; soğurucunun içinde ε sabit
+    (rampada 9e-7…6e-5 sapma; rampa varken dual yine kayıplı bir TE_z
+    Yee'dir, yalnız Ey kaybını ort(σ/ε) ile kurar); dört duvar ve iç maske
+    **PMC** — bu yolla TE_z'de PEC cisim kurulamaz. Sevk `PML` σ/ε ölçeğini
+    vermez; sınır nesnesi testte yerel.
+    "Motorun TE_z yolu var" denmez. Ölçülen (`.superpowers/sdd/g1p-olcum/`):
+    - **Kimlik:** dual 2B'nin y-kipi, eğik p'nin `k_y → 2 sin(k_y/2)`
+      konmuş hâlidir; yayılan kiplerde tepeye göre ≤ 2.3e-14 (yedi düzenek:
+      ε 4→1, 1→2.25, 2.25→1, 1→4, 1→9, 9→1, 6.25→2.25; S 0.3–0.6; PML ve
+      PEC). Kimlik `ey_kural` = `mu_yari_2d` kuralıyken tutar (sevk:
+      aritmetik); harmonik/sol/sağ `ey_kural` ile ≥ 2.7e-2 kırılır.
+    - **Kapalı form (aritmetik Ey):** `r_p = (ε2 a1 c2 − ε1 a2 c1) /
+      (ε2 a1 c2 + ε1 a2 c1)`, `a_j = sin(k_j/2)`, `c_j = cos(k_j/2)` — s'ninkinin
+      ε ağırlıklı eşi. Bağımsız çözücülere yuvarlama düzeyinde (a2 < 1'de
+      ≤ 8.8e-15; a2 → 1 Nyquist kenarında 1.4e-14), sevk aletine ≤ 2.4e-6.
+      Dal: ortam 2'de a2 > 1 iken c2 = −i√(a2²−1) (`np.sqrt` öteki dalı
+      seçer; G1-s yardımcısı da düzeltildi, sayıları değişmedi).
+    - **Bedelin işareti Brewster'de döner:** λ = 20, 1→2.25, 30/45/60°:
+      **−1.05e-4 / −7.28e-4 / +3.82e-3** (sevk aleti, kapalı formla ≤ 3.3e-7
+      içinde; en büyüğü 60°'de); sabit açıda O(Δx²). s'de hep pozitifti. İki şemanın Brewster
+      açısı da `atan(n2/n1)`'e O(Δx²) gider; işaret ikisinin arasında bir kez
+      döner.
+    - **Kritik açı bandı s ile aynı** (dispersiyon ortak); bantta p bedelinin
+      tepesi daha büyük: 2.25→1, λ = 20'de 0.303 (s'de 0.147), yalnız O(Δx);
+      λ → ∞'da p/s oranı ε1/ε2'ye gider. p için bant kilidi YOK (s'nin T3
+      kapısını eğik |r| 5.5e-3 ile geçmiyor; bant sınırı s'nin T3'ünde kilitli).
+    - **δ_ps bedeli referans düzleminden bağımsız** (her şemada s ve p aynı
+      k1): λ = 20, 4→1, 45°'de δ_ps(eğik) − δ_ps(2B) = −0.390° (boru hattı
+      uzlaşımı). Doğrudan 2B'den (eğik çözücü yok) okunan TİY δ_ps sürekliye
+      O(Δx²) yakınsar: 4→1, 45°, L 6/12'de +1.345° / +0.365°, üs 1.88 — 2B
+      TE_z yolunun FİZİK ÇIPASI.
+    - Kilitler `tests/em/test_g1p_egik_2b_te.py`: T0p yerli TE_z (0.02 s), T1p
+      kimlik (0.18 s), T2p kapalı form + işaret (0.33 s) hızlı; T3p doğrudan
+      2B δ_ps `slow` (4.1 s). Mutasyon 12/14 (hayatta: işaret gauge'u, eşdeğer;
+      `Medium` sınıf varsayılanı `ey_kural`, bu yollara ulaşmaz — hızlı şeritte
+      kesin kapı testinde düşer). Yan bulgu:
+      `mu_yari_2d`'yi harmonik yapan mutant mevcut hızlı EM şeridinin 246
+      testinin hepsinden geçiyordu; artık T0p ve T1p'de düşüyor. 2B'nin y
+      eksenindeki μ kuralını (ve `dbx`in μ'sünü) hızlı şeritte YALNIZ T0p
+      kilitliyor (doğrulayıcı).
 - ~~**`reflection_coefficient` sıyırma / kritik-yakını açılarda SESSİZ
   protokol hatası.**~~ **KAPANDI 10.10.2026 (sevk geometrisinde) — kuyruk
   kapısı** (kayıt tamlığı); kayıt içi yankı ayrı bir madde (aşağıda; o da KAPANDI, ayrı `echo_gate` ile). Kaydın son periyodundaki genlik (gelen ya da yansıyan seride)

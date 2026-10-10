@@ -42,9 +42,11 @@ AYRIK Fresnel'dir, sürekli Fresnel değil; yani ikisi de şema çıpası /
 (`_r_ayrik`) ve sınır nesnesi (`_XSig`) testte elle yazılır, kaynaktan
 import edilmez. Özel (`_ad`) import YOK: koşumlar kamu yolundan geçer.
 
-KAPSAM TAVANI, BAŞTAN: p (TE_z) için tam 2B ÖLÇÜLMEDİ — motorun 2B yolu
-yalnız TM_z'dir (`yee._adim_2d`: Ez, Hx, Hy). G1'in p kolu AÇIK kalır.
-Kontrast 1<->2.25, 1->4, 4->1 ve S 0.4/0.5/0.6 dışı ölçülmedi.
+KAPSAM TAVANI, BAŞTAN: bu dosya yalnız s (TM_z) kolunu kilitler. p (TE_z)
+kolu 10.10.2026'da AYRI DOSYADA kapandı (`test_g1p_egik_2b_te.py`): motorun
+2B yolu yalnız TM_z'dir (`yee._adim_2d`: Ez, Hx, Hy); TE_z ona dual ortam
+(ε' = 1, μ' = ε, σ' = σ/ε) verilerek koşulur ve kimlik orada kilitli.
+s'te kontrast 1<->2.25, 1->4, 4->1 ve S 0.4/0.5/0.6 dışı ölçülmedi.
 
 HIZLI ŞERİT BOŞLUĞU (bu dosyadan önce): `ky != 0`da 2B ile eğik çözücüyü
 bağlayan hızlı test yoktu. G mutantı (enine geri beslemede komşu hücrenin
@@ -102,6 +104,14 @@ def _r_ayrik(eps1: float, eps2: float, K: float, lam: float, S: float) -> comple
     Türetim (modül dokstringi): s'te ayrık süreklilik koşulları, her iki
     ortamda `sin(k_j/2)^2 = (eps_j Om^2 - K^2)/4` dispersiyonuyla. Geçen
     dalga sönümlüyse `Im a2 > 0` dalı seçilir; o zaman |r| = 1 TAM'dır.
+
+    DAL (G1-p eleştirmeni, 10.10.2026): a2 gerçel ve > 1 iken (ortam 2'de
+    Nyquist üstü sönümlü dal, k2 = π + iκ) fiziksel dal c2 = −i sqrt(a2² − 1);
+    `np.sqrt(1 − a2²)` öteki dalı seçer ve 2.0'a kadar yanılır. Bu dosyanın
+    çağrıları o bölgeye GİRMEZ (sayılar bit bit aynı); dal yine de açıkça yazılı.
+    Burada dal KİLİTSİZDİR (|r| kapıları yanlış dala yapısal olarak kör: o
+    dal r'nin eşleniğini verir, |r| = 1 ikisinde de); p dosyasının `_ac`ı
+    ayrıca assert'le kilitli.
     """
     om = 2.0 * math.sin(math.pi / lam * S) / S
     a1 = np.sqrt(complex(eps1 * om * om - K * K)) / 2.0
@@ -109,6 +119,8 @@ def _r_ayrik(eps1: float, eps2: float, K: float, lam: float, S: float) -> comple
     if a2.imag < 0:
         a2 = -a2
     c1, c2 = np.sqrt(1.0 - a1 * a1), np.sqrt(1.0 - a2 * a2)
+    if a2.imag == 0.0 and a2.real > 1.0:
+        c2 = complex(-1j * math.sqrt(a2.real * a2.real - 1.0))
     return complex((a1 * c2 - c1 * a2) / (a1 * c2 + c1 * a2))
 
 
