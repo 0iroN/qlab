@@ -2836,7 +2836,7 @@ edilince sınanabilir hâle gelen iddialardı**:
     Kontrast 1↔2.25, 1→4, 4→1 ve S 0.4/0.5/0.6 dışı da ölçülmedi.
 - ~~**`reflection_coefficient` sıyırma / kritik-yakını açılarda SESSİZ
   protokol hatası.**~~ **KAPANDI 10.10.2026 (sevk geometrisinde) — kuyruk
-  kapısı** (kayıt tamlığı); kayıt içi yankı ayrı bir açık madde (aşağıda). Kaydın son periyodundaki genlik (gelen ya da yansıyan seride)
+  kapısı** (kayıt tamlığı); kayıt içi yankı ayrı bir madde (aşağıda; o da KAPANDI, ayrı `echo_gate` ile). Kaydın son periyodundaki genlik (gelen ya da yansıyan seride)
   tepenin `tail_gate` = 1.6e-3 katını aşarsa alet `None` döndürüyor; yeni
   koşum yok, geçen her sayı eski sayının bit bit aynısı. Ölçülen
   (`.superpowers/sdd/rc-olcum/`, ayrık-tam referansa karşı: s'te G1 kapalı
@@ -2864,7 +2864,7 @@ edilince sınanabilir hâle gelen iddialardı**:
     prob arayüze yakınken (sevk ofseti 6):** hata/kuyruk ızgarada ≤ 0.11
     (ızgara dışı 0.15), depoda en kötü 0.54 (bir yankı kayda tepesinden
     giriyor) → orada geçen sayının protokol hatası ≲ 0.54·τ ≈ 8.6e-4 diye
-    okunur. Küçük T2 penceresinde geçen iki sayı 1e-4'ü aşıyor
+    okunur (prob uzaktayken yankıyı ayrıca `echo_gate` sınırlıyor, aşağıdaki RC-a maddesi). Küçük T2 penceresinde geçen iki sayı 1e-4'ü aşıyor
     (2.25→1, 45°: 2.05e-4 / 1.82e-4).
   - **Açı ve çözünürlük** (sevk penceresinde `None`): n1 = 1'de λ = 10
     θ ≥ 60 (1→2.25 p'de 55° de, Brewster yakınında yanlış alarm), λ = 20
@@ -2876,23 +2876,80 @@ edilince sınanabilir hâle gelen iddialardı**:
     periyot susup geri geliyor (τ = 3e-4'te kabul edilen bir sayının hatası
     3.35e-3). **Açık:** dağılım / ayrık grup hızıyla düzeltilmiş bir
     `_record_steps` ölçülmedi.
-  - Kilitler: `tests/em/test_kayit_tamligi.py` (hızlı şeritte 13 test,
+  - Kilitler: `tests/em/test_kayit_tamligi.py` (hızlı şeritte 13 test — RC-a'dan sonra 19,
     her biri ≤ 0.5 s; sevk penceresindeki G1 başlıkları `slow`); birleşik
     mutasyon 23/24 (hayatta kalan `>` → `>=`, eşdeğer). Kilit dosyası
     olmadan em hızlı şeridi kapı mutantlarının hiçbirini görmüyor. Kapı
     kapalıyken ham sayıları gösteren `test_arayuz.py` testleri artık iki
     kapıyı da açıkça kapatıyor (`unity_gate` 1e9, `tail_gate` 1). Körlük 2
     yarıya indi: λ = 54'te soğurucusuz kayıt kapıda `None`.
-- **AÇIK — kayıt içi soğurucu yankısı kuyruk kapısına görünmüyor** (orta,
-  10.10.2026, bağımsız doğrulayıcı buldu). Prob arayüzden uzaksa kaynağın
-  sol PML yankısı gelen kayda TAMAMEN giriyor, yansıması kayıt bitmeden
-  yansıyana varmıyor; kaydın sonu sessiz, kapı sayıyı geçiriyor. 9→1, 30°,
-  λ = 40: sevk penceresinde `probe_offset` 590'da hata **5.45e-3**, T2
-  penceresinde ofset 400'de **6.20e-3**; r0 1e-6→1e-12 ile 8.1e-5'e iniyor.
-  Sağ taraf kısaysa geçen dalganın sağ PML yankısı da giriyor (cells 1600,
-  2.25→9: 8.21e-3). Testle kilitli dürüst olumsuz (kapı düzeltilince
-  kırmızıya döner). Ölçülmüş aday, uygulanmadı: gelen kayıtta ana darbeden
-  sonraki ikinci varışın genliği (hatayla aynı mertebe).
+- ~~**AÇIK — kayıt içi soğurucu yankısı kuyruk kapısına görünmüyor**~~
+  **KAPANDI 10.10.2026 (RC-a) — spektral ikinci varış kapısı (`echo_gate`) +
+  sağ soğurucu sınırı.** Bağımsız doğrulayıcının bulduğu kör nokta: prob
+  arayüzden uzaksa kaynağın sol PML yankısı gelen kayda TAMAMEN giriyor,
+  yansıması kayıt bitmeden yansıyana varmıyor, kaydın sonu sessiz (9→1,
+  30°, λ = 40: sevk `probe_offset` 590'da **5.45e-3**, T2 ofset 400'de
+  **6.20e-3**); sağ taraf kısaysa geçen dalganın sağ PML yankısı da giriyor
+  (cells 1600, 2.25→9: **8.21e-3**). Ön ölçüm (`.superpowers/sdd/rc-olcum/rca/`,
+  adaylar aynı FDTD koşum çiftinden):
+  - **(a) İkinci varış — uygulandı, SPEKTRAL.** c = |F(gelen[i:])| /
+    |F(gelen[:i])|, F tam f = 1/λ'da DTFT, i ana darbenin sonu (t_dir +
+    5 sg). Yansıyanda karşılığı olmayan kalan için |hata| ≤ |r|·c/(1 − c)
+    — yankının şeklinden bağımsız; 2986 durumda yankı baskın 444'ünde (ve
+    ikinci turun 61'inde) %5 payla hiç aşılmadı.
+  - **İlk sürüm elendi (ikinci doğrulayıcı):** aynı pencerenin zaman-alanı
+    tepe oranı, kuyrukla aynı eşikte (1.6e-3). Eğik yankı ince PML'de
+    genişliyor, tepesi spektral ağırlığını %12–19 eksik okuyor; doğrulayıcı
+    onunla geçen bir sayı buldu (T2 ofset 410, 9→1, 48.25°, λ = 42, p:
+    hata **1.84e-3 > τ**, |ρ| = 1.000009 olduğu için birim kapısı da
+    görmüyor). Aynı 2986 durumda tepe oranla geçenlerin 31'i τ'yu aşıyordu.
+  - **Eşik ayrı düğme, ölçülen banttan:** `echo_gate` = 4.5e-4 —
+    sabitlenmiş (kapısı açık) çağrıların en büyük c'si 2.02e-4 (ofset 300,
+    yarım yankı), kuyruktan geçip hatası > 1e-3 olanların en küçüğü
+    9.84e-4; geometrik orta. Aynı 2986 durumda kuyruk eşiğinde (1.6e-3)
+    bırakılsaydı geçen en kötü hata 1.64e-3 olurdu; bu eşikte **3.21e-4**,
+    hatası > 1e-3 geçen sayı 64 → 0 (ikinci doğrulayıcı, yankı ve kuyruğun
+    toplandığı dar bir rejimde 6.16e-4 buldu — aşağıda).
+  - **(b) `_record_steps`e sağ soğurucu — uygulandı.** Arka koşumun ve geçen
+    dalganın sağ PML dönüşü kayıt sınırına eklendi; geçen dalganınki
+    yansıyanla zamanda örtüşüyor, kayıttan ayrılamıyor → ölçüm değil
+    geometri. Bedel 10 yanlış alarm / 1357 durum (5 sg payının temkini),
+    sabitlenmiş çağrıların hiçbiri.
+  - **(c) Gelen kaydı yankıdan önce sıfırlamak — elendi.** Kapısı açık 62
+    sabitlenmiş çağrının 26–27'sini değiştiriyor, sevk ana çıpasını
+    1.2e-7'den 1.25e-5'e bozuyor (yankı ana darbeyle 5 sg içinde örtüşünce
+    kesim darbenin kendi kuyruğunu kesiyor).
+  - **Sonuç:** kamu yolu ölçülen adayla 3005/3005 bit bit aynı; geçen hiçbir
+    sayı değişmedi. Kapı 514 sayıyı kesti (445'inin hatası > 1e-3); ikinci
+    varıştan 3 yanlış alarm, sevk ızgarasında (336) kayıp yok;
+    sabitlenmişlerden yalnız eski kör nokta testinin durumu (T2 ofset 400,
+    4→1, 0°, λ = 20: c 1.02e-3, hata 3.56e-4) `None` oldu — kilitli test
+    tersine döndü.
+  - **Dürüst olumsuz (kilitli):** kapı yankıyı GÖRÜYOR ama c ≤ `echo_gate`
+    ise geçiriyor, hatası ~|r|·c (T2 ofset 410, 4→1, 40°, λ = 20: c 2.25e-4,
+    hata 2.23e-4). **İki kaynak toplanıyor** (ikinci doğrulayıcı): c ve
+    kuyruk her biri kendi eşiğinin altındayken hata ikisinin toplamı — T2
+    ofset 430, 4→1, 32°, λ = 24: c 4.45e-4, kuyruk 1.06e-3, hata
+    **6.16e-4** (> `echo_gate`). Ölçülen toplam sınır (769 geçen sayı):
+    hata ≤ |r|·c/(1 − c) + 0.17·kuyruk → geçen sayının protokol hatası,
+    prob nerede olursa olsun, ≲ `echo_gate` + 0.17·τ ≈ 7.2e-4 diye okunur
+    (ölçülen bir oran, kanıt değil). Yankının genliği
+    soğurucunun kendisi (9→1'de r0 1e-6→1e-12 hatayı 8.1e-5'e indiriyor);
+    soğurucu bu kapanışta değişmedi.
+  - Kilitler: `tests/em/test_kayit_tamligi.py` (hızlı şeritte 19 test, en
+    yavaşı ~1 s; PEC duvarlı tam yankı vakası eski aletin 0.29'luk hatasını
+    `None` yapıyor; belgelenen PML vakası `slow`). Kapıları açıkça kapatan
+    `test_arayuz` testleri artık `echo_gate` 1'i de yazıyor; G1 T2 ve G7
+    FRESNEL pencereleri `echo_gate` alanını açıkça taşıyor. Mutasyon 27/27,
+    tek turda son test dosyasına karşı (`rc-olcum/rca/mut_rca2_kilit.log`);
+    doğrulayıcının spektral ölçüte özgü mutantları 11/11.
+- **AÇIK — FFT penceresi hann/blackman iken hata üç kapıya da görünmüyor**
+  (RC-d, orta, 10.10.2026; RC-a'nın ikinci doğrulayıcısı buldu, RC-a'dan
+  önce de vardı). Pencere erken gelen darbeyi ve geç gelen yansıyanı farklı
+  ağırlıkla çarpıyor: T2, 4→2.25, 40°, λ = 20'de hann **2.56e-2**,
+  blackman **3.56e-2** (dikdörtgende 1.4e-7); kuyruklar 4.8e-6 / 1.7e-5,
+  ikinci varış 2.4e-9. Sevk penceresi dikdörtgen. Testle kilitli dürüst
+  olumsuz (kapı pencereyi görmeyi öğrenince kırmızıya döner).
 - **`-m "not slow"` koşumunda modülün doğa çıpalarının TAMAMI atlanıyor.**
   İşaret fixture yüzünden geniş (Bessel tarafında `kayitlar`ı tüketen 11
   test), ve Rayleigh/yarık tarafı da `slow`. G7 (09.10.2026) hızlı şeride

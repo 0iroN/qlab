@@ -225,6 +225,7 @@ T2_PENCERE = ObliqueWindow(
     unity_gate=1e-2,
     pml_m=3.0,
     tail_gate=1.6e-3,
+    echo_gate=4.5e-4,
 )
 
 

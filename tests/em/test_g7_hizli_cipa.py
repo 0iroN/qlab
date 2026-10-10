@@ -220,11 +220,13 @@ def test_DIELEKTRIK_DOLU_DIKDORTGEN_KOVUK_DERS_KITABI_FREKANSINDA():
 #: AÇIKÇA YAZILIR (G7 denetimi, bulgu 4): `ObliqueWindow` varsayılanlarından
 #: biri değişirse bu çıpa sessizce başka bir pencereyi ölçmesin. Değerler
 #: bugünkü varsayılanlarla aynıdır (`courant`, `probe_offset`, `window_fn`,
-#: `ey_kural`, `unity_gate`, `pml_m`, `tail_gate`), yani ölçülen sayılar
+#: `ey_kural`, `unity_gate`, `pml_m`, `tail_gate`, `echo_gate`), yani ölçülen sayılar
 #: değişmedi. `unity_gate` artık KULLANILIYOR: ayna koşumunda `||m| - 1|`
 #: kapısıdır. `tail_gate` (kuyruk kapısı, 10.10.2026): bu penceredeki
 #: çağrıların kaydın son periyodundaki genliği tepenin <= 6.05e-06'sı,
-#: eşiğin ~260 kat altında.
+#: eşiğin ~260 kat altında. `echo_gate` (yankı kapısı, RC-a, 10.10.2026):
+#: gelen kaydında ana darbeden sonra kalanın spektral ağırlığı <= 1.81e-07,
+#: eşiğin ~2500 kat altında.
 FRESNEL_PENCERE = ObliqueWindow(
     cells=500,
     npml=40,
@@ -238,6 +240,7 @@ FRESNEL_PENCERE = ObliqueWindow(
     unity_gate=1e-2,
     pml_m=3.0,
     tail_gate=1.6e-3,
+    echo_gate=4.5e-4,
 )
 FRESNEL_LAMBDA = 20.0
 

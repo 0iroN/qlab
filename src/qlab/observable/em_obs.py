@@ -476,6 +476,16 @@ DEFAULT_UNITY_GATE: float = 1e-2
 #: yana 1.7 kat pay). Ayrinti: `reflection_coefficient`.
 DEFAULT_TAIL_GATE: float = 1.6e-3
 
+#: KAYIT ICI YANKI kapisinin esigi (RC-a, 10.10.2026): gelen kaydinda ana
+#: darbeden SONRA kalanin f = 1/lam'daki spektral agirliginin ana darbeninkine
+#: orani (`_ikinci_varis`). Tolerans degil IMKAN kapisi: kalan, gelenin
+#: paydasina eklenir ve yansiyanda karsiligi yoksa olculen sey yansima
+#: katsayisi DEGILDIR. Esik OLCULEN BANTTAN secildi: kapisi acik sabitlenmis
+#: cagrilarin en buyugu 2.02e-04, kuyruk kapisindan gecen hatasi > 1e-3
+#: sayilarin en kucugu 9.84e-04; esik ikisinin geometrik ortasi (4.5e-4, iki
+#: yana ~2.2 kat pay). Ayrinti: `reflection_coefficient`.
+DEFAULT_ECHO_GATE: float = 4.5e-4
+
 
 @dataclass(frozen=True)
 class ObliqueWindow:
@@ -507,6 +517,7 @@ class ObliqueWindow:
     unity_gate: float = DEFAULT_UNITY_GATE
     pml_m: float = 3.0
     tail_gate: float = DEFAULT_TAIL_GATE
+    echo_gate: float = DEFAULT_ECHO_GATE
 
     @property
     def probe(self) -> int:
@@ -524,6 +535,7 @@ class ObliqueWindow:
             f"ey_kural    : {self.ey_kural}",
             f"|rho|=1 kapisi: {self.unity_gate:g}",
             f"kuyruk kapisi : {self.tail_gate:g}",
+            f"yanki kapisi  : {self.echo_gate:g}",
         ]
 
 
@@ -600,7 +612,13 @@ def total_internal_reflection(eps1: float, eps2: float, theta_deg: float) -> boo
 
 
 def _record_steps(
-    *, theta_deg: float, wavelength: float, eps1: float, window: ObliqueWindow
+    *,
+    theta_deg: float,
+    wavelength: float,
+    eps1: float,
+    window: ObliqueWindow,
+    eps2: float | None = None,
+    mirror: bool = False,
 ) -> int | None:
     """Kayit kac adim surmeli -- ve GUVENLI BIR SURE VAR MI?
 
@@ -635,6 +653,24 @@ def _record_steps(
     eps 4, lam 10'da (ortamda 5 hucre/dalgaboyu) 0.393, surekli 0.5; darbe
     `lo`ya TEPESIYLE varir. Bu fonksiyon bunlari DUZELTMEZ; kesik kaydi
     `reflection_coefficient`in kuyruk kapisi yakalar.
+
+    SAG SOGURUCU (RC-a, 10.10.2026; olculdu): `t_yanki` tek sahte varis
+    DEGILDIR. Sag sogurucunun ic yuzunden (`cells - npml`) iki yanki daha
+    doner: arka (arayuzsuz) kosumda saga giden dalganinki (ortam 1'de, `vx`)
+    ve on kosumda GECEN dalganinki (ortam 2'de, x grup hizi
+    `vx2 = sqrt(eps2 - eps1 sin^2(theta)) / eps2`; yalniz `eps2` verilmisse,
+    gecen dalga YAYILIYORSA ve ayna DEGILSE). Ikisi de yansiyandan
+    `2 (cells - npml - iface) / vx` (ya da `/ vx2`) sonra gelir; `hi` uc
+    yankinin EN ERKENINDEN hesaplanir. Bu bir olcum degil GEOMETRIDIR,
+    cunku gecen dalganin yankisi yansiyanla ZAMANDA ORTUSEBILIR ve kayittan
+    ayrilamaz: cells 1600, 2.25 -> 9, theta 30, lam 40, p'de bu sinir
+    yokken gecen sayinin hatasi 8.21e-03 idi (kuyruk 5.2e-04; gecen
+    dalganin yankisi YANSIYANDADIR, yalniz gelen kaydina bakan ikinci varis
+    olcutu onu goremez). BEDEL
+    (`.superpowers/sdd/rc-olcum/rca/`, 1357 durum): 10 yanlis alarm, hepsi
+    5 sg payinin temkininden (ornek: 1800 hucre, iface 750, sgf 6, 4 -> 1,
+    theta 0, lam 40'ta eski hata 1.8e-05); depodaki sabitlenmis
+    cagrilarin HICBIRININ kayit uzunlugu degismedi.
     """
     S = window.courant
     sg = window.sgf * wavelength
@@ -645,6 +681,13 @@ def _record_steps(
         return None
     t_yans = t0 + (2.0 * window.interface - window.source_index - window.probe) / vx
     t_yanki = t_yans + 2.0 * window.probe / vx
+    sag = window.cells - window.npml - window.interface
+    t_yanki = min(t_yanki, t_yans + 2.0 * sag / vx)
+    if eps2 is not None and not mirror:
+        s2 = eps1 * np.sin(th) ** 2
+        if eps2 > s2:
+            vx2 = np.sqrt(eps2 - s2) / eps2
+            t_yanki = min(t_yanki, t_yans + 2.0 * sag / vx2)
     lo, hi = t_yans + 5.0 * sg, t_yanki - 5.0 * sg
     if lo >= hi:
         return None
@@ -667,6 +710,46 @@ def _kuyruk(seri: np.ndarray, *, wavelength: float, courant: float) -> float:
         return 0.0
     p = int(np.ceil(wavelength / courant))
     return float(np.max(a[-p:])) / tepe
+
+
+def _ikinci_varis(
+    gelen: np.ndarray,
+    *,
+    theta_deg: float,
+    wavelength: float,
+    eps1: float,
+    window: ObliqueWindow,
+) -> float:
+    """GELEN kaydinda ana darbe BITTIKTEN SONRA kalanin SPEKTRAL agirligi.
+
+    c = |F(gelen[i:])| / |F(gelen[:i])|; F, `window_fn` penceresiyle tam
+    f = 1/lam'daki DTFT (FFT binine ozdes, bkz. `_spektrum`), i ana darbenin
+    son ornegi: darbe prob'a `t_dir = t0 + |prob - kaynak| / vx`te varir ve
+    `t_dir + 5 sg`de biter (`_record_steps`in zamanlariyla AYNI: surekli
+    `vx`, dagilmamis `sg`). O ornekten (dahil) kaydin sonuna kadarki her sey
+    IKINCI bir varistir; olculen kaynagi sogurucu yankisidir (kaynagin sola
+    giden dalgasinin sol PML'den donusu). SPEKTRAL cunku hatanin kendisi bu
+    orandir: gelenin paydasi F_a + F_b olur, yansiyanda F_b'nin karsiligi
+    yoksa |rho - r| = |r| c / |1 + F_b / F_a| <= |r| c / (1 - c).
+    1'de KIRPILIR (`echo_gate` = 1 her kaydi kabul etsin: kapi kapali =
+    eski alet). Kayit sifirsa ya da i kaydin disindaysa 0; ana darbenin
+    agirligi sifirsa 1 doner.
+    """
+    n = gelen.shape[-1]
+    if n == 0 or not np.any(gelen):
+        return 0.0
+    sg = window.sgf * wavelength
+    vx = np.cos(np.deg2rad(float(theta_deg))) / np.sqrt(eps1)
+    t_son = 5.0 * sg + abs(window.probe - window.source_index) / vx + 5.0 * sg
+    i = int(np.ceil(t_son / window.courant))
+    if i >= n:
+        return 0.0
+    faz = np.exp(-2j * np.pi * (window.courant / wavelength) * np.arange(n))
+    s = gelen * _FFT_PENCERELERI[window.window_fn](n) * faz
+    ana = abs(complex(np.sum(s[:i])))
+    if ana == 0.0:
+        return 1.0
+    return min(1.0, abs(complex(np.sum(s[i:]))) / ana)
 
 
 def _spektrum(seri: np.ndarray, courant: float, f: float) -> tuple[complex, float]:
@@ -752,6 +835,9 @@ def reflection_coefficient(
       * kayit TAM degilse -- kaydin son periyodundaki genlik, gelen ya da
         yansiyan seride, tepenin `tail_gate` katini asiyorsa (KUYRUK KAPISI,
         asagida),
+      * GELEN kaydinda ana darbeden sonra kalanin f'deki spektral agirligi
+        ana darbeninkinin `echo_gate` katini asiyorsa (IKINCI VARIS,
+        asagida),
       * ve `|rho| = 1`in ZORUNLU oldugu yerde (TIY ya da ayna) `||rho| - 1|`
         kapiyi geciyorsa.
 
@@ -797,7 +883,7 @@ def reflection_coefficient(
     theta = 0'da bile: eps 4 -> 1, lam 10'da hata 1.09e-01). Ek olarak
     bir sogurucu yankisi (kaynagin SOLA giden dalgasinin sol PML'den, gecen
     dalganin sag PML'den donusu) kayda yarim ya da TAM girebilir (asagida
-    KOR NOKTA).
+    IKINCI VARIS).
     OLCULDU (sevk penceresi, eps 1 -> 2.25, 2.25 -> 1, 4 -> 1, 1 -> 4 x 56
     aci x lam 10/20/40 x s/p = 336 durum, 10 kayit yok): ESKI ALET 253 sayi
     dondururdu, 157'sinin hatasi > 1e-4, 136'sinin > 1e-3, 99'unun > 1e-2.
@@ -809,24 +895,77 @@ def reflection_coefficient(
     ESIK BANTTAN SECILDI: depodaki sabitlenmis cagrilarin en buyuk kuyrugu
     9.44e-04, sessiz hatasi > 1e-4 olan sayilarin en kucuk kuyrugu 2.78e-03;
     `DEFAULT_TAIL_GATE` = 1.6e-3 ikisinin geometrik ortasi.
-    HATA SINIRI, BEYAN -- YALNIZ PROB ARAYUZE YAKINKEN (sevk ofseti 6):
+    HATA SINIRI, BEYAN -- PROB ARAYUZE YAKINKEN (sevk ofseti 6):
     kuyruk <= 1e-3 olan izgara durumlarinda hata/kuyruk <= 0.11 (izgara
     disinda 0.15); depoda en kotusu 0.54 (`probe_offset` 300, eps 4 -> 1,
     theta 45, lam 40: kaynak yankisi kayda TEPESINDEN girer, eksik kalan yari
     yaklasik yarim genlik eder; hata 2.02e-04, kuyruk 3.76e-04). Yani orada
     gecen bir sayinin protokol hatasi ~0.54 * `tail_gate` = 8.6e-04'u
-    asmaz diye OKUNUR -- olculen bir oran, kanit degil.
-    KOR NOKTA -- KAYIT ICI YANKI (bagimsiz dogrulayici buldu, 10.10.2026):
-    prob arayuzden uzaksa bir sogurucu yankisi GELEN kaydina TAMAMEN girer,
-    yansimasi ise kayit bitmeden YANSIYANA varmaz; kaydin sonu sessizdir ve
-    kapi sayiyi GECIRIR. Olculen (9 -> 1, theta 30, lam 40, s): sevk
+    asmaz diye OKUNUR -- olculen bir oran, kanit degil. Prob arayuzden
+    UZAKKEN bu oran tutmaz; yanki kaynakli hatayi orada `echo_gate` sinirlar
+    (asagida IKINCI VARIS).
+    IKINCI VARIS -- KAYIT ICI YANKININ KAPISI (RC-a, 10.10.2026). Bagimsiz
+    dogrulayici kuyruk kapisinin bir KOR NOKTASINI buldu: prob arayuzden
+    uzaksa bir sogurucu yankisi GELEN kaydina TAMAMEN girer, yansimasi ise
+    kayit bitmeden YANSIYANA varmaz; kaydin sonu sessizdir ve kuyruk kapisi
+    sayiyi GECIRIRDI. Olculen (9 -> 1, theta 30, lam 40, s): sevk
     penceresinde `probe_offset` 590'da hata 5.45e-03 (kuyruk 1.42e-05),
-    T2 penceresinde (1800 hucre, sgf 6) ofset 400'de 6.20e-03; r0 1e-6 ->
-    1e-12 ile 8.1e-05'e iner. Sag taraf kisaysa gecen dalganin sag PML
-    yankisi da ayni sekilde girer (cells 1600, 2.25 -> 9, theta 30, lam 40,
-    p: 8.21e-03). OLCULMUS ADAY, UYGULANMADI: gelen kaydinda ana darbeden
-    5 sg sonra kalan en buyuk genlik / tepe -- 6.19e-03 iken hata 6.20e-03,
-    1.02e-03 iken 3.56e-04 (4 -> 1, theta 0, lam 20, T2 ofset 400).
+    1800 hucre / sgf 6 penceresinde ofset 400'de 6.20e-03; r0 1e-6 ->
+    1e-12 ile 8.1e-05'e iner (yani yanki sogurucunun). Sag sogurucunun
+    yankisini `_record_steps` geometriyle disliyor (orada).
+    KAPI: `_ikinci_varis` -- gelen kaydinda ana darbenin sonundan (t_dir +
+    5 sg) kaydin sonuna kadar kalanin f'deki spektral agirligi / ana
+    darbeninki -- esigi `echo_gate`. NEDEN SPEKTRAL (cebir, `_ikinci_varis`):
+    yansiyanda karsiligi olmayan kalan icin |hata| <= |r| c / (1 - c),
+    yankinin SEKLINDEN bagimsiz. OLCULEN (`.superpowers/sdd/rc-olcum/rca/
+    spek_analiz.log`, 2986 durum: eps1 1..16, ofset 5..880, 500..3600
+    hucre, npml 0..120, sgf 1.5..14, 322 ayna; ikinci dogrulayicinin
+    karsi-ornek avi dahil):
+    yankinin baskin oldugu 444 durumda (c > 1e-4, c > 3 kuyruk) bu sinir %5
+    payla hic asilmadi (c buyudukce oran 1 / (1 - c)'ye yaklasir).
+    ELENEN ILK SURUM -- ZAMAN-ALANI TEPE ORANI (ayni pencerede en buyuk
+    |deger| / tepe, kuyrukla ayni esik 1.6e-3). Egik yanki ince PML'de
+    genisler, tepesi spektral agirligini %12..19 eksik okur: dogrulayici
+    onunla gecen bir sayi buldu -- 9 -> 1, theta 48.25, lam 42, p, 1800
+    hucre, ofset 410: hata 1.84e-03 > `tail_gate` (|rho| = 1.000009, birim
+    kapisi da gormez); ayni 2986 durumda tepe oranla gecenlerin 31'inin
+    hatasi 1.6e-3'u asiyordu, hata / olcut 1.19'a cikiyordu.
+    ESIK OLCULEN BANTTAN (`DEFAULT_ECHO_GATE`): kapisi acik sabitlenmis
+    cagrilarin en buyuk c'si 2.02e-04 (`probe_offset` 300, eps 4 -> 1,
+    theta 45, lam 40: yanki kayda tepesinden girer), kuyruk kapisindan gecen
+    hatasi > 1e-3 sayilarin en kucugu 9.84e-04 (9 -> 1, theta 52, lam 40, p,
+    sevk ofset 880); 4.5e-4 ikisinin geometrik ortasi. Eski kor nokta
+    testinin durumu (4 -> 1, theta 0, lam 20, 1800 hucre, ofset 400: c
+    1.02e-03, hata 3.56e-04) bandin USTUNDEDIR ve artik `None`. Bedel (ayni
+    2986 durum): kapi 514 sayiyi kesti, 445'inin hatasi > 1e-3; ikinci
+    varistan 3 yanlis alarm (en kotusu 3600 hucre, ofset 150, 4 -> 9,
+    theta 0, lam 40, p: eski hata 9.7e-05), sevk izgarasinda (336 durum)
+    kayip YOK, sabitlenmis cagrilardan yalniz eski kor nokta durumu `None`.
+    DURUST OLUMSUZ: esigin altindaki yanki GECER ve hatasi ~|r| * c'dir
+    (ornek 1800 hucre, ofset 410, 4 -> 1, theta 40, lam 20, s: c 2.25e-04,
+    hata 2.23e-04). IKI KAYNAK TOPLANIR (ikinci dogrulayici buldu): c ve
+    kuyruk her biri kendi esiginin altindayken hata ikisinin TOPLAMIDIR --
+    1800 hucre, ofset 430, 4 -> 1, theta 32, lam 24, s: c 4.45e-04, kuyruk
+    1.06e-03, hata 6.16e-04 (> `echo_gate`); theta 32.4, lam 22'de hata /
+    max(kuyruk, c) 1.108. Olculen toplam sinir (769 gecen sayi, iki
+    dogrulayicinin avi dahil, dikdortgen pencere): hata <= |r| c / (1 - c)
+    + 0.17 * kuyruk. Yani gecen bir sayinin protokol hatasi, prob nerede
+    olursa olsun, <~ `echo_gate` + 0.17 * `tail_gate` = 7.2e-04 diye OKUNUR
+    (olculen en kotu 6.16e-04) -- olculen bir oran, kanit degil. Kapi yeni
+    kosum eklemez; gecen her sayi eski sayinin BIT BIT aynisidir.
+    DURUST OLUMSUZ -- FFT PENCERESI (RC-d, ikinci dogrulayici; RC-a'dan
+    ONCE de vardi, HEAD ayni sayiyi verir): `window_fn` hann ya da
+    blackman iken pencere erken gelen darbeyi ve gec gelen yansiyani FARKLI
+    agirlikla carpar ve uc kapi da bunu GORMEZ. 1800 hucre, ofset 6, 4 ->
+    2.25, theta 40, lam 20, s: hann'da hata 2.56e-02, blackman'da 3.56e-02
+    (dikdortgende 1.4e-07; kuyruk 4.8e-06 / 1.7e-05, c 2.4e-09). Sevk
+    penceresi dikdortgendir; madde acik.
+    ELENEN ADAY (olculdu): gelen kaydini yankidan once SIFIRLAMAK (zaman
+    kapisi). Yanki ana darbeyle 5 sg icinde ortusuyorsa kesim darbenin
+    kendi kuyrugunu keser: sevk penceresinin ana cipasi (4 -> 1, theta 45,
+    lam 40) 1.2e-07'den 1.25e-05'e bozuldu; kapisi acik 62 sabitlenmis
+    cagrinin 26..27'si degisti, 10..11'i `None` oldu (yalniz gelen / iki
+    kayit birden kesilince).
     ACI VE COZUNURLUK BAGIMLILIGI (kapi `None` der; olculen acilar 0..85):
     SIYIRMA -- n1 = 1, lam 10: theta >= 60 (1 -> 2.25, p'de 55 de: Brewster
     yakininda yanlis alarm, eski hata 2.96e-06); lam 20: 1 -> 2.25'te >= 65,
@@ -890,7 +1029,12 @@ def reflection_coefficient(
             f"interface 1 ile {w.cells - 1} arasinda olmali, verilen: {w.interface}"
         )
     steps = _record_steps(
-        theta_deg=theta_deg, wavelength=wavelength, eps1=eps1, window=w
+        theta_deg=theta_deg,
+        wavelength=wavelength,
+        eps1=eps1,
+        window=w,
+        eps2=eps2,
+        mirror=mirror,
     )
     if steps is None:
         return None
@@ -929,6 +1073,11 @@ def reflection_coefficient(
         _kuyruk(yansiyan, wavelength=wavelength, courant=w.courant),
     )
     if kuyruk > w.tail_gate:
+        return None
+    yanki = _ikinci_varis(
+        gelen, theta_deg=theta_deg, wavelength=wavelength, eps1=eps1, window=w
+    )
+    if yanki > w.echo_gate:
         return None
 
     pen = _FFT_PENCERELERI[w.window_fn](steps)

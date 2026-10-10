@@ -467,7 +467,9 @@ def test_KORLUK_2_SOGURUCU_TEK_IZGARADA_KOR_MERDIVENDE_DEGIL():
     soğurucusuz kayıt TAM DEĞİL — PEC yankısı kayda giriyor, kaydın son
     periyodunda genlik tepenin 1.75e-01'i — ve alet artık `None` döndürüyor;
     yani bozma orada TEK IZGARADA görünür. 13.9 sigma sayısı ve merdivenin
-    YARGILANAMAZ hükmü kuyruk kapısı KAPALIYKEN (`tail_gate` 1) üretilir.
+    YARGILANAMAZ hükmü kuyruk kapısı KAPALIYKEN (`tail_gate` 1) üretilir
+    (RC-a'dan beri yankı kapısı da kapalı, `echo_gate` 1: PEC yankısı
+    gelen kaydında, spektral ikinci varış 8.9e-03).
     `lambda` = 40'ta soğurucusuz kuyruk 1.97e-04 (eşiğin altında) ve körlük
     orada SÜRÜYOR.
     """
@@ -480,7 +482,7 @@ def test_KORLUK_2_SOGURUCU_TEK_IZGARADA_KOR_MERDIVENDE_DEGIL():
 
     d54 = _delta(lam=54.0)
     assert _delta(lam=54.0, window=cipsiz) is None  # kuyruk kapısı görüyor
-    d54p = _delta(lam=54.0, window=dataclasses.replace(cipsiz, tail_gate=1.0))
+    d54p = _delta(lam=54.0, window=dataclasses.replace(cipsiz, tail_gate=1.0, echo_gate=1.0))
     assert abs(d54p - d54) == pytest.approx(3.04e-02, rel=0.2)
     assert abs(d54p - d54) / SIGMA_ANALIZ > 10.0  # daha ince ızgarada GÖRÜNÜR
 
@@ -553,8 +555,8 @@ def test_OLCUM_ALETININ_TAVANI_VAR_ve_KAPI_ONU_KESIYOR():
        `source.gauss_cos` ve `boundary.PML` dokstringlerinde de vardı ve
        Task 3'te düzeltildi.)
 
-    KUYRUK KAPISI (10.10.2026): yukarıdaki tablo İKİ KAPI DA KAPALIYKEN
-    (`unity_gate` 1e9, `tail_gate` 1) okunur. Kuyruk kapısı açıkken 65..85
+    KUYRUK KAPISI (10.10.2026): yukarıdaki tablo KAPILAR KAPALIYKEN
+    (`unity_gate` 1e9, `tail_gate` 1, `echo_gate` 1) okunur. Kuyruk kapısı açıkken 65..85
     hepsi `None` (kaydın son periyodunda genlik tepenin 2.35e-02 .. 0.99'u;
     ayrık-tam referansa hata 1.6e-03 .. 7.4e-02); theta = 75'in `|rho| = 1`
     kapısından geçmesi bir rastlantıydı (hata 4.7e-02). Mekanizma kesik
@@ -565,7 +567,7 @@ def test_OLCUM_ALETININ_TAVANI_VAR_ve_KAPI_ONU_KESIYOR():
     assert tir_phase_difference(
         eps1=EPS1, eps2=EPS2, theta_deg=80.0, wavelength=LAM) is None
 
-    acik = dataclasses.replace(SEVK, unity_gate=1e9, tail_gate=1.0)
+    acik = dataclasses.replace(SEVK, unity_gate=1e9, tail_gate=1.0, echo_gate=1.0)
     r80 = _rho("s", theta=80.0, window=acik)
     assert abs(r80) == pytest.approx(0.941959, abs=1e-4)
     assert abs(abs(r80) - 1.0) > SEVK.unity_gate
@@ -607,11 +609,11 @@ def test_TAVANIN_SEBEBI_sgf_ve_TASK1_DOKSTRINGI_HALA_DOGRU():
     yeniden ölçüldü ve **birebir tuttu**: 4.2533e-02 / 2.7313e-05 /
     7.4694e-08 (sgf = 9), ve npml 200'de yine 4.2533e-02.
 
-    İki kapı da kapalı (`unity_gate` 1e9, `tail_gate` 1): sgf = 3 ve 6'da
+    Kapılar kapalı (`unity_gate` 1e9, `tail_gate` 1, `echo_gate` 1): sgf = 3 ve 6'da
     kayıt TAM DEĞİL (kuyruk 4.75e-01 ve 2.96e-03, 10.10.2026) ve kuyruk
     kapısı açıkken ikisi de `None` dönerdi.
     """
-    acik = dataclasses.replace(SEVK, unity_gate=1e9, tail_gate=1.0)
+    acik = dataclasses.replace(SEVK, unity_gate=1e9, tail_gate=1.0, echo_gate=1.0)
     w3 = dataclasses.replace(acik, sgf=3.0)
     w6 = dataclasses.replace(acik, sgf=6.0)
     w3n = dataclasses.replace(acik, sgf=3.0, npml=200)
@@ -1217,7 +1219,7 @@ def test_PENCERE_BEYANI_TAM():
     satirlar = SEVK.as_lines()
     metin = " ".join(satirlar)
     for parca in ("3600", "0.4", "1500", "600", "1494", "60", "m = 3", "9",
-                  "dikdortgen", "aritmetik", "0.01", "0.0016"):
+                  "dikdortgen", "aritmetik", "0.01", "0.0016", "0.00045"):
         assert parca in metin
     assert SEVK.probe == SEVK.interface - SEVK.probe_offset
     assert dataclasses.replace(SEVK, probe_offset=300).probe == 1200

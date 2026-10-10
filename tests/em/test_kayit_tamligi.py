@@ -8,11 +8,14 @@ suçsuz; kayıt bittiğinde darbe hâlâ geliyor. Sebepler sabit-`ky` indirgemes
 (sıyırma), dal noktasının uzun kuyruğu (kritik açı), kaba ızgarada şemanın
 yavaş grup hızı (yoğun ortam, θ = 0'da bile) ve kaynağın sola giden
 dalgasının soğurucudan dönüşüdür. Kapı: kaydın SON PERİYODUNDAKİ genlik
-(gelen ya da yansıyan) tepenin `tail_gate` katını aşarsa `None`.
+(gelen ya da yansıyan) tepenin `tail_gate` katını aşarsa `None`; RC-a'dan
+(10.10.2026) beri GELEN kaydında ana darbeden sonra kalanın f'deki
+spektral ağırlığı ana darbeninkinin `echo_gate` katını aşarsa da (İKİNCİ
+VARIŞ), ve `_record_steps` sağ soğurucunun iki yankısını da dışlıyor.
 
 PENCERE (T2): G1'in `T2_PENCERE`si — 1800 hücre, npml 40, S 0.4, iface 750,
 kaynak 300, prob ofseti 6, sgf 6, dikdörtgen, aritmetik, |ρ|=1 kapısı 1e-2,
-m = 3 — ve kapı alanı AÇIKÇA yazılır (G7 dersi: varsayılan değişirse test
+m = 3 — ve iki kapı alanı AÇIKÇA yazılır (G7 dersi: varsayılan değişirse test
 sessizce başka pencereyi ölçmesin). Sevk penceresinin pahalı başlıkları
 tek bir `slow` testte.
 
@@ -22,7 +25,7 @@ s'tedir; p'nin ayrık-tam referansı ön ölçümde transfer özyinelemesiyle
 kuruldu (temiz açılarda alete 5e-9 .. 1e-7'de oturur) ve burada
 kullanılmaz.
 
-ÖLÇÜLDÜ (T2, kapı kapalı = `tail_gate` 1; `rc-olcum/f_beyan.log`,
+ÖLÇÜLDÜ (T2, kapı kapalı = `tail_gate` 1, `echo_gate` 1; `rc-olcum/f_beyan.log`,
 `g_hizli_adaylar.log`, `g_bant_kenari.log`):
 
     durum                                   kuyruk(T_min)  kapalı hata
@@ -45,14 +48,35 @@ kuyruk 1.37e-03; λ 10'da 1.82e-04, 1.57e-03). Sevk penceresinde (prob
 ofseti 6) ızgara noktalarında geçenlerin en kötüsü 8.28e-05, ızgara dışında
 1.49e-04 (bağımsız doğrulayıcı, 2.25 -> 1, 44°, λ 30); hata/kuyruk orada
 <= 0.54 (yankı kayda tepesinden girer).
-DÜRÜST OLUMSUZ 2 — KAYIT İÇİ YANKI KAPIYA GÖRÜNMEZ (doğrulayıcı buldu,
-`rc-olcum/dogrulama/`): prob arayüzden uzaksa soğurucunun bir yankısı
-GELEN kaydına TAMAMEN girer, yansıması ise kayıt bitmeden YANSIYANA varmaz;
-kaydın sonu sessizdir ve kapı sayıyı geçirir. Ölçülen: 9 -> 1, 30°, λ 40,
-T2 ofset 400'de hata 6.20e-03 (kuyruk 2.15e-05, oran 288); r0 1e-6 -> 1e-12
-ile 8.1e-05'e iner (`i_yanki_mekanizma.log`). Yani "<= 0.54 τ" okuması
-YALNIZ prob arayüze yakınken (sevk ofseti 6) geçerlidir. Bir test bunu
-kilitler; kapı düzeltilince kırmızıya döner.
+KAYIT İÇİ YANKI — KAPANDI (RC-a, 10.10.2026; `rc-olcum/rca/`). Doğrulayıcı
+(`rc-olcum/dogrulama/`) kuyruk kapısının kör noktasını bulmuştu: prob
+arayüzden uzaksa soğurucunun bir yankısı GELEN kaydına TAMAMEN girer,
+yansıması kayıt bitmeden YANSIYANA varmaz; kaydın sonu sessizdir. Ölçülen:
+9 -> 1, 30°, λ 40, T2 ofset 400'de hata 6.20e-03 (kuyruk 2.15e-05, oran
+288). Üç aday aynı koşum çiftinden ölçüldü: (a) gelen kaydında ana darbe
+(t_dir + 5 sg) SONRASI ikinci varış; (b) `_record_steps`e sağ soğurucunun
+iki yankısı; (c) gelen kaydını yankıdan önce sıfırlamak. (c) ELENDİ
+(kapısı açık 62 sabitlenmiş çağrının 26..27'sini değiştirir, sevk ana
+çıpasını 1.2e-07'den 1.25e-05'e bozar). (a)'nın İLK sürümü zaman-alanı tepe
+oranıydı ve kuyrukla aynı eşiği (1.6e-3) kullanıyordu; ikinci doğrulayıcı
+onunla GEÇEN bir sayı buldu (T2 ofset 410, 9 -> 1, 48.25°, λ 42, p: hata
+1.84e-03 > τ; ince PML'de eğik yankı genişler, tepesi spektral ağırlığını
+%12..19 eksik okur). Uygulanan (a) SPEKTRAL: c = |F(gelen[i:])| /
+|F(gelen[:i])|; yansıyanda karşılığı olmayan kalan için |hata| <=
+|r| c / (1 - c), yankının şeklinden bağımsız (2986 durumda yankı baskın
+444'ünde, ikinci turun 61'inde %5 payla hiç aşılmadı). Eşik ayrı düğme `echo_gate` = 4.5e-4,
+ölçülen banttan (`rc-olcum/rca/spek_esik_4p5.log`). (a) + (b) sonrası
+sabitlenmiş sayılardan yalnız eski kör nokta testinin durumu `None` oldu.
+DÜRÜST OLUMSUZ 2 — EŞİĞİN ALTINDAKİ YANKI GEÇER, VE KUYRUKLA TOPLANIR:
+kapı yankıyı GÖRÜR ama c <= `echo_gate` ise sayıyı geçirir, hatası ~|r| c;
+kuyruk da kendi eşiğinin altındaysa ikisi TOPLANIR (ikinci doğrulayıcı: T2
+ofset 430, 4 -> 1, 32°, λ 24: c 4.45e-04, kuyruk 1.06e-03, hata 6.16e-04).
+Ölçülen toplam sınır (769 geçen sayı): hata <= |r| c/(1 - c) + 0.17 kuyruk,
+yani geçen sayı için ≲ `echo_gate` + 0.17 τ ≈ 7.2e-04 diye okunur.
+DÜRÜST OLUMSUZ 3 — FFT PENCERESİ (RC-d, açık, RC-a'dan önce de vardı):
+hann / blackman pencereleri erken gelen darbeyle geç gelen yansıyanı farklı
+ağırlıkla çarpar ve üç kapı da görmez (T2, 4 -> 2.25, 40°, λ 20: hann
+2.56e-02, blackman 3.56e-02; dikdörtgende 1.4e-07). Bir test kilitler.
 
 SINIF: kapalı-form referanslı ÇEVİRİ DENETİMİ + `None` disiplini (Modül 5
 sözlüğü, `test_arayuz.py` başlığı). Özel import tek bir TRANSKRİPSİYON
@@ -70,14 +94,17 @@ import numpy as np
 import pytest
 
 from qlab.observable.em_obs import (
+    DEFAULT_ECHO_GATE,
     DEFAULT_TAIL_GATE,
     ObliqueWindow,
+    _ikinci_varis,
     _kuyruk,
+    _record_steps,
     reflection_coefficient,
     total_internal_reflection,
 )
 
-#: G1'in T2 penceresi + kuyruk kapısı, HER ALAN açık.
+#: G1'in T2 penceresi + kuyruk ve yankı kapıları, HER ALAN açık.
 T2 = ObliqueWindow(
     cells=1800,
     npml=40,
@@ -91,10 +118,14 @@ T2 = ObliqueWindow(
     unity_gate=1e-2,
     pml_m=3.0,
     tail_gate=1.6e-3,
+    echo_gate=4.5e-4,
 )
-#: Kapı KAPALI: kuyruk oranı tanım gereği <= 1, yani 1.0 her kaydı kabul
-#: eder ve alet kapıdan önceki hâline BİT BİT döner.
-KAPALI = dataclasses.replace(T2, tail_gate=1.0)
+#: Kapılar KAPALI: kuyruk ve ikinci varış oranları tanım gereği <= 1 (ikinci
+#: varış 1'de kırpılır), yani 1.0 her kaydı kabul eder ve alet kapılardan
+#: önceki hâline BİT BİT döner. `_record_steps`in GEOMETRİK sınırları (sol ve
+#: sağ soğurucu yankıları) bu düğmelere bağlı değildir; T2'de bu dosyanın
+#: KAPALI kullanan hiçbir durumunda bağlamaz.
+KAPALI = dataclasses.replace(T2, tail_gate=1.0, echo_gate=1.0)
 
 #: Bandın iki ucu (sevk penceresi, `rc-olcum/d_bant.log` ve
 #: `e_cipa_hatalari.log`; ÖLÇÜLDÜ, seçilmedi).
@@ -131,7 +162,9 @@ def _r_prob(eps1: float, eps2: float, theta: float, lam: float, w: ObliqueWindow
 def _iki(eps1, eps2, theta, lam, w=T2):
     ortak = dict(eps1=eps1, eps2=eps2, theta_deg=theta, wavelength=lam, polarization="s")
     acik = reflection_coefficient(window=w, **ortak)
-    kapali = reflection_coefficient(window=dataclasses.replace(w, tail_gate=1.0), **ortak)
+    kapali = reflection_coefficient(
+        window=dataclasses.replace(w, tail_gate=1.0, echo_gate=1.0), **ortak
+    )
     return acik, kapali
 
 
@@ -290,21 +323,197 @@ def test_ESIK_OLCULEN_BANTTA_ve_PENCERE_BEYANINDA():
     assert "kuyruk kapisi : 0.0016" in ObliqueWindow().as_lines()
 
 
-def test_DURUST_OLUMSUZ_KAYIT_ICI_YANKI_KAPIYA_GORUNMUYOR():
-    """KAPININ KÖR NOKTASI, KİLİTLİ (açık madde). T2, prob ofseti 400 (prob
-    kaynağın 50 hücre sağında, arayüzden 400 hücre uzakta), 4 -> 1, θ = 0,
-    λ = 20: kaynağın sola giden dalgası sol soğurucudan döner, GELEN kaydına
-    TAMAMEN girer (ana darbeden sonra tepenin 1.02e-03'ü), yansıması kayıt
-    bitmeden yansıyana varmaz. Kaydın sonu sessiz (gelen 5.8e-08, yansıyan
-    1.7e-04) ve kapı sayıyı GEÇİRİR: hata 3.56e-04. r0 1e-12'de hata
-    1.86e-06 (`rc-olcum/i_yanki_mekanizma.log`). Kapı bu yankıyı görmeyi
-    öğrenince bu test KIRMIZIYA döner — o zaman tersine çevrilmeli.
+#: Yankı kapısının bandı (`rc-olcum/rca/spek_analiz.log`, 2986 durum): kapısı
+#: açık sabitlenmiş çağrıların en büyük spektral ikinci varışı (sevk ofseti
+#: 300, 4 -> 1, 45°, λ 40: yankı kayda tepesinden girer; eski kör nokta
+#: durumu HARİÇ, o bandın üstünde) ve kuyruk kapısından geçen hatası > 1e-3
+#: sayıların en küçüğü (9 -> 1, 52°, λ 40, p, sevk ofseti 880). ÖLÇÜLDÜ.
+IKINCI_CIPA_EN_BUYUK = 2.02e-04
+IKINCI_SESSIZ_EN_KUCUK = 9.84e-04
+
+
+def test_KAYIT_ICI_YANKI_ARTIK_KAPIYA_GORUNUYOR():
+    """RC-a'nın KAPANIŞI (eskiden `test_DURUST_OLUMSUZ_KAYIT_ICI_YANKI_KAPIYA_
+    GORUNMUYOR`). Soğurucusuz T2 (npml 0, PEC duvar), prob ofseti 350 (prob
+    kaynağın 100 hücre sağında), 1 -> 2.25, θ = 0, λ = 10: kaynağın sola
+    giden dalgası duvardan TAM genlikle döner ve GELEN kaydına TAMAMEN girer
+    — ana darbe ile yankı 5 sg'de ayrık, yankının yansıması kayıt bitmeden
+    yansıyana varmaz. Kaydın sonu SESSİZ (kuyruk gelen 1.3e-07, yansıyan
+    1.2e-04; ikisi de eşiğin çok altında), yani kuyruk kapısı bu sayıyı
+    GEÇİRİRDİ: kapılar kapalıyken hata 0.290 (ayrık-tam |r| = 0.235'ten
+    büyük). Spektral ikinci varış 1'de kırpılır -> `None`. Aynı mekanizma
+    soğurucu yankısıyla (PML, 9 -> 1, 30°, λ 40, T2 ofset 400: 6.20e-03)
+    slow testte.
+    """
+    w = dataclasses.replace(T2, npml=0, probe_offset=350)
+    acik, kapali = _iki(1.0, 2.25, 0.0, 10.0, w)
+    assert acik is None
+    assert kapali is not None
+    assert abs(kapali - _r_prob(1.0, 2.25, 0.0, 10.0, w)) >= 0.1
+
+
+def test_ESKI_KOR_NOKTA_DURUMU_ARTIK_NONE():
+    """RC-a'nın KİLİTLİ DURUMU TERSİNE DÖNDÜ (eskiden `test_DURUST_OLUMSUZ_
+    KAYIT_ICI_YANKI_KAPIYA_GORUNMUYOR`, "kapı yankıyı görmeyi öğrenince
+    kırmızıya döner"). T2, prob ofseti 400, 4 -> 1, θ = 0, λ = 20: sol PML
+    yankısı GELEN kaydına TAMAMEN girer, iki kuyruk 5.8e-08 / 1.7e-04 —
+    kuyruk kapısına görünmez. Spektral ikinci varış 1.02e-03 > `echo_gate`
+    -> `None`. Kapılar kapalıyken hata 3.56e-04 = |r| (0.351) × c: yankının
+    paydaya eklenen payı. r0 1e-12'de hata 1.86e-06 (yankı soğurucunun;
+    `rc-olcum/i_yanki_mekanizma.log`).
     """
     w = dataclasses.replace(T2, probe_offset=400)
-    r = reflection_coefficient(eps1=4.0, eps2=1.0, theta_deg=0.0, wavelength=20.0,
-                               polarization="s", window=w)
+    acik, kapali = _iki(4.0, 1.0, 0.0, 20.0, w)
+    assert acik is None
+    assert kapali is not None
+    assert abs(kapali - _r_prob(4.0, 1.0, 0.0, 20.0, w)) >= 1e-4
+
+
+def test_DURUST_OLUMSUZ_ESIGIN_ALTINDAKI_YANKI_GECER_ve_HATASI_ESIKLE_SINIRLI():
+    """KAPI YANKIYI GÖRÜR, AMA EŞİĞİN ALTINDAYSA GEÇİRİR — kilitli dürüst
+    olumsuz. T2, prob ofseti 410, 4 -> 1, θ = 40° (TİY, |r| = 1), λ = 20:
+    sol PML yankısı GELEN kaydına TAMAMEN girer; spektral ikinci varış
+    2.25e-04 (< `echo_gate` = 4.5e-04), iki kuyruk 8.7e-08 / 9.3e-05. Sayı
+    GEÇER ve hatası 2.23e-04 ≈ |r| × c — kapının gördüğü ölçütle sınırlı
+    (`rc-olcum/rca/toplam_sinir.log`: geçen 769 sayıda hata <= |r| c/(1 - c)
+    + 0.17 kuyruk). GÖRDÜĞÜNÜN kanıtı kamu yolundan: `echo_gate` 1.8e-4'e
+    (c'nin hemen altı) inince aynı çağrı `None`.
+    """
+    w = dataclasses.replace(T2, probe_offset=410)
+    ortak = dict(eps1=4.0, eps2=1.0, theta_deg=40.0, wavelength=20.0, polarization="s")
+    assert total_internal_reflection(4.0, 1.0, 40.0)
+    r = reflection_coefficient(window=w, **ortak)
     assert r is not None
-    assert abs(r - _r_prob(4.0, 1.0, 0.0, 20.0, w)) >= 1e-4
+    h = abs(r - _r_prob(4.0, 1.0, 40.0, 20.0, w))
+    assert 1e-4 <= h <= DEFAULT_ECHO_GATE
+    assert reflection_coefficient(window=dataclasses.replace(w, echo_gate=1.8e-4), **ortak) is None
+
+
+def test_IKINCI_VARIS_SPEKTRAL_ve_PENCERESI_ANA_DARBENIN_SONUNDAN_BASLAR():
+    """TRANSKRİPSİYON DENETİMİ (özel `_ikinci_varis`, sentetik dizi).
+
+    c = |F(g[i:])| / |F(g[:i])|, F tam f = 1/λ'da DTFT. Sentetik dizi
+    g_n = b_n exp(+2πi f S n) seçilince F'nin terimleri b_n'nin KENDİSİ
+    olur: ana parça b[:i] = 1 (ağırlık i), işaretler kalan parçada. Ana
+    darbe t0 + |prob - kaynak| / vx'te varır ve 5 sg sonra biter; pencere o
+    örnekten (DAHİL) kaydın sonuna kadardır. Geometri: kaynak 200, prob 300,
+    sgf 1, λ 10 (sg 10, t0 50), S 0.4. ε1 = 1: t_son = 200 -> örnek 500;
+    ε1 = 4 (vx yarıya iner): t_son = 300 -> örnek 750. Prob kaynağın
+    SOLUNDA da mesafe mutlak değerle okunur. Faz uyumsuz bir kalan
+    (f'den farklı frekans) aynı genlikte olsa bile ağırlık TAŞIMAZ.
+    """
+    w = ObliqueWindow(cells=1000, npml=0, courant=0.4, interface=400,
+                      source_index=200, probe_offset=100, sgf=1.0)
+    assert w.probe == 300
+    n = 1200
+    ton = np.exp(2j * np.pi * (0.4 / 10.0) * np.arange(n))
+
+    def dizi(i, **isaret):
+        b = np.zeros(n, dtype=complex)
+        b[:i] = 1.0  # ana darbe: ağırlık i
+        for k_, deger in isaret.items():
+            b[int(k_[1:])] += deger
+        return b * ton
+
+    k = dict(theta_deg=0.0, wavelength=10.0, eps1=1.0, window=w)
+    assert _ikinci_varis(dizi(500, i500=-5.0), **k) == pytest.approx(5.0 / 500)  # ilk örnek dahil
+    assert _ikinci_varis(dizi(500, i1199=2.5j), **k) == pytest.approx(2.5 / 500)  # son örnek
+    assert _ikinci_varis(dizi(499, i499=5.0), **k) == 0.0  # 499 ana parçada
+    k4 = dict(k, eps1=4.0)
+    assert _ikinci_varis(dizi(750, i750=3.0), **k4) == pytest.approx(3.0 / 750)
+    assert _ikinci_varis(dizi(749, i749=3.0), **k4) == 0.0
+    solda = dataclasses.replace(w, interface=500, probe_offset=200, source_index=400)
+    assert solda.probe == 300 and solda.source_index > solda.probe
+    assert _ikinci_varis(dizi(500, i500=5.0), **dict(k, window=solda)) == pytest.approx(0.01)
+    # FFT penceresi de uygulanır (`Fi` ile AYNI ağırlık): hann'da ana parçanın
+    # ağırlığı sum(hann[:500]), kalan örneğinki 5 hann[500].
+    hann = np.hanning(n)
+    assert _ikinci_varis(dizi(500, i500=5.0), **dict(k, window=dataclasses.replace(
+        w, window_fn="hann"))) == pytest.approx(5.0 * hann[500] / hann[:500].sum())
+    # faz uyumsuz kalan: tepe genliği ana darbeninkine eşit ama frekansı 0.2
+    # devir/örnek (ton 0.04): 500 örnekte tam devir sayısı -> F_f = 0
+    b = np.zeros(n, dtype=complex)
+    b[:500] = 1.0
+    uyumsuz = b * ton
+    uyumsuz[600:1100] += np.cos(2 * np.pi * 0.2 * np.arange(500))
+    assert _ikinci_varis(uyumsuz, **k) < 1e-12
+    assert _ikinci_varis(dizi(500, i600=1e6), **k) == 1.0  # 1'de kırpılır
+    assert _ikinci_varis(np.zeros(n), **k) == 0.0  # kayıt sıfır
+    assert _ikinci_varis(dizi(500)[:500], **k) == 0.0  # pencere kaydın dışında
+    sifir_ana = np.zeros(n, dtype=complex)
+    sifir_ana[700] = 1.0
+    assert _ikinci_varis(sifir_ana, **k) == 1.0  # ana darbenin ağırlığı sıfır
+
+
+def test_SAG_SOGURUCU_YANKISI_KAYIT_UZUNLUGUNU_SINIRLAR():
+    """TRANSKRİPSİYON DENETİMİ + `None` disiplini (`_record_steps`, aritmetik).
+
+    Sağ soğurucunun iç yüzünden (cells - npml) iki yankı döner: arka
+    koşumda sağa giden dalganınki (ortam 1, vx) ve ön koşumda GEÇEN
+    dalganınki (ortam 2, vx2 = sqrt(ε2 - ε1 sin²θ)/ε2). T2, 4 -> 1, θ = 0,
+    λ 40: T = 3320, vx = 0.5, vx2 = 1.
+      * arka yankı: hi = 3316 (cells 1391, None) / 3324 (1393, 8300 adım);
+      * geçen dalga, ε2 = 1: hi = 3318 (cells 1993, None) / 3322 (1995);
+        ε2 verilmezse ya da AYNADA bu yankı yok; ε2 = 9'da (vx2 = 1/3)
+        bağlamaz.
+    Fizik (sevk geometrisi, `rc-olcum/dogrulama/v3_FH.log`): cells 1600,
+    2.25 -> 9, 30°, λ 40'ta bu sınır yokken geçen sayının hatası 8.21e-03
+    (p) / 7.18e-03 (s); geçen dalganın yankısı yansıyanla ZAMANDA örtüşür,
+    kayıttan ayrılamaz — o yüzden ölçüm değil geometri. Bedeli 10 yanlış
+    alarm / 1357 durum (`rc-olcum/rca/birlesik.log`), sabitlenmiş hiçbiri.
+    """
+    def adim(cells, **kw):
+        return _record_steps(theta_deg=0.0, wavelength=40.0, eps1=4.0,
+                             window=dataclasses.replace(T2, cells=cells), **kw)
+
+    assert adim(1391) is None
+    assert adim(1393) == 8300
+    assert adim(1993, eps2=1.0) is None
+    assert adim(1995, eps2=1.0) == 8300
+    assert adim(1993) == 8300
+    assert adim(1993, eps2=1.0, mirror=True) == 8300
+    assert adim(1993, eps2=9.0) == 8300
+    assert reflection_coefficient(eps1=4.0, eps2=1.0, theta_deg=0.0, wavelength=40.0,
+                                  polarization="s",
+                                  window=dataclasses.replace(T2, cells=1993)) is None
+    sevk1600 = ObliqueWindow(cells=1600, npml=60, courant=0.4, interface=1500,
+                             source_index=600, probe_offset=6, sgf=9.0,
+                             window_fn="dikdortgen", ey_kural="aritmetik",
+                             unity_gate=1e-2, pml_m=3.0, tail_gate=1.6e-3)
+    for pol in ("s", "p"):
+        assert reflection_coefficient(eps1=2.25, eps2=9.0, theta_deg=30.0, wavelength=40.0,
+                                      polarization=pol, window=sevk1600) is None
+    # AYNADA ε2 KULLANILMAZ (`reflection_coefficient` dokstringi): geçen dalga
+    # yok, yani kısa sağ pencerede de ε2 sınır koymaz. T2, cells 1393, λ 20:
+    # aynasız ε2 = 1 kayıt uzunluğunu kapatır (hi 2118 < T 2120); aynada
+    # ε2 = 1 ve 9 BİT BİT aynı sayı.
+    kisa = dataclasses.replace(T2, cells=1393)
+    ayna = dict(eps1=4.0, theta_deg=0.0, wavelength=20.0, polarization="s", window=kisa)
+    assert reflection_coefficient(eps2=1.0, **ayna) is None
+    r1 = reflection_coefficient(eps2=1.0, mirror=True, **ayna)
+    assert r1 is not None and abs(abs(r1) - 1.0) < 1e-5
+    assert reflection_coefficient(eps2=9.0, mirror=True, **ayna) == r1
+
+
+def test_YANKI_ESIGI_OLCULEN_BANTTA_ve_PENCERE_BEYANINDA():
+    """SÜREÇ KİLİDİ: `echo_gate`in ARİTMETİĞİ (`test_ESIK_OLCULEN_BANTTA...`
+    deseni). Bant `rc-olcum/rca/spek_analiz.log`dan (2986 durum): kapısı
+    açık sabitlenmiş çağrıların en büyük spektral ikinci varışı 2.02e-04,
+    kuyruk kapısından geçen hatası > 1e-3 sayıların en küçüğü 9.84e-04; eşik
+    ikisinin geometrik ortası, iki yana ~2.2 kat. Ölçülen bedel
+    (`spek_esik_4p5.log`): 3 yanlış alarm, sevk ızgarasında kayıp yok.
+    Eşik kuyruk kapısınınkiyle AYNI DEĞİL ve bu ölçüldü: aynı 2986 durumda
+    kuyruk eşiğinde (1.6e-3) geçen en kötü hata 1.64e-03, bu eşikte
+    3.21e-04 (ikinci doğrulayıcı, yankı ve kuyruğun toplandığı dar bir
+    rejimde 6.16e-04 buldu; dürüst olumsuz 2).
+    """
+    assert DEFAULT_ECHO_GATE == 4.5e-4
+    assert ObliqueWindow().echo_gate == DEFAULT_ECHO_GATE
+    assert IKINCI_CIPA_EN_BUYUK < DEFAULT_ECHO_GATE < IKINCI_SESSIZ_EN_KUCUK
+    assert DEFAULT_ECHO_GATE == pytest.approx(
+        math.sqrt(IKINCI_CIPA_EN_BUYUK * IKINCI_SESSIZ_EN_KUCUK), rel=0.02
+    )
+    assert "yanki kapisi  : 0.00045" in ObliqueWindow().as_lines()
 
 
 # ---------------------------------------------------------------------------
@@ -324,3 +533,38 @@ def test_SEVK_PENCERESINDE_G1_BASLIKLARI_ARTIK_NONE():
         acik, kapali = _iki(e1, e2, th, 20.0, sevk)
         assert acik is None, (e1, e2, th)
         assert abs(kapali - _r_prob(e1, e2, th, 20.0, sevk)) >= esik, (e1, e2, th)
+
+
+def test_DURUST_OLUMSUZ_HANN_PENCERESI_KAPILARA_GORUNMUYOR():
+    """KAPILARIN KÖR NOKTASI, KİLİTLİ (açık madde RC-d; ikinci doğrulayıcı,
+    `rc-olcum/rca/dogrulama/hann.log`). T2, `window_fn` hann, 4 -> 2.25,
+    θ = 40°, λ = 20: pencere erken gelen darbeyi ve geç gelen yansıyanı
+    FARKLI ağırlıkla çarpar; kuyruklar 4.8e-06 / 1.7e-05, ikinci varış
+    2.4e-09 — üç kapı da sayıyı GEÇİRİR ve hata 2.56e-02 (dikdörtgende
+    1.4e-07; blackman'da 3.56e-02). RC-a'dan ÖNCE de vardı. Kapı pencereyi
+    görmeyi öğrenince bu test KIRMIZIYA döner — o zaman tersine çevrilmeli.
+    """
+    w = dataclasses.replace(T2, window_fn="hann")
+    r = reflection_coefficient(eps1=4.0, eps2=2.25, theta_deg=40.0, wavelength=20.0,
+                               polarization="s", window=w)
+    assert r is not None
+    assert abs(r - _r_prob(4.0, 2.25, 40.0, 20.0, w)) >= 1e-2
+
+
+@pytest.mark.slow
+def test_SOGURUCU_YANKISI_KAYIT_ICINDE_ARTIK_NONE():
+    """RC-a'nın belgelenen durumu (doğrulayıcı, `rc-olcum/dogrulama/v3_FH.log`):
+    T2, prob ofseti 400, 9 -> 1, θ = 30° (TİY), λ = 40. Sol PML yankısı GELEN
+    kaydına TAMAMEN girer; kuyruk 2.2e-05 (yansıyan), spektral ikinci varış
+    6.20e-03. Kapılar kapalıyken hata 6.20e-03 (= |r| × c, |r| = 1); yankı
+    kapısıyla `None`. `|ρ| = 1` kapısı (1e-2) bu sayıyı GEÇİRİYORDU. MALİYET: iki çağrı
+    ~1.4 s -> `slow` (hızlı şeritteki eşdeğeri PEC duvarlı
+    `test_KAYIT_ICI_YANKI_ARTIK_KAPIYA_GORUNUYOR`).
+    """
+    w = dataclasses.replace(T2, probe_offset=400)
+    assert total_internal_reflection(9.0, 1.0, 30.0)
+    acik, kapali = _iki(9.0, 1.0, 30.0, 40.0, w)
+    assert acik is None
+    assert kapali is not None
+    assert abs(abs(kapali) - 1.0) < 1e-2  # birim kapısı geçirirdi
+    assert abs(kapali - _r_prob(9.0, 1.0, 30.0, 40.0, w)) >= 5e-3
