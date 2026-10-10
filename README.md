@@ -1353,7 +1353,8 @@ değildir.
 | **ω — YOL B (dinamik)** | MD periyodu, ikinci türev ALINMAZ | **5481.22946 cm⁻¹** |
 | **İki yolun uyuşması** | \|ω_B/ω_A − 1\| < 1e-4 | **−4.36e-06** — milyonda 4.4; marj 23× |
 | Geometri kapısı | R > 21.1 bohr'da hata fırlatır | E(21.10) = −0.5695574096 → E(21.20) = −0.2057275665, **ΔE = +0.36383 hartree** |
-| MD senaryosu CLI'dan uçtan uca | `python -m qlab.run scenarios/h2_aimd.yaml -o h2aimd.npz` | çıkış 0, `energy_drift=1.465e-04` (03.10.2026'dan beri payda max(KE); eskiden \|blok[0]\| ile 8.78e-08), panelde `gradient_step_bohr=1e-05`, `energy_drift_scale=max_kinetic` |
+| MD senaryosu CLI'dan uçtan uca | `python -m qlab.run scenarios/h2_aimd.yaml -o h2aimd.npz` | çıkış 0, `energy_drift=1.465e-04` (03.10.2026'dan beri payda max(KE); eskiden \|blok[0]\| ile 8.78e-08), panelde `gradient_step_bohr=1e-05`, `energy_drift_scale=max_kinetic`; D2-ii'den beri `energy_oscillation=4.113e-03`, `omega_dt_frame0=1.160e-01`, `omega_dt_path_frames=1.356e-01` → ✓ (CLI 2.19 → 2.39 s) |
+| dt doğruluk hükmü (D2-ii) | iri dt'de sürüklenme eşiğin altında kalan dört pencere; kamu yolu | sevk geometrisi ω·dt 1.0: S **0.281**, kare-0 **0.856**, yol karesi **1.000** → ✗; dönen H2 (v 0.002): S **6.0e-03** (seyrelmiş) ama kare-0 **0.842**, yol karesi **0.925** → ✗; gerilmiş +0.30 + dönme: S **0.054**, kare-0 **0.466**, yalnız yol karesi **0.926** → ✗; dengede hareketsiz H2: S **4.4e+07** → ✗ (dördünde de D2-ii öncesi panel ✓); aynı pencereler dt yarıda ✓; sıcak F–H + dönen H2 (eleştirmen, CLI 2.6 dk): genel en kısa çift karesi 0.640 ama F–H türünün karesi **0.955** → ✗ |
 
 **İki yolun bağımsızlığı iddia değil, ölçüm.** Kuvvetleri ×1.001 ile bozan
 bir mutant çalıştırıldı:
@@ -1394,6 +1395,41 @@ ilk hâli `sürüklenme < 1e-8` yazıyordu; ölçülen değer **9.42e-05** (N=50
 **1.94e-05** (N=100) — yani dt ile ölçekleniyor, bir gürültü tabanı değil
 ayrıklaştırma eseri. O sınır 9421 kat dışarıda kalırdı. Ölçüt salınım
 oranıdır; salınım temiz π²/N² yasasına uyuyor (N ikiye katlanınca 4.0016).
+
+**Panel iri dt'yi artık yargılıyor (D2-ii, 10.10.2026).** O ölçüt testteydi,
+panelde değil: HF NVE panelinin hükmü yalnız sürüklenmeydi ve sürüklenme iri
+dt'nin Verlet salınımına kördür. Ön ölçüm (334 hücre, 16 aile: gerilmiş /
+sıkışık / dönen H2, 6-31G, LiH, H₂O, H₂ + H₂ çarpışması; sınıflar her ailenin
+kendi yol ω'sında) bugünkü panelin iri-dt sınıfının (ω·dt ≥ 0.925) **105
+hücresinden 49'una ✓** bastığını ölçtü. Artık HF NVE de TB'nin dört ölçütüyle
+yargılanır: Yakınsama = sürüklenme VE S = tepe-tepe(KE + E)/max(KE) ≤ **0.085**
+(uçlar her adımdan) VE kare-0 ω0·dt ≤ **0.67** VE yolun her adımda izlenen en
+kısa çift karelerinin (genel ve element çifti türü başına) ω·dt'si ≤ **0.67**.
+Eşikler HF'nin kendi bandından: TB'nin S eşiği 0.05 küçük genlikli her H₂
+koşusunda ω·dt 0.44–0.463'te sahte ✗ verir (harmonik S = x²/(4−x²)); S'nin
+küçük-dt tavanı bu harmonik sınır (0.057), seyrelmeyen iri tabanı genlikle 0.093'e
+iner — 0.085 sahte ✗'ten kaçınma yönünde, çünkü HF'de iri dt'yi birincil
+yakalayan ω·dt'dir: S tek başına dönme / öteleme KE'siyle seyrelir (dönen H₂'de
+bin kata kadar) ve iri-dt'nin 24/105'ini kaçırırdı; kare 0 tek başına hiç
+ayıramaz (gerilmiş başlangıç yolun en yumuşak anıdır). Genel en kısa çift
+karesinin ω'sı H/He sistemlerinde (yoğun örneklemeyle He + H₂, H₂ + H₂, dönen
+H₂O dahil) yol tepesinin kendisiydi; ama farklı bağ türlerinde değil —
+eleştirmen soğuk H₂ + sıcak F–H'de kamu yolundan sahte ✓ buldu (S 0.060, ω·dt
+0.640; yolun gerçek değeri 0.955), bu yüzden en kısa an element çifti türü
+başına da izlenir (`pair_type_steps=F-H@32 H-H@0` → ✗). Birleşik kuralda
+küçük-dt sınıfında yeni sahte ✗ yok, iri sınıf 105/105 ✗. Hessian'lar alanın
+taze kopyasıyla alınır (B10 kararlılık sayaçları yalnız koşunun adımlarını
+sayar); sondası geometri kapısına ya da SCF yakınsamamasına takılırsa tanı
+"YARGILANAMAZ" olur, koşu yine yapılır; seçilen kare kare 0'ın kendisiyse
+Hessian ikinci kez alınmaz. **Beyanlı sınırlar:** ω·dt ekseni yolun en sert
+anını okur — iri genlikli anharmonik titreşimde ✗ temkinlidir (gerçek frekans
+hatasının harmonik eşdeğeri 0.68–0.93 kat küçük, genlik Rc'yi aşınca 0.38–0.43
+kata kadar); gri bölge aileye ve genliğe
+bağlı; sürüklenmenin kısa koşu sınırı değişmedi (2 periyotluk koşuda küçük
+dt'de de ✗, save_every'ye bağlı); en hızlı mod seçilen karelerin hiçbirinde
+değilse ve S seyreltilmişse ✓ dt'yi kanıtlamaz; bedel kısa çok-atomlu koşuda
+koşunun katları olabilir (Hessian ≈ 6N kuvvet çağrısı; ölçüldü: H₂O 4 adım 4.2
+→ 38.6 s, LiH 10 adım ×3.6).
 
 **Dürüst olumsuzlar (ölçüldü, gizlenmiyor):**
 

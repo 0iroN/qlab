@@ -632,8 +632,9 @@ def test_KAMU_YOLU_nan_YOL_KARESI_PANELDE_nan_ve_YARGILANAMAZ(tmp_path, capsys, 
     edilen senaryoda gerçek değer 3.174e-01 (✓); sarmalayıcının `nan`ı panelde
     `nan` ve "yol karelerinin tanısı YARGILANAMAZ", ✗. KIRMA: `run.py`de yol
     karelerini hiç hesaplamayıp 0.0 geçen ya da `nan`ı 0.0'a çeviren mutant ✓."""
+    # D2-ii: `_run_md` kare-0 değerini `omega_frame0=` ile de geçirir (aynı kareyse tek Hessian).
     monkeypatch.setattr(
-        fabrika, "omega_max_path_frames", lambda senaryo, izleyici, durum, alan: float("nan")
+        fabrika, "omega_max_path_frames", lambda senaryo, izleyici, durum, alan, **_: float("nan")
     )
     sevk = Path(qlab.__file__).resolve().parents[2] / "scenarios" / "tb_zincir_md.yaml"
     satir = _panel(sevk, tmp_path, capsys)
@@ -947,6 +948,13 @@ def test_T12b_SECICILER_EN_YAKIN_GORUNTU_KUTLE_AGIRLIGI_ESITLIK_KOPYA_nan():
     assert wB > wA, (wA, wB)
     durum = MDState(positions=A, velocities=np.zeros_like(A), masses=kutle)
     assert omega_max_path_frames(sen, iz, durum, alan) == wB
+    # Ters sıra (D2-ii doğrulaması N36): sertlik tepesi KARE 0'da (adım 0 "falsy"
+    # değildir), en kısa çift adım 1'de -> iki kare de Hessian'lanır.
+    iz = YolKaresiIzleyici(alan, kutle)
+    iz(B)
+    iz(A)
+    assert (iz.en_kisa_adim, iz.sertlik_adim) == (1, 0) and len(iz.secilen_kareler()) == 2
+    assert omega_max_path_frames(sen, iz, durum, alan) == wB
     # Eşitlik ve kopya.
     iz = YolKaresiIzleyici(alan, np.full(16, mH))
     C = taban.copy()
@@ -978,6 +986,9 @@ def test_T12b_SECICILER_EN_YAKIN_GORUNTU_KUTLE_AGIRLIGI_ESITLIK_KOPYA_nan():
     iz(tek)
     iz(tek + 0.1)
     assert iz.en_kisa_adim == 0 and iz.sertlik_adim == 0 and iz.en_kisa == float("inf")
+    # Kutusuz TB izleyicisi de TB'nin panel anahtarlarını taşır (HF'ninkini değil):
+    # anahtar seçimi kutuya değil türe bağlı (D2-ii doğrulaması N35).
+    assert list(iz.tanilar()) == list(fabrika._YOL_KARESI_TANILARI)
 
 
 def test_T12c_TEK_HESSIAN_KAPI_ve_RUN_MD_IZLEYICIYI_YALNIZ_KOSUYA_VERIR(tmp_path, capsys, monkeypatch):

@@ -716,14 +716,17 @@ def _run_md(scenario: MDScenario, output: str | None) -> int:
     durum, alan, termostat = build(scenario)
     durum = durum.remove_center_of_mass_motion()
     # A PRIORI TANI (D2-i, 10.10.2026): koşudan ÖNCE, kare-0 geometrisinin en
-    # hızlı kütle ağırlıklı modu (TB NVE; öteki koşularda None). S'nin paydası
-    # tüm KE'dir ve titreşime katılmayan KE onu seyreltir; omega0*dt bakmaz.
+    # hızlı kütle ağırlıklı modu (TB ve -- D2-ii -- HF NVE; öteki koşularda
+    # None). S'nin paydası tüm KE'dir ve titreşime katılmayan KE onu
+    # seyreltir; omega0*dt bakmaz. HF'de Hessian alanın TAZE kopyasıyla alınır
+    # (fabrikada): `alan`ın kararlılık sayaçları yalnız koşunun adımlarını sayar.
     omega0 = omega_max_frame0(scenario, durum, alan)
     # YOL TANISI (D2-vi): kare 0 yolun en hızlı modunu görmez (sonradan
-    # çarpışan parçalar, ısıl keşif). TB NVE'de koşu alanı saran izleyiciyle
-    # yapılır; o HER ADIMI görür (kayıtlı kareleri değil), en kısa çift
-    # mesafesinin ve kütle ağırlıklı sertlik tepesinin karelerini seçer;
-    # koşudan sonra o karelerde aynı Hessian alınır. Öteki koşularda None.
+    # çarpışan parçalar, ısıl keşif; HF'de gerilmiş başlangıç). TB ve HF
+    # NVE'de koşu alanı saran izleyiciyle yapılır; o HER ADIMI görür (kayıtlı
+    # kareleri değil), en kısa çift mesafesinin (TB'de bir de kütle ağırlıklı
+    # sertlik tepesinin) karesini seçer; koşudan sonra o karelerde aynı
+    # Hessian alınır. Öteki koşularda None.
     # Kare-0 Hessian'ından SONRA kurulur ve yalnız `run`a verilir: `alan`
     # adı değişmez (HF'nin kararlılık sayaçları `alan`dan okunur).
     izleyici = path_frame_tracker(scenario, alan, durum.masses)
@@ -757,11 +760,12 @@ def _run_md(scenario: MDScenario, output: str | None) -> int:
     # `md/factory.py::energy_drift`te: TB'de enerjinin sıfırı keyfidir ve
     # |blok[0]|'a bölmek hükmü o sıfıra bağlıyordu (spec B8; ölçüm orada).
     suruklenme = energy_drift(scenario, yorunge.kinetic, yorunge.potential)
-    # SALINIM (D2, 09.10.2026): TB NVE'de iri dt'yi yargılar, öteki koşularda
-    # None. Uçlar integratörün HER adımından gelir (`Trajectory.total_min` ...);
+    # SALINIM (D2, 09.10.2026): TB ve (D2-ii) HF NVE'de iri dt'yi yargılar,
+    # öteki koşularda None. Uçlar integratörün HER adımından gelir (`Trajectory.total_min` ...);
     # buradaki termostat döngüsü onları biriktirmez ve NVT'de S hesaplanmaz.
     salinim = energy_oscillation(scenario, yorunge)
-    omega_yol = omega_max_path_frames(scenario, izleyici, durum, alan)
+    # D2-ii: seçilen kare kare 0'ın kendisiyse fabrika Hessian'ı ikinci kez almaz.
+    omega_yol = omega_max_path_frames(scenario, izleyici, durum, alan, omega_frame0=omega0)
     yol_kareleri = None if izleyici is None else izleyici.tanilar()
 
     # KISIT SAYISI TERMOSTATA BAĞLIDIR: ÖLÇÜLDÜ -- Langevin kütle merkezini

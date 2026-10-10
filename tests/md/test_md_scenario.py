@@ -208,7 +208,7 @@ def test_HF_dalinda_yaklasim_listesi_ANALITIK_MODEL_DEMIYOR():
         dt=5.0,
         n_steps=1,
     )
-    prov = provenance_for(senaryo, energy_drift=1e-10)
+    prov = provenance_for(senaryo, energy_drift=1e-10, **_HF_NVE_TANI)
     metin = " ".join(prov.approximations + prov.neglected).lower()
 
     # İKİ yalan da gitmiş olmalı (factory.py `_YAKLASIMLAR`ın birinci ve
@@ -222,11 +222,18 @@ def test_HF_dalinda_yaklasim_listesi_ANALITIK_MODEL_DEMIYOR():
     assert prov.diagnostics["gradient_step_bohr"] == pytest.approx(1e-5)
 
 
+#: D2-ii (10.10.2026): HF NVE'de S ve iki omega*dt tanısı ZORUNLU (TB NVE ile
+#: aynı kapı). Hükmü bu testlerde sürüklenme belirlesin diye üçü de geçer.
+_HF_NVE_TANI = dict(energy_oscillation=1e-9, omega_max_frame0=1e-9, omega_max_path_frames=1e-9)
+
+
 def test_HF_dalinda_kararlilik_denetiminin_ATLANDIGI_beyan_ediliyor():
     """`omega*dt < 2` denetimi yalnız `harmonic` dalındadır; HF'de omega
-    analitik DEĞİLDİR ve denetim atlanır.
+    analitik DEĞİLDİR ve koşudan ÖNCE denetim atlanır (koşu reddedilmez).
 
-    Atlamak meşru bir seçimdir; SESSİZ atlamak değildir.
+    Atlamak meşru bir seçimdir; SESSİZ atlamak değildir. D2-ii (10.10.2026):
+    seçilen dt'yi NVE'de koşudan SONRA salınım hükmü ve kare-0 ile yolun en
+    kısa çift karesinin omega*dt'si yargılar -- beyan bunu da söyler.
     """
     senaryo = MDScenario(
         name="t",
@@ -242,9 +249,13 @@ def test_HF_dalinda_kararlilik_denetiminin_ATLANDIGI_beyan_ediliyor():
         dt=5.0,
         n_steps=1,
     )
-    prov = provenance_for(senaryo, energy_drift=1e-10)
+    prov = provenance_for(senaryo, energy_drift=1e-10, **_HF_NVE_TANI)
     metin = " ".join(prov.approximations + prov.neglected).lower()
     assert "kararlılık" in metin and "denetlenmiyor" in metin
+    for parca in ("koşu reddedilmez", "koşudan sonra salınım hükmü",
+                  "en kısa çift mesafesi karesinin (element çifti türü başına da)",
+                  "yalnız bu karelere bakar"):
+        assert parca in metin, parca
 
 
 # --- Kuvvet alanı kapısı ve TÜRETME KİLİDİ -----------------------------------
@@ -518,7 +529,8 @@ def test_ELEKTRON_COZEN_HER_TURDE_panel_ELEKTRON_YOK_DEMIYOR(tur):
     assert (tur in ELEKTRON_COZEN) != (tur in KLASIK), f"{tur} sınıflandırılmamış"
     # D2: TB NVE'de salınım S'i zorunlu, öteki türlerde verilmez (kapı);
     # D2-i: a priori tanının omega0'ı da aynı kapıdan geçer; D2-vi: yol karelerininki de.
-    salinim = 1e-9 if tur == "tb_ss_sigma" else None
+    # D2-ii: HF NVE de aynı kapıda -- elektron çözen iki tür.
+    salinim = 1e-9 if tur in ELEKTRON_COZEN else None
     prov = provenance_for(
         _senaryo(tur), energy_drift=1e-9, energy_oscillation=salinim, omega_max_frame0=salinim,
         omega_max_path_frames=salinim,
@@ -926,18 +938,19 @@ def test_C5_HF_ESIGI_PANELDE_ve_HUKUMDE_AYNI_SAYI_ve_HAREKETSIZ_YARGILANAMAZ():
 
     Panelin `energy_drift_tolerance`ı hükmün GERÇEKTEN kullandığı eşik ve
     `_MD_DRIFT_TOLERANCE`; bir ulp altı ✓, bir ulp üstü ✗. HF dalında max(KE) = 0
-    ise oran `nan` ve hüküm ✗ (YARGILANAMAZ), 0.0 = sahte ✓ değil.
+    ise oran `nan` ve hüküm ✗ (YARGILANAMAZ), 0.0 = sahte ✓ değil. D2-ii: S ve
+    iki omega*dt tanısı geçer durumda sabit -- hükmü yalnız sürüklenme belirler.
     """
     hf = _senaryo("hartree_fock")
-    t = provenance_for(hf, energy_drift=1e-9).diagnostics
+    t = provenance_for(hf, energy_drift=1e-9, **_HF_NVE_TANI).diagnostics
     esik = t["energy_drift_tolerance"]
     assert t["energy_drift_scale"] == "max_kinetic"
     assert esik == qlab.engine.md.factory._MD_DRIFT_TOLERANCE
-    assert provenance_for(hf, energy_drift=float(np.nextafter(esik, 0.0))).converged
-    assert not provenance_for(hf, energy_drift=float(np.nextafter(esik, 1.0))).converged
+    assert provenance_for(hf, energy_drift=float(np.nextafter(esik, 0.0)), **_HF_NVE_TANI).converged
+    assert not provenance_for(hf, energy_drift=float(np.nextafter(esik, 1.0)), **_HF_NVE_TANI).converged
     oran = qlab.engine.md.factory.energy_drift(hf, np.zeros(12), np.full(12, -1.1))
     assert np.isnan(oran)
-    assert provenance_for(hf, energy_drift=oran).converged is False
+    assert provenance_for(hf, energy_drift=oran, **_HF_NVE_TANI).converged is False
 
 
 def test_B10_KARARLILIK_YAKINSAMAYA_GIRMEZ_ve_VARSAYILAN_ADIM_PANELDE():
@@ -950,9 +963,10 @@ def test_B10_KARARLILIK_YAKINSAMAYA_GIRMEZ_ve_VARSAYILAN_ADIM_PANELDE():
     hf = _senaryo("hartree_fock")
     eyer = StabilityVerdict(stable=False, lowest_eigenvalue=-0.45, n_rotations=1, channel="dis")
     ic = StabilityVerdict(stable=True, lowest_eigenvalue=3.037, n_rotations=1, channel="ic")
-    duz = provenance_for(hf, energy_drift=1e-9)
+    duz = provenance_for(hf, energy_drift=1e-9, **_HF_NVE_TANI)
     izli = provenance_for(
-        hf, energy_drift=1e-9, stability=ic, external_stability=eyer, kararlilik_tanisi={"dis_kararsiz": "3/5"}
+        hf, energy_drift=1e-9, stability=ic, external_stability=eyer, kararlilik_tanisi={"dis_kararsiz": "3/5"},
+        **_HF_NVE_TANI,
     )
     assert duz.converged is izli.converged is True
     satirlar = dict(izli.as_lines())
@@ -1089,13 +1103,13 @@ def test_G5_energy_drift_SAKLI_DAL_YOK_ve_run_py_KENDISI_HESAPLAMIYOR(
     oznitelikler = {f.attr for f in cagrilar if isinstance(f, ast.Attribute)}
     assert "energy_drift" in adlar
     assert not {"reshape", "mean"} & oznitelikler, oznitelikler
-    # D2 (09.10.2026): salınım da fabrikada. `energy_oscillation`ın TEK dalı
-    # TB'dir; `_run_md` onu çağırır, S'yi KENDİSİ hesaplamaz (kayıtlı
-    # karelerden ptp/max/min = save_every'ye bağlı sahte hüküm, D2 ön ölçümü)
-    # ve sonucu `provenance_for`a `energy_oscillation=` ile geçirir.
-    assert dize_karsilastirma_tarayici(fabrika, "energy_oscillation") == {
-        ("tur", "tb_ss_sigma")
-    }
+    # D2 (09.10.2026): salınım da fabrikada. `energy_oscillation`ın dalları
+    # TB ve (D2-ii) HF -- ELEKTRON ÇÖZEN iki tür; `_run_md` onu çağırır, S'yi
+    # KENDİSİ hesaplamaz (kayıtlı karelerden ptp/max/min = save_every'ye bağlı
+    # sahte hüküm, D2 ön ölçümü) ve sonucu `provenance_for`a
+    # `energy_oscillation=` ile geçirir.
+    elektron_cozen = {("tur", tur) for tur in ELEKTRON_COZEN}
+    assert dize_karsilastirma_tarayici(fabrika, "energy_oscillation") == elektron_cozen
     assert "energy_oscillation" in adlar
     assert not {"ptp", "max", "min"} & oznitelikler, oznitelikler
     # Doğrulama (09.10.2026, N05/N12): yerleşik min/max ya da
@@ -1110,19 +1124,17 @@ def test_G5_energy_drift_SAKLI_DAL_YOK_ve_run_py_KENDISI_HESAPLAMIYOR(
         and d.func.id == "provenance_for"
     )
     assert "energy_oscillation" in {k.arg for k in prov_cagrisi.keywords}
-    # D2-i (10.10.2026): a priori tanı da fabrikada; TEK dalı TB NVE'dir ve
-    # `_run_md` onu çağırıp sonucunu `omega_max_frame0=` ile geçirir (Hessian'ı
-    # kendisi kurmaz: `eigvalsh` yasak).
-    assert dize_karsilastirma_tarayici(fabrika, "omega_max_frame0") == {
-        ("tur", "tb_ss_sigma")
-    }
+    # D2-i (10.10.2026): a priori tanı da fabrikada; dalları TB ve (D2-ii) HF
+    # NVE'dir ve `_run_md` onu çağırıp sonucunu `omega_max_frame0=` ile geçirir
+    # (Hessian'ı kendisi kurmaz: `eigvalsh` yasak).
+    assert dize_karsilastirma_tarayici(fabrika, "omega_max_frame0") == elektron_cozen
     assert "omega_max_frame0" in adlar
     assert "eigvalsh" not in oznitelikler
     assert "omega_max_frame0" in {k.arg for k in prov_cagrisi.keywords}
-    # D2-vi: yol kareleri de fabrikada; izleyicinin ve Hessian'ın TEK dalı TB
-    # NVE'dir. `_run_md` izleyiciyi kurar, koşuyu onunla yapar, sonucu
-    # `omega_max_path_frames=` ve `path_frames=` ile geçirir.
+    # D2-vi: yol kareleri de fabrikada; izleyicinin ve Hessian'ın dalları TB ve
+    # (D2-ii) HF NVE'dir. `_run_md` izleyiciyi kurar, koşuyu onunla yapar,
+    # sonucu `omega_max_path_frames=` ve `path_frames=` ile geçirir.
     for islev in ("path_frame_tracker", "omega_max_path_frames"):
-        assert dize_karsilastirma_tarayici(fabrika, islev) == {("tur", "tb_ss_sigma")}, islev
+        assert dize_karsilastirma_tarayici(fabrika, islev) == elektron_cozen, islev
         assert islev in adlar, islev
     assert {"omega_max_path_frames", "path_frames"} <= {k.arg for k in prov_cagrisi.keywords}
