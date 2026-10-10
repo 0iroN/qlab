@@ -2943,13 +2943,56 @@ edilince sınanabilir hâle gelen iddialardı**:
     FRESNEL pencereleri `echo_gate` alanını açıkça taşıyor. Mutasyon 27/27,
     tek turda son test dosyasına karşı (`rc-olcum/rca/mut_rca2_kilit.log`);
     doğrulayıcının spektral ölçüte özgü mutantları 11/11.
-- **AÇIK — FFT penceresi hann/blackman iken hata üç kapıya da görünmüyor**
-  (RC-d, orta, 10.10.2026; RC-a'nın ikinci doğrulayıcısı buldu, RC-a'dan
-  önce de vardı). Pencere erken gelen darbeyi ve geç gelen yansıyanı farklı
-  ağırlıkla çarpıyor: T2, 4→2.25, 40°, λ = 20'de hann **2.56e-2**,
-  blackman **3.56e-2** (dikdörtgende 1.4e-7); kuyruklar 4.8e-6 / 1.7e-5,
-  ikinci varış 2.4e-9. Sevk penceresi dikdörtgen. Testle kilitli dürüst
-  olumsuz (kapı pencereyi görmeyi öğrenince kırmızıya döner).
+- ~~**AÇIK — FFT penceresi hann/blackman iken hata üç kapıya da görünmüyor**~~
+  **KAPANDI 10.10.2026 (RC-d) — `reflection_coefficient` yalnız dikdörtgen
+  pencereyle ölçer; dikdörtgen dışındaki her değer koşumdan önce
+  `InvalidInputError`.** RC-a'nın ikinci doğrulayıcısı buldu, RC-a'dan önce
+  de vardı: pencere erken gelen darbeyi ve geç gelen yansıyanı farklı
+  ağırlıkla çarpıyordu ve üç kapı da görmüyordu (T2, 4→2.25, 40°, λ = 20'de
+  hann **2.56e-2**, blackman **3.56e-2**, dikdörtgende 1.4e-7; kuyruklar
+  4.8e-6 / 1.7e-5; ikinci varış hann'da 2.4e-9, dikdörtgende 8.6e-7).
+  - **Mekanizma (ölçüldü):** hata ≈ |r|·|w(t_y)/w(t_g) − 1| (w pencere;
+    t_g, t_y gelen ve yansıyan kaydın enerji ağırlık merkezleri); 638
+    durumda hata/tahmin medyanı 0.95 (hann, %10–%90: 0.93–1.08). Baskın
+    terim değişebilir: |r| → 0'da (Brewster yakını p) ya da w(t_y) ≈
+    w(t_g) iken r(f)'nin dağıtkanlığı baskın — 638'in 65'i ±%15 dışında
+    (en uzak oran 30), dağıtkanlık terimiyle iki terimli sınır 645/646
+    (kalan r = 0). Pencere kaydın sonunu sıfıra çektiği için yankı ölçütü
+    c de küçülüyordu: dikdörtgende yankı kapısının kestiği 32 kayıtta hann
+    sayı döndürüyordu, hepsinin hatası > 1e-3 — ama hata yankıdan değil
+    yine pencere ağırlığından (dikdörtgenin aynı kayıtlardaki kapısız
+    hatası medyan 2.5e-4).
+  - **Ön ölçüm** (`.superpowers/sdd/rc-olcum/rcd/`; RC-a'nın 3005 durumu +
+    doğrulayıcının 36 hann durumu; kapılı ve referanslı 2803 satır, 2720
+    tekil durum): `window_fn` FDTD koşumunu değiştirmiyor, üç pencere aynı
+    koşum çiftinden okundu (RC-d'den önceki kamu yoluyla 84/84 bit bit
+    aynı; bugün bunların 56'sı reddedilir). Dikdörtgen 646 sayı, en kötüsü
+    3.21e-4; hann'da kapılardan geçen 408 sayının **406'sının** hatası
+    > 1e-3 (en kötü 0.48), blackman'da 416'nın 414'ü. İkisinin de sayı
+    verdiği 376 durumun **hiçbirinde** pencere dikdörtgenden iyi değil;
+    1e-3'ün altında kalan iki pencereli sayının ikisinde de |r| ≈ 0
+    (arayüzsüz durum, ve Brewster'da 5→4, 41.81°, λ = 30, p: hann hatası
+    4.5e-4, bağıl %16).
+  - **Elenen adaylar:** yansıyanın penceresini gecikme kadar kaydırmak ya
+    da her serinin penceresini kendi darbe merkezine ortalamak — en iyi
+    aday bile yüzlercesini geçiriyor (hann; ölçülen gecikmeyle kaydırma
+    679 sayının 238'ini, ölçülen merkezlere ortalama 1122'nin 452'sini
+    > 1e-3 hatayla), çünkü oran saf gecikme değil (r(f) dağıtkan); yalnız
+    son periyotta konik — dikdörtgenle aynı 646 kaydı geçiriyor, sayıları
+    ondan en fazla 1.1e-4 farklı (medyan 2.4e-7): "hann" etiketi altında
+    dikdörtgen = sessiz ikame.
+  - **Neden `None` değil:** hata kayda değil pencereye bağlı (`dx_kapisi`
+    gibi yapılandırma hatası; bilinmeyen adlar, örn. `kaiser`, aynı
+    kuraldan reddediliyor); `None` bir merdiveni sebebi görünmeden
+    öldürürdü. Bedel: depoda hann/blackman ile tek çağrı bu maddenin eski
+    dürüst olumsuz testiydi; sevk penceresi ve sabitlenmiş bütün sayılar
+    dikdörtgen, dokunulmadı (bağımsız doğrulayıcı: 72/72 durum HEAD'le bit
+    bit aynı).
+  - Kilitler: `tests/em/test_kayit_tamligi.py` — ret her kipte (5 ad × s/p
+    × ayna, güvenli kayıt yokken de, `tir_phase_difference` ofsetli ve
+    aynalı, `tir_phase_ladder`; ret koşumdan önce) ve gerekçe testi (iç
+    koşum çifti kamu yolunun sayısına bit bit eşit; hann/blackman hataları
+    ve mekanizma oranı); dosyanın hızlı şeridi 19 → 40 test.
 - **`-m "not slow"` koşumunda modülün doğa çıpalarının TAMAMI atlanıyor.**
   İşaret fixture yüzünden geniş (Bessel tarafında `kayitlar`ı tüketen 11
   test), ve Rayleigh/yarık tarafı da `slow`. G7 (09.10.2026) hızlı şeride

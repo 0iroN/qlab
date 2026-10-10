@@ -73,16 +73,25 @@ kuyruk da kendi eşiğinin altındaysa ikisi TOPLANIR (ikinci doğrulayıcı: T2
 ofset 430, 4 -> 1, 32°, λ 24: c 4.45e-04, kuyruk 1.06e-03, hata 6.16e-04).
 Ölçülen toplam sınır (769 geçen sayı): hata <= |r| c/(1 - c) + 0.17 kuyruk,
 yani geçen sayı için ≲ `echo_gate` + 0.17 τ ≈ 7.2e-04 diye okunur.
-DÜRÜST OLUMSUZ 3 — FFT PENCERESİ (RC-d, açık, RC-a'dan önce de vardı):
+FFT PENCERESİ — KAPANDI (RC-d, 10.10.2026; RC-a'dan önce de vardı):
 hann / blackman pencereleri erken gelen darbeyle geç gelen yansıyanı farklı
-ağırlıkla çarpar ve üç kapı da görmez (T2, 4 -> 2.25, 40°, λ 20: hann
-2.56e-02, blackman 3.56e-02; dikdörtgende 1.4e-07). Bir test kilitler.
+ağırlıkla çarpıyordu ve üç kapı da görmüyordu (T2, 4 -> 2.25, 40°, λ 20:
+hann 2.56e-02, blackman 3.56e-02; dikdörtgende 1.4e-07). Ön ölçüm
+(`rc-olcum/rcd/`, 2803 satır): dikdörtgenin sayı verdiği 646 kaydın
+hiçbirinde pencere daha iyi değil (r = 0'da eşit). Darbeleri farklı
+ağırlıklandıran hiçbir düzeltme adayı zarfı tutturmadı; tutturan tek aday
+(yalnız son periyotta konik) dikdörtgenin kendisi → `window_fn`
+"dikdortgen" değilse `InvalidInputError`, koşumdan önce. İki test reddi
+(her kipte), bir test GEREKÇEYİ (hata ≈ |r| |w(t_y)/w(t_g) - 1|) kilitler.
 
 SINIF: kapalı-form referanslı ÇEVİRİ DENETİMİ + `None` disiplini (Modül 5
 sözlüğü, `test_arayuz.py` başlığı). Özel import tek bir TRANSKRİPSİYON
 testinde: `_kuyruk`un penceresi (tam bir periyot) sentetik diziyle sınanır,
 çünkü pencere uzunluğu kamu yolunda eşiğin içinde kaybolur (doğrulayıcının
-yarım/iki periyot mutantları kamu yolu testlerinin hepsini geçti).
+yarım/iki periyot mutantları kamu yolu testlerinin hepsini geçti). RC-d'nin
+gerekçe testi de iç koşum çiftini (`_kosum`, `_spektrum`) kullanır, çünkü
+kamu yolu artık pencereli sayı üretmez; dikdörtgen oranını kamu yolunun
+sayısına BİT BİT eşitleyerek kurulumunu sınar.
 """
 
 from __future__ import annotations
@@ -93,14 +102,23 @@ import math
 import numpy as np
 import pytest
 
+from qlab.engine.em.boundary import PML
+from qlab.engine.em.medium import Medium
+from qlab.errors import InvalidInputError
+from qlab.observable import em_obs
 from qlab.observable.em_obs import (
+    _FFT_PENCERELERI,
     DEFAULT_ECHO_GATE,
     DEFAULT_TAIL_GATE,
     ObliqueWindow,
     _ikinci_varis,
+    _kosum,
     _kuyruk,
     _record_steps,
+    _spektrum,
     reflection_coefficient,
+    tir_phase_difference,
+    tir_phase_ladder,
     total_internal_reflection,
 )
 
@@ -426,7 +444,8 @@ def test_IKINCI_VARIS_SPEKTRAL_ve_PENCERESI_ANA_DARBENIN_SONUNDAN_BASLAR():
     assert solda.probe == 300 and solda.source_index > solda.probe
     assert _ikinci_varis(dizi(500, i500=5.0), **dict(k, window=solda)) == pytest.approx(0.01)
     # FFT penceresi de uygulanır (`Fi` ile AYNI ağırlık): hann'da ana parçanın
-    # ağırlığı sum(hann[:500]), kalan örneğinki 5 hann[500].
+    # ağırlığı sum(hann[:500]), kalan örneğinki 5 hann[500]. (RC-d'den beri
+    # kamu yolundan yalnız dikdörtgen gelir; burada sınanan ağırlık kuralıdır.)
     hann = np.hanning(n)
     assert _ikinci_varis(dizi(500, i500=5.0), **dict(k, window=dataclasses.replace(
         w, window_fn="hann"))) == pytest.approx(5.0 * hann[500] / hann[:500].sum())
@@ -535,20 +554,129 @@ def test_SEVK_PENCERESINDE_G1_BASLIKLARI_ARTIK_NONE():
         assert abs(kapali - _r_prob(e1, e2, th, 20.0, sevk)) >= esik, (e1, e2, th)
 
 
-def test_DURUST_OLUMSUZ_HANN_PENCERESI_KAPILARA_GORUNMUYOR():
-    """KAPILARIN KÖR NOKTASI, KİLİTLİ (açık madde RC-d; ikinci doğrulayıcı,
-    `rc-olcum/rca/dogrulama/hann.log`). T2, `window_fn` hann, 4 -> 2.25,
-    θ = 40°, λ = 20: pencere erken gelen darbeyi ve geç gelen yansıyanı
-    FARKLI ağırlıkla çarpar; kuyruklar 4.8e-06 / 1.7e-05, ikinci varış
-    2.4e-09 — üç kapı da sayıyı GEÇİRİR ve hata 2.56e-02 (dikdörtgende
-    1.4e-07; blackman'da 3.56e-02). RC-a'dan ÖNCE de vardı. Kapı pencereyi
-    görmeyi öğrenince bu test KIRMIZIYA döner — o zaman tersine çevrilmeli.
+#: RC-d reddinin mesaj parçası (`reflection_coefficient`).
+RET = "yalniz window_fn 'dikdortgen'"
+
+
+@pytest.fixture
+def nobetci(monkeypatch):
+    """`_kosum` çağrılırsa düşer: pencere reddi KOŞUMDAN ÖNCE olmalı."""
+    def kosma(**_):
+        raise AssertionError("pencere reddi koşumdan ÖNCE olmalı")
+
+    monkeypatch.setattr(em_obs, "_kosum", kosma)
+
+
+@pytest.mark.parametrize("ad", ["hann", "blackman", "kaiser", "Dikdortgen", " dikdortgen"])
+@pytest.mark.parametrize("pol", ["s", "p"])
+@pytest.mark.parametrize("ayna", [False, True])
+def test_DIKDORTGEN_DISI_PENCERE_HER_KIPTE_KOSUMDAN_ONCE_REDDEDILIR(ad, pol, ayna, nobetci):
+    """RC-d KAPANDI — eski dürüst olumsuz TERSİNE ÇEVRİLDİ. Eskiden T2,
+    4 -> 2.25, θ = 40°, λ = 20'de hann 2.56e-02, blackman 3.56e-02 hatalı
+    sayıyı üç kapıdan da geçiriyordu (`rc-olcum/rca/dogrulama/hann.log`).
+    Ön ölçüm (`rc-olcum/rcd/ozet_rcd.log`, 2803 satır, üç pencere aynı
+    koşum çiftinden): kapılardan geçen 408 hann sayısının 406'sının hatası
+    > 1e-3; hann ile dikdörtgenin ikisinin de sayı verdiği 376 durumun
+    (blackman'da aynı küme) hiçbirinde pencere dikdörtgenden iyi değil.
+    Karar `InvalidInputError`, `None` değil: hata kayda değil PENCEREYE
+    bağlı. Ret her kipte (s/p, ayna) ve tam ad eşitliğiyle (büyük harf,
+    boşluk normalleştirilmez); `_kosum` çağrılırsa test düşer. Bağımsız
+    doğrulayıcının altı mutantı (`rc-olcum/rcd/dogrulama/mut_oneri.log`):
+    yalnız s'de ret — T2, hann, p'de 9.2e-03'lük hata sızıyordu — aynada
+    ret yok, kayıt yokken `None`, ofsetle / merdivende sessiz ikame,
+    büyük-küçük harf normalleştirmesi.
     """
-    w = dataclasses.replace(T2, window_fn="hann")
-    r = reflection_coefficient(eps1=4.0, eps2=2.25, theta_deg=40.0, wavelength=20.0,
-                               polarization="s", window=w)
-    assert r is not None
-    assert abs(r - _r_prob(4.0, 2.25, 40.0, 20.0, w)) >= 1e-2
+    w = dataclasses.replace(T2, window_fn=ad)
+    with pytest.raises(InvalidInputError, match=RET):
+        reflection_coefficient(eps1=4.0, eps2=2.25, theta_deg=40.0, wavelength=20.0,
+                               polarization=pol, window=w, mirror=ayna)
+
+
+def test_RET_KAYIT_KAPISINDAN_ve_FAZ_YOLLARINDAN_ONCE(nobetci):
+    """Ret, güvenli kayıt uzunluğu YOKKEN de `None` değil hatadır (sevk
+    penceresi, ε1 = 1, θ = 0, λ = 40: `_record_steps` None); fazı okuyan
+    `tir_phase_difference` `probe_offset`le ve aynada, `tir_phase_ladder`
+    ilk basamakta aynı hatayı yükseltir. Son satır nöbetçinin kendisini
+    sınar: dikdörtgende çağrı gerçekten `_kosum`a ulaşıyor (yoksa "önce"
+    sınanmamış olurdu).
+    """
+    sevk = dataclasses.replace(ObliqueWindow(), window_fn="hann")
+    assert _record_steps(theta_deg=0.0, wavelength=40.0, eps1=1.0, window=sevk,
+                         eps2=2.25) is None
+    with pytest.raises(InvalidInputError, match=RET):
+        reflection_coefficient(eps1=1.0, eps2=2.25, theta_deg=0.0, wavelength=40.0,
+                               polarization="s", window=sevk)
+    h = dataclasses.replace(T2, window_fn="hann")
+    tir = dict(eps1=4.0, eps2=1.0, theta_deg=45.0, wavelength=40.0, window=h)
+    with pytest.raises(InvalidInputError, match=RET):
+        tir_phase_difference(probe_offset=6, **tir)
+    with pytest.raises(InvalidInputError, match=RET):
+        tir_phase_difference(mirror=True, **tir)
+    with pytest.raises(InvalidInputError, match=RET):
+        tir_phase_ladder(eps1=4.0, eps2=1.0, theta_deg=45.0,
+                         wavelengths=[16.0, 24.0, 36.0, 54.0], noise=3.09e-5, window=h)
+    with pytest.raises(AssertionError, match="ÖNCE"):
+        reflection_coefficient(eps1=4.0, eps2=2.25, theta_deg=40.0, wavelength=20.0,
+                               polarization="s", window=T2)
+
+
+def test_GEREKCE_PENCERE_IKI_DARBEYI_FARKLI_AGIRLIKLA_CARPAR():
+    """RC-d'nin GEREKÇESİ, kilitli (reddin neden var olduğu). Kamu yolu
+    artık pencereli sayı üretmediği için `reflection_coefficient`in iç
+    koşum çifti `_kosum` ile aynen kurulur; dikdörtgen oranı kamu yolunun
+    sayısına BİT BİT eşittir (kurulum doğru). T2, 4 -> 2.25, θ = 40°,
+    λ = 20, s:
+      * ayrık-tam r'ye hata: dikdörtgen 1.4e-07, hann 2.56e-02, blackman
+        3.56e-02;
+      * kapılar KÖR: kuyruklar 4.8e-06 / 1.7e-05, pencereli ikinci varış
+        <= 2.4e-09;
+      * MEKANİZMA: hata ≈ |r| |w(t_y)/w(t_g) - 1| (w pencere; t_g, t_y gelen
+        ve yansıyan kaydın enerji ağırlık merkezleri). Ön ölçümde 638
+        durumda hata/tahmin medyanı 0.95 (hann, %10..%90 0.93..1.08),
+        blackman'da 0.91; burada (|r| 0.34) [0.85, 1.15]. Tek terim
+        |r| -> 0'da (Brewster yakını p) ya da w(t_y) ≈ w(t_g) iken eksik
+        kalır: orada r(f)'nin dağıtkanlığı baskındır (638'in 65'i ±%15
+        dışında; iki terimli sınır 645/646, `rcd/dogrulama/mekanizma2.log`).
+    MALİYET: dört koşum (~0.6 s).
+    """
+    e1, e2, th, lam = 4.0, 2.25, 40.0, 20.0
+    n = _record_steps(theta_deg=th, wavelength=lam, eps1=e1, window=T2, eps2=e2)
+    ky = 2.0 * math.pi / lam * math.sqrt(e1) * math.sin(math.radians(th))
+    ortak = dict(steps=n, wavelength=lam, ky=ky, polarization="s", window=T2)
+    on = _kosum(medium=Medium.half_space(T2.cells, interface=T2.interface, eps1=e1,
+                                         eps2=e2, ey_kural=T2.ey_kural),
+                boundary=PML(thickness=T2.npml, m=T2.pml_m), **ortak)
+    arka = _kosum(medium=Medium(np.full(T2.cells, e1), np.ones(T2.cells), T2.ey_kural),
+                  boundary=PML(thickness=T2.npml, m=T2.pml_m), **ortak)
+    g = arka.probes[0]
+    y = on.probes[0] - g
+
+    def oran(pen):
+        Fi, _ = _spektrum(g * pen, T2.courant, 1.0 / lam)
+        Fr, _ = _spektrum(y * pen, T2.courant, 1.0 / lam)
+        return Fr / Fi
+
+    r = _r_prob(e1, e2, th, lam, T2)
+    dik = oran(_FFT_PENCERELERI["dikdortgen"](n))
+    assert dik == reflection_coefficient(eps1=e1, eps2=e2, theta_deg=th, wavelength=lam,
+                                         polarization="s", window=T2)
+    assert abs(dik - r) < 1e-6
+    assert max(_kuyruk(g, wavelength=lam, courant=T2.courant),
+               _kuyruk(y, wavelength=lam, courant=T2.courant)) < 1e-4
+    k = np.arange(n)
+
+    def merkez(s):
+        e = np.abs(s) ** 2
+        return float((k * e).sum() / e.sum())
+
+    for ad, beklenen in (("hann", 2.56e-2), ("blackman", 3.56e-2)):
+        pen = _FFT_PENCERELERI[ad](n)
+        hata = abs(oran(pen) - r)
+        assert hata == pytest.approx(beklenen, rel=0.01), ad
+        assert _ikinci_varis(g, theta_deg=th, wavelength=lam, eps1=e1,
+                             window=dataclasses.replace(T2, window_fn=ad)) < 1e-6
+        wg, wy = np.interp([merkez(g), merkez(y)], k, pen)
+        assert 0.85 < hata / (abs(r) * abs(wy / wg - 1.0)) < 1.15, ad
 
 
 @pytest.mark.slow

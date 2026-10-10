@@ -333,10 +333,12 @@ def test_DIK_GELIS_FRESNEL_KATSAYISI_ve_r_p_EKSI_r_s(n2):
     `pml_m` 4 -> 3.53e-06°; `sgf` 2 -> 8.89e-08°; prob ofseti 2/20 ->
     9.25e-08 / 9.12e-07° (npml 80 için ızgara 540/270/110, `sgf` 2 için
     600/300/100). Yalnız FFT penceresi Hann yapılınca 2.02e-01°'ye
-    fırlıyor (`|r_p|` sapması -1.04e-01) — `window_fn`in açıkça yazılması
-    bu yüzden. Değerini çapalamak pencerenin kalıntısını ölçüt yapmak
-    olurdu; kapı kalıntının 764 katında, en yakın ölçülen mutantın (N5,
-    2.145e-02°) 21 katı altında.
+    fırlıyordu (`|r_p|` sapması -1.04e-01; RC-d'den önceki aletle
+    ölçüldü) — `window_fn`in açıkça yazılması bu yüzdendi (RC-d'den beri
+    `reflection_coefficient` dikdörtgen dışındaki her değeri
+    `InvalidInputError` ile reddeder). Değerini çapalamak pencerenin
+    kalıntısını ölçüt yapmak olurdu; kapı kalıntının 764 katında, en
+    yakın ölçülen mutantın (N5, 2.145e-02°) 21 katı altında.
 
     KIRMA (mutasyon, düzeltme turunda yeniden ölçüldü):
       * M2 (`yee_coefficients`te 1B `eps = sqrt(eps_r)`): `|r_s|` -4.79e-01

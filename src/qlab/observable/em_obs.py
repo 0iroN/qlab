@@ -503,6 +503,11 @@ class ObliqueWindow:
     Varsayilanlar SEVK EDILEN PENCEREDIR ve olculerek secildi; `sgf` = 9'un
     gerekcesi `source.gauss_cos`ta yaziyor (yalniz `sgf` 3 -> 6 ile
     ||rho_s|-1| 1557 kat degisiyor, `npml`/`N`/`S` hicbir sey yapmiyor).
+
+    `window_fn` bu pencerenin bir alanidir (kosum kaydina ustveri olarak
+    gecer), ama `reflection_coefficient` YALNIZ "dikdortgen"i kabul eder;
+    dikdortgen disindaki her deger (hann, blackman, bilinmeyen adlar)
+    `InvalidInputError` verir (RC-d, olculdu; bkz. orada).
     """
 
     cells: int = 3600
@@ -829,6 +834,9 @@ def reflection_coefficient(
     p'de `e` = Hz oldugu icin ayni satir bir PMC'dir. Ikisi de MALZEMESIZ
     mukemmel aynadir ve ikisi de tam olarak AYNI hucrede oturur.
 
+    `window_fn` "dikdortgen" DEGILSE kosumdan ONCE `InvalidInputError`
+    verir (asagida FFT PENCERESI; RC-d).
+
     `None` DONER ve sessizce imkansiz bir sayi basmaz:
       * guvenli bir kayit uzunlugu yoksa (bkz. `_record_steps`),
       * kosum sonlu kalmadiysa,
@@ -953,19 +961,62 @@ def reflection_coefficient(
     olursa olsun, <~ `echo_gate` + 0.17 * `tail_gate` = 7.2e-04 diye OKUNUR
     (olculen en kotu 6.16e-04) -- olculen bir oran, kanit degil. Kapi yeni
     kosum eklemez; gecen her sayi eski sayinin BIT BIT aynisidir.
-    DURUST OLUMSUZ -- FFT PENCERESI (RC-d, ikinci dogrulayici; RC-a'dan
-    ONCE de vardi, HEAD ayni sayiyi verir): `window_fn` hann ya da
-    blackman iken pencere erken gelen darbeyi ve gec gelen yansiyani FARKLI
-    agirlikla carpar ve uc kapi da bunu GORMEZ. 1800 hucre, ofset 6, 4 ->
-    2.25, theta 40, lam 20, s: hann'da hata 2.56e-02, blackman'da 3.56e-02
-    (dikdortgende 1.4e-07; kuyruk 4.8e-06 / 1.7e-05, c 2.4e-09). Sevk
-    penceresi dikdortgendir; madde acik.
     ELENEN ADAY (olculdu): gelen kaydini yankidan once SIFIRLAMAK (zaman
     kapisi). Yanki ana darbeyle 5 sg icinde ortusuyorsa kesim darbenin
     kendi kuyrugunu keser: sevk penceresinin ana cipasi (4 -> 1, theta 45,
     lam 40) 1.2e-07'den 1.25e-05'e bozuldu; kapisi acik 62 sabitlenmis
     cagrinin 26..27'si degisti, 10..11'i `None` oldu (yalniz gelen / iki
     kayit birden kesilince).
+    FFT PENCERESI -- YALNIZ DIKDORTGEN (RC-d, 10.10.2026; ikinci
+    dogrulayici buldu, RC-a'dan ONCE de vardi). `window_fn` hann ya da
+    blackman iken pencere erken gelen darbeyi ve gec gelen yansiyani FARKLI
+    agirlikla carpiyordu ve uc kapi da GORMUYORDU: 1800 hucre, ofset 6,
+    4 -> 2.25, theta 40, lam 20, s'de hann hata 2.56e-02, blackman
+    3.56e-02, dikdortgen 1.4e-07 (kuyruklar 4.8e-06 / 1.7e-05; ikinci
+    varis hann'da 2.4e-09, dikdortgende 8.6e-07).
+    MEKANIZMA (olculdu): hata ~ |r| |w(t_y) / w(t_g) - 1|; w pencere, t_g
+    ve t_y gelen ve yansiyan kaydin enerji agirlik merkezleri. 638 durumda
+    hata / tahmin medyani 0.95 (hann; %10..%90 0.93..1.08), blackman'da
+    0.91. BASKIN TERIM DEGISEBILIR: |r| -> 0 (Brewster yakini p) ya da
+    w(t_y) ~ w(t_g) iken r(f)'nin dagitkanligi baskindir, hata ~
+    |r (w_y/w_g - 1) + (i/2 pi)(w'_y/w_g) r'_dag| (r'_dag saf gecikmesi
+    cikarilmis r'nin f-turevi). 638'in 65'i +-%15 bandinin disinda (en
+    uzak oran 30); iki terimli sinir 645/646 tutar, kalan r = 0
+    (`rc-olcum/rcd/dogrulama/mekanizma2.log`). Pencere kaydin sonunu
+    sifira cektigi icin yanki olcutu c de kuculur: dikdortgende c >=
+    5.1e-04 (> esik) olan 32 kayitta hann'da c <= 3.7e-04 idi ve sayi
+    donuyordu, hepsinin hatasi > 1e-3 -- ama bu hata yankidan degil yine
+    pencere agirligindan gelir (dikdortgenin ayni kayitlardaki kapisiz
+    hatasi medyan 2.5e-04).
+    ON OLCUM (`.superpowers/sdd/rc-olcum/rcd/ozet_rcd.log`; RC-a'nin 3005
+    durumu + dogrulayicinin 36 hann durumu; kapisi acik ve referansi
+    gecerli 2803 satir, 2720 tekil durum -- 83 satir ayni kosumun
+    tekrari). `window_fn` FDTD kosumunu DEGISTIRMEZ: uc pencere ayni kosum
+    ciftinden okundu, RC-d'den ONCEKI kamu yoluyla 84/84 bit bit ayni
+    (bugun bunlarin 56'si reddedilir). Dikdortgen 646 sayi, en kotusu
+    3.21e-04; hann'da uc kapidan gecen 408 sayinin 406'sinin hatasi > 1e-3
+    (en kotu 0.48), blackman'da 416'nin 414'u. Ikisinin de sayi verdigi 376
+    durumun HICBIRINDE pencere dikdortgenden iyi degil. 1e-3'un altinda
+    kalan iki pencereli sayinin ikisinde de |r| ~ 0: arayuzsuz durum
+    (r = 0) ve Brewster'da bir p durumu (5 -> 4, theta 41.81, lam 30:
+    |r| 2.9e-03, hann hatasi 4.5e-04, bagil %16). Tam kayitta (kuyruk
+    kapisi) dikdortgenin orani dogrusal sistemin TAM transfer oranidir;
+    pencere bilgi eklemez, iki darbenin agirligini ayirir.
+    KARAR: `window_fn` != "dikdortgen" -> `InvalidInputError`, kosumdan
+    ONCE; bilinmeyen adlar (`kaiser`) da ayni kuraldan reddedilir. `None`
+    DEGIL: hata kayda degil PENCEREYE baglidir (`grid.dx_kapisi` gibi bir
+    yapilandirma hatasi); `None` bir merdiveni (`tir_phase_ladder`)
+    sebebi gorunmeden oldururdu. Bedel: depoda hann / blackman ile tek
+    cagri bu maddenin eski durust olumsuz testiydi.
+    ELENEN ADAYLAR (ayni olcum): yansiyanin penceresini gecikme kadar
+    KAYDIRMAK ya da her serinin penceresini KENDI darbe merkezine
+    ORTALAMAK -- en iyi aday bile yuzlercesini gecirir (hann; olculen
+    gecikmeyle kaydirma 679 sayinin 238'ini, olculen merkezlere ortalama
+    1122'nin 452'sini > 1e-3 hatayla; en kotu 2.1e-02 / 9.5e-03), cunku
+    oran saf bir gecikme degildir (yukaridaki ikinci terim); YALNIZ SON
+    PERIYOTTA KONIK -- dikdortgenle ayni 646 kaydi gecirir, sayilari ondan
+    en fazla 1.1e-04 farklidir (medyan 2.4e-07, en kotu hata yine
+    3.21e-04): "hann" etiketi altinda dikdortgen = sessiz ikame.
     ACI VE COZUNURLUK BAGIMLILIGI (kapi `None` der; olculen acilar 0..85):
     SIYIRMA -- n1 = 1, lam 10: theta >= 60 (1 -> 2.25, p'de 55 de: Brewster
     yakininda yanlis alarm, eski hata 2.96e-06); lam 20: 1 -> 2.25'te >= 65,
@@ -1019,10 +1070,11 @@ def reflection_coefficient(
             f"{polarization!r}"
         )
     w = ObliqueWindow() if window is None else window
-    if w.window_fn not in _FFT_PENCERELERI:
+    if w.window_fn != "dikdortgen":
         raise InvalidInputError(
-            f"window_fn {tuple(_FFT_PENCERELERI)} icinden olmali, verilen: "
-            f"{w.window_fn!r}"
+            "reflection_coefficient yalniz window_fn 'dikdortgen' ile olcer "
+            f"(verilen: {w.window_fn!r}): pencere gelen ve yansiyan darbeyi "
+            "FARKLI agirlikla carpar, kapilar bunu gormez (RC-d, olculdu)"
         )
     if not 0 < w.interface < w.cells:
         raise InvalidInputError(
