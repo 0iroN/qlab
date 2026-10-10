@@ -110,7 +110,8 @@ _TB_YAKLASIMLAR = (
     "gelir -- dt'yi kullanıcı seçer, koşu reddedilmez; seçilen dt'yi koşudan "
     "SONRA NVE'nin salınım hükmü yargılar (energy_oscillation), koşudan ÖNCE "
     "de kare-0 geometrisinin sayısal Hessian'ından ölçülen omega0*dt hükme "
-    "girer (omega_dt_frame0; yol boyu omega'yı görmez)",
+    "girer (omega_dt_frame0), koşudan SONRA da yolun her adımda izlenen iki "
+    "karesininki (omega_dt_path_frames; yalnız seçilen karelere bakar)",
 )
 _TB_IHMALLER = (
     "çekirdeklerin kuantum istatistiği (Maxwell-Boltzmann klasik limittir), "
@@ -143,10 +144,12 @@ _TB_BEKLENEN = (
     "SALINIMINI ise ayrı ölçüt yargılar: energy_oscillation = tepe-tepe(KE + "
     "Omega) / max(KE), uçlar kayıtlardan değil her adımdan, eşiği "
     "energy_oscillation_tolerance. S'nin paydası tüm KE'dir ve titreşime "
-    "katılmayan KE onu seyreltir; onu koşudan ÖNCE ölçülen a priori tanı "
-    "yakalar: omega_dt_frame0 = kare-0 geometrisinin en hızlı kütle ağırlıklı "
-    "modu omega0 x dt, eşiği omega_dt_frame0_tolerance. Yakınsama üçünün "
-    "VE'sidir. Hareketsiz koşu (max KE = 0) YARGILANAMAZ ve ✗ basılır."
+    "katılmayan KE onu seyreltir; onu omega*dt tanısı yakalar: "
+    "omega_dt_frame0 = kare-0 geometrisinin (koşudan ÖNCE) ve "
+    "omega_dt_path_frames = yolun her adımda izlenen iki karesinin (en kısa "
+    "çift mesafesi, kütle ağırlıklı sertlik tepesi; koşudan SONRA) en hızlı "
+    "kütle ağırlıklı modu x dt, ikisinin eşiği omega_dt_tolerance. Yakınsama "
+    "dördünün VE'sidir. Hareketsiz koşu (max KE = 0) YARGILANAMAZ ve ✗ basılır."
 )
 
 
@@ -276,7 +279,8 @@ def build(scenario: MDScenario):
     elif tur == "tb_ss_sigma":
         # dt kararlılık denetimi BU DALDA DA YOK (spec B10): omega analitik
         # değil. Atlandığı _TB_YAKLASIMLAR'da beyan edilir. Koşu reddedilmez;
-        # kare-0 omega0*dt NVE panelinin hükmüne girer (D2-i, omega_max_frame0).
+        # kare-0 ve yol karelerinin omega*dt'si NVE panelinin hükmüne girer
+        # (D2-i `omega_max_frame0`, D2-vi `omega_max_path_frames`).
         alan = _tb_ss_sigma_alani(p)
     else:
         raise ScenarioError(f"bilinmeyen kuvvet alanı: {tur!r}")
@@ -326,7 +330,8 @@ _MD_DRIFT_TOLERANCE: float = 5.0e-03
 #:   Bu eşik TEK BAŞINA dt'nin yeterince küçük olduğunu ONAYLAMAZ (spec
 #:   B10: dt'yi kullanıcı seçer). D2 (09.10.2026): o yarıyı
 #:   `_TB_OSCILLATION_TOLERANCE` yargılar, S'nin seyreltildiği koşuları
-#:   `_TB_OMEGA_DT_TOLERANCE` (D2-i); TB NVE'de Yakınsama üçünün VE'sidir.
+#:   `_TB_OMEGA_DT_TOLERANCE` (D2-i, D2-vi); TB NVE'de Yakınsama dördünün
+#:   VE'sidir.
 #:   (Bu 33 hücrenin ekseni M11 minimumunun omega_max'ıdır; D2
 #:   ön ölçümünde pencerelerin kendi yol boyu omega_max'ı D ve Q
 #:   ailelerinde 1.2-1.6 kat büyük, U/U2'de 0.86-1.20, metalik W3'te
@@ -363,53 +368,79 @@ _TB_DRIFT_TOLERANCE: float = 1.0e-02
 #:
 #: SEYRELME: payda TÜM kinetik enerjidir; titreşime katılmayan ya da az
 #: katılan KE S'yi seyreltir (`energy_oscillation`, KÖR AİLELER). Onu S
-#: değil, KE'nin dağılımına bakmayan a priori tanı yakalar
-#: (`_TB_OMEGA_DT_TOLERANCE`, D2-i).
+#: değil, KE'nin dağılımına bakmayan omega*dt tanısı yakalar
+#: (`_TB_OMEGA_DT_TOLERANCE`, D2-i ve D2-vi).
 _TB_OSCILLATION_TOLERANCE: float = 5.0e-02
 
-#: TB NVE'nin A PRIORI dt tanısının eşiği (D2-i, 10.10.2026). Ölçüt
-#: `omega_max_frame0`: kare-0 geometrisinin TAM 3N kütle ağırlıklı
-#: Hessian'ının (kuvvetin merkezi farkı, h = 1e-4) en büyük özdeğerinden
-#: omega0; tanı omega0*dt. NEDEN: S'nin paydası tüm KE'dir ve titreşime
-#: katılmayan KE onu seyreltir -- kamu yolunda ayrışan iki zincir (yol
-#: omega_max*dt 1.09) S 0.021 ✓, kütle safsızlığı (omega*dt 1.0) S 0.036 ✓
-#: basıyordu. omega0*dt KE'nin nereye dağıldığına bakmaz.
+#: TB NVE'nin omega*dt TANISININ eşiği (D2-i 10.10.2026, D2-vi aynı gün).
+#: AYNI eşik iki yere uygulanır: kare-0 geometrisinin (`omega_max_frame0`,
+#: koşudan ÖNCE) ve yolun izleyicinin seçtiği karelerinin
+#: (`omega_max_path_frames`, koşudan SONRA) TAM 3N kütle ağırlıklı
+#: Hessian'ından (kuvvetin merkezi farkı, h = 1e-4) en hızlı mod; tanı
+#: omega*dt. NEDEN: S'nin paydası tüm KE'dir ve titreşime katılmayan KE onu
+#: seyreltir -- kamu yolunda ayrışan iki zincir (yol omega_max*dt 1.09) S
+#: 0.021 ✓, kütle safsızlığı (omega*dt 1.0) S 0.036 ✓ basıyordu. omega*dt
+#: KE'nin nereye dağıldığına bakmaz.
 #:
-#: ÖLÇÜLDÜ (D2-i ön ölçümü, bu makine; D2 bandının 1170 hücresi S'leri bit
-#: bit aynı yeniden üretilerek; sınıf ekseni yine her pencerenin yol boyu
-#: omega_ref'i): düz 871 hücrede küçük-dt sınıfının (omega_ref*dt <= 0.463)
-#: en büyük omega0*dt'si 0.430, iri sınıfın (>= 0.925) en küçüğü 0.682 --
-#: 1.59 katlık bir ayırma bandı; 0.54 onun geometrik ortası (0.542). Kare 0
-#: yolun bir karesidir, yani omega0 <= yol boyu omega_max: eşik 0.463'ün
-#: üstünde olduğundan tanı küçük-dt sınıfında HİÇBİR ailede ✗ vermez
-#: (ölçülen 0/405); iri sınıfın 235'inin 235'ini TEK BAŞINA yakalar. Bilinen
-#: kör ailelerde (D2 şüphecisi, D2 doğrulaması, D2-i eleştirmeni; kamu
-#: yolunun `_run_md`ıyla) D2 panelinin sahte ✓ verdiği 24 iri-dt hücresinin
-#: 19'u ✗ olur: ayrışan parçalar (omega0*dt 0.945), kütle safsızlığı
-#: (0.927), yalnız düşük mod, zikzak. Sayı eşiğe duyarlıdır: iki hücre
-#: eşiğin %1.5 yakınında (0.533 ve 0.542); kendi bandının iki kenarı da
-#: sürekli dt'de alınırsa orta 0.5475 olurdu. BEDELİ: gri bölgede S'nin
-#: ✓ verdiği 53 hücrenin 9'u ✗ olur (gri ✗ 178/231 -> 187/231; hepsi
-#: omega0*dt 0.545-0.579). "Hiçbir hücrede hüküm değiştirmeyen" bir eşik
-#: aralığı yoktur: ızgarada 0.579-0.682 görünür ama sürekli dt'de
-#: 0.630-0.647'ye daralır. Parça başına COM paydası (öteki aday) ölçüldü:
-#: yalnız öteleme ailesini yakalar, onları bu tanı zaten yakalıyor;
-#: uygulanmadı. (Bant 1B zincirlerdir: orada 3N omega0 x altuzayınınkine
-#: eşit; zikzakta 3N/x 1.048.)
+#: D2-i (yalnız kare 0, eşik 0.54): D2 bandının 1170 hücresi S'leri bit bit
+#: aynı yeniden üretilerek, sınıf ekseni her pencerenin yol boyu omega_ref'i
+#: -- düz 871 hücrede küçük-dt sınıfının (omega_ref*dt <= 0.463) en büyük
+#: omega0*dt'si 0.430, iri sınıfın (>= 0.925) en küçüğü 0.682, geometrik orta
+#: 0.542. Bilinen kör ailelerde D2 panelinin sahte ✓ verdiği 24 iri-dt
+#: hücresinin 19'unu yakaladı. KALAN 5'i kare 0'ın YOLU görmemesiydi:
+#: çarpışan parçalar (kare 0 yalnız parça içi modları görür, omega0*dt
+#: 0.405-0.470, yol boyu 0.93-1.0) ve 6000 K ısıl hız (0.533, yol 0.930).
 #:
-#: KÖRLÜĞÜ: kare 0 yolun en hızlı modunu temsil etmezse (omega0/omega_yol <
-#: 0.54/0.925 = 0.58) VE S seyreltilmişse ✓ yine dt'yi kanıtlamaz. Ölçülen
-#: kalan 5 hücre: Peierls minimumu + 6000 K ısıl hız (omega0*dt 0.533, yol
-#: boyu 0.930, S 0.045) ve ÇARPIŞAN PARÇALAR -- kare 0'da 10 bohr ayrı iki
-#: 8'li zincir birbirine koşar, kare 0 yalnız parça içi modları görür
-#: (omega0*dt 0.405-0.470, yol boyu 0.93-1.0, S 0.040-0.048; 4 hücre).
-#: Yalnız serbest atomlardan oluşan bir başlangıçta omega0 = 0'dır.
-#: (`_TB_SALINIM_BEYANI`, KALAN KÖRLÜK.) BEDEL: 6N kuvvet çağrısı (N 16'da
-#: ~98 MD adımı, N 32'de ~190, N 64'te ~400).
-_TB_OMEGA_DT_TOLERANCE: float = 0.54
+#: D2-vi: YOL KARELERİ. Koşu, alanı saran `YolKaresiIzleyici` ile yapılır;
+#: o HER ADIMDA iki kare seçer -- en kısa çift mesafesi ve kütle ağırlıklı
+#: köşegen sertlik vekilinin tepesi -- ve koşudan sonra o karelerde aynı
+#: Hessian alınır. ÖLÇÜLDÜ (D2-vi ön ölçümü ve eleştirmeni, bu makine):
+#: * Adaylar aynı 1170 + 121 panel hücresinde yan yana: yalnız SON kare
+#:   (önceki adayın) çarpışıp AYRILAN parçalarda kendi eşiğinde (0.57) D2
+#:   panelinin sahte ✓ verdiği 13 hücrenin 10'unu kaçırdı -- son kare olayı
+#:   değil, olaydan sonrasını görür; 5/9 eşit aralıklı kare kısa olayı
+#:   aralarında kaçırdı (koşu 4 kat uzayınca 9 kare de); yalnız kayıtlı
+#:   karelerden seçim save_every 50'de 37 hücrenin 3'ünü kaçırdı. Yalnız en
+#:   kısa mesafe kütleyi görmez: içinde H olan ağır parçalar çarpışırken en
+#:   kısa mesafe ağır çiftlerde, H'nin yerel modu başka anda tepe yapar
+#:   (seçilen karenin omega'sı yol boyununkinin 0.425'i; 6 hücre kaçtı).
+#:   İki seçici birlikte: seçilen karelerin omega'sı yol boyununkinin en az
+#:   0.973'ü (63 hücre, yol boyu = koşunun HER karesi).
+#: * Eşik bu tanının KENDİ bandından, S'nin ve D2-i'nin yöntemiyle: düz 871
+#:   hücrede küçük-dt sınıfının en büyük omega*dt'si 0.478, iri sınıfın en
+#:   küçüğü 0.930; geometrik orta 0.667 -> 0.67 (kenarlar sürekli dt'de
+#:   alınırsa 0.6875; 0.67 ile 0.68 aynı sayıları verir). 0.67'de: küçük-dt
+#:   sınıfında ✗ 0/552 (U0 dahil en büyük 0.552), iri sınıfın 302'sinin
+#:   302'si tek başına, gri bölgede S'nin ✓ verdiği 53 hücrenin 4'ü ✗
+#:   (D2-i'de 9'u). Bilinen kör ailelerde (D2 şüphecisi ve doğrulaması, D2-i
+#:   ve D2-vi eleştirmenleri: kütle safsızlığı 12/40 amu, ağır parça + H,
+#:   karışık kütleli gaz -- kare 0'da omega0 = 0 --, çarpışan ve çarpışıp
+#:   ayrılan parçalar, yüksek T_ion, zikzak; kamu yolunun `_run_md`ıyla) D2
+#:   panelinin sahte ✓ verdiği 95 iri-dt hücresinden D2-i 40'ını kaçırıyordu
+#:   (eşik 0.54); bu tanı HİÇBİRİNİ kaçırmaz (en küçük omega*dt 0.723).
+#:   Eşiği 0.67'ye çıkarmak D2-i'nin yakaladığı 55 hücreden hiçbirini
+#:   kaçırmaz: omega0*dt'si 0.54-0.67 arasındaki 22'sinde yol kareleri en az
+#:   0.774.
+#: * YAPISAL GÜVENCE KOŞUNUN KENDİ YOLUNA GÖREDİR: seçilen kare
+#:   integratörün bir karesidir, yani omega <= koşunun yol boyu omega_max'ı.
+#:   Sınıf ekseni omega_ref ise dt 2.5 referans koşusunun ÖRNEKLENMİŞ
+#:   karelerinden gelir; yuvarlamadan büyüyen kararsızlıkta (gürültüsüz
+#:   düzgün zincir) koşunun yolu onu 1.25 kata kadar aşar.
+#:
+#: KÖRLÜĞÜ (`_TB_SALINIM_BEYANI`, KALAN KÖRLÜK): tanı yolun en çok üç
+#: karesine bakar. En hızlı mod bu karelerde değilse (sertliği çift
+#: mesafesinden ya da köşegenden okunmayan, ör. elektronik ya da toplu bir mod
+#: başka bir anda tepe yaparsa) VE S seyreltilmişse ✓ dt'yi kanıtlamaz. Sertlik
+#: vekili ss-sigma'nın iki üstel yasasına özgüdür. Ölçülen Fermi penceresinde
+#: omega(t) sivri uç vermedi (en büyük / medyan 1.10). BEDEL: kare başına 6N
+#: kuvvet çağrısı (N 16'da ~100 MD adımı, N 32'de ~190, N 64'te ~380), en çok
+#: üç Hessian (iki seçici aynı kareyi seçerse iki) ve adım başına izleme
+#: (~%10); sevk edilen senaryonun CLI süresi (N 16, 400 adım, yorumlayıcı
+#: açılışı dahil) 0.76 s'den 0.90 s'ye.
+_TB_OMEGA_DT_TOLERANCE: float = 0.67
 
 #: TB NVE "Yakınsama tanısı" satırının SABİT yarısı (D2). Canlı yarı
-#: (`_tb_yakinsama_tanisi`) iki ölçütün bu koşudaki hükmünü söyler; bu yarı
+#: (`_tb_yakinsama_tanisi`) ölçütlerin bu koşudaki hükmünü söyler; bu yarı
 #: hükmün nerede bir şey söylemediğini. `diagnostics`e konmaz: ✓/✗'nin
 #: hemen ardına basılırdı (`Provenance.convergence_diagnosis` gerekçesi).
 _TB_SALINIM_BEYANI = (
@@ -423,16 +454,16 @@ _TB_SALINIM_BEYANI = (
     "AİLELER: payda TÜM kinetik enerjidir; titreşime katılmayan ya da az "
     "katılan her KE S'yi seyreltir -- ayrışan parçaların ötelemesi, kütle "
     "safsızlığı, yalnız düşük modun uyarıldığı koşu, yüksek T_ion (ön ölçümde "
-    "3000-6000 K), enine yumuşak modlu geometri. A PRIORI TANI onları kare "
-    "0'da yakalar: başlangıç geometrisinin en hızlı kütle ağırlıklı modu için "
-    "omega0*dt eşiğin üstündeyse ✗ (panelin sahte ✓ verdiği 24 ölçülmüş "
-    "iri-dt hücresinin 19'u; sayı eşiğe duyarlı). KALAN KÖRLÜK: kare 0 yolun "
-    "en hızlı modunu temsil etmiyorsa VE S seyreltilmişse ✓ dt'nin yeterince "
-    "küçük olduğunu kanıtlamaz -- kare 0'da ayrı duran parçaların sonradan "
-    "çarpışması (kare 0 yalnız parça içi modları görür; ölçülen 4 hücre), "
-    "yüksek T_ion'da anharmonik keşif (6000 K'de omega0*dt 0.533, yol boyu "
-    "0.930), gürültülü başlangıçta ağır kütleler; yalnız serbest atomlardan "
-    "oluşan başlangıçta omega0 = 0'dır. Liste kapsayıcı değildir."
+    "3000-6000 K), enine yumuşak modlu geometri, sonradan çarpışan parçalar. "
+    "OMEGA*DT TANISI onları yakalar: kare 0'ın ve yolun her adımda izlenen iki "
+    "karesinin (en kısa çift mesafesi, kütle ağırlıklı sertlik tepesi) en "
+    "hızlı kütle ağırlıklı modu için omega*dt eşiğin üstündeyse ✗ (panelin "
+    "sahte ✓ verdiği ölçülmüş 95 iri-dt hücresinin hepsi). KALAN KÖRLÜK: tanı "
+    "yolun en çok üç karesine bakar -- en hızlı mod bu karelerde değilse "
+    "(sertliği çift mesafesinden ya da köşegenden okunmayan, ör. elektronik ya "
+    "da toplu bir mod başka bir anda tepe yaparsa) VE S seyreltilmişse ✓ "
+    "dt'nin yeterince küçük olduğunu kanıtlamaz. Güvence koşunun kendi yoluna "
+    "göredir. Liste kapsayıcı değildir."
 )
 
 
@@ -440,20 +471,24 @@ def _tb_yakinsama_tanisi(
     suruklenme_gecti: bool,
     salinim_gecti: bool,
     salinim_sonlu: bool,
-    a_priori_gecti: bool,
-    a_priori_sonlu: bool,
+    kare0_gecti: bool,
+    kare0_sonlu: bool,
+    yol_gecti: bool,
+    yol_sonlu: bool,
 ) -> str:
-    """TB NVE "Yakınsama tanısı": üç ölçütün AYRI hükmü + sabit beyan.
+    """TB NVE "Yakınsama tanısı": dört ölçütün AYRI hükmü + sabit beyan.
 
     Hükümler `provenance_for`da BİR KEZ hesaplanır ve buraya geçer -- eşik
     karşılaştırması iki yerde yazılsaydı biri kayınca panel hükmüyle
     açıklaması ayrışırdı.
     """
-    if suruklenme_gecti and salinim_gecti and a_priori_gecti:
+    if suruklenme_gecti and salinim_gecti and kare0_gecti and yol_gecti:
         canli = (
-            "sürüklenme, salınım ve kare-0 omega0*dt üçü de eşiğin altında: "
-            "KE + Omega bu koşuda ne sürükleniyor ne iri salınıyor; dt "
-            "başlangıç geometrisinin en hızlı modu için de eşiğin altında."
+            "sürüklenme, salınım, kare-0 omega0*dt ve yol karelerinin "
+            "omega*dt'si dördü de eşiğin altında: KE + Omega bu koşuda ne "
+            "sürükleniyor ne iri salınıyor; dt başlangıç geometrisinin ve "
+            "yolun seçilen iki anının (en kısa çift mesafesi, sertlik tepesi) "
+            "en hızlı modu için de eşiğin altında."
         )
     else:
         parcalar = []
@@ -469,15 +504,27 @@ def _tb_yakinsama_tanisi(
                 "düzeyindedir -- dt'yi küçültüp yeniden koşun; S dt^2 ile "
                 "küçülmüyorsa sebep dt değildir"
             )
-        if not a_priori_sonlu:
+        if not kare0_sonlu:
             parcalar.append(
                 "a priori tanı YARGILANAMAZ (kare-0 Hessian'ı sonlu değil)"
             )
-        elif not a_priori_gecti:
+        elif not kare0_gecti:
             parcalar.append(
                 "kare-0 omega0*dt eşiğin üstünde: dt başlangıç geometrisinin "
                 "en hızlı titreşimini çözmüyor -- S eşiğin altında olsa bile "
                 "(titreşime katılmayan KE onu seyreltir) dt'yi küçültün"
+            )
+        if not yol_sonlu:
+            parcalar.append(
+                "yol karelerinin tanısı YARGILANAMAZ (konum ya da Hessian "
+                "sonlu değil)"
+            )
+        elif not yol_gecti:
+            parcalar.append(
+                "yol karelerinin omega*dt'si eşiğin üstünde: dt yolun en "
+                "sıkışık ya da en sert anındaki en hızlı titreşimi çözmüyor "
+                "(kare 0 onu görmez: sonradan çarpışan parçalar, ısıl keşif) "
+                "-- S eşiğin altında olsa bile dt'yi küçültün"
             )
         if not suruklenme_gecti:
             parcalar.append(
@@ -631,9 +678,10 @@ def energy_oscillation(scenario: MDScenario, trajectory: Trajectory) -> float | 
     S = 0.036 ✓; ön ölçümde yalnız en düşük mod uyarılmışken omega*dt
     1.5'te S 0.0425, T_ion 3000-6000 K'de 0.045-0.050. Liste kapsayıcı değil.
     D2-i (10.10.2026): bu seyrelmeyi S DÜZELTMEZ -- payda değişmedi; panel
-    onu `omega_max_frame0`ın a priori tanısıyla yakalar (D2 panelinin sahte
-    ✓ verdiği 24 ölçülmüş iri-dt hücresinin 19'u). Kalan körlük (çarpışan
-    parçalar, yüksek T_ion) `_TB_OMEGA_DT_TOLERANCE`ta.
+    onu omega*dt tanısıyla yakalar: kare 0 (`omega_max_frame0`) ve D2-vi'den
+    beri yolun izlenen iki karesi (`omega_max_path_frames`; D2 panelinin sahte
+    ✓ verdiği ölçülmüş 95 iri-dt hücresinin hepsi). Kalan körlük
+    `_TB_OMEGA_DT_TOLERANCE`ta.
 
     Hareketsiz koşu (max KE = 0) ve uçları biriktirmeyen bir kurucu (`nan`,
     ör. `run.py`nin termostat döngüsü) `nan` döner, panel ✗ basar.
@@ -676,31 +724,169 @@ def omega_max_frame0(
     modunu yanlış ölçerdi. Negatif özdeğer (eyer) omega0'a girmez.
 
     KÖR: yol boyu omega'yı görmez -- kare 0 yolun en hızlı modunu temsil
-    etmiyorsa (sonradan çarpışan parçalar, yüksek T_ion, gürültülü
-    başlangıçta ağır kütleler) tanı geçer; o koşularda S de seyreltilmişse ✓
-    dt'yi kanıtlamaz (beyan). Yalnız serbest atomlardan oluşan bir başlangıç
-    omega0 = 0 verir. Hessian sonlu değilse `nan` döner, panel ✗ basar
+    etmiyorsa (sonradan çarpışan parçalar, yüksek T_ion); yalnız serbest
+    atomlardan oluşan bir başlangıç omega0 = 0 verir. O yarıyı D2-vi'den beri
+    `omega_max_path_frames` (yolun izlenen iki karesi) yargılar; panel ikisini
+    AYNI eşikle okur. Hessian sonlu değilse `nan` döner, panel ✗ basar
     (YARGILANAMAZ).
     """
     tur = scenario.force_field["kind"]
     if tur == "tb_ss_sigma" and scenario.thermostat is None:
-        konum = np.asarray(state.positions, dtype=float)
-        n3 = konum.size
-        hessian = np.empty((n3, n3))
-        for k in range(n3):
-            arti = konum.copy().ravel()
-            arti[k] += step
-            eksi = konum.copy().ravel()
-            eksi[k] -= step
-            kuvvet_arti = force_field(arti.reshape(konum.shape))[1].ravel()
-            kuvvet_eksi = force_field(eksi.reshape(konum.shape))[1].ravel()
-            hessian[:, k] = -(kuvvet_arti - kuvvet_eksi) / (2.0 * step)
-        hessian = 0.5 * (hessian + hessian.T)
-        olcek = 1.0 / np.sqrt(np.repeat(np.asarray(state.masses, dtype=float), 3))
-        agirlikli = hessian * olcek[:, None] * olcek[None, :]
-        if not np.all(np.isfinite(agirlikli)):
+        return _omega_max(state.positions, state.masses, force_field, step)
+    return None
+
+
+def _omega_max(positions, masses, force_field, step: float) -> float:
+    """Bir geometrinin en hızlı kütle ağırlıklı modu: sqrt(max(lambda_max, 0)),
+    lambda_max = M^-1/2 H M^-1/2'nin en büyük özdeğeri; H TAM 3N Hessian,
+    kuvvetin merkezi farkından (6N kuvvet çağrısı) ve simetrikleştirilmiş.
+    Sonlu değilse `nan`. `omega_max_frame0` ve `omega_max_path_frames`
+    AYNI tarifi kullanır -- iki kare aynı ölçütle karşılaştırılır."""
+    konum = np.asarray(positions, dtype=float)
+    n3 = konum.size
+    hessian = np.empty((n3, n3))
+    for k in range(n3):
+        arti = konum.copy().ravel()
+        arti[k] += step
+        eksi = konum.copy().ravel()
+        eksi[k] -= step
+        kuvvet_arti = force_field(arti.reshape(konum.shape))[1].ravel()
+        kuvvet_eksi = force_field(eksi.reshape(konum.shape))[1].ravel()
+        hessian[:, k] = -(kuvvet_arti - kuvvet_eksi) / (2.0 * step)
+    hessian = 0.5 * (hessian + hessian.T)
+    olcek = 1.0 / np.sqrt(np.repeat(np.asarray(masses, dtype=float), 3))
+    agirlikli = hessian * olcek[:, None] * olcek[None, :]
+    if not np.all(np.isfinite(agirlikli)):
+        return float("nan")
+    return float(np.sqrt(max(float(np.linalg.eigvalsh(agirlikli)[-1]), 0.0)))
+
+
+#: `YolKaresiIzleyici.tanilar`ın ve panelin yol karesi anahtarları (sıra panel sırasıdır).
+_YOL_KARESI_TANILARI = ("closest_pair_step", "closest_pair_bohr", "stiffest_frame_step")
+
+
+class YolKaresiIzleyici:
+    """TB NVE'de kuvvet alanını SARAR ve yolun iki karesini SEÇER; dönüşü
+    DEĞİŞTİRMEZ (alanın (enerji, kuvvet)'i aynen geçer, yörünge bit bit aynı).
+
+    Her çağrıda iki seçici (x'te en yakın görüntü, kutu alanın kendi
+    `kutu_x_bohr`u):
+    * EN KISA ÇİFT MESAFESİ -- çarpışmanın, sıkışmanın anı;
+    * KÜTLE AĞIRLIKLI KÖŞEGEN SERTLİK VEKİLİ, en büyüğü: atom başına
+      s_i = sum_j [(us/d0)^2 |itme(d_ij)| + 2 (us/d0)^2 |ss_sigma(d_ij)|] / m_i
+      (üstel yasanın ikinci türevi (us/d0)^2 x değer; 2 = spin dahil bağ
+      mertebesinin üst sınırı). Mesafeyi görmeyen KÜTLEYİ görür: ağır
+      parçalar çarpışırken içlerindeki H'nin yerel modu başka bir anda tepe
+      yapar ve en kısa mesafe karesi onu kaçırıyordu (ölçüm:
+      `_TB_OMEGA_DT_TOLERANCE`).
+    Seçici yalnız HANGİ karenin Hessian'lanacağını seçer: hükmü yine o karenin
+    TAM Hessian'ı verir (`omega_max_path_frames`), seçilen kare yolun bir
+    karesidir -- vekil yanlışsa yakalama gücü düşer, sahte ✗ doğmaz.
+
+    NEDEN HER ÇAĞRI: velocity-Verlet alanı adım başına TAM BİR KEZ çağırır
+    (`integrator.velocity_verlet_step`), koşudan önce bir kez de kare 0 için;
+    izleyici böylece HER ADIMI görür, kayıtlı kareleri değil -- kayıtlı
+    karelerden seçim save_every büyüdükçe kısa olayı kaçırıyordu. Yalnız
+    `integrator.run`a verilir: kare-0 Hessian'ının sondaları yolun kareleri
+    DEĞİLDİR. İlk çağrı her durumda kaydedilir (tek atomda çift yok: kare 0
+    seçilir); eşitlikte İLK kare kalır. Sonlu olmayan bir konum `sonlu`yu
+    False yapar (tanı YARGILANAMAZ).
+    """
+
+    def __init__(self, force_field: SsSigmaTBKuvveti, masses):
+        self._alan = force_field
+        self._kutu = force_field.kutu_x_bohr
+        self._kutle = np.asarray(masses, dtype=float)
+        self._yasalar = tuple(
+            (yasa, carpan * (yasa.us / yasa.d0_bohr) ** 2)
+            for yasa, carpan in ((force_field.itme, 1.0), (force_field.ss_sigma, 2.0))
+        )
+        self._kesme = max(force_field.itme.r_cut_bohr, force_field.ss_sigma.r_cut_bohr)
+        self.cagri = 0
+        self.sonlu = True
+        self.en_kisa = float("inf")
+        self.en_kisa_adim: int | None = None
+        self.en_kisa_konum: np.ndarray | None = None
+        self.sertlik = float("-inf")
+        self.sertlik_adim: int | None = None
+        self.sertlik_konum: np.ndarray | None = None
+
+    def __call__(self, positions):
+        sonuc = self._alan(positions)
+        adim = self.cagri
+        self.cagri += 1
+        konum = np.array(positions, dtype=float)  # KOPYA: çağıran diziyi değiştirse de kare korunur
+        if not np.all(np.isfinite(konum)):
+            self.sonlu = False
+            return sonuc
+        fark = konum[:, None, :] - konum[None, :, :]
+        if self._kutu is not None:
+            fark[..., 0] -= self._kutu * np.round(fark[..., 0] / self._kutu)
+        uzaklik = np.sqrt((fark * fark).sum(axis=2))
+        np.fill_diagonal(uzaklik, np.inf)
+        en_kisa = float(uzaklik.min())
+        yakin = uzaklik < self._kesme
+        sertlik = np.zeros(len(konum))
+        if yakin.any():
+            for yasa, carpan in self._yasalar:
+                deger = np.zeros_like(uzaklik)
+                deger[yakin] = yasa.deger_ve_turev(uzaklik[yakin])[0]
+                sertlik += carpan * np.abs(deger).sum(axis=1)
+        sertlik_tepe = float((sertlik / self._kutle).max())
+        if self.en_kisa_konum is None or en_kisa < self.en_kisa:
+            self.en_kisa, self.en_kisa_adim, self.en_kisa_konum = en_kisa, adim, konum
+        if self.sertlik_konum is None or sertlik_tepe > self.sertlik:
+            self.sertlik, self.sertlik_adim, self.sertlik_konum = sertlik_tepe, adim, konum
+        return sonuc
+
+    def tanilar(self) -> dict:
+        """Panelin `path_frames` tanıları (`_YOL_KARESI_TANILARI` sırasıyla):
+        seçilen iki karenin adımı ve en kısa çift mesafesi (bohr)."""
+        return dict(zip(
+            _YOL_KARESI_TANILARI, (self.en_kisa_adim, self.en_kisa, self.sertlik_adim)
+        ))
+
+
+def path_frame_tracker(scenario: MDScenario, force_field, masses) -> YolKaresiIzleyici | None:
+    """TB NVE'de alanı saran `YolKaresiIzleyici`; öteki koşularda `None`
+    (izlenmez -- koşu doğrudan alanla yapılır)."""
+    tur = scenario.force_field["kind"]
+    if tur == "tb_ss_sigma" and scenario.thermostat is None:
+        return YolKaresiIzleyici(force_field, masses)
+    return None
+
+
+def omega_max_path_frames(
+    scenario: MDScenario,
+    tracker: YolKaresiIzleyici | None,
+    state: MDState,
+    force_field,
+    step: float = 1.0e-4,
+) -> float | None:
+    """TB NVE'de izleyicinin seçtiği yol karelerinin (en kısa çift mesafesi,
+    sertlik tepesi) en hızlı kütle ağırlıklı modunun EN BÜYÜĞÜ (`_omega_max`,
+    kare 0 ile aynı tarif; iki seçici aynı kareyi seçtiyse tek Hessian);
+    öteki koşularda `None`. Koşu BİTTİKTEN sonra, alanın KENDİSİyle (izleyici
+    değil) çağrılır. İzleyici sonlu olmayan bir konum gördüyse, hiç
+    çağrılmadıysa ya da bir Hessian sonlu değilse `nan` (panel ✗,
+    YARGILANAMAZ). Panelin tanısı omega*dt; eşik ve ölçüm
+    `_TB_OMEGA_DT_TOLERANCE`ta."""
+    tur = scenario.force_field["kind"]
+    if tur == "tb_ss_sigma" and scenario.thermostat is None:
+        if tracker is None:
+            raise InvalidInputError(
+                "TB NVE koşusunda yol karesi izleyicisi zorunludur: "
+                "path_frame_tracker(scenario, alan, kütleler) ile koşun (D2-vi)"
+            )
+        if not tracker.sonlu or tracker.en_kisa_konum is None:
             return float("nan")
-        return float(np.sqrt(max(float(np.linalg.eigvalsh(agirlikli)[-1]), 0.0)))
+        omegalar = [_omega_max(tracker.en_kisa_konum, state.masses, force_field, step)]
+        if tracker.sertlik_adim != tracker.en_kisa_adim:
+            omegalar.append(_omega_max(tracker.sertlik_konum, state.masses, force_field, step))
+        # max() nan'ı sırasına göre yutar: biri sonlu değilse sonuç nan.
+        if not all(np.isfinite(omegalar)):
+            return float("nan")
+        return float(max(omegalar))
     return None
 
 
@@ -710,6 +896,8 @@ def provenance_for(
     energy_drift: float,
     energy_oscillation: float | None = None,
     omega_max_frame0: float | None = None,
+    omega_max_path_frames: float | None = None,
+    path_frames: dict | None = None,
     n_constraints: int = 3,
     stability: StabilityVerdict | None = None,
     external_stability: StabilityVerdict | None = None,
@@ -719,7 +907,8 @@ def provenance_for(
 
     `energy_oscillation` (D2, 09.10.2026): `energy_oscillation()`ın S'i.
     TB NVE'de ZORUNLUDUR ve Yakınsama = (sürüklenme eşik altı) VE (S eşik
-    altı) VE (kare-0 omega0*dt eşik altı); verilmezse InvalidInputError --
+    altı) VE (kare-0 omega0*dt eşik altı) VE (yol karelerinin omega*dt'si
+    eşik altı); verilmezse InvalidInputError --
     "yok say" sürüklenmenin kör olduğu iri-dt salınımına yeni bir sahte ✓
     kapısı açardı. Öteki koşularda (NVT, HF, klasik) S hesaplanmaz ve
     verilirse yine hata: hükme girmeyen bir sayının panelde hüküm gibi
@@ -728,6 +917,13 @@ def provenance_for(
     `omega_max_frame0` (D2-i, 10.10.2026): `omega_max_frame0()`ın omega0'ı;
     S'yle AYNI kapı (TB NVE'de zorunlu, öteki koşularda yasak, negatif
     hata). Verilmezse S'nin seyreltildiği iri-dt koşusu yine ✓ alırdı.
+
+    `omega_max_path_frames` (D2-vi): `omega_max_path_frames()`ın yol
+    karelerindeki en büyük omega'sı; omega0'la AYNI kapı ve AYNI eşik
+    (`_TB_OMEGA_DT_TOLERANCE`). Verilmezse kare 0'ın görmediği yol (sonradan
+    çarpışan parçalar, ısıl keşif) yine ✓ alırdı. `path_frames`
+    (`YolKaresiIzleyici.tanilar()`) yalnız tanıdır: seçilen karelerin adımı
+    ve en kısa çift mesafesi; TB NVE'de isteğe bağlı, öteki koşularda yasak.
 
     `stability` / `external_stability` (B10, 03.10.2026): HF kuvvet alanının
     koşu boyunca biriktirdiği EN KÖTÜ iç / dış kararlılık hükmü
@@ -784,7 +980,31 @@ def provenance_for(
     if omega_max_frame0 is not None and omega_max_frame0 < 0.0:
         # sqrt(max(lambda, 0)) negatif olamaz; `omega_max_frame0()` bunu üretmez.
         raise InvalidInputError(f"omega_max_frame0 negatif olamaz: {omega_max_frame0}")
-    omega_dt = omega_esigi = None  # NVT'de ve TB dışında hükme girmez (0.0 DEĞİL)
+    # D2-vi: yol karelerinin omega'sı kare 0'ınkiyle AYNI kapıdan geçer --
+    # verilmezse kare 0'ın görmediği yol (çarpışma, ısıl keşif) yine ✓ alırdı.
+    if salinim_hukme_girer and omega_max_path_frames is None:
+        raise InvalidInputError(
+            "TB NVE koşusunda yol karelerinin tanısı zorunludur: "
+            "provenance_for(..., omega_max_path_frames=omega_max_path_frames("
+            "scenario, izleyici, durum, alan)); kare 0 yolun en hızlı modunu "
+            "görmez (D2-vi)"
+        )
+    if not salinim_hukme_girer and (omega_max_path_frames is not None or path_frames is not None):
+        raise InvalidInputError(
+            "omega_max_path_frames ve path_frames yalnız TB NVE koşusunda "
+            f"hükme girer; bu koşu ({tur}, termostat "
+            f"{termostat['kind'] if termostat else None}) için None verin"
+        )
+    if path_frames is not None and set(path_frames) - set(_YOL_KARESI_TANILARI):
+        raise InvalidInputError(
+            f"path_frames yalnız {_YOL_KARESI_TANILARI} anahtarlarını taşır: "
+            f"{sorted(set(path_frames) - set(_YOL_KARESI_TANILARI))}"
+        )
+    if omega_max_path_frames is not None and omega_max_path_frames < 0.0:
+        raise InvalidInputError(
+            f"omega_max_path_frames negatif olamaz: {omega_max_path_frames}"
+        )
+    omega_dt = omega_dt_yol = omega_esigi = None  # NVT'de ve TB dışında hükme girmez (0.0 DEĞİL)
     salinim_esigi = None  # NVT'de ve TB dışında salınım hükme girmez (0.0 DEĞİL)
     yakinsama_tanisi = None
     if termostat is None:
@@ -805,16 +1025,22 @@ def provenance_for(
             salinim_esigi = _TB_OSCILLATION_TOLERANCE
             salinim_sonlu = bool(np.isfinite(energy_oscillation))
             salinim_gecti = salinim_sonlu and energy_oscillation <= salinim_esigi
-            # D2-i: S seyreltilebilir (payda tüm KE); omega0*dt KE'nin
-            # dağılımına bakmaz. `nan` (Hessian sonlu değil) -> ✗, YARGILANAMAZ.
+            # D2-i: S seyreltilebilir (payda tüm KE); omega*dt KE'nin
+            # dağılımına bakmaz. D2-vi: AYNI eşik iki yere -- kare 0 ve yolun
+            # izleyicinin seçtiği kareleri (en kısa çift mesafesi, sertlik
+            # tepesi). `nan` (Hessian sonlu değil) -> ✗, YARGILANAMAZ.
             omega_esigi = _TB_OMEGA_DT_TOLERANCE
             omega_dt = float(omega_max_frame0 * scenario.dt)
-            a_priori_sonlu = bool(np.isfinite(omega_dt))
-            a_priori_gecti = a_priori_sonlu and omega_dt <= omega_esigi
+            omega_dt_yol = float(omega_max_path_frames * scenario.dt)
+            kare0_sonlu = bool(np.isfinite(omega_dt))
+            kare0_gecti = kare0_sonlu and omega_dt <= omega_esigi
+            yol_sonlu = bool(np.isfinite(omega_dt_yol))
+            yol_gecti = yol_sonlu and omega_dt_yol <= omega_esigi
             yakinsama_tanisi = _tb_yakinsama_tanisi(
-                yakinsadi, salinim_gecti, salinim_sonlu, a_priori_gecti, a_priori_sonlu
+                yakinsadi, salinim_gecti, salinim_sonlu,
+                kare0_gecti, kare0_sonlu, yol_gecti, yol_sonlu,
             )
-            yakinsadi = yakinsadi and salinim_gecti and a_priori_gecti
+            yakinsadi = yakinsadi and salinim_gecti and kare0_gecti and yol_gecti
     else:
         parametreler = ", ".join(
             f"{ad}={deger}" for ad, deger in sorted(termostat["params"].items())
@@ -875,11 +1101,17 @@ def provenance_for(
             energy_oscillation=energy_oscillation,
             energy_oscillation_scale="max_kinetic_all_steps" if salinim_hukme_girer else None,
             energy_oscillation_tolerance=salinim_esigi,
-            # D2-i: a priori tanı; omega0 a.u. (1/zaman), hükme giren omega0*dt.
-            # NVT'de hesaplanmaz: üçü de None (S'nin anahtarlarıyla aynı kural).
+            # D2-i / D2-vi: kare 0'ın ve yol karelerinin omega'sı a.u.
+            # (1/zaman), hükme giren omega*dt'ler; eşik ikisine de aynı.
+            # Seçilen karelerin adımı ve en kısa çift mesafesi (bohr) hangi
+            # karelerin Hessian'landığını söyler (`YolKaresiIzleyici.tanilar`).
+            # NVT'de hesaplanmaz: hepsi None (S'nin anahtarlarıyla aynı kural).
             omega_max_frame0=omega_max_frame0,
             omega_dt_frame0=omega_dt,
-            omega_dt_frame0_tolerance=omega_esigi,
+            omega_max_path_frames=omega_max_path_frames,
+            omega_dt_path_frames=omega_dt_yol,
+            **{ad: (path_frames or {}).get(ad) for ad in _YOL_KARESI_TANILARI},
+            omega_dt_tolerance=omega_esigi,
         )
     if kararlilik_tanisi:
         tanilar.update(kararlilik_tanisi)

@@ -60,6 +60,8 @@ from qlab.engine.md.factory import (
     energy_drift,
     energy_oscillation,
     omega_max_frame0,
+    omega_max_path_frames,
+    path_frame_tracker,
     provenance_for,
 )
 from qlab.engine.md.integrator import run, velocity_verlet_step
@@ -744,14 +746,26 @@ def _ortak(senaryo: MDScenario) -> MDScenario:
     return dataclasses.replace(senaryo, force_field={"kind": "morse", "params": {}})
 
 
-def _hukum(senaryo: MDScenario, yorunge, omega0: float | None) -> tuple[float, bool]:
+def _hukum(
+    senaryo: MDScenario, yorunge, omega0: float | None, omega_yol: float | None
+) -> tuple[float, bool]:
     """Sürüklenme oranı ve panelin BİRLEŞİK hükmü (D2: TB NVE'de S de girer;
-    D2-i: kare-0 omega0*dt de -- `omega0` = `omega_max_frame0`, ortak dalda None)."""
+    D2-i: kare-0 omega0*dt de -- `omega0` = `omega_max_frame0`; D2-vi: yol
+    karelerininki de -- `omega_yol` = `_izlenen_kosu`nun; ortak dalda ikisi None)."""
     oran = energy_drift(senaryo, yorunge.kinetic, yorunge.potential)
     salinim = energy_oscillation(senaryo, yorunge)
     return oran, provenance_for(
-        senaryo, energy_drift=oran, energy_oscillation=salinim, omega_max_frame0=omega0
+        senaryo, energy_drift=oran, energy_oscillation=salinim, omega_max_frame0=omega0,
+        omega_max_path_frames=omega_yol,
     ).converged
+
+
+def _izlenen_kosu(senaryo: MDScenario, durum, alan, dt: float, n: int):
+    """`_run_md`in TB NVE koşusu: alanı saran izleyiciyle (yörünge bit bit aynı)
+    -> (yörünge, yol karelerinin omega'sı)."""
+    izleyici = path_frame_tracker(senaryo, alan, durum.masses)
+    yorunge = run(durum, izleyici, dt=dt, n_steps=n)
+    return yorunge, omega_max_path_frames(senaryo, izleyici, durum, alan)
 
 
 def _suruklenme_hukmu(senaryo: MDScenario, oran: float) -> bool:
@@ -762,7 +776,8 @@ def _suruklenme_hukmu(senaryo: MDScenario, oran: float) -> bool:
     kalır (Fermi penceresinde 3.16 K: sürüklenme 5.48e-02, S 7.30e-02).
     """
     return provenance_for(
-        senaryo, energy_drift=oran, energy_oscillation=0.0, omega_max_frame0=0.0
+        senaryo, energy_drift=oran, energy_oscillation=0.0, omega_max_frame0=0.0,
+        omega_max_path_frames=0.0,
     ).converged
 
 
@@ -801,23 +816,25 @@ def test_G5_SURUKLENME_HUKMU_ENERJI_SIFIRINDAN_BAGIMSIZ():
     w0 = omega_max_frame0(senaryo, durum, alan)
     assert abs(omega_max_frame0(senaryo, durum, _Kaydirilmis(alan, -omega0)) - w0) < 1e-12 * w0
     for dt, n, beklenen in ((15.0, 267, True), (40.0, 100, False)):
-        ref = run(durum, alan, dt=dt, n_steps=n)
-        ref_oran, ref_hukum = _hukum(senaryo, ref, w0)
+        # D2-vi: yol karelerinin omega'sı da konumdan gelir; c'yle kayan
+        # kopyalar AYNI konumları üretir (aşağıda bit bit sınanır).
+        ref, w_yol = _izlenen_kosu(senaryo, durum, alan, dt, n)
+        ref_oran, ref_hukum = _hukum(senaryo, ref, w0, w_yol)
         ref_salinim = energy_oscillation(senaryo, ref)
         assert ref_hukum is beklenen, (dt, ref_oran, ref_salinim)
-        _, eski_c0 = _hukum(_ortak(senaryo), ref, None)
+        _, eski_c0 = _hukum(_ortak(senaryo), ref, None, None)
         eski = {eski_c0}
         for c in (-omega0, 16.0):
             yor = run(durum, _Kaydirilmis(alan, c), dt=dt, n_steps=n)
             assert np.array_equal(yor.positions, ref.positions)
             assert np.array_equal(yor.kinetic, ref.kinetic)
             assert not np.array_equal(yor.potential, ref.potential)
-            oran, hukum = _hukum(senaryo, yor, w0)
+            oran, hukum = _hukum(senaryo, yor, w0, w_yol)
             assert abs(oran - ref_oran) < 1e-9 * ref_oran, (dt, c, oran, ref_oran)
             salinim = energy_oscillation(senaryo, yor)
             assert abs(salinim - ref_salinim) < 1e-9 * ref_salinim, (dt, c, salinim)
             assert hukum is beklenen
-            eski.add(_hukum(_ortak(senaryo), yor, None)[1])
+            eski.add(_hukum(_ortak(senaryo), yor, None, None)[1])
         # Pozitif kontrol: AYNI kayitlarda eski olcutun hukmu c ile DEGISIYOR,
         # yani pencere sifir-bagimliligini gercekten gosterebiliyor.
         assert eski == {True, False}, (dt, eski)
@@ -850,11 +867,11 @@ def test_G5_ESIK_TB_OZGU_SURUKLENMEYI_YAKALAR_FERMI_GECISI():
     for kelvin, beklenen in ((631.6, True), (3.16, False)):
         senaryo = _tb_senaryo(kelvin, n_electron=15)
         durum, alan, _ = build(senaryo)
-        yorunge = run(durum, alan, dt=10.0, n_steps=400)
-        oran, hukum = _hukum(senaryo, yorunge, omega_max_frame0(senaryo, durum, alan))
+        yorunge, w_yol = _izlenen_kosu(senaryo, durum, alan, 10.0, 400)
+        oran, hukum = _hukum(senaryo, yorunge, omega_max_frame0(senaryo, durum, alan), w_yol)
         assert _suruklenme_hukmu(senaryo, oran) is beklenen, (kelvin, oran)
         assert hukum is beklenen, (kelvin, oran)
-        assert _hukum(_ortak(senaryo), yorunge, None)[1] is True, kelvin
+        assert _hukum(_ortak(senaryo), yorunge, None, None)[1] is True, kelvin
 
 
 def test_G5_DURAGAN_OLMAYAN_KOSU_max_KE_ORTALAMA_KE_DEGIL():
@@ -878,12 +895,13 @@ def test_G5_DURAGAN_OLMAYAN_KOSU_max_KE_ORTALAMA_KE_DEGIL():
         initial={"positions_bohr": R.tolist(), "masses_amu": [1.00782503207]},
     )
     durum, alan, _ = build(senaryo)
-    yorunge = run(durum, alan, dt=10.0, n_steps=100)
-    oran, hukum = _hukum(senaryo, yorunge, omega_max_frame0(senaryo, durum, alan))
+    yorunge, w_yol = _izlenen_kosu(senaryo, durum, alan, 10.0, 100)
+    oran, hukum = _hukum(senaryo, yorunge, omega_max_frame0(senaryo, durum, alan), w_yol)
     assert yorunge.kinetic[0] == 0.0 and yorunge.kinetic.max() > 1e-2
     ortalama_ile = oran * float(yorunge.kinetic.max()) / float(yorunge.kinetic.mean())
     tolerans = provenance_for(
-        senaryo, energy_drift=oran, energy_oscillation=0.0, omega_max_frame0=0.0
+        senaryo, energy_drift=oran, energy_oscillation=0.0, omega_max_frame0=0.0,
+        omega_max_path_frames=0.0,
     ).diagnostics["energy_drift_tolerance"]
     assert ortalama_ile > tolerans, ortalama_ile
     # D2: birlesik hukum de GECER (S 1.3672e-02, buyume evresine ragmen).
@@ -925,11 +943,15 @@ def test_G5_SEVK_EDILEN_TB_SENARYOSU_CLI_UCTAN_UCA(tmp_path, capsys):
     for parca in (
         "energy_oscillation=1.005e-02", "energy_oscillation_scale=max_kinetic_all_steps",
         "energy_oscillation_tolerance=5.000e-02",
-        # D2-i: kare-0 omega0*dt = 2.555e-01 (esigin 2.1x alti), esik 0.54.
-        "omega_dt_frame0=2.555e-01", "omega_dt_frame0_tolerance=5.400e-01",
+        # D2-i: kare-0 omega0*dt = 2.555e-01; D2-vi: yol kareleri 3.174e-01
+        # (en kisa cift adim 16, 1.675 bohr; sertlik tepesi adim 289) -- esigin
+        # (0.67) 2.1x alti; izleyici HER adimi gorur (bu senaryoda save_every 2).
+        "omega_dt_frame0=2.555e-01", "omega_dt_path_frames=3.174e-01",
+        "closest_pair_step=16,", "closest_pair_bohr=1.675e+00", "stiffest_frame_step=289,",
+        "omega_dt_tolerance=6.700e-01",
     ):
         assert parca in yakinsama, parca
-    assert "\xfc\xe7\xfc de e\u015fi\u011fin alt\u0131nda" in satirlar["Yak\u0131nsama tan\u0131s\u0131"]
+    assert "d\xf6rd\xfc de e\u015fi\u011fin alt\u0131nda" in satirlar["Yak\u0131nsama tan\u0131s\u0131"]
     assert "elektron yok" not in ekran and "analitik bir model" not in ekran
 
 

@@ -27,6 +27,16 @@ testine döndü (kontrolleri küçük dt'de ✓); kalan körlük (kare 0 yolun e
 hızlı modunu görmez: çarpışan parçalar, yüksek T_ion) iki yeni dürüst
 olumsuzla kilitli.
 
+D2-vi (10.10.2026): o iki dürüst olumsuz kare 0'ın YOLU görmemesiydi. Ön
+ölçüm ve eleştirmeni (`.superpowers/sdd/d2-olcum/D2vi/`) son kareyi, eşit
+aralıklı kareleri ve seçicili kareleri ölçtü; kod: koşu alanı saran
+`YolKaresiIzleyici` ile yapılır, o HER ADIMDA en kısa çift mesafesinin ve
+kütle ağırlıklı köşegen sertlik vekilinin tepesinin karelerini seçer, koşudan
+sonra o karelerde aynı Hessian alınır; tek eşik kendi bandından 0.67. İki
+dürüst olumsuz KAPANIŞ testine döndü (aynı pencere dt yarıda ✓); T10 yol
+karelerinin kapısını, T12 izleyiciyi (yörünge bit bit aynı, her adım, en yakın
+görüntü, kütle ağırlığı, eşitlik, kopya, nan, tek Hessian) kilitler.
+
 SÜRE (ölçüldü, 10.10.2026, bu makine): bkz. commit; hiçbiri `slow` değildir.
 """
 
@@ -40,7 +50,15 @@ import pytest
 
 import qlab
 import qlab.engine.md.factory as fabrika
-from qlab.engine.md.factory import build, energy_oscillation, omega_max_frame0, provenance_for
+from qlab.engine.md.factory import (
+    YolKaresiIzleyici,
+    build,
+    energy_oscillation,
+    omega_max_frame0,
+    omega_max_path_frames,
+    path_frame_tracker,
+    provenance_for,
+)
 from qlab.engine.md.forcefields import Harmonic
 from qlab.engine.md.integrator import Trajectory, run
 from qlab.engine.md.state import MDState
@@ -231,12 +249,13 @@ def test_T5_SALINIM_ESIGI_PANELDE_ve_HUKUMDE_AYNI_SAYI():
     kırmızı (literal 5e-02).
     """
     tb = _tb_senaryo()
-    t = provenance_for(tb, energy_drift=1e-9, energy_oscillation=1e-9, omega_max_frame0=1e-9).diagnostics
+    t = provenance_for(tb, energy_drift=1e-9, energy_oscillation=1e-9, omega_max_frame0=1e-9,
+                       omega_max_path_frames=1e-9).diagnostics
     esik = t["energy_oscillation_tolerance"]
     assert esik == 5.0e-02
     assert t["energy_oscillation_scale"] == "max_kinetic_all_steps"
-    # D2-i: a priori tanı geçer durumda sabit (omega0 1e-9) -- hükmü yalnız S belirler.
-    w = dict(energy_drift=1e-9, omega_max_frame0=1e-9)
+    # D2-i / D2-vi: omega*dt tanısı geçer durumda sabit (1e-9) -- hükmü yalnız S belirler.
+    w = dict(energy_drift=1e-9, omega_max_frame0=1e-9, omega_max_path_frames=1e-9)
     assert provenance_for(tb, energy_oscillation=float(np.nextafter(esik, 0.0)), **w).converged
     assert not provenance_for(tb, energy_oscillation=float(np.nextafter(esik, 1.0)), **w).converged
     # Eşiğin KENDİSİ ✓ ('<='; sürüklenme dalıyla aynı anlam -- doğrulama N03).
@@ -270,8 +289,10 @@ def test_T6_KAPI_TB_NVE_S_ZORUNLU_ve_OTEKI_KOSULARDA_YASAK():
     assert prov.diagnostics["energy_oscillation_tolerance"] is None
     # Hesaplanmayan S'nin paydası ✓'nin yanında basılmaz (doğrulama, 09.10).
     assert prov.diagnostics["energy_oscillation_scale"] is None
-    # D2-i: a priori tanının üç anahtarı da NVT'de None (0.0 DEĞİL).
-    for anahtar in ("omega_max_frame0", "omega_dt_frame0", "omega_dt_frame0_tolerance"):
+    # D2-i / D2-vi: omega*dt tanısının bütün anahtarları NVT'de None (0.0 DEĞİL).
+    for anahtar in ("omega_max_frame0", "omega_dt_frame0", "omega_max_path_frames",
+                    "omega_dt_path_frames", "closest_pair_step", "closest_pair_bohr",
+                    "stiffest_frame_step", "omega_dt_tolerance"):
         assert anahtar in prov.diagnostics and prov.diagnostics[anahtar] is None, anahtar
     assert prov.convergence_diagnosis is None
     with pytest.raises(InvalidInputError, match="negatif olamaz"):
@@ -303,7 +324,8 @@ def test_T7_HAREKETSIZ_ve_UCLARI_BIRIKTIRMEYEN_KOSU_YARGILANAMAZ():
     for yorunge in (sifir, olculmemis):
         s = energy_oscillation(tb, yorunge)
         assert np.isnan(s)
-        prov = provenance_for(tb, energy_drift=1e-9, energy_oscillation=s, omega_max_frame0=1e-9)
+        prov = provenance_for(tb, energy_drift=1e-9, energy_oscillation=s, omega_max_frame0=1e-9,
+                              omega_max_path_frames=1e-9)
         assert prov.converged is False
         assert "salınım YARGILANAMAZ" in prov.convergence_diagnosis
         assert "sürüklenme eşiğin üstünde" not in prov.convergence_diagnosis
@@ -414,13 +436,14 @@ def test_D2i_KAPANDI_KUTLE_SAFSIZLIGI_S_SEYRELIR_A_PRIORI_YAKALAR(tmp_path, caps
     omega_ref*dt = 1.000 (yol boyu 51 karenin en büyük kütle ağırlıklı
     Hessian modu; D2 şüphecisi s8). S = 3.629e-02 hâlâ eşiğin ALTINDA (S
     düzeltilmedi, payda tüm KE) ve sürüklenme 1.559e-03 de; D2'nin paneli ✓
-    basıyordu. Şimdi ✗: kare-0 omega0*dt = 9.266e-01 > 0.54 (H'nin yerel
-    modu kare 0'da da hızlı).
+    basıyordu. Şimdi ✗: kare-0 omega0*dt = 9.266e-01 > 0.67 (H'nin yerel
+    modu kare 0'da da hızlı; D2-vi'den beri yol kareleri de 1.001).
 
     Aynı gözlenebilir üzerinde çürütme: AYNI pencere dt yarıya (26.175 x 114
-    adım, aynı süre) -> ✓ (S 8.047e-03, omega0*dt 4.633e-01). ✗'i dt
-    vermiştir, pencere değil. Pencere `_KS_*` (şüphecinin kamu yolu YAML'ı).
-    KIRMA: a priori tanı yok sayılır ya da eşik >= 0.927 -> ✓, kırmızı.
+    adım, aynı süre) -> ✓ (S 8.047e-03, omega0*dt 4.633e-01, yol kareleri
+    5.002e-01). ✗'i dt vermiştir, pencere değil. Pencere `_KS_*` (şüphecinin
+    kamu yolu YAML'ı). KIRMA: kare-0 tanısı yok sayılır -> tanı yalnız yol
+    karelerini suçlar, kırmızı; ikisi de yok sayılır ya da eşik >= 1.001 -> ✓.
     """
     sonuc = {}
     for ad, dt, n in (("iri", _KS_DT, _KS_N), ("kontrol", _KS_DT / 2.0, 2 * _KS_N)):
@@ -429,12 +452,12 @@ def test_D2i_KAPANDI_KUTLE_SAFSIZLIGI_S_SEYRELIR_A_PRIORI_YAKALAR(tmp_path, caps
     iri = sonuc["iri"]["Yakınsama"]
     assert "✗" in iri and "✓" not in iri, iri
     for parca in ("energy_drift=1.559e-03,", "energy_oscillation=3.629e-02,", "omega_dt_frame0=9.266e-01,",
-                  "omega_dt_frame0_tolerance=5.400e-01"):
+                  "omega_dt_path_frames=1.001e+00,", "omega_dt_tolerance=6.700e-01"):
         assert parca in iri, parca
     assert _a_priori_suclar(sonuc["iri"]), sonuc["iri"]["Yakınsama tanısı"]
     kontrol = sonuc["kontrol"]["Yakınsama"]
     assert "✓" in kontrol and "omega_dt_frame0=4.633e-01," in kontrol, kontrol
-    assert "energy_oscillation=8.047e-03," in kontrol
+    assert "energy_oscillation=8.047e-03," in kontrol and "omega_dt_path_frames=5.002e-01," in kontrol
 
 
 def test_D2i_KAPANDI_AYRISAN_PARCALAR_otelemesi_S_yi_seyreltir_A_PRIORI_YAKALAR(tmp_path, capsys):
@@ -452,8 +475,10 @@ def test_D2i_KAPANDI_AYRISAN_PARCALAR_otelemesi_S_yi_seyreltir_A_PRIORI_YAKALAR(
     priori tanıyı suçlar.
 
     Aynı gözlenebilir üzerinde çürütme: ayrışan çift dt 20 x 200'de ✓ (S
-    6.077e-03, omega0*dt 4.725e-01).
-    KIRMA: a priori tanı yok sayılır -> ayrışan ✓, kırmızı.
+    6.077e-03, omega0*dt 4.725e-01, yol kareleri 6.275e-01 -- eşiğin 0.67
+    yalnız %7 altı: dt 20 bu pencere için gri bölgenin alt ucundadır).
+    KIRMA: kare-0 tanısı yok sayılır -> tanı yalnız yol karelerini suçlar
+    (1.241), kırmızı.
     """
     zA = np.zeros((16, 3))
     zA[:, 0] = _zincir(4)
@@ -478,9 +503,22 @@ def test_D2i_KAPANDI_AYRISAN_PARCALAR_otelemesi_S_yi_seyreltir_A_PRIORI_YAKALAR(
     assert _a_priori_suclar(sonuc["ayrisan"]), sonuc["ayrisan"]["Yakınsama tanısı"]
     ince = sonuc["ayrisan_ince"]["Yakınsama"]
     assert "✓" in ince and "omega_dt_frame0=4.725e-01," in ince, ince
+    assert "omega_dt_path_frames=6.275e-01," in ince
 
 
-# ------------------------------------------------- dürüst olumsuz: KALAN körlük --
+# ---------------------------------- D2-vi: yol körlüğü KAPANDI (yol kareleri) --
+
+
+def _yol_suclar(satir: dict[str, str]) -> bool:
+    """Tanının CANLI yarısı ✗'i YALNIZ yol karelerine mi bağlıyor (S,
+    sürüklenme ve kare 0 geçerken)?"""
+    canli = satir["Yakınsama tanısı"].split(" GRİ BÖLGE")[0]
+    return (
+        "yol karelerinin omega*dt'si eşiğin üstünde" in canli
+        and "kare-0 omega0*dt eşiğin üstünde" not in canli
+        and "salınım eşiğin üstünde" not in canli
+        and "sürüklenme eşiğin üstünde" not in canli
+    )
 
 
 #: Şüphecinin s3 penceresi "H Pmin T=6000 t2" (D2-i ön ölçümü i8, kamu yolunda
@@ -496,46 +534,71 @@ _KK_V = np.array([
 ])
 
 
-def test_DURUST_OLUMSUZ_KALAN_YUKSEK_T_ION_kare0_yolu_temsil_etmez(tmp_path, capsys):
-    """BEYANLI KALAN KÖRLÜK (D2-i): kare 0 yolun en hızlı modunu temsil etmez.
+def test_D2vi_KAPANDI_YUKSEK_T_ION_kare0_yolu_temsil_etmez_YOL_KARESI_YAKALAR(tmp_path, capsys):
+    """D2-i'nin dürüst olumsuzu KAPANDI (D2-vi): kare 0 yolun en hızlı modunu
+    temsil etmez. Peierls minimumu + 6000 K ısıl hız, dt 23.02 x 130: yol boyu
+    omega_ref*dt 0.930 (şüpheci s3) -- iri dt; kare-0 omega0*dt 5.328e-01, S
+    4.511e-02 ve sürüklenme 3.046e-03 eşiğin altında (anharmonik keşif yol
+    boyu omega'yı kare 0'ın 1.75 katına çıkarır; düşük modlar S'yi seyreltir).
+    D2-i'nin paneli ✓ basıyordu. Şimdi ✗: yolun izlenen karelerinde omega*dt
+    9.431e-01 > 0.67 ve tanı YALNIZ yol karelerini suçlar.
 
-    Peierls minimumu + 6000 K ısıl hız, dt 23.02 x 130: yol boyu
-    omega_ref*dt 0.930 (şüpheci s3, 51 kare) -- iri dt; ama kare-0 omega0*dt
-    5.328e-01 eşiğin (0.54) ALTINDA, S 4.511e-02 de (anharmonik keşif yol
-    boyu omega'yı kare 0'ın 1.75 katına çıkarır; S'yi seyrelten düşük modlar).
-    Panel ✓ -- dt'yi KANITLAMAZ.
-
-    Bu test bir başarıyı değil BİLİNEN BİR KÖRLÜĞÜ kilitler: eşik bu hücreye
-    göre 0.53'e çekilirse ya da tanı yol boyu omega'ya genişletilirse kırmızıya
-    döner ve beyan (`_TB_SALINIM_BEYANI`, KALAN KÖRLÜK) güncellenmelidir.
+    Aynı gözlenebilir üzerinde çürütme: AYNI pencere dt yarıda (11.51 x 260,
+    aynı süre) -> ✓ (yol kareleri 4.693e-01, S 1.205e-02).
+    KIRMA: yol kareleri yok sayılır -> iri ✓, kırmızı; eşik >= 0.944 -> ✓.
     """
-    yol = _yaml(tmp_path / "kk.yaml", _KS_X, 23.02, 130, hizlar=_KK_V)
-    satir = _panel(yol, tmp_path, capsys)
-    yakinsama = satir["Yakınsama"]
-    assert "✓" in yakinsama, yakinsama
-    for parca in ("energy_drift=3.046e-03,", "energy_oscillation=4.511e-02,", "omega_dt_frame0=5.328e-01,"):
-        assert parca in yakinsama, parca
-    assert "KALAN KÖRLÜK" in satir["Yakınsama tanısı"] and "yüksek T_ion" in satir["Yakınsama tanısı"]
+    sonuc = {}
+    for ad, dt, n in (("iri", 23.02, 130), ("kontrol", 11.51, 260)):
+        sonuc[ad] = _panel(_yaml(tmp_path / f"{ad}.yaml", _KS_X, dt, n, hizlar=_KK_V), tmp_path, capsys)
+    iri = sonuc["iri"]["Yakınsama"]
+    assert "✗" in iri and "✓" not in iri, iri
+    for parca in ("energy_drift=3.046e-03,", "energy_oscillation=4.511e-02,", "omega_dt_frame0=5.328e-01,",
+                  "omega_dt_path_frames=9.431e-01,", "omega_dt_tolerance=6.700e-01"):
+        assert parca in iri, parca
+    assert _yol_suclar(sonuc["iri"]), sonuc["iri"]["Yakınsama tanısı"]
+    kontrol = sonuc["kontrol"]["Yakınsama"]
+    assert "✓" in kontrol and "omega_dt_path_frames=4.693e-01," in kontrol, kontrol
+    assert "energy_oscillation=1.205e-02," in kontrol
 
 
-def test_DURUST_OLUMSUZ_KALAN_CARPISAN_PARCALAR_kare0_yalniz_parca_ici_modlari_gorur(tmp_path, capsys):
-    """BEYANLI KALAN KÖRLÜK (D2-i eleştirmeni): kare 0'da 10 bohr ayrı iki 8'li
-    zincir (x = 0..14 ve 24..38, L 64) +/-0.004 hızla birbirine koşar; dt 21.61
-    x 139. Yol boyu omega_ref*dt 0.930 (eleştirmen e3, dt 2.5 referansı) --
-    iri dt; kare 0 yalnız parça içi modları görür: omega0*dt 4.371e-01, S
-    3.961e-02, sürüklenme 3.007e-03 -- panel ✓, dt'yi KANITLAMAZ.
+def test_D2vi_KAPANDI_CARPISAN_PARCALAR_kare0_parca_ici_YOL_KARESI_YAKALAR_save_every_BAGIMSIZ(
+    tmp_path, capsys
+):
+    """D2-i eleştirmeninin dürüst olumsuzu KAPANDI (D2-vi): kare 0'da 10 bohr
+    ayrı iki 8'li zincir (x = 0..14 ve 24..38, L 64) +/-0.004 hızla birbirine
+    koşar; dt 21.61 x 139, yol boyu omega_ref*dt 0.930 -- iri dt. Kare 0
+    yalnız parça içi modları görür (omega0*dt 4.371e-01); S 3.961e-02 ve
+    sürüklenme 3.007e-03 de eşiğin altında -- D2-i'nin paneli ✓ basıyordu.
+    Şimdi ✗: izleyicinin seçtiği karelerde (en kısa çift adım 95, sertlik
+    tepesi adım 38) omega*dt 9.549e-01; tanı YALNIZ yol karelerini suçlar.
 
-    Aynı aile dt yarıya (10.805 x 278): S 1.111e-02 (1/3.6). Kilit bilinen
-    körlüğü tutar: tanı yol boyu omega'ya genişletilirse kırmızıya döner.
+    İZLEYİCİ HER ADIMI GÖRÜR: aynı koşu save_every 5 ile -> AYNI adımlar ve
+    AYNI omega (kayıtlı karelerden seçim save_every 50'de 37 hücrenin 3'ünü
+    kaçırıyordu -- ön ölçüm). Sürüklenme save_every'ye bağlıdır (D2-iii).
+    Aynı gözlenebilir üzerinde çürütme: dt yarıda (10.805 x 278) ✓ (yol
+    kareleri 4.687e-01, S 1.111e-02).
+    KIRMA: yol kareleri yok sayılır -> iri ✓; kayıtlı karelerden seçim -> se 5
+    hücresinde adımlar kayar, kırmızı.
     """
     x = np.r_[2.0 * np.arange(8), 24.0 + 2.0 * np.arange(8)]
     v = np.r_[np.full(8, 0.004), np.full(8, -0.004)]
-    satir = _panel(_yaml(tmp_path / "carpisma.yaml", x, 21.61, 139, hizlar=v, kutu=64.0), tmp_path, capsys)
-    yakinsama = satir["Yakınsama"]
-    assert "✓" in yakinsama, yakinsama
-    for parca in ("energy_drift=3.007e-03,", "energy_oscillation=3.961e-02,", "omega_dt_frame0=4.371e-01,"):
-        assert parca in yakinsama, parca
-    assert "çarpışması" in satir["Yakınsama tanısı"]
+    sonuc = {}
+    for ad, dt, n, se in (("iri", 21.61, 139, 1), ("iri_se5", 21.61, 139, 5), ("kontrol", 10.805, 278, 1)):
+        yol = _yaml(tmp_path / f"{ad}.yaml", x, dt, n, save_every=se, hizlar=v, kutu=64.0)
+        sonuc[ad] = _panel(yol, tmp_path, capsys)
+    iri = sonuc["iri"]["Yakınsama"]
+    assert "✗" in iri and "✓" not in iri, iri
+    for parca in ("energy_drift=3.007e-03,", "energy_oscillation=3.961e-02,", "omega_dt_frame0=4.371e-01,",
+                  "omega_dt_path_frames=9.549e-01,", "closest_pair_step=95,", "stiffest_frame_step=38,"):
+        assert parca in iri, parca
+    assert _yol_suclar(sonuc["iri"]), sonuc["iri"]["Yakınsama tanısı"]
+    se5 = sonuc["iri_se5"]["Yakınsama"]
+    for parca in ("omega_dt_path_frames=9.549e-01,", "closest_pair_step=95,", "stiffest_frame_step=38,",
+                  "energy_oscillation=3.961e-02,"):
+        assert parca in se5, parca
+    kontrol = sonuc["kontrol"]["Yakınsama"]
+    assert "✓" in kontrol and "omega_dt_path_frames=4.687e-01," in kontrol, kontrol
+    assert "energy_oscillation=1.111e-02," in kontrol
 
 
 def test_KAMU_YOLU_nan_S_PANELDE_nan_ve_YARGILANAMAZ(tmp_path, capsys, monkeypatch):
@@ -564,6 +627,22 @@ def test_KAMU_YOLU_nan_OMEGA0_PANELDE_nan_ve_YARGILANAMAZ(tmp_path, capsys, monk
     assert "salınım" not in satir["Yakınsama tanısı"].split(" GRİ BÖLGE")[0]
 
 
+def test_KAMU_YOLU_nan_YOL_KARESI_PANELDE_nan_ve_YARGILANAMAZ(tmp_path, capsys, monkeypatch):
+    """D2-vi: `run.py` yol karelerinin omega'sını olduğu gibi geçirir -- sevk
+    edilen senaryoda gerçek değer 3.174e-01 (✓); sarmalayıcının `nan`ı panelde
+    `nan` ve "yol karelerinin tanısı YARGILANAMAZ", ✗. KIRMA: `run.py`de yol
+    karelerini hiç hesaplamayıp 0.0 geçen ya da `nan`ı 0.0'a çeviren mutant ✓."""
+    monkeypatch.setattr(
+        fabrika, "omega_max_path_frames", lambda senaryo, izleyici, durum, alan: float("nan")
+    )
+    sevk = Path(qlab.__file__).resolve().parents[2] / "scenarios" / "tb_zincir_md.yaml"
+    satir = _panel(sevk, tmp_path, capsys)
+    assert "✗" in satir["Yakınsama"] and "omega_dt_path_frames=nan," in satir["Yakınsama"]
+    canli = satir["Yakınsama tanısı"].split(" GRİ BÖLGE")[0]
+    assert "yol karelerinin tanısı YARGILANAMAZ" in canli
+    assert "salınım" not in canli and "kare-0" not in canli
+
+
 # ------------------------------------------------------- T9: metin kilitleri --
 
 
@@ -583,11 +662,14 @@ def test_T9_TANI_SATIRI_GRI_BOLGE_BUYUME_KOR_AILE_ve_TEK_KAYNAK():
         "YUVARLAMA TABANI", "dt'yi küçültmek çare değildir",
         "KÖR AİLELER", "payda TÜM kinetik enerjidir", "ayrışan parçaların ötelemesi",
         "kütle safsızlığı", "yalnız düşük modun uyarıldığı koşu",
-        "yüksek T_ion", "enine yumuşak modlu geometri",
-        # D2-i: seyrelmeyi a priori tanı yakalar; kalanı açıkça beyanlı.
-        "A PRIORI TANI", "en hızlı kütle ağırlıklı modu", "24 ölçülmüş iri-dt hücresinin 19'u",
-        "sayı eşiğe duyarlı", "KALAN KÖRLÜK", "kare 0 yolun en hızlı modunu temsil etmiyorsa",
-        "parçaların sonradan çarpışması", "omega0 = 0", "Liste kapsayıcı değildir.",
+        "yüksek T_ion", "enine yumuşak modlu geometri", "sonradan çarpışan parçalar",
+        # D2-i / D2-vi: seyrelmeyi omega*dt tanısı yakalar (kare 0 + yolun iki
+        # karesi); kalanı açıkça beyanlı.
+        "OMEGA*DT TANISI", "her adımda izlenen iki karesinin",
+        "en kısa çift mesafesi, kütle ağırlıklı sertlik tepesi",
+        "ölçülmüş 95 iri-dt hücresinin hepsi", "KALAN KÖRLÜK",
+        "yolun en çok üç karesine bakar", "elektronik ya da toplu bir mod",
+        "Güvence koşunun kendi yoluna göredir.", "Liste kapsayıcı değildir.",
         "kanıtlamaz",
     ):
         assert parca in beyan, parca
@@ -598,9 +680,12 @@ def test_T9_TANI_SATIRI_GRI_BOLGE_BUYUME_KOR_AILE_ve_TEK_KAYNAK():
     sayim = sum(p.read_text(encoding="utf-8").count(beyan[:60]) for p in kaynak.rglob("*.py"))
     assert sayim == 1, sayim
     tb = _tb_senaryo()
-    w = dict(omega_max_frame0=1e-9)  # a priori tanı geçer; hükmü öteki ikisi verir
+    # omega*dt tanısı geçer; hükmü öteki ikisi verir.
+    w = dict(omega_max_frame0=1e-9, omega_max_path_frames=1e-9)
     iyi = provenance_for(tb, energy_drift=1e-9, energy_oscillation=1e-9, **w).convergence_diagnosis
-    assert iyi.startswith("sürüklenme, salınım ve kare-0 omega0*dt üçü de eşiğin altında")
+    assert iyi.startswith(
+        "sürüklenme, salınım, kare-0 omega0*dt ve yol karelerinin omega*dt'si dördü de eşiğin altında"
+    )
     assert iyi.endswith(beyan)
     kayan = provenance_for(tb, energy_drift=1.0, energy_oscillation=1e-9, **w)
     assert kayan.converged is False
@@ -622,60 +707,84 @@ def test_T9_TANI_SATIRI_GRI_BOLGE_BUYUME_KOR_AILE_ve_TEK_KAYNAK():
     assert provenance_for(morse, energy_drift=1e-9).convergence_diagnosis is None
 
 
-# ------------------------------------------- T10: a priori tanının kapısı --
+# ------------------------------------ T10: omega*dt tanısının kapısı ve eşiği --
 
 
-def test_T10_A_PRIORI_ESIGI_PANELDE_ve_HUKUMDE_AYNI_SAYI_KAPI_ve_TANI():
-    """D2-i: omega0*dt eşiği panelde ve hükümde aynı sayı (literal 0.54); eşiğin
-    KENDİSİ ✓ ('<=', öteki eşiklerle aynı anlam), bir ulp üstü ✗. Kapı S'ninkiyle
-    aynı: TB NVE'de zorunlu, NVT'de ve klasik dalda yasak, negatif hata. `nan`
-    (Hessian sonlu değil) ✗ ve "YARGILANAMAZ". Üç ölçüt birden ✗ iken canlı
-    yarı üçünü de söyler.
+def test_T10_OMEGA_DT_ESIGI_PANELDE_ve_HUKUMDE_AYNI_SAYI_KAPI_ve_TANI():
+    """D2-i / D2-vi: omega*dt eşiği panelde ve hükümde aynı sayı (literal
+    0.67), kare 0'a da yol karelerine de AYNI eşik; eşiğin KENDİSİ ✓ ('<=',
+    öteki eşiklerle aynı anlam), bir ulp üstü ✗ -- her biri TEK BAŞINA. Kapı
+    S'ninkiyle aynı: TB NVE'de ikisi de zorunlu, NVT'de ve klasik dalda yasak,
+    negatif hata; `path_frames` yalnız tanıdır (TB NVE'de isteğe bağlı,
+    başka yerde yasak, bilinmeyen anahtar hata). `nan` ✗ ve "YARGILANAMAZ".
+    Dört ölçüt birden ✗ iken canlı yarı dördünü de söyler.
 
-    Eşik dt üzerinden sınanır (omega0 sabit 1.0 -> omega0*dt = dt): a priori
-    tanı `omega0 * scenario.dt`yi yargılar, omega0'ı değil.
-    KIRMA: tanı yok sayılır -> ulp üstü ✓; '<' -> eşiğin kendisi ✗; eşik 0.6
-    ya da 0.5 -> kırmızı; `nan` -> ✓ (`not omega_dt > esik` biçimi) kırmızı.
+    Eşik dt üzerinden sınanır (omega = 1.0 -> omega*dt = dt): tanı
+    `omega * scenario.dt`yi yargılar, omega'yı değil.
+    KIRMA: tanılardan biri yok sayılır -> ulp üstü ✓; '<' -> eşiğin kendisi ✗;
+    eşik 0.54 / 0.69 -> kırmızı; `nan` -> ✓ (`not x > esik` biçimi) kırmızı;
+    yol karesi kapısı kaldırılır -> zorunluluk kırmızı.
     """
     tb = _tb_senaryo()
-    esik = provenance_for(tb, energy_drift=1e-9, energy_oscillation=1e-9,
-                          omega_max_frame0=1e-9).diagnostics["omega_dt_frame0_tolerance"]
-    assert esik == 0.54 == fabrika._TB_OMEGA_DT_TOLERANCE
+    esik = provenance_for(tb, energy_drift=1e-9, energy_oscillation=1e-9, omega_max_frame0=1e-9,
+                          omega_max_path_frames=1e-9).diagnostics["omega_dt_tolerance"]
+    assert esik == 0.67 == fabrika._TB_OMEGA_DT_TOLERANCE
 
-    def hukum(dt, omega0=1.0, s=1e-9, d=1e-9):
+    def hukum(dt, omega0=1e-9, omega_yol=1e-9, s=1e-9, d=1e-9, **ek):
         sen = dataclasses.replace(tb, dt=dt)
-        return provenance_for(sen, energy_drift=d, energy_oscillation=s, omega_max_frame0=omega0)
+        return provenance_for(sen, energy_drift=d, energy_oscillation=s, omega_max_frame0=omega0,
+                              omega_max_path_frames=omega_yol, **ek)
 
-    assert hukum(esik).converged
-    assert hukum(float(np.nextafter(esik, 0.0))).converged
-    ust = hukum(float(np.nextafter(esik, 1.0)))
-    assert not ust.converged
-    assert ust.diagnostics["omega_dt_frame0"] == float(np.nextafter(esik, 1.0))
-    assert ust.diagnostics["omega_max_frame0"] == 1.0
-    canli = ust.convergence_diagnosis.split(" GRİ BÖLGE")[0]
-    assert "kare-0 omega0*dt eşiğin üstünde" in canli
-    assert "salınım" not in canli and "sürüklenme" not in canli
-    # nan -> ✗ ve YARGILANAMAZ; inf de sonlu değil.
-    for omega0 in (float("nan"), float("inf")):
-        p = hukum(0.1, omega0=omega0)
-        assert p.converged is False
-        assert "a priori tanı YARGILANAMAZ" in p.convergence_diagnosis
-    # Üçü birden ✗: canlı yarı üçünü de söyler (biri öbürünü yutmaz).
-    canli = hukum(10.0, s=1.0, d=1.0).convergence_diagnosis.split(" GRİ BÖLGE")[0]
-    for parca in ("salınım eşiğin üstünde", "kare-0 omega0*dt eşiğin üstünde", "sürüklenme eşiğin üstünde"):
+    ust = float(np.nextafter(esik, 1.0))
+    for ad, parca, digeri in (("omega0", "kare-0 omega0*dt eşiğin üstünde", "yol karelerinin"),
+                              ("omega_yol", "yol karelerinin omega*dt'si eşiğin üstünde", "kare-0")):
+        assert hukum(esik, **{ad: 1.0}).converged, ad
+        assert hukum(float(np.nextafter(esik, 0.0)), **{ad: 1.0}).converged, ad
+        p = hukum(ust, **{ad: 1.0})
+        assert not p.converged, ad
+        anahtar = "omega_dt_frame0" if ad == "omega0" else "omega_dt_path_frames"
+        assert p.diagnostics[anahtar] == ust, ad
+        canli = p.convergence_diagnosis.split(" GRİ BÖLGE")[0]
+        assert parca in canli and digeri not in canli, (ad, canli)
+        assert "salınım" not in canli and "sürüklenme" not in canli
+        for kotu in (float("nan"), float("inf")):
+            q = hukum(0.1, **{ad: kotu})
+            assert q.converged is False
+            yargi = "a priori tanı YARGILANAMAZ" if ad == "omega0" else "yol karelerinin tanısı YARGILANAMAZ"
+            assert yargi in q.convergence_diagnosis, (ad, kotu)
+    assert hukum(ust).diagnostics["omega_max_path_frames"] == 1e-9
+    # Dördü birden ✗: canlı yarı dördünü de söyler (biri öbürünü yutmaz).
+    canli = hukum(10.0, omega0=1.0, omega_yol=1.0, s=1.0, d=1.0).convergence_diagnosis.split(" GRİ BÖLGE")[0]
+    for parca in ("salınım eşiğin üstünde", "kare-0 omega0*dt eşiğin üstünde",
+                  "yol karelerinin omega*dt'si eşiğin üstünde", "sürüklenme eşiğin üstünde"):
         assert parca in canli, (parca, canli)
-    # Kapı: TB NVE'de zorunlu ...
+    # path_frames: panelde adıyla ve sırasıyla; yoksa None; bilinmeyen anahtar hata.
+    yk = {"closest_pair_step": 16, "closest_pair_bohr": 1.675, "stiffest_frame_step": 289}
+    t = hukum(0.1, path_frames=yk).diagnostics
+    assert [t[k] for k in yk] == [16, 1.675, 289]
+    assert list(t)[-5:] == ["omega_dt_path_frames", *yk, "omega_dt_tolerance"]
+    assert all(hukum(0.1).diagnostics[k] is None for k in yk)
+    with pytest.raises(InvalidInputError, match="path_frames yalnız"):
+        hukum(0.1, path_frames={"adim": 3})
+    # Kapı: TB NVE'de ikisi de zorunlu ...
     with pytest.raises(InvalidInputError, match="a priori tanı zorunludur"):
-        provenance_for(tb, energy_drift=1e-9, energy_oscillation=1e-9)
-    with pytest.raises(InvalidInputError, match="negatif olamaz"):
-        provenance_for(tb, energy_drift=1e-9, energy_oscillation=1e-9, omega_max_frame0=-1e-3)
-    # ... NVT'de ve klasik dalda yasak.
-    with pytest.raises(InvalidInputError, match="omega_max_frame0 yalnız TB NVE"):
-        provenance_for(_tb_senaryo(_NVT), energy_drift=5.0, omega_max_frame0=1e-9)
+        provenance_for(tb, energy_drift=1e-9, energy_oscillation=1e-9, omega_max_path_frames=1e-9)
+    with pytest.raises(InvalidInputError, match="yol karelerinin tanısı zorunludur"):
+        provenance_for(tb, energy_drift=1e-9, energy_oscillation=1e-9, omega_max_frame0=1e-9)
+    with pytest.raises(InvalidInputError, match="omega_max_frame0 negatif olamaz"):
+        hukum(0.1, omega0=-1e-3)
+    with pytest.raises(InvalidInputError, match="omega_max_path_frames negatif olamaz"):
+        hukum(0.1, omega_yol=-1e-3)
+    # ... NVT'de ve klasik dalda yasak (tanı anahtarları da).
     morse = dataclasses.replace(tb, force_field={"kind": "morse", "params": {}})
-    with pytest.raises(InvalidInputError, match="omega_max_frame0 yalnız TB NVE"):
-        provenance_for(morse, energy_drift=1e-9, omega_max_frame0=1e-9)
-    assert not any(k.startswith("omega_") for k in provenance_for(morse, energy_drift=1e-9).diagnostics)
+    for sen, ek in ((_tb_senaryo(_NVT), dict(energy_drift=5.0)), (morse, dict(energy_drift=1e-9))):
+        with pytest.raises(InvalidInputError, match="omega_max_frame0 yalnız TB NVE"):
+            provenance_for(sen, omega_max_frame0=1e-9, **ek)
+        for yasak in (dict(omega_max_path_frames=1e-9), dict(path_frames=yk)):
+            with pytest.raises(InvalidInputError, match="omega_max_path_frames ve path_frames yalnız TB NVE"):
+                provenance_for(sen, **yasak, **ek)
+    assert not any(k.startswith(("omega_", "closest_", "stiffest_"))
+                   for k in provenance_for(morse, energy_drift=1e-9).diagnostics)
 
 
 # ----------------------------------- T11: omega0 bağımsız yoldan, analitik --
@@ -743,3 +852,203 @@ def test_T11_OMEGA0_ENERJININ_IKINCI_FARKIYLA_UYUSUR_DONME_ve_KUTLE_OLCEGI():
     # Hessian sonlu değil -> nan (panel ✗, YARGILANAMAZ; T10).
     bozuk = lambda R: (0.0, np.full(R.shape, np.nan))  # noqa: E731
     assert np.isnan(omega_max_frame0(tb, durum, bozuk))
+
+
+# ----------------------------------------- T12: yol karesi izleyicisi (D2-vi) --
+
+
+def _tb_alan(n_e: int = 16, kutu: float | None = 32.0):
+    """Ortak pencerenin TB alanı (`_yaml` ile aynı yasalar), kamu yolundan."""
+    sen = dataclasses.replace(_tb_senaryo(), force_field={"kind": "tb_ss_sigma", "params": dict(
+        _tb_senaryo().force_field["params"], n_electron=n_e, box_x_bohr=kutu)})
+    return sen, build(sen)[1]
+
+
+def test_T12_IZLEYICI_YORUNGEYI_DEGISTIRMEZ_HER_ADIMI_GORUR_SECILEN_KARE_YOLUN_KARESI():
+    """`YolKaresiIzleyici` alanın dönüşünü AYNEN geçirir: izleyicili ve
+    izleyicisiz koşu bit bit aynı (konum, hız, KE, Omega, her adım uçları);
+    alan adım başına TAM bir kez (+ kare 0) çağrılır: n + 1. Seçim HER
+    ADIMDAN yapılır, save_every'den bağımsız (se 1 ve 7 aynı adımlar); seçilen
+    kare yolun karesidir (se 1 koşusunun o adımıyla bit bit aynı) ve en kısa
+    çift mesafesi bağımsız yoldan (her kare, en yakın görüntü) aynı.
+    KIRMA: kayıtlı karelerden seçim -> se 7 kayar; dönüşü değiştiren
+    sarmalayıcı -> yörünge ayrışır.
+    """
+    sen, alan = _tb_alan()
+    R = np.c_[_zincir(3), np.zeros((16, 2))]
+    m = np.full(16, float(amu_to_electron_mass(np.array([_M_H]))[0]))
+    durum = MDState(positions=R, velocities=np.zeros_like(R), masses=m)
+    yalin = run(durum, alan, dt=20.0, n_steps=60)
+    secim = {}
+    for se in (1, 7):
+        iz = path_frame_tracker(sen, alan, m)
+        y = run(durum, iz, dt=20.0, n_steps=60, save_every=se)
+        assert iz.cagri == 61 and iz.sonlu
+        secim[se] = (iz.en_kisa_adim, iz.en_kisa, iz.sertlik_adim, iz.sertlik)
+        if se == 1:
+            for ad in ("positions", "velocities", "kinetic", "potential"):
+                assert np.array_equal(getattr(y, ad), getattr(yalin, ad)), ad
+            assert (y.total_min, y.total_max, y.kinetic_max) == (
+                yalin.total_min, yalin.total_max, yalin.kinetic_max)
+            assert np.array_equal(iz.en_kisa_konum, yalin.positions[iz.en_kisa_adim])
+            assert np.array_equal(iz.sertlik_konum, yalin.positions[iz.sertlik_adim])
+            fark = yalin.positions[:, :, None, :] - yalin.positions[:, None, :, :]
+            fark[..., 0] -= 32.0 * np.round(fark[..., 0] / 32.0)
+            uzak = np.sqrt((fark ** 2).sum(axis=3)) + np.where(np.eye(16, dtype=bool), np.inf, 0.0)
+            dmin = uzak.min(axis=(1, 2))
+            assert iz.en_kisa_adim == int(np.argmin(dmin)) and iz.en_kisa == float(dmin.min())
+    assert secim[1] == secim[7]
+    assert 0 < secim[1][0] < 60  # pencere seçimi gerçekten yolun içinden yapıyor
+
+
+def test_T12b_SECICILER_EN_YAKIN_GORUNTU_KUTLE_AGIRLIGI_ESITLIK_KOPYA_nan():
+    """İzleyicinin iki seçicisi elle kurulan karelerde.
+
+    EN YAKIN GÖRÜNTÜ: 16 atom, x = 2i (i < 15) ve 15. atom 30.4, L 32 -> en
+    kısa çift kutu sınırının ÖTESİNDE (30.4 -> 32.0: 1.6 bohr); görüntüsüz
+    mesafe 2.0 derdi. KÜTLE AĞIRLIĞI (D2-vi eleştirmeni: içinde H olan ağır
+    parçalar): 12 amu zincirde tek H (indis 3); kare A'da iki AĞIR atom 1.5
+    bohr'a sıkışmış (en kısa), kare B'de H'nin bağı 1.7 -- en kısa mesafe
+    A'yı, kütle ağırlıklı sertlik B'yi seçer ve tam Hessian B'de daha hızlı
+    (seçici doğru kareyi buluyor); `omega_max_path_frames` ikisinin büyüğü.
+    EŞİTLİK: aynı kare iki kez -> ilk kare kalır. KOPYA: çağıranın dizisi
+    sonradan değişse de saklanan kare değişmez. NAN: sonlu olmayan konum ->
+    `sonlu` False -> omega `nan`. Tek atom: çift yok, kare 0 seçilir.
+    KIRMA: görüntüsüz mesafe; kütlesiz sertlik (A'yı seçer); '<=' (eşitlikte
+    son kare); kopyasız saklama; nan'ın sessizce düşmesi.
+    """
+    sen, alan = _tb_alan()
+    mH = float(amu_to_electron_mass(np.array([_M_H]))[0])
+    m12 = float(amu_to_electron_mass(np.array([12.0]))[0])
+    # En yakın görüntü.
+    R = np.zeros((16, 3))
+    R[:15, 0] = 2.0 * np.arange(15)
+    R[15, 0] = 30.4
+    iz = YolKaresiIzleyici(alan, np.full(16, mH))
+    sonuc = alan(R)
+    geri = iz(R)
+    assert geri[0] == sonuc[0] and np.array_equal(geri[1], sonuc[1])
+    assert abs(iz.en_kisa - 1.6) < 1e-12, iz.en_kisa
+    # Kütle ağırlığı: A (ağır çift sıkışık) sonra B (H'nin bağı sıkışık).
+    kutle = np.full(16, m12)
+    kutle[3] = mH
+    taban = np.zeros((16, 3))
+    taban[:, 0] = 2.0 * np.arange(16)
+    A = taban.copy()
+    A[9:, 0] -= 0.5  # 8-9 çifti 1.5 bohr (ağır)
+    B = taban.copy()
+    B[4:, 0] -= 0.3  # 3-4 (H-ağır) bağı 1.7 bohr
+    iz = YolKaresiIzleyici(alan, kutle)
+    iz(A)
+    iz(B)
+    assert (iz.en_kisa_adim, iz.sertlik_adim) == (0, 1)
+    wA = fabrika._omega_max(A, kutle, alan, 1e-4)
+    wB = fabrika._omega_max(B, kutle, alan, 1e-4)
+    assert wB > wA, (wA, wB)
+    durum = MDState(positions=A, velocities=np.zeros_like(A), masses=kutle)
+    assert omega_max_path_frames(sen, iz, durum, alan) == wB
+    # Eşitlik ve kopya.
+    iz = YolKaresiIzleyici(alan, np.full(16, mH))
+    C = taban.copy()
+    iz(C)
+    C[0, 0] = 1.0  # çağıranın dizisi değişir: saklanan kare değişmemeli
+    iz(taban)
+    assert iz.en_kisa_adim == 0 and iz.sertlik_adim == 0 and iz.en_kisa_konum[0, 0] == 0.0
+    # nan konum: sonlu değil -> omega nan. Gerçek alan nan konumda kendisi
+    # hata verir (koşu orada durur); izleyicinin kendi dalı, yasaları aynı
+    # ama kuvveti sıfır döndüren bir alanla sınanır.
+    class _SifirKuvvet:
+        itme, ss_sigma, kutu_x_bohr = alan.itme, alan.ss_sigma, alan.kutu_x_bohr
+
+        def __call__(self, X):
+            return 0.0, np.zeros_like(X)
+
+    iz = YolKaresiIzleyici(_SifirKuvvet(), np.full(16, mH))
+    iz(taban)
+    bozuk = taban.copy()
+    bozuk[2, 0] = np.nan
+    iz(bozuk)
+    assert iz.sonlu is False and iz.cagri == 2
+    durum = MDState(positions=taban, velocities=np.zeros_like(taban), masses=np.full(16, mH))
+    assert np.isnan(omega_max_path_frames(sen, iz, durum, alan))
+    # Tek atom: çift yok -> kare 0 seçilir, omega 0.
+    sen1, alan1 = _tb_alan(n_e=1, kutu=None)
+    iz = YolKaresiIzleyici(alan1, np.array([mH]))
+    tek = np.zeros((1, 3))
+    iz(tek)
+    iz(tek + 0.1)
+    assert iz.en_kisa_adim == 0 and iz.sertlik_adim == 0 and iz.en_kisa == float("inf")
+
+
+def test_T12c_TEK_HESSIAN_KAPI_ve_RUN_MD_IZLEYICIYI_YALNIZ_KOSUYA_VERIR(tmp_path, capsys, monkeypatch):
+    """İki seçici aynı kareyi seçerse TEK Hessian (6N kuvvet çağrısı), ayrıysa
+    iki (12N). TB NVE'de izleyici yoksa hata; NVT ve klasik dalda izleyici
+    kurulmaz ve omega `None`. `_run_md` izleyiciyi kare-0 Hessian'ından SONRA
+    kurar ve yalnız koşuya verir: sevk edilen senaryoda (400 adım) izleyici
+    TAM 401 çağrı görür ve panelin adımları onunkiyle aynı.
+    KIRMA: tekilleştirme kaldırılır -> 12N; izleyici kare-0 Hessian'ına da
+    verilir -> 401 + 96 çağrı; panel başka bir izleyicinin adımını basar.
+    """
+    sen, alan = _tb_alan()
+    mH = float(amu_to_electron_mass(np.array([_M_H]))[0])
+    taban = np.zeros((16, 3))
+    taban[:, 0] = 2.0 * np.arange(16)
+    durum = MDState(positions=taban, velocities=np.zeros_like(taban), masses=np.full(16, mH))
+    sayac = {"n": 0}
+
+    def sayan(X):
+        sayac["n"] += 1
+        return alan(X)
+
+    for kareler, beklenen in (((taban,), 96), ((taban, taban + np.r_[0.0, 0.1, 0.0]), 96)):
+        iz = YolKaresiIzleyici(alan, durum.masses)
+        for X in kareler:
+            iz(X)
+        sayac["n"] = 0
+        omega_max_path_frames(sen, iz, durum, sayan)
+        assert sayac["n"] == beklenen, (len(kareler), sayac["n"])
+    # Ayrı kareler (T12b'nin ağır + H geometrisi): iki Hessian.
+    kutle = np.full(16, float(amu_to_electron_mass(np.array([12.0]))[0]))
+    kutle[3] = mH
+    A = taban.copy()
+    A[9:, 0] -= 0.5
+    B = taban.copy()
+    B[4:, 0] -= 0.3
+    iz = YolKaresiIzleyici(alan, kutle)
+    iz(A)
+    iz(B)
+    assert (iz.en_kisa_adim, iz.sertlik_adim) == (0, 1)
+    sayac["n"] = 0
+    omega_max_path_frames(sen, iz, MDState(positions=A, velocities=np.zeros_like(A), masses=kutle), sayan)
+    assert sayac["n"] == 192
+    # İkinci karenin Hessian'ı sonlu değilse sonuç nan -- `max()` nan'ı
+    # sırasına göre yutardı (ilk kare sonlu, ikinci nan -> sonlu bir sayı).
+    def b_de_bozuk(X):
+        enerji, kuvvet = alan(X)
+        return enerji, (np.full_like(kuvvet, np.nan) if abs(X[5, 0] - B[5, 0]) < 1e-3 else kuvvet)
+
+    yol = omega_max_path_frames(sen, iz, MDState(positions=A, velocities=np.zeros_like(A), masses=kutle),
+                                b_de_bozuk)
+    assert np.isnan(yol), yol
+    with pytest.raises(InvalidInputError, match="yol karesi izleyicisi zorunludur"):
+        omega_max_path_frames(sen, None, durum, alan)
+    morse = dataclasses.replace(sen, force_field={"kind": "morse", "params": {}})
+    for baska in (_tb_senaryo(_NVT), morse):
+        assert path_frame_tracker(baska, alan, durum.masses) is None
+        assert omega_max_path_frames(baska, None, durum, alan) is None
+    # _run_md: izleyiciyi yakala, çağrı sayısını ve panelin adımlarını oku.
+    gercek = fabrika.path_frame_tracker
+    yakalanan = []
+
+    def yakala(senaryo, alan_, kutleler):
+        iz_ = gercek(senaryo, alan_, kutleler)
+        yakalanan.append(iz_)
+        return iz_
+
+    monkeypatch.setattr(fabrika, "path_frame_tracker", yakala)
+    sevk = Path(qlab.__file__).resolve().parents[2] / "scenarios" / "tb_zincir_md.yaml"
+    satir = _panel(sevk, tmp_path, capsys)
+    assert len(yakalanan) == 1 and yakalanan[0].cagri == 401, [i.cagri for i in yakalanan]
+    for parca in (f"closest_pair_step={yakalanan[0].en_kisa_adim},",
+                  f"stiffest_frame_step={yakalanan[0].sertlik_adim},"):
+        assert parca in satir["Yakınsama"], parca

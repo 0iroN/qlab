@@ -517,10 +517,11 @@ def test_ELEKTRON_COZEN_HER_TURDE_panel_ELEKTRON_YOK_DEMIYOR(tur):
     """
     assert (tur in ELEKTRON_COZEN) != (tur in KLASIK), f"{tur} sınıflandırılmamış"
     # D2: TB NVE'de salınım S'i zorunlu, öteki türlerde verilmez (kapı);
-    # D2-i: a priori tanının omega0'ı da aynı kapıdan geçer.
+    # D2-i: a priori tanının omega0'ı da aynı kapıdan geçer; D2-vi: yol karelerininki de.
     salinim = 1e-9 if tur == "tb_ss_sigma" else None
     prov = provenance_for(
-        _senaryo(tur), energy_drift=1e-9, energy_oscillation=salinim, omega_max_frame0=salinim
+        _senaryo(tur), energy_drift=1e-9, energy_oscillation=salinim, omega_max_frame0=salinim,
+        omega_max_path_frames=salinim,
     )
     metin = " ".join(prov.approximations + prov.neglected).lower()
     if tur in ELEKTRON_COZEN:
@@ -549,7 +550,8 @@ def test_TB_PANELI_MERMIN_KELVIN_SS_SIGMA_DOGA_CIPASI_ve_dt_BEYANI():
     kırmızı; panelin kT'si Kelvin'den çevrilmeden basılınca kırmızı.
     """
     prov = provenance_for(
-        _senaryo("tb_ss_sigma"), energy_drift=1e-9, energy_oscillation=1e-9, omega_max_frame0=1e-9
+        _senaryo("tb_ss_sigma"), energy_drift=1e-9, energy_oscillation=1e-9, omega_max_frame0=1e-9,
+        omega_max_path_frames=1e-9,
     )
     metin = " ".join(prov.approximations + prov.neglected).lower()
     # G6: anahtar adı (`electron_temperature_kelvin`) cümleden TANILARA
@@ -569,9 +571,11 @@ def test_TB_PANELI_MERMIN_KELVIN_SS_SIGMA_DOGA_CIPASI_ve_dt_BEYANI():
         # D2: koşuyu reddeden denetim yok, a posteriori hüküm var.
         "koşu reddedilmez",
         "koşudan sonra nve'nin salınım hükmü yargılar",
-        # D2-i: koşudan önce kare-0 omega0*dt de hükme girer; körlüğü yazılı.
+        # D2-i: koşudan önce kare-0 omega0*dt de hükme girer; D2-vi: koşudan
+        # sonra yolun izlenen iki karesininki de; körlüğü yazılı.
         "koşudan önce de kare-0 geometrisinin sayısal hessian'ından ölçülen omega0*dt",
-        "yol boyu omega'yı görmez",
+        "koşudan sonra da yolun her adımda izlenen iki karesininki",
+        "yalnız seçilen karelere bakar",
     ):
         assert parca in metin, f"TB beyanında eksik: {parca!r}"
     beklenen = prov.expected_error.lower()
@@ -590,10 +594,11 @@ def test_TB_PANELI_MERMIN_KELVIN_SS_SIGMA_DOGA_CIPASI_ve_dt_BEYANI():
         # yargılıyor ve hüküm ikisinin VE'si.
         "ayrı ölçüt yargılar",
         "kayıtlardan değil her adımdan",
-        # D2-i: S'nin seyrelmesini a priori tanı yakalar; hüküm üçünün VE'si.
+        # D2-i / D2-vi: S'nin seyrelmesini omega*dt tanısı yakalar (kare 0 ve
+        # yol kareleri, tek eşik); hüküm dördünün VE'si.
         "titreşime katılmayan ke onu seyreltir",
-        "omega_dt_frame0",
-        "yakınsama üçünün ve'sidir",
+        "omega_dt_frame0", "omega_dt_path_frames", "omega_dt_tolerance",
+        "yakınsama dördünün ve'sidir",
     ):
         assert parca in beklenen, f"TB sürüklenme beyanında eksik: {parca!r}"
     assert "yargılamaz" not in beklenen and "anlamına gelmez" not in beklenen
@@ -630,7 +635,8 @@ def test_TB_PANELI_r_cut_IKI_yasanin_BUYUGU_ve_KURULAN_KESMEYLE_AYNI(ss_rc, itme
     )
     senaryo = _senaryo("tb_ss_sigma", params)
     t = provenance_for(
-        senaryo, energy_drift=1e-9, energy_oscillation=1e-9, omega_max_frame0=1e-9
+        senaryo, energy_drift=1e-9, energy_oscillation=1e-9, omega_max_frame0=1e-9,
+        omega_max_path_frames=1e-9,
     ).diagnostics
     assert t["r_cut_bohr"] == 4.2
     _, alan, _ = build(senaryo)
@@ -807,8 +813,8 @@ def test_G5_TB_ESIGI_PANELDE_ve_HUKUMDE_AYNI_SAYI():
     """
     tb = _senaryo("tb_ss_sigma")
     # D2: S eşiğin altında sabit (1e-9): bu test YALNIZ sürüklenme eşiğini sınar.
-    # D2-i: a priori tanı da geçer durumda sabit (omega0 1e-9).
-    w = dict(energy_oscillation=1e-9, omega_max_frame0=1e-9)
+    # D2-i / D2-vi: omega*dt tanısı da geçer durumda sabit (omega 1e-9).
+    w = dict(energy_oscillation=1e-9, omega_max_frame0=1e-9, omega_max_path_frames=1e-9)
     t = provenance_for(tb, energy_drift=1e-9, **w).diagnostics
     esik = t["energy_drift_tolerance"]
     assert t["energy_drift_scale"] == "max_kinetic"
@@ -849,9 +855,10 @@ def test_G5_HAREKETSIZ_TB_KOSUSU_YARGILANAMAZ():
     tb = _senaryo("tb_ss_sigma")
     oran = qlab.engine.md.factory.energy_drift(tb, kinetik, potansiyel)
     assert np.isnan(oran)
-    # S ve omega0 eşik altında sabit: ✗'yi sürüklenmenin `nan`ı veriyor.
+    # S ve omega'lar eşik altında sabit: ✗'yi sürüklenmenin `nan`ı veriyor.
     assert provenance_for(
-        tb, energy_drift=oran, energy_oscillation=1e-9, omega_max_frame0=1e-9
+        tb, energy_drift=oran, energy_oscillation=1e-9, omega_max_frame0=1e-9,
+        omega_max_path_frames=1e-9,
     ).converged is False
     assert qlab.engine.md.factory.energy_drift(_senaryo("morse"), kinetik, potansiyel) == 0.0
 
@@ -1112,3 +1119,10 @@ def test_G5_energy_drift_SAKLI_DAL_YOK_ve_run_py_KENDISI_HESAPLAMIYOR(
     assert "omega_max_frame0" in adlar
     assert "eigvalsh" not in oznitelikler
     assert "omega_max_frame0" in {k.arg for k in prov_cagrisi.keywords}
+    # D2-vi: yol kareleri de fabrikada; izleyicinin ve Hessian'ın TEK dalı TB
+    # NVE'dir. `_run_md` izleyiciyi kurar, koşuyu onunla yapar, sonucu
+    # `omega_max_path_frames=` ve `path_frames=` ile geçirir.
+    for islev in ("path_frame_tracker", "omega_max_path_frames"):
+        assert dize_karsilastirma_tarayici(fabrika, islev) == {("tur", "tb_ss_sigma")}, islev
+        assert islev in adlar, islev
+    assert {"omega_max_path_frames", "path_frames"} <= {k.arg for k in prov_cagrisi.keywords}

@@ -449,7 +449,8 @@ zincirde (kütle ¹H; atomlar bir element DEĞİL, yasası seçilmiş bir modeli
 siteleridir) kısa NVE; kuvvet, tek orbitalli ss-σ modelinin Mermin serbest
 enerjisinin gradyanıdır (ölçüldü, 24.09.2026, bu makine: CLI 0.72 s,
 `energy_drift` 4.513e-04, eşik 1e-02; salınım S 1.005e-02, eşik 5e-02 —
-D2, 09.10.2026; kare-0 ω0·dt 0.2555, eşik 0.54 — D2-i, 10.10.2026; pencere
+D2, 09.10.2026; kare-0 ω0·dt 0.2555 ve yol kareleri 0.3174, eşik 0.67 — D2-i ve
+D2-vi, 10.10.2026; pencere
 senaryonun kendisi — a = 2
 bohr zincir + 0.05 bohr bozulma, 631.6 K, L = 32 bohr, dt = 10, 400 adım):
 
@@ -1265,7 +1266,8 @@ yasalar seçildi, yasadan geri okunan bağ, genlik ve eşik fizik iddiası deği
 | Sürüklenme hükmü enerjinin sıfırından bağımsız | zincir(16, 2, 0.05, 3), 631.6 K, L = 32, dt = 15, 267 adım; Ω + c (D2'den önce dt = 20, 200 adım: orada S 4.138e-02, eşiğin yalnız 1.2 katı altı) | eski ölçüt (\|blok[0]\|'a bölen) c = 0'da **1.09e-05** ✓, c = −Ω₀'da **5.35e-02** ✗ (dt = 20'de 3.26e-05 / 9.13e-02); TB ölçütü (max KE'ye bölen) c boyunca bağıl **≤ 5.1e-11**, S **≤ 2.9e-13** aynı; S **2.297e-02** ✓ |
 | Eşik TB'ye özgü sürüklenmeyi yakalıyor | aynı zincir, n_e = 15, v₀ = 0, dt = 10, 400 adım | T_e = 3.16 K'de **5.48e-02** ✗ (Fermi seviyesindeki geçiş adımda çözülmüyor), 631.6 K'de **5.97e-04** ✓; eşik **1e-02**. D2'den beri 3.16 K'de S de ✗ (7.30e-02); test sürüklenme hükmünü S'den ayrı okur |
 | Salınım hükmü iri dt'yi yakalıyor (D2) | zincir(16, 2, 0.05, 4), n_e = 16, 631.6 K, v₀ = 0, dt = 40, 100 adım (kamu yolu) | save_every 1'de sürüklenme **8.788e-03**, 2'de 1.401e-03 (ikisi de eşik altı; D2 öncesi panel ✓ basıyordu), S = tepe-tepe(KE + Ω)/max(KE) **2.310e-01** ✗; save_every 1/2/5/20'de S bit bit aynı (karelerden okunan S 2.310e-01 → 2.081e-01 kayıyor); sevk edilen senaryoda S **1.0054e-02** ✓; eşik **5e-02** |
-| Seyrelmeyi a priori tanı yakalıyor (D2-i) | kütle safsızlığı (15 × 12 amu zincirde tek H, Peierls minimumu + 300 K, dt = 52.35, 57 adım) ve ayrışan iki zincir (T1 zinciri iki kopya, ±v_y, dt = 40, 100 adım); kamu yolu | S **3.629e-02** / **2.100e-02** (eşiğin altında: titreşime katılmayan KE seyreltiyor; D2 paneli ✓ basıyordu) ama kare-0 ω0·dt **0.927** / **0.945** > 0.54 → ✗; aynı pencereler küçük dt'de ✓ (ω0·dt 0.463 / 0.473); eşik **0.54** |
+| Seyrelmeyi a priori tanı yakalıyor (D2-i) | kütle safsızlığı (15 × 12 amu zincirde tek H, Peierls minimumu + 300 K, dt = 52.35, 57 adım) ve ayrışan iki zincir (T1 zinciri iki kopya, ±v_y, dt = 40, 100 adım); kamu yolu | S **3.629e-02** / **2.100e-02** (eşiğin altında: titreşime katılmayan KE seyreltiyor; D2 paneli ✓ basıyordu) ama kare-0 ω0·dt **0.927** / **0.945** > 0.67 → ✗ (yol kareleri 1.001 / 1.241); aynı pencereler küçük dt'de ✓ (ω0·dt 0.463 / 0.473; yol kareleri 0.500 / 0.628); eşik **0.67** |
+| Yol körlüğünü yol kareleri yakalıyor (D2-vi) | Peierls minimumu + 6000 K ısıl hız (dt = 23.02, 130 adım) ve kare 0'da 10 bohr ayrı iki 8'li zincir ±0.004 ile çarpışıyor (L = 64, dt = 21.61, 139 adım); kamu yolu | kare-0 ω0·dt **0.533** / **0.437**, S **4.511e-02** / **3.961e-02**, sürüklenme eşiğin altında (D2-i paneli ✓ basıyordu); izleyicinin seçtiği karelerde ω·dt **0.943** / **0.955** > 0.67 → ✗; dt yarıda ✓ (yol kareleri 0.469 / 0.469); save_every 5'te seçilen adımlar ve ω aynı |
 
 Çağrı maliyeti (bu makine, 1B zincir a = 2, kT = 2e-3, L = 2N, 5 tekrarın en
 küçüğü): N = 16'da **0.62 ms**, 128'de **4.31 ms**. `energy_drift` eşiği
@@ -1281,15 +1283,24 @@ düşer); TB NVE'de Yakınsama = sürüklenme **VE** S, ve "Yakınsama tanısı"
 satırı ikisinin ayrı hükmünü basar. Koşuyu reddeden bir dt kararlılık
 denetimi TB dalında yoktur, dt'yi kullanıcı seçer; seçilen dt'yi koşudan sonra
 S yargılar. NVT'de S hesaplanmaz. **D2-i'den (10.10.2026) beri koşudan ÖNCE de
-bir tanı hükme girer:** kare-0 geometrisinin tam 3N kütle ağırlıklı
-Hessian'ından (kuvvetin merkezi farkı, 6N kuvvet çağrısı — N = 16'da ≈ 98 MD
-adımı) en hızlı mod ω0; eşik ω0·dt ≤ **0.54** (ön ölçümde, D2'nin 1170 hücresi
-bit bit yeniden üretilerek: küçük-dt sınıfının en büyük ω0·dt'si 0.430, iri
-sınıfın en küçüğü 0.682, geometrik orta 0.542; kare 0 yolun bir karesi olduğu
-için küçük-dt sınıfında hiçbir ailede ✗ vermez, iri sınıfın 235'inin 235'ini
-tek başına yakalar; bedeli gri bölgede S'nin ✓ verdiği 53 hücrenin 9'unun ✗
-olması). TB NVE'de Yakınsama = sürüklenme **VE** S **VE** ω0·dt; tanı satırı
-üçünün ayrı hükmünü basar. **Beyanlı sınırlar:** gri bölgede
+bir tanı hükme girer, D2-vi'den beri koşudan SONRA da:** kare-0 geometrisinin
+ve yolun iki karesinin tam 3N kütle ağırlıklı Hessian'ından (kuvvetin merkezi
+farkı, 6N kuvvet çağrısı — N = 16'da ≈ 100 MD adımı) en hızlı mod; iki kare,
+koşu boyunca alanı saran bir izleyiciyle **her adımdan** seçilir (kayıtlı
+karelerden değil): en kısa çift mesafesinin ve kütle ağırlıklı köşegen
+sertlik vekilinin tepe yaptığı anlar. Eşik ikisine de ω·dt ≤ **0.67** (ön
+ölçümde, D2'nin 1170 hücresi bit bit yeniden üretilerek: küçük-dt sınıfının
+en büyük ω·dt'si 0.478, iri sınıfın en küçüğü 0.930, geometrik orta 0.667;
+seçilen kareler yolun kareleri olduğu için küçük-dt sınıfında ✗ vermez —
+0/552 —, iri sınıfın 302'sinin 302'sini tek başına yakalar; bedeli gri
+bölgede S'nin ✓ verdiği 53 hücrenin 4'ünün ✗ olması). Yalnız son kareye ya da
+eşit aralıklı karelere bakmak ölçüldü ve reddedildi: kısa süren olayı
+(çarpışıp ayrılan parçalar) kaçırıyorlardı; yalnız en kısa mesafe kütleyi
+görmüyordu (içinde H olan ağır parçalar). TB NVE'de Yakınsama = sürüklenme
+**VE** S **VE** kare-0 ω0·dt **VE** yol karelerinin ω·dt'si; tanı satırı
+dördünün ayrı hükmünü basar; bedel en çok üç Hessian ve adım başına ≈ %10
+(sevk edilen senaryonun CLI süresi, yorumlayıcı açılışı dahil, 0.76 s'den
+0.90 s'ye). **Beyanlı sınırlar:** gri bölgede
 (ölçülen ailelerde ω·dt ≈ 0.46–0.93) hükmü tohum, aile ve koşu uzunluğu
 değiştirir; büyüme evresindeki ✗ "korunum doğrulanamadı" diye okunur; max KE
 yuvarlama düzeyindeyse S gürültüdür. Payda **tüm** kinetik enerji olduğu için
@@ -1298,15 +1309,17 @@ liste kapsayıcı değil: ayrışan parçaların ötelemesi (T1 zincirinin iki k
 ±v_y ile ayrışırken yol ω_max·dt 1.09'da S = 0.021, panel ✓; ötelemesiz ✗),
 kütle safsızlığı (15 × 12 amu zincirde tek H, ω·dt = 1.0'da S = 0.036, ✓),
 yalnız düşük modun uyarıldığı koşu, yüksek T_ion (ön ölçümde 3000–6000 K),
-enine yumuşak modlu geometri. **D2-i:** S'nin paydası değişmedi; seyrelmeyi
-ω0·dt yakalar — ölçülen kör ailelerde D2 panelinin sahte ✓ verdiği 24 iri-dt
-hücresinin 19'u artık ✗ (ilk ikisi kapanış testiyle kilitli; sayı eşiğe
-duyarlı, iki hücre eşiğin %1.5 yakınında). Parça başına COM paydası da ölçüldü,
-yalnız öteleme ailesini yakalıyordu; uygulanmadı. **Kalan körlük** (dürüst
-olumsuz, testle kilitli): ω0 yalnız kare 0'ı görür — kare 0'da 10 bohr ayrı iki
-zincir sonradan çarpışınca (ω0·dt 0.437, yol boyu 0.930, S 0.040) ve 6000 K
-ısıl hızla (ω0·dt 0.533, yol boyu 0.930, S 0.045) panel ✓ basar; yalnız serbest
-atomlardan oluşan bir başlangıçta ω0 = 0'dır.
+enine yumuşak modlu geometri, sonradan çarpışan parçalar. S'nin paydası
+değişmedi; seyrelmeyi ω·dt tanısı yakalar — ölçülen kör ailelerde (D2
+şüphecisi ve doğrulaması, D2-i ve D2-vi eleştirmenleri) D2 panelinin sahte ✓
+verdiği 95 iri-dt hücresinin **hepsi** artık ✗ (yalnız kare 0'la, eşik
+0.54'te, 40'ı kaçıyordu; dördü kapanış testiyle kilitli). Parça başına COM
+paydası da ölçüldü, yalnız öteleme ailesini yakalıyordu; uygulanmadı. **Kalan
+körlük** (beyanlı): tanı yolun en çok üç karesine bakar — en hızlı mod bu
+karelerde değilse (sertliği çift mesafesinden ya da köşegenden okunmayan,
+ör. elektronik ya da toplu bir mod başka bir anda tepe yaparsa) ve S
+seyreltilmişse panel ✓ basar; sertlik vekili ss-σ'nın iki üstel yasasına
+özgüdür; güvence koşunun kendi yoluna göredir.
 
 **Dürüst olumsuzlar:** termostatlı TB koşusu hiç koşulmadı (panel yalnız NVT'de
 eşiğin `None` olduğunu söyler; korunum cümlesi — KE + Ω korunur, KE + E

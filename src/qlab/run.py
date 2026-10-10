@@ -707,6 +707,8 @@ def _run_md(scenario: MDScenario, output: str | None) -> int:
         energy_drift,
         energy_oscillation,
         omega_max_frame0,
+        omega_max_path_frames,
+        path_frame_tracker,
         provenance_for,
     )
     from qlab.engine.md.integrator import Trajectory, run
@@ -717,11 +719,19 @@ def _run_md(scenario: MDScenario, output: str | None) -> int:
     # hızlı kütle ağırlıklı modu (TB NVE; öteki koşularda None). S'nin paydası
     # tüm KE'dir ve titreşime katılmayan KE onu seyreltir; omega0*dt bakmaz.
     omega0 = omega_max_frame0(scenario, durum, alan)
+    # YOL TANISI (D2-vi): kare 0 yolun en hızlı modunu görmez (sonradan
+    # çarpışan parçalar, ısıl keşif). TB NVE'de koşu alanı saran izleyiciyle
+    # yapılır; o HER ADIMI görür (kayıtlı kareleri değil), en kısa çift
+    # mesafesinin ve kütle ağırlıklı sertlik tepesinin karelerini seçer;
+    # koşudan sonra o karelerde aynı Hessian alınır. Öteki koşularda None.
+    # Kare-0 Hessian'ından SONRA kurulur ve yalnız `run`a verilir: `alan`
+    # adı değişmez (HF'nin kararlılık sayaçları `alan`dan okunur).
+    izleyici = path_frame_tracker(scenario, alan, durum.masses)
 
     if termostat is None:
         yorunge = run(
-            durum, alan, dt=scenario.dt, n_steps=scenario.n_steps,
-            save_every=scenario.save_every,
+            durum, alan if izleyici is None else izleyici, dt=scenario.dt,
+            n_steps=scenario.n_steps, save_every=scenario.save_every,
         )
     else:
         # Termostatlı koşu: `step` imzası velocity_verlet_step ile aynıdır.
@@ -751,6 +761,8 @@ def _run_md(scenario: MDScenario, output: str | None) -> int:
     # None. Uçlar integratörün HER adımından gelir (`Trajectory.total_min` ...);
     # buradaki termostat döngüsü onları biriktirmez ve NVT'de S hesaplanmaz.
     salinim = energy_oscillation(scenario, yorunge)
+    omega_yol = omega_max_path_frames(scenario, izleyici, durum, alan)
+    yol_kareleri = None if izleyici is None else izleyici.tanilar()
 
     # KISIT SAYISI TERMOSTATA BAĞLIDIR: ÖLÇÜLDÜ -- Langevin kütle merkezini
     # YENİDEN ISITIYOR (<KE_COM>/(1.5kT) = 1.098, çıkarılmış kalsaydı 0.000),
@@ -776,7 +788,8 @@ def _run_md(scenario: MDScenario, output: str | None) -> int:
         }
     provenance = provenance_for(
         scenario, energy_drift=suruklenme, energy_oscillation=salinim,
-        omega_max_frame0=omega0, n_constraints=kisit, **kararlilik
+        omega_max_frame0=omega0, omega_max_path_frames=omega_yol,
+        path_frames=yol_kareleri, n_constraints=kisit, **kararlilik
     )
     for etiket, deger in provenance.as_lines():
         print(f"{etiket:<14}: {deger}")
