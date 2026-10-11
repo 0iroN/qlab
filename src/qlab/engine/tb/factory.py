@@ -19,7 +19,7 @@ import numpy as np
 
 from qlab.engine.tb.bands import grid_extremum_bound
 from qlab.engine.tb.downfold import (
-    STAGGERING_TOLERANCE,
+    RHF_LIMITI_S2_SINIRI, SPIN_KIRIK_ESIGI, STAGGERING_TOLERANCE,
     DownfoldedParameters,
     downfold_uhf,
     hydrogen_ring,
@@ -200,8 +200,28 @@ def build_downfold(
     kuresel-olmayan minimumlarin hepsi (kamu yolunda seeds = 1, H8 d = 3.6 /
     4.0; Haar baslangiclarinda N6/N8) iki-siteli AF yapida degildi ve yapi
     kapisinda dustu -- bu bir GOZLEMDIR, garanti degil. KOR BANT (olculdu):
-    lambda (-1e-8, 0) yumusak mod bandindaysa eyer de "kararli" sayilir ve
-    ✓ basilir -- N=6'da Rc'nin ~1.3e-8 bohr ustune kadar.
+    lambda (-1e-8, 0) yumusak mod bandindaysa eyer de "kararli" sayilir --
+    N=6'da Rc'nin ~1.3e-8 bohr ustune kadar; arama satiri orada hala "UHF
+    YEREL minimum" der. Bu kararlilik kor bandi DURUR, ama o bantta donen
+    eyerlerin hepsi spin-KIRILMAMIS cikti (Rc + 1e-9 ... 1.3e-8, seeds 1-20:
+    |Delta| <= 4.2e-16), yani artik UCUNCU KOSUL onlari ✗'ler.
+
+    UCUNCU KOSUL (B7dog-2, 11.10.2026): her mesafede |Delta| >=
+    `SPIN_KIRIK_ESIGI` (2.5e-5 hartree) olmalidir. Neden: bu modulun
+    indirgedigi sey iki-siteli ANTIFERROMANYETIK hucredir; Delta ~ 0 olan bir
+    mesafede yapi kapisi yine gecer (iki alt-orgu ayni oldugu icin kaydirma
+    artigi da ~0'dir) ve once "Yakinsama : ✓" basiliyordu (olculdu, kamu
+    CLI: N=6 (2.6, 2.0, 3.0), seeds 8 -- d=2.0'da |Delta| 3.336e-13).
+    Parametreler DEGISMEZ; yalniz hukum ✗ olur ve "Yakinsama tanisi" satiri
+    hangi mesafede neden oldugunu yazar: |<S^2>| < `RHF_LIMITI_S2_SINIRI`
+    ise "RHF limiti: AF yapi yok -- parametreler tekbicim zincir", degilse
+    "spin kirik ama kademeli degil" (|Delta| ~ 0 ama <S^2> buyuk; ornegin H8
+    d=3.6 seeds=1'de <S^2> 3.5606). Kapi hicbir mesafede atesmezse tani
+    satiri YOKTUR. Esigin iki yandan olculmus gerekcesi ve gri bolgeleri
+    sabitin yanindadir (`downfold.SPIN_KIRIK_ESIGI`). Sevk edilen senaryonun
+    en kucuk |Delta|'si 0.17936 hartree (esigin 7174 kati); tani
+    `delta_abs_min` olarak da basilir (`s_squared_max` kirilmamis mesafeyi
+    gizler: tanik kosuda 1.935, `delta_abs_min` 3.336e-13).
     """
     parametreler = tuple(
         downfold_uhf(
@@ -215,6 +235,17 @@ def build_downfold(
 
     artik_max = max(p.staggering_residual for p in parametreler)
     s2_max = max(abs(p.s_squared) for p in parametreler)
+    delta_min = min(abs(p.delta) for p in parametreler)
+
+    # UCUNCU KOSUL (B7dog-2): spin-KIRILMAMIS mesafeler. Esik modulun TEK
+    # kaynagindan (`fit_distance_laws` ayni sabiti okur); her mesafe AYRI
+    # yargilanir -- `min`/`max` ozetine bakan bir kapi hangi mesafenin
+    # dustugunu soyleyemezdi.
+    kirilmamis = tuple(
+        (d, p)
+        for d, p in zip(scenario.distances_bohr, parametreler)
+        if abs(p.delta) < SPIN_KIRIK_ESIGI
+    )
 
     # ARAMA SATIRI. Her mesafe AYRI bir arama demektir. Hepsi ayni ozeti
     # verirse tek satir yazilir; vermezse HEPSI mesafesiyle birlikte yazilir.
@@ -241,13 +272,53 @@ def build_downfold(
         converged=bool(
             artik_max < STAGGERING_TOLERANCE
             and all(p.search_stable is True for p in parametreler)
+            and not kirilmamis
         ),
         diagnostics={
             "staggering_residual_max": artik_max,
             "s_squared_max": s2_max,
+            "delta_abs_min": delta_min,
             "n_distance": float(len(parametreler)),
             "n_neighbour": float(scenario.n_neighbour),
             "arama": arama,
         },
+        convergence_diagnosis=_delta_kapisi_tanisi(kirilmamis),
     )
     return parametreler, kaynak
+
+
+def _delta_kapisi_tanisi(
+    kirilmamis: tuple[tuple[float, DownfoldedParameters], ...],
+) -> str | None:
+    """Delta kapisinin (B7dog-2) "Yakinsama tanisi" satiri; atesmezse None.
+
+    Etiket <S^2>'den SECILIR ama hukum ondan GELMEZ (`RHF_LIMITI_S2_SINIRI`
+    gerekcesi): |Delta| ~ 0 iken |<S^2>| sinirin altindaysa RHF limiti,
+    ustundeyse spin kirik ama iki-siteli AF degil. Her mesafe kendi
+    sayilariyla yazilir -- bir mesafenin ozeti otekilerin adina konusamaz
+    (arama satirinin kurali).
+    """
+    if not kirilmamis:
+        return None
+
+    def _olcu(d: float, p: DownfoldedParameters) -> str:
+        return f"d={d:.3f}: |Delta|={abs(p.delta):.3e}, <S^2>={p.s_squared:.3e}"
+
+    rhf = [_olcu(d, p) for d, p in kirilmamis if abs(p.s_squared) < RHF_LIMITI_S2_SINIRI]
+    kirik = [
+        _olcu(d, p) for d, p in kirilmamis if not abs(p.s_squared) < RHF_LIMITI_S2_SINIRI
+    ]
+    parcalar = []
+    if rhf:
+        parcalar.append(
+            "RHF limiti: AF yapi yok -- parametreler tekbicim zincir ("
+            + "; ".join(rhf)
+            + ")"
+        )
+    if kirik:
+        parcalar.append("spin kirik ama kademeli degil (" + "; ".join(kirik) + ")")
+    return (
+        " / ".join(parcalar)
+        + f" -- spin kirilmasi esigi |Delta| >= {SPIN_KIRIK_ESIGI:.1e} hartree; "
+        "bu mesafelerde iki-siteli AF hucre indirgenmedi"
+    )

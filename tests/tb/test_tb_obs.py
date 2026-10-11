@@ -142,6 +142,35 @@ def test_fermi_seviyesi_yari_dolu_zincirde_bant_MERKEZINDE():
     assert fermi_level(e, n_electron_per_cell=1) == pytest.approx(-0.1948, abs=1e-12)
 
 
+@pytest.mark.parametrize("t", [-0.0625, 0.0625])
+def test_fermi_seviyesi_IZGARA_degeridir_n_2_mod_4_te_KAPALI_FORM_hata(t):
+    """K5 (11.10.2026): `fermi_level` bir IZGARA degeridir, surekli-k E_F
+    DEGIL -- yukaridaki n = 400 tamligi izgaraya baglidir.
+
+    Yari dolu en-yakin-komsu zincirde (kamu fonksiyonlariyla OLCULDU):
+    n = 0 (mod 4) TAM 0 (n = 8, 400); n = 2 (mod 4) TAM -2|t| sin(pi/n)
+    (n = 6: -|t|; n = 82: -4.787842e-03 hartree, kamu CLI'da k = 82'de
+    -5.4302 eV, dogrusu -5.3 eV). Isaret t'nin isaretinden bagimsizdir.
+
+    Hata kanitli sinirin (B1 = `grid_lipschitz_bound`, n_e * n_k cift) ICINDE
+    kalir ve sinir SIKIDIR: n = 82'de |hata| / B1 = 0.9998. Degerler
+    toleransla (abs 1e-12 hartree) kilitlenir; son-ulp KILITLENMEZ.
+    """
+    from qlab.engine.tb.bands import grid_lipschitz_bound
+
+    eps = -0.1948
+    model = _tek_orbital(ZINCIR, t=t, eps=eps)
+    for n, beklenen in ((8, 0.0), (400, 0.0), (6, -abs(t)),
+                        (82, -2.0 * abs(t) * np.sin(np.pi / 82))):
+        e = band_structure(model, uniform_k_grid(model.lattice, n))
+        hata = fermi_level(e, n_electron_per_cell=1) - eps
+        assert hata == pytest.approx(beklenen, abs=1e-12), n
+        sinir = grid_lipschitz_bound(model, n)
+        assert abs(hata) <= sinir, (n, hata, sinir)
+    # n = 82'de sinir SIKI (oran ~0.9998): hata gercekten B1 mertebesinde.
+    assert abs(hata) / sinir > 0.99
+
+
 @pytest.mark.parametrize(
     ("vektorler", "n_k", "z"), [(ZINCIR, 50, 2), (KARE, 20, 4), (KUBIK, 8, 6)]
 )

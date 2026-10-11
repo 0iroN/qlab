@@ -173,6 +173,46 @@ def test_main_does_not_print_stability_for_tdse(scenario_file, tmp_path, capsys)
     assert "Kararlılık" not in capsys.readouterr().out
 
 
+def _yakinsama_satirlari(out: str) -> tuple[str, str | None]:
+    """TDSE CLI panelinden "Yakınsama" ve "Yakınsama tanısı" değerleri."""
+    yakinsama = tani = None
+    for satir in out.splitlines():
+        govde = satir.strip()
+        if govde.startswith("Yakınsama tanısı"):
+            tani = govde[len("Yakınsama tanısı"):].strip()
+        elif govde.startswith("Yakınsama"):
+            yakinsama = govde[len("Yakınsama"):].strip()
+    return yakinsama, tani
+
+
+def test_main_MASKELI_TDSE_paneli_X_ve_YARGILANMADI_basar(tmp_path, capsys):
+    """KAMU YOLU (B5, 11.10.2026): maskeli bir TDSE koşusu CLI panelinde ✗
+    basar ve "Yakınsama tanısı" satırı YARGILANMADI ile başlar.
+
+    Maske normu kasten düşürür ve evolve() o koşuda norm kontrolünü atlar,
+    yani üniterlik HİÇ ÖLÇÜLMEZ. Eskiden panel maskeli koşuda her zaman ✓
+    basıyordu (ölçüldü: 64000 adımlık maskeli tünelleme koşusunda %99.99
+    norm kaybının yanına ✓). Aynı küçük senaryonun MASKESİZ hâli aynı yoldan
+    ✓ basar ve tanı satırı taşımaz -- yani ✗'i maskeden başka bir şey
+    üretmiyor (her koşuyu ✗ yapan bir mutant da kırmızıya döner)."""
+    maskeli = tmp_path / "maskeli.yaml"
+    maskeli.write_text(SMALL_SCENARIO + "absorbing_width_bohr: 10.0\n", encoding="utf-8")
+    maskesiz = tmp_path / "maskesiz.yaml"
+    maskesiz.write_text(SMALL_SCENARIO, encoding="utf-8")
+
+    assert run.main([str(maskeli), "-o", str(tmp_path / "m.npz")]) == 0
+    yakinsama, tani = _yakinsama_satirlari(capsys.readouterr().out)
+    assert yakinsama.startswith("✗"), yakinsama
+    assert "observed_norm_drop=" in yakinsama
+    assert tani is not None and tani.startswith("YARGILANMADI:"), tani
+
+    assert run.main([str(maskesiz), "-o", str(tmp_path / "s.npz")]) == 0
+    yakinsama, tani = _yakinsama_satirlari(capsys.readouterr().out)
+    assert yakinsama.startswith("✓"), yakinsama
+    assert "norm_deviation=" in yakinsama
+    assert tani is None
+
+
 def test_main_reports_point_count_for_hf_scan(hf_scenario_file, tmp_path, capsys):
     output = tmp_path / "hf_cli.npz"
     assert run.main([str(hf_scenario_file), "-o", str(output)]) == 0

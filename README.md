@@ -437,6 +437,19 @@ python -m qlab.run scenarios/argon_nvt.yaml -o argon.npz
 `total` ve `temperature_kelvin` taşır; şeffaflık paneli koşunun yöntemini,
 yaklaşımlarını ve enerji sürüklenmesini stdout'a basar.
 
+`argon_nvt`in paneli **`Yakınsama : ✗`** basar ve hemen altında
+`Yakınsama tanısı: YARGILANMADI: …` satırı gelir (11.10.2026'dan beri; önce
+koşulsuz ✓ basıyordu). Sebep bir hata değil, ölçülmemiş bir hükümdür: NVT'de
+toplam enerji tanım gereği korunmaz, yani NVE'nin korunum hükmü burada yoktur;
+NVT'nin kendi sorusu — kinetik sıcaklık hedefe oturdu mu (⟨T⟩ hedefe karşı) —
+ise bu koşuda hiç hesaplanmaz (`temperature_kelvin` npz'dedir ama ne ortalaması
+basılır ne hedefle karşılaştırılır). Satırdaki `energy_drift` (sevk edilen
+koşuda 3.460e-02) bir tanıdır, hüküm değil. **YARGILANMADI** (= denenmedi)
+bilerek **YARGILANAMAZ**'dan (= denendi, sonuçsuz) ayrı bir kelimedir. Aynı
+hüküm her termostatlı koşuya (Langevin ve Nose-Hoover, her kuvvet alanı)
+uygulanır; ⟨T⟩'nin ölçülmüş değerleri aşağıda "Langevin 300 K'ya OTURMADI"
+maddesindedir — ölçüm olarak, hüküm olarak değil.
+
 Ab initio MD (Modül 2D) — H₂ Hartree-Fock yüzeyinde titreşiyor, kuvvetler
 her adımda SCF ile yeniden çözülüyor (adım başına 7 SCF, ~8.5 ms):
 
@@ -476,7 +489,11 @@ Panelin `Yakınsama` satırı burada "SCF durdu" demez — modelin varsaydığı
 iki-siteli antiferromanyetik yapının her mesafede gerçekten bulunduğunu ve
 her mesafede dönen UHF çözümünün bir UHF **YEREL** minimumu olduğunu söyler
 (eyer dönen tek bir mesafe satırı ✗ yapar; küresel minimum iddia edilmez;
-|λ| < 1e-8 yumuşak modlar ayırt edilmez).
+|λ| < 1e-8 yumuşak modlar ayırt edilmez) — **ve** (B7dog-2, 11.10.2026) her
+mesafede spinin gerçekten kırık olduğunu: |Δ| ≥ 2.5e-5 hartree (sevk edilen
+senaryoda en küçük |Δ| 0.17936, eşiğin 7174 katı). Δ ≈ 0 olan bir mesafe
+(RHF limiti) satırı ✗ yapar ve "Yakınsama tanısı" satırı o mesafeyi adıyla
+yazar; ayrıntı aşağıda Modül 3H "Panel ve senaryo"dadır.
 
 Spin Monte Carlo (Modül 4) — 2B Ising kafesinde altı sıcaklıklık bir tarama
 (ölçüldü, 0.56 s):
@@ -1187,9 +1204,14 @@ diye soran bir test bunu kaçırırdı).
   "Yakınsama : ✓ … ✗ donen cozum UHF EYERI" diye basıyordu; artık eyer
   dönen tek bir mesafe satırın işaretini ✗ yapar. Kalan kör bant ölçüldü
   (λ ≈ −0.77·d, doğrusal): Rc + 5e-9'da λ = −3.76e-9 ve Rc + 1e-8'de
-  −7.60e-9 yumuşak mod bandında (−1e-8, 0) kalıyor ve panel ✓ basıyor
-  (satırda "UHF YEREL minimum … lambda_min=-7.602e-09"); Rc + 2e-8'de
-  −1.53e-8 ile ✗. Bant genişliği ≈1.3e-8 bohr. LiF ve 6-31G ölçülmedi.
+  −7.60e-9 yumuşak mod bandında (−1e-8, 0) kalıyor ve arama satırı hâlâ
+  "UHF YEREL minimum … lambda_min=-7.602e-09" diyor; Rc + 2e-8'de −1.53e-8
+  ile ✗. Bant genişliği ≈1.3e-8 bohr. Panelin işareti ise artık o bantta da
+  **✗** (B7dog-2, 11.10.2026): bantta dönen eyerlerin hepsi spin-kırılMAMIŞ
+  çıktı (Rc + 1e-9 … 1.3e-8, seeds 1–20: |Δ| ≤ 4.2e-16; Rc + 5e-9'da
+  |Δ| = 1.7e-16, ⟨S²⟩ = 2.7e-15), yani ✗'i kararlılık değil **Δ kapısı**
+  verir ve "Yakınsama tanısı" satırı "RHF limiti" der. Kararlılık kör
+  bandının kendisi durur. LiF ve 6-31G ölçülmedi.
 - **PySCF bu makinede kurulu değil** (yalnız kaynak tarball); `reference/`
   kayıtları PySCF **2.14.0** ile başka bir yerde üretilmiştir. Dahası 11
   referans kaydının **hepsi kapalı kabuktur**, yani UHF'in **spin kırılan
@@ -1347,9 +1369,13 @@ karelerde değilse (sertliği çift mesafesinden ya da köşegenden okunmayan,
 seyreltilmişse panel ✓ basar; sertlik vekili ss-σ'nın iki üstel yasasına
 özgüdür; güvence koşunun kendi yoluna göredir.
 
-**Dürüst olumsuzlar:** termostatlı TB koşusu hiç koşulmadı (panel yalnız NVT'de
-eşiğin `None` olduğunu söyler; korunum cümlesi — KE + Ω korunur, KE + E
-korunmaz — yalnız NVE'nin beklenen hatasında basılır, NVT panelinde basılmaz);
+**Dürüst olumsuzlar:** termostatlı TB koşusu yalnız bir ön ölçümde koşuldu
+(11.10.2026, Langevin, kazıma YAML'larla; ⟨T⟩ hedefin %2.0 üstünde,
+**açıklanmadı** — aşağıdaki "Langevin 300 K'ya OTURMADI" maddesi) ve bu bir
+hüküm değil ölçümdür: panel NVT'de eşiğin `None` olduğunu söyler ve
+Yakınsama'yı **✗ YARGILANMADI** basar, çünkü ⟨T⟩ hedefe karşı yargılanmaz;
+korunum cümlesi — KE + Ω korunur, KE + E korunmaz — yalnız NVE'nin beklenen
+hatasında basılır, NVT panelinde basılmaz;
 enine (y, z) kararsızlık ölçülmedi — 1B pencereler y = z = 0 alt-uzayında
 kalır; termal bir MD koşusunun Fermi geçişine varıp varmadığı **ölçülmedi**
 (G5'in n_e = 15 penceresi v₀ = 0'dan başlar; ön ölçümün yörüngesi tek bir
@@ -1464,6 +1490,26 @@ koşunun katları olabilir (Hessian ≈ 6N kuvvet çağrısı; ölçüldü: H₂
   ergodik değil ve 200 adım istatistik için yetersiz. **Termostatın HF ile
   KOŞTUĞU kanıtlandı; hedef sıcaklığa OTURDUĞU kanıtlanmadı** ve iddia
   edilmiyor. (Nosé-Hoover'da ⟨T⟩ = 289.2 K ama T_max 974.3 K — aynı uyarı.)
+  Panel bunu artık açıkça söyler: her termostatlı koşuda **✗ YARGILANMADI**
+  (önce ✓ basıyordu). **Daha uzun koşuların ölçümü (11.10.2026, kamu CLI,
+  kazıma YAML'lar, üç tohum; ölçüm olarak, hüküm olarak DEĞİL):** ⟨T⟩
+  npz'nin `temperature_kelvin` dizisinden, ilk 6/(2γ) dengeleme penceresi
+  atılarak okundu.
+  - `argon_nvt` (sevk edilen tohum 2026 + 7 + 11; hedef 87.2 K):
+    87.294 / 86.127 / 87.510 K → ortalama 86.977 K, **−%0.26** (tohumlar arası
+    SEM 0.43 K, −0.5σ). Sevk edilen tohum tek başına, soğuk başlangıç dahil:
+    86.785 K (−%0.48).
+  - `h2_aimd` + Langevin (300 K, γ 0.01), 10⁴ adım (koşu başı ~94 s):
+    280.39 / 298.68 / 295.72 K → 291.60 K, **−%2.8** (SEM 5.67 K, −1.5σ).
+  - `tb_zincir_md` + Langevin (300 K, γ 1e-3): dt 10 / 2·10⁴ adımda 305.02 K
+    (+%1.67); dt 5 / 4·10⁴ adımla birlikte beş koşuda 306.09 K, **+%2.0**
+    (SEM 1.71 K, +3.6σ). **Açıklanmadı:** BAOAB'ın bilinen kinetik yanlılığı
+    ters yöndedir (≈(ω·dt)²/4 kadar DÜŞÜK okur) ve dt'yi yarıya indirmek farkı
+    tutarlı biçimde küçültmüyor.
+  - **Olağan hata çubuğu güvenilmez:** tek koşuyu 10 bloğa bölmek hatayı
+    küçük gösteriyor (argon tohum 7'de blok SEM 0.27 K farkı −4.0σ diye
+    okuturdu; tohumlar arası yayılım öyle demiyor). İleride bir NVT hükmü
+    kurulacaksa çok tohum ya da düzgün bir öz-ilinti tahmini ister.
 - **"Isı bağı kırar" hikâyesi RHF'e TAŞINMAZ.** Ölçüldü: RHF/STO-3G ayrışma
   limiti −0.5709 hartree, doğrusu −1.000000. Plan C'nin Morse ayrışması nicel
   bir iddiaydı; RHF'te aynı iddia kurulamaz.
@@ -1664,6 +1710,20 @@ Dokunan bantlar (yarı metal) hiçbir n'de metal kanıtlanamaz; grafen her
 kanıtlı. İki bayrak birbirinden bağımsızdır: grafen k=100'de kenarlar kanıtlı
 (✓) ama hüküm "belirsiz". npz'de `iletkenlik` tam hükmü taşır; `is_metal`
 yalnız kanıtlı metalde True'dur ve False "yalıtkan" demek **değildir**.
+
+**`fermi_ev` bir ızgara değeridir (K5, 11.10.2026).** npz'nin `fermi_ev` alanı
+`k_points` ızgarasında doldurulan son durumun enerjisidir; panel onu basmaz ve
+`Yakınsama ✓` onu sertifikalamaz (✓ bant uçlarının B2 sınırına bakar). Kamu
+CLI'dan ölçüldü (sevk edilen zincir, ε = −5.3 eV, t = −1.7 eV): k = 8 ve 100'de
+−5.3000 (tam), k = 6'da −7.0000, k = 82'de **−5.4302** eV — panel k = 82'de ✓
+basarken. Yarı dolu 1B zincirde n ≡ 2 (mod 4) iken hata tam 2|t|·sin(π/n)'dir;
+bu formül genel değildir (2B kare örgüde aynı n'lerde hata 0). Genel ve kanıtlı
+sınır |fermi_ev − E_F| ≤ B1'dir (npz'de `iletkenlik_cozunurluk_ev`), yalnız
+n_e·n_k çiftken (2750 vakada ihlal 0, en büyük oran 0.995); tekken bir durum
+yarı doludur ve sınır kanıtlı değildir (1B'de 395 vakanın 8'inde 1.49·B1'e
+kadar aşıldı). Yalıtkanda `fermi_ev` aralık ortası değil son dolu durumdur.
+`energies_ev` Γ–X yolunda, `fermi_ev` tekbiçim ızgarada hesaplanır. Ayrıntı
+ve kanıt `tb_obs.fermi_level` dokstringindedir.
 
 **Hoplama listesi Hermityen olmalıdır (H0, 04.10.2026).** Eskiden tek yönlü
 yazılmış bir zincir rc=0 ile "metal ✓" basıyor ve bant genişliği yarıya
@@ -2014,7 +2074,12 @@ başka bir yordam, Coulson-Fischer noktasında |spin| ölçüsü — üssü **0.
 2.886867e-09, d_c−0.02'de 1.539807e-08; N=10'da 9.908740e-16 ve
 1.998401e-16. Bu artıklar fizik değil `solve_uhf`'in artık tabanıdır ve eşik
 (1e-7) tam da bu yüzden planın önerdiği 1e-8 **değildir**: N=6 d_c−0.02
-noktası 1.539807e-08 ile 1e-8'i aşıyor.
+noktası 1.539807e-08 ile 1e-8'i aşıyor. Bu eşik yalnız çıpa testinin bu iki
+noktası içindir: kırılmamış durumun artığı noktadan noktaya ve tohumdan
+tohuma DÜZENSİZ değişir, yalnız ZARFI geçişe yaklaştıkça büyür (yumuşak mod;
+ölçüldü, B7dog-2, varsayılan OpenBLAS: N=6 Rc−0.03'te 1.1104e-07, Rc−1e-5'te
+6.1235e-06 ama Rc−1e-6 … −5e-7'de ≤ 4.5e-16). Panelin Δ kapısı ve
+`fit_distance_laws` bu yüzden 2.5e-5 kullanır (Modül 3H "Panel ve senaryo").
 
 > **Üs testi tek başına ÖLÇEĞE KÖRDÜR** ve bu delik ayrıca kapatıldı: log-log
 > eğimi `Δ → c·Δ` dönüşümü altında değişmez, yani üs testi `Δ`'yı sabit bir
@@ -2205,7 +2270,23 @@ senaryoda ölçülen **7.526e-09**) **ve** her mesafede dönen UHF çözümünü
 UHF-kararlı, yani YEREL minimum olmasıdır (B7-c; sevk edilen senaryoda beş
 mesafenin beşi, λ +0.248 … +0.850; |λ| < 1e-8 yumuşak modlar ayırt
 edilmez, bkz. Modül 1C kör bant notu). Eyer dönen tek bir mesafe ✗ yapar —
-yoksa ✓ satırın içinde "✗ donen cozum UHF EYERI" yazıyordu.
+yoksa ✓ satırın içinde "✗ donen cozum UHF EYERI" yazıyordu. **Üçüncü koşul
+(B7dog-2, 11.10.2026):** her mesafede spin gerçekten kırık olmalı, |Δ| ≥
+`SPIN_KIRIK_ESIGI` = 2.5e-5 hartree (sevk edilen senaryoda en küçük |Δ|
+**0.17936**, eşiğin 7174 katı; panelde `delta_abs_min`). Δ ≈ 0 olan bir
+mesafede (RHF limiti) yapı kapısı yine geçer — iki alt-örgü aynıdır — ve
+panel ✓ basıyordu (ölçüldü: N = 6 (2.6, 2.0, 3.0), seeds 8, d = 2.0'da
+|Δ| 3.336e-13). Artık ✗ ve "Yakınsama tanısı" satırı hangi mesafede neden
+olduğunu yazar: |⟨S²⟩| < 1e-8 ise "RHF limiti: AF yapi yok -- parametreler
+tekbicim zincir", değilse "spin kirik ama kademeli degil". Parametreler
+değişmez; kapı hiçbir mesafede ateşlemezse tanı satırı yoktur (sevk edilen
+panel beş satır kalır). Eşik iki yandan ölçüldü: spin-kırılmamış durumun en
+büyük gürültüsü 6.1235e-06 (N6, Rc − 1e-5), kararlı dönen en küçük kırık
+durum 9.3066e-05 (N6, Rc + 1e-7) — eşik birincinin 4.08 katı, ikincinin 3.72'de
+biri. Gri bölgeler (Rc'nin hemen üstünde ≲ 3e-9 bohr, altında ≲ 6e-7 bohr
+dış-değerleme) sabitin yanında yazılıdır. Aynı sabit `fit_distance_laws`ın
+"spin-KIRILMAMIŞ nokta" kapısıdır (eskiden 1e-7'ydi ve Rc'ye yakın gürültüyü
+geçirirdi).
 
 Beyan metninin **tek kaynağı** `engine/tb/factory.py`dir ve bu bir disiplin
 değil bir **test**tir: her beyan cümlesi `src/` ağacında tam bir kez geçer;

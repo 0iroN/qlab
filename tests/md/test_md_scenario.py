@@ -839,19 +839,105 @@ def test_G5_TB_ESIGI_PANELDE_ve_HUKUMDE_AYNI_SAYI():
 
 
 def test_G5_TERMOSTATLI_TB_de_SURUKLENME_ESIGI_YOK():
-    """NVT'de sürüklenme hükme girmez: eşik `None` basılır (0.0 DEĞİL), hüküm ✓.
+    """NVT'de sürüklenme hükme girmez: eşik `None` basılır (0.0 DEĞİL), hüküm
+    ✗ + YARGILANMADI.
 
-    Termostatlı TB koşusu HİÇ koşulmadı (spec 6, eleştirmen P2-10); bu test
-    yalnız panelin ne dediğini kilitler, dinamiği değil.
+    Bu test yalnız panelin ne dediğini kilitler, dinamiği değil. Eskiden
+    hüküm ✓'ydı; ama NVT'nin kendi sorusu (⟨T⟩ hedefe oturdu mu) hiç
+    hesaplanmıyordu -- ölçülmemiş bir hükmün yanına ✓ basılıyordu
+    (C1/D3/D2-iv, 11.10.2026). Termostatlı TB koşusu artık ön ölçümde
+    koşuldu (README: Langevin, üç tohum, ⟨T⟩ hedefin %2.0 üstünde,
+    açıklanmadı) ama bu bir ölçümdür, hüküm değil; panel onu yargılamaz.
+    energy_drift = 5.0 (çok büyük) ✗'nin SEBEBİ değildir: eşik yok.
     """
     nvt = dataclasses.replace(
         _senaryo("tb_ss_sigma"),
         thermostat={"kind": "langevin", "params": {"temperature": 300.0, "gamma": 1e-3}},
     )
     prov = provenance_for(nvt, energy_drift=5.0)
-    assert prov.converged is True
+    assert prov.converged is False
+    assert prov.convergence_diagnosis.startswith("YARGILANMADI:")
     assert prov.diagnostics["energy_drift_tolerance"] is None
     assert "NVT" in prov.expected_error
+    # Hüküm sürüklenmeden BAĞIMSIZ: sıfır sürüklenme de ✗ + aynı tanı.
+    sifir = provenance_for(nvt, energy_drift=0.0)
+    assert sifir.converged is False
+    assert sifir.convergence_diagnosis == prov.convergence_diagnosis
+
+
+def _md_paneli(out: str) -> dict[str, str]:
+    """MD CLI panelinin etiket -> değer sözlüğü.
+
+    Satır biçimi "{etiket:<14}: {deger}"; "Yakınsama tanısı" 16 karakterdir
+    ve hizayı taşar, bu yüzden sabit sütun değil ilk ": " ile bölünür.
+    """
+    panel = {}
+    for satir in out.splitlines():
+        if ": " in satir:
+            etiket, deger = satir.split(": ", 1)
+            panel.setdefault(etiket.strip(), deger)
+    return panel
+
+
+_SEVK = Path(__file__).resolve().parents[2] / "scenarios"
+
+
+@pytest.mark.parametrize(
+    "ad, metin",
+    [
+        # Sevk edilen argon_nvt (Langevin) -- yalnız adım sayısı kısaltıldı
+        # (20000 -> 200; panelin hükmü adım sayısına bağlı değil).
+        (
+            "argon_langevin",
+            (_SEVK / "argon_nvt.yaml").read_text(encoding="utf-8")
+            .replace("n_steps: 20000", "n_steps: 200"),
+        ),
+        # Sevk edilen h2_morse + Nose-Hoover, 400 adım.
+        (
+            "h2_nose_hoover",
+            (_SEVK / "h2_morse.yaml").read_text(encoding="utf-8")
+            .replace("n_steps: 4000", "n_steps: 400")
+            + "thermostat:\n  kind: nose_hoover\n"
+            "  params: {target_temperature_kelvin: 300.0, relaxation_time: 400.0}\n",
+        ),
+    ],
+    ids=["argon_langevin", "h2_nose_hoover"],
+)
+def test_NVT_KAMU_YOLU_X_ve_YARGILANMADI_basar(tmp_path, capsys, ad, metin):
+    """KAMU YOLU (C1/D3/D2-iv, 11.10.2026): termostatlı koşu CLI panelinde ✗
+    basar ve "Yakınsama tanısı" satırı YARGILANMADI ile başlar -- iki
+    termostat türünde de (Langevin, Nose-Hoover).
+
+    Eskiden panel NVT'de koşulsuz ✓ basıyordu (ölçüldü, sevk edilen
+    `argon_nvt`: "✓ dt=4.457e+02, n_steps=20000, energy_drift=3.460e-02,
+    ..."); NVT'nin sorusu (⟨T⟩ hedefe oturdu mu) ise hiç hesaplanmıyordu.
+    energy_drift Yakınsama satırında tanı olarak kalır.
+    """
+    import qlab.run as run_modulu
+
+    assert "n_steps: 200\n" in metin or "n_steps: 400\n" in metin  # kısaltma tuttu
+    yol = tmp_path / f"{ad}.yaml"
+    yol.write_text(metin, encoding="utf-8")
+    assert run_modulu.main([str(yol), "-o", str(tmp_path / f"{ad}.npz")]) == 0
+    panel = _md_paneli(capsys.readouterr().out)
+    assert panel["Yakınsama"].startswith("✗"), panel["Yakınsama"]
+    assert "energy_drift=" in panel["Yakınsama"]
+    assert panel["Yakınsama tanısı"].startswith("YARGILANMADI:"), panel
+    assert "YARGILANAMAZ" not in panel["Yakınsama tanısı"]
+    assert panel["Beklenen hata"].startswith("NVT: toplam enerji KORUNMAZ")
+
+
+def test_NVT_KAMU_YOLU_KONTROLU_NVE_h2_morse_HALA_TIK_ve_TANISIZ(tmp_path, capsys):
+    """Yukarıdaki ✗'in sebebi TERMOSTAT, başka bir şey değil: AYNI h2_morse
+    termostatsız (NVE, sevk edildiği gibi) aynı kamu yolundan ✓ basar ve
+    "Yakınsama tanısı" satırı taşımaz. Her MD koşusunu ✗ yapan bir mutant
+    burada kırmızıya döner."""
+    import qlab.run as run_modulu
+
+    assert run_modulu.main([str(_SEVK / "h2_morse.yaml"), "-o", str(tmp_path / "nve.npz")]) == 0
+    panel = _md_paneli(capsys.readouterr().out)
+    assert panel["Yakınsama"].startswith("✓"), panel["Yakınsama"]
+    assert "Yakınsama tanısı" not in panel
 
 
 def test_G5_HAREKETSIZ_TB_KOSUSU_YARGILANAMAZ():

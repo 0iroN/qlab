@@ -262,6 +262,11 @@ def _run_tb(scenario: TBScenario, output: str | None) -> int:
             degenerate=yuk.degenerate,
             tick_distances=yuk.tick_distances,
             tick_labels=np.array(yuk.tick_labels),
+            # `fermi_ev` k_points IZGARASININ değeridir (yol değil) ve panelin
+            # ✓'si onu SERTİFİKALAMAZ (✓ bant uçlarına bakar): zincirde k = 82'de
+            # -5.4302 eV, doğrusu -5.3. Kanıtlı sınır |fermi_ev - E_F| <=
+            # iletkenlik_cozunurluk_ev (B1), yalnız n_e·n_k çiftken
+            # (bkz. `tb_obs.fermi_level`).
             fermi_ev=np.array(yuk.fermi_ev),
             # `is_metal` yalnız KANITLI metalde True; False "yalıtkan"
             # DEMEK DEĞİLDİR -- tam hüküm `iletkenlik` alanındadır.

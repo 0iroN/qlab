@@ -30,9 +30,15 @@ import numpy as np
 import pytest
 
 import qlab.engine.tb.factory as factory_modulu
-from qlab.engine.tb.downfold import STAGGERING_TOLERANCE, downfold_uhf, hydrogen_ring
+from qlab.engine.tb.downfold import (
+    SPIN_KIRIK_ESIGI,
+    STAGGERING_TOLERANCE,
+    DownfoldedParameters,
+    downfold_uhf,
+    hydrogen_ring,
+)
 from qlab.engine.tb.factory import build_downfold
-from qlab.errors import ScenarioError
+from qlab.errors import ScenarioError, UnsupportedSystemError
 from qlab.scenario.loader import load_scenario
 from qlab.scenario.schema import DownfoldScenario
 
@@ -392,6 +398,9 @@ def test_YAKINSAMA_KADEMELI_YAPININ_DOGRULANMASINA_bagli():
     )
     assert kaynak.diagnostics["n_distance"] == float(len(UCUZ.distances_bohr))
     assert kaynak.diagnostics["n_neighbour"] == 2.0
+    # B7dog-2: iki mesafe de spin-kirik -> Delta kapisi atesmez, tani satiri YOK.
+    assert kaynak.diagnostics["delta_abs_min"] == min(abs(p.delta) for p in parametreler)
+    assert kaynak.convergence_diagnosis is None
 
     arama = kaynak.diagnostics["arama"]
     assert "8 tohum" in arama
@@ -422,6 +431,147 @@ def test_YAKINSAMA_ESIGE_gercekten_BAKIYOR(monkeypatch):
     parametreler, kaynak = build_downfold(UCUZ)
     assert max(p.staggering_residual for p in parametreler) > 1e-16
     assert kaynak.converged is False
+
+
+def _elle_parametre(delta: float, s2: float) -> DownfoldedParameters:
+    """SCF'siz, elle kurulan bir mesafe sonucu (esik testleri icin)."""
+    return DownfoldedParameters(
+        epsilon_bar=0.0, delta=delta, hoppings=(-0.3, 0.02), n_site=6,
+        basis_name="sto-3g", s_squared=s2, energy_uhf=-3.0,
+        staggering_residual=0.0, search_line="elle", search_stable=True,
+    )
+
+
+@pytest.mark.parametrize(
+    ("delta", "s2", "beklenen"),
+    [
+        # Olculen en buyuk GURULTU (N6 Rc - 1e-5, seeds 4, varsayilan OpenBLAS):
+        # eski esik 1e-7 bunu "kirik" sayip ✓ basardi.
+        (6.1235e-06, 7.1088e-10, False),
+        # Olculen en kucuk KIRIK kararli deger (N6 Rc + 1e-7, seeds 16).
+        (9.3066e-05, 1.6421e-07, True),
+    ],
+)
+def test_DELTA_ESIGI_OLCULEN_IKI_YANIN_ARASINDA(monkeypatch, delta, s2, beklenen):
+    """Esigin KENDISI: olculen gurultu ✗, olculen en kucuk kirik ✓.
+
+    SCF'siz (`downfold_uhf` yamalanir) cunku Rc'nin 1e-5 bohr yakininda hangi
+    durumun dondugu BLAS cekirdegine bagli (olculdu: Prescott/Haswell'de ayni
+    noktalar baska durum veriyor) -- sayilar varsayilan cekirdekte olculmus
+    girdilerdir. Esigi <= 6.1e-6'ya (eski 1e-7 dahil) ya da > 9.3e-5'e ceken
+    bir degisiklik burada kirmizi olur.
+    """
+    monkeypatch.setattr(
+        factory_modulu, "downfold_uhf", lambda *a, **k: _elle_parametre(delta, s2)
+    )
+    _, kaynak = build_downfold(dataclasses.replace(UCUZ, distances_bohr=(2.6,)))
+    assert kaynak.converged is beklenen
+    if beklenen:
+        assert kaynak.convergence_diagnosis is None
+    else:
+        assert "RHF limiti" in kaynak.convergence_diagnosis
+
+
+@pytest.mark.parametrize(
+    ("s2", "etiket"),
+    [
+        # Olculen en buyuk <S^2> GURULTUSU (N6 Rc - 1e-5) -> RHF limiti.
+        (7.1088e-10, "RHF limiti"),
+        # Olculen en kucuk KIRIK <S^2> (N6 Rc + 1e-7): Delta kapisi atesse de
+        # bu "RHF limiti" DEGILDIR.
+        (1.6421e-07, "spin kirik ama kademeli degil"),
+    ],
+)
+def test_TANI_ETIKETI_S2_SINIRINA_bakiyor(monkeypatch, s2, etiket):
+    """Delta kapisi atesledigi zaman tanının "RHF limiti" demesi <S^2>'ye
+    baglidir; sinir (1e-8) olculen iki degerin arasindadir. Siniri 1e-3'e
+    ceken bir degisiklik ikinci satiri "RHF limiti" yapardi.
+    """
+    monkeypatch.setattr(
+        factory_modulu, "downfold_uhf", lambda *a, **k: _elle_parametre(6.1235e-06, s2)
+    )
+    _, kaynak = build_downfold(dataclasses.replace(UCUZ, distances_bohr=(2.6,)))
+    assert kaynak.converged is False
+    assert kaynak.convergence_diagnosis.startswith(etiket)
+
+
+def test_MESAFE_YASASI_esigi_GURULTUYU_reddediyor(monkeypatch):
+    """`fit_distance_laws` AYNI esigi okur: gurultu duzeyindeki |Delta|
+    (6.1235e-06) olan bir pencere ln|Delta| uydurmasina GIRMEZ. Eski 1e-7
+    esigi bu noktayi kabul edip gurultuden bir ustel yasa uydururdu.
+    """
+    import qlab.engine.tb.downfold as downfold_modulu
+
+    deltalar = iter((0.18, 6.1235e-06, 0.2))
+    monkeypatch.setattr(
+        downfold_modulu,
+        "downfold_uhf",
+        lambda *a, **k: _elle_parametre(next(deltalar), 1.0),
+    )
+    with pytest.raises(UnsupportedSystemError, match="KIRILMAMIS"):
+        downfold_modulu.fit_distance_laws(6, (2.6, 2.8, 3.0))
+
+
+def test_DELTA_KAPISI_kirilmamis_ORTA_mesafe_TIKI_DUSURUYOR():
+    """B7dog-2 (11.10.2026) TANIGI: N=6 (2.6, 2.0, 3.0), 8 tohum.
+
+    d = 2.0 gecis noktasinin (2.233818500 bohr) ALTINDADIR: UHF RHF'e
+    coker, |Delta| 3.336e-13, <S^2> ~ 0. Yapi kapisi yine gecer (iki
+    alt-orgu ayni oldugu icin kaydirma artigi da ~0) ve eskiden kamu CLI
+    "Yakinsama : ✓" basiyordu -- AF olmayan bir mesafenin parametreleri
+    iki-siteli AF hucre diye. Artik ✗ ve "Yakinsama tanisi" YALNIZ d=2.000'i
+    "RHF limiti" diye adlandirir.
+
+    Kirilmamis mesafe ORTADADIR: "yalniz ilk" ya da "yalniz son" mesafeye
+    bakan bir kapi onu gormezdi (B7-c'nin eyer-ortada secimiyle ayni
+    gerekce). Parametreler degismez: yalniz hukum ve tani.
+    """
+    senaryo = dataclasses.replace(UCUZ, distances_bohr=(2.6, 2.0, 3.0))
+    parametreler, kaynak = build_downfold(senaryo)
+
+    deltalar = [abs(p.delta) for p in parametreler]
+    assert [dl < SPIN_KIRIK_ESIGI for dl in deltalar] == [False, True, False]
+    assert max(p.staggering_residual for p in parametreler) < STAGGERING_TOLERANCE
+    assert all(p.search_stable is True for p in parametreler)
+    assert kaynak.converged is False
+    assert kaynak.diagnostics["delta_abs_min"] == min(deltalar)
+
+    tani = kaynak.convergence_diagnosis
+    assert tani.startswith("RHF limiti: AF yapi yok")
+    assert "d=2.000" in tani
+    assert "d=2.600" not in tani and "d=3.000" not in tani
+    assert "spin kirik ama kademeli degil" not in tani
+
+    satirlar = kaynak.as_lines()
+    etiketler = [e for e, _ in satirlar]
+    assert dict(satirlar)["Yakınsama"].startswith("✗")
+    assert etiketler[etiketler.index("Yakınsama") + 1] == "Yakınsama tanısı"
+
+
+def test_DELTA_KAPISI_ESIGE_gercekten_BAKIYOR_ve_MESAFE_BASINA_yargiliyor(monkeypatch):
+    """Esik MUTASYON KORUMASI: UCUZ (2.6, 3.0) gercek esikte ✓ (iki mesafe de
+    kirik; bkz. `test_YAKINSAMA_KADEMELI_YAPININ_DOGRULANMASINA_bagli`).
+    Fabrikanin esigi 0.3'e cekilince |Delta| 2.6'da esigin ALTINA, 3.0'da
+    USTUNE duser: hukum ✗ ve tani YALNIZ d=2.600'u adlandirir.
+
+    Kirdigi mutantlar: kapiyi `min`/`max` ozetine baglayan (hangi mesafe
+    oldugunu soyleyemez ya da yanlis olani adlandirir), `any`/`all`
+    karistiran, sabit True yazan. d=2.6 durumu gercekten spin-kiriktir
+    (<S^2> RHF sinirinin cok ustunde): tani onu "RHF limiti" DEGIL "spin
+    kirik ama kademeli degil" diye etiketler -- etiketin <S^2>'den secildigi
+    de burada kilitlenir.
+    """
+    parametreler, _ = build_downfold(UCUZ)
+    deltalar = [abs(p.delta) for p in parametreler]
+    assert deltalar[0] < 0.3 < deltalar[1], deltalar  # on kosul OLCULDU
+
+    monkeypatch.setattr(factory_modulu, "SPIN_KIRIK_ESIGI", 0.3)
+    _, kaynak = build_downfold(UCUZ)
+    assert kaynak.converged is False
+    tani = kaynak.convergence_diagnosis
+    assert "d=2.600" in tani and "d=3.000" not in tani
+    assert tani.startswith("spin kirik ama kademeli degil")
+    assert "RHF limiti" not in tani
 
 
 def test_YAKLASIMLAR_ile_IHMAL_EDILEN_KARISMIYOR():

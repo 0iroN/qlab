@@ -27,8 +27,14 @@ from __future__ import annotations
 
 import pytest
 
+import qlab.engine.tb.factory as factory_modulu
 from qlab.engine.hf.multistart import search_uhf
-from qlab.engine.tb.downfold import STAGGERING_TOLERANCE, DistanceLaws, hydrogen_ring
+from qlab.engine.tb.downfold import (
+    SPIN_KIRIK_ESIGI,
+    STAGGERING_TOLERANCE,
+    DistanceLaws,
+    hydrogen_ring,
+)
 from qlab.engine.tb.factory import build_downfold
 from qlab.scenario.schema import DownfoldScenario
 
@@ -41,11 +47,14 @@ def test_B7a_UHF_KARARLI_kuresel_DEGIL_ve_satir_YEREL_diyor():
 
     seeds = 1'in sonucu kararli AMA seeds = 2'ninkinden > 0.01 Ha yukarida;
     satiri "YEREL" der ve kuresel iddia etmez. Downfold yolunda ayni durum
-    `search_stable is True` tasir ve panelin ✗'i YAPI kapisindan gelir
-    (kademeli artik ~0.75, Delta = 0: durum antiferromanyetik DEGIL) --
-    B7-c kapisindan DEGIL. Bu bir GOZLEMDIR: olculen kuresel-olmayan
-    minimumlarin hepsi AF degildi; AF olan kuresel-olmayan bir minimumun
-    var olmadigi iddia EDILMEZ.
+    `search_stable is True` tasir ve panelin ✗'inin IKI sebebi vardir: YAPI
+    kapisi (kademeli artik ~0.75) VE Delta kapisi (B7dog-2: |Delta| 6.8e-12
+    < `SPIN_KIRIK_ESIGI`) -- B7-c kapisi DEGIL. Durum antiferromanyetik
+    DEGIL ama RHF limiti de DEGIL: <S^2> 3.5606, yani tani "spin kirik ama
+    kademeli degil" der, "RHF limiti" DEMEZ (|Delta| < esik RHF limitini
+    gerektirmez; etiket bu yuzden <S^2>'den secilir). Bu bir GOZLEMDIR:
+    olculen kuresel-olmayan minimumlarin hepsi AF degildi; AF olan
+    kuresel-olmayan bir minimumun var olmadigi iddia EDILMEZ.
     """
     mol = hydrogen_ring(8, 3.6)
     tek, iki = search_uhf(mol, "sto-3g", seeds=1), search_uhf(mol, "sto-3g", seeds=2)
@@ -63,15 +72,27 @@ def test_B7a_UHF_KARARLI_kuresel_DEGIL_ve_satir_YEREL_diyor():
     assert p.staggering_residual > 0.1
     assert kaynak.converged is False
     assert "UHF YEREL minimum" in kaynak.diagnostics["arama"]
+    assert abs(p.delta) < SPIN_KIRIK_ESIGI and p.s_squared > 1.0
+    assert "spin kirik ama kademeli degil" in kaynak.convergence_diagnosis
+    assert "RHF limiti" not in kaynak.convergence_diagnosis
 
 
-def test_B7c_EYER_donen_mesafe_YAKINSAMA_isaretini_dusuruyor():
+def test_B7c_EYER_donen_mesafe_YAKINSAMA_isaretini_dusuruyor(monkeypatch):
     """Uc mesafe, EYER ORTADA: kararli / eyer / kararli.
 
     Eyerin ortada olmasi bir secimdir: (eyer, kararli) "yalniz ilk mesafeye
     bak", (kararli, eyer) "yalniz sona bak" mutantini hayatta birakirdi.
     On kosul (`search_stable` deseni ve kademeli artik) ayrica kilitlenir:
     izleme bir gun o eyerden inmeyi ogrenirse test SESLI kirilir.
+
+    DELTA KAPISI BU TESTTE KAPATILIR (B7dog-2, 11.10.2026) ve sebebi
+    olculmustur: 2.0 (Rc'nin altinda) ve Rc + 1e-5 (seeds = 1'in dondurdugu
+    eyer) IKISI DE spin-KIRILMAMISTIR (|Delta| ~ 3.4e-16). Kapi acik kalsaydi
+    ✗ onlardan da gelirdi ve `search_stable` kosulunu dusuren bir mutant bu
+    testi YESIL birakirdi. Fabrikanin esigi -1'e cekilir (|Delta| < -1 hic
+    dogru degil) -- yani kalan tek ✗ kaynagi eyer kapisidir; on kosul
+    (iki mesafe gercekten kirilmamis) ayrica kilitlenir ki patch'in gerekcesi
+    bayatlarsa test sesli kirilsin.
     """
     senaryo = DownfoldScenario(
         name="B7-c catallanma kenari",
@@ -79,8 +100,11 @@ def test_B7c_EYER_donen_mesafe_YAKINSAMA_isaretini_dusuruyor():
         distances_bohr=(2.0, RC6 + 1e-5, 2.6),
         seeds=1,
     )
+    monkeypatch.setattr(factory_modulu, "SPIN_KIRIK_ESIGI", -1.0)
     parametreler, kaynak = build_downfold(senaryo)
 
+    assert [abs(p.delta) < SPIN_KIRIK_ESIGI for p in parametreler] == [True, True, False]
+    assert kaynak.convergence_diagnosis is None  # Delta kapisi gercekten kapali
     assert [p.search_stable for p in parametreler] == [True, False, True]
     assert max(p.staggering_residual for p in parametreler) < STAGGERING_TOLERANCE
     assert kaynak.converged is False
@@ -121,10 +145,18 @@ def test_B7c_KOR_BANT_beyani_yumusak_modda_eyer_KARARLI_sayiliyor():
 
     lambda (-1e-8, 0) yumusak mod bandinda ayirt edilmez: N=6 halkasinda
     Rc + 5e-9'da lambda ~ -3.76e-9 (gercekte eyer) ama `search_stable` True
-    ve panel ✓; Rc + 3e-8'de lambda ~ -2.30e-8 bandin DISINDA ve ✗.
-    Esigi 0'a ceken bir degisiklik (`lowest_eigenvalue > 0`) ya da bandi
-    genisleten bir degisiklik README'nin kor bant cumlesini bayatlatir --
-    bu test o cumleyi tutar. Paylar: -3.76e-9 sinira 6.2e-9, -2.30e-8 1.3e-8.
+    ve arama satiri "UHF YEREL minimum" der; Rc + 3e-8'de lambda ~ -2.30e-8
+    bandin DISINDA ve kararsiz. Esigi 0'a ceken bir degisiklik
+    (`lowest_eigenvalue > 0`) ya da bandi genisleten bir degisiklik README'nin
+    kor bant cumlesini bayatlatir -- bu test o cumleyi tutar. Paylar:
+    -3.76e-9 sinira 6.2e-9, -2.30e-8 1.3e-8.
+
+    PANEL ARTIK ✗ BASAR (B7dog-2, 11.10.2026), ama sebebi kararlilik DEGIL
+    Delta kapisidir: o banttaki eyer spin-KIRILMAMISTIR (olculdu |Delta|
+    1.7e-16, <S^2> 2.7e-15; Rc + 1e-9 ... 1.3e-8 ve seeds 1-20'nin hepsinde
+    |Delta| <= 4.2e-16). Tani bu yuzden "RHF limiti" der. Kararlilik kor
+    bandinin KENDISI durur -- arama satiri hala "UHF YEREL minimum" der.
+    Eskiden burada `converged is True` (panel ✓) kilitliydi.
     """
     ic = search_uhf(hydrogen_ring(6, RC6 + 5e-9), "sto-3g", seeds=1)
     dis = search_uhf(hydrogen_ring(6, RC6 + 3e-8), "sto-3g", seeds=1)
@@ -137,5 +169,8 @@ def test_B7c_KOR_BANT_beyani_yumusak_modda_eyer_KARARLI_sayiliyor():
         DownfoldScenario(name="B7-c kor bant", ring_size=6, distances_bohr=(RC6 + 5e-9,), seeds=1)
     )
     assert p.search_stable is True
-    assert kaynak.converged is True
     assert "UHF YEREL minimum" in kaynak.diagnostics["arama"]
+    assert abs(p.delta) < SPIN_KIRIK_ESIGI
+    assert kaynak.converged is False
+    assert "RHF limiti" in kaynak.convergence_diagnosis
+    assert dict(kaynak.as_lines())["Yakınsama"].startswith("✗")

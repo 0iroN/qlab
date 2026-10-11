@@ -1226,6 +1226,24 @@ def omega_max_path_frames(
     return None
 
 
+#: NVT (termostatlı) koşunun "Yakınsama tanısı" (C1/D3/D2-iv, 11.10.2026).
+#: NVT'de enerji korunmaz, yani NVE'nin korunum hükmü burada YOKTUR; NVT'nin
+#: kendi hükmü (kinetik sıcaklık hedefe oturdu mu, ⟨T⟩ hedefe karşı) ise bu
+#: koşuda HİÇ HESAPLANMIYOR. Eskiden panel burada koşulsuz ✓ basıyordu (ör.
+#: `argon_nvt`: energy_drift 3.46e-02'nin yanında ✓). Artık ✗ + bu tanı.
+#: YARGILANMADI (= denenmedi) bilerek YARGILANAMAZ'dan (= denendi, sonuçsuz)
+#: ayrı bir kelimedir. ⟨T⟩ ölçümleri (üç tohum) README'dedir -- ölçümdür,
+#: hüküm değil; blok SEM'i tek koşuda hatayı küçük gösterdiği için gelecekteki
+#: bir hüküm çok tohum ya da öz-ilinti tahmini ister.
+_NVT_YARGILANMADI = (
+    "YARGILANMADI: NVT'de toplam enerji korunmaz (banyo enerji alıp verir), "
+    "bu yüzden korunum hükmü yoktur; kinetik sıcaklığın hedefe oturup "
+    "oturmadığı (⟨T⟩ hedefe karşı) bu koşuda YARGILANMADI -- sıcaklık serisi "
+    "npz'de (temperature_kelvin) durur ama ne ortalaması basılır ne hedefle "
+    "karşılaştırılır; energy_drift bir tanı değeridir, hüküm değil"
+)
+
+
 def provenance_for(
     scenario: MDScenario,
     *,
@@ -1261,6 +1279,12 @@ def provenance_for(
     çarpışan parçalar, ısıl keşif) yine ✓ alırdı. `path_frames`
     (`YolKaresiIzleyici.tanilar()`) yalnız tanıdır: seçilen karelerin adımı
     ve en kısa çift mesafesi; TB NVE'de isteğe bağlı, öteki koşularda yasak.
+
+    NVT (termostatlı koşu; C1/D3/D2-iv, 11.10.2026): Yakınsama ✗ ve
+    `convergence_diagnosis` = `_NVT_YARGILANMADI`. NVT'nin hükmü (⟨T⟩ hedefe
+    oturdu mu) bu koşuda hesaplanmaz; ölçülmemiş bir hükmün yanına ✓
+    basılmaz. Langevin ve Nose-Hoover aynı dalı alır (termostat türüne göre
+    dallanma yok).
 
     `stability` / `external_stability` (B10, 03.10.2026): HF kuvvet alanının
     koşu boyunca biriktirdiği EN KÖTÜ iç / dış kararlılık hükmü
@@ -1399,13 +1423,20 @@ def provenance_for(
         )
         # NVT'DE ENERJİ KORUNMAZ -- bu bir kusur değil, tanımdır. Eskiden
         # termostatlı koşuda da "enerji SÜRÜKLENMEZ" yazıyordu ve ölçülen
-        # sürüklenme %22.4 iken panel ✓ basıyordu.
+        # sürüklenme %22.4 iken panel ✓ basıyordu. Sonra metin "Ölçülen
+        # büyüklük kinetik sıcaklıktır" dedi ve ✓ kaldı -- ama ⟨T⟩ ne basılıyor
+        # ne hedefle karşılaştırılıyordu, yani ✓ ölçülmemiş bir hükmün
+        # yanındaydı. C1/D3/D2-iv (11.10.2026): ✗ + YARGILANMADI tanısı.
+        # Termostat türüne göre dallanma YOK (AST kilidi, `tur` dışı karşılaştırma
+        # yasak): Langevin ve Nose-Hoover aynı hükmü alır.
         beklenen = (
             "NVT: toplam enerji KORUNMAZ, sistem banyoyla enerji alışverişi "
-            "yapar. Ölçülen büyüklük kinetik sıcaklıktır, enerji sürüklenmesi "
-            "değil; aşağıdaki energy_drift bir tanı değeridir, bir hata payı DEĞİL."
+            "yapar. NVT'nin sorusu kinetik sıcaklığın hedefe oturup oturmadığıdır "
+            "ve bu koşu onu yargılamaz (Yakınsama tanısı); aşağıdaki energy_drift "
+            "bir tanı değeridir, bir hata payı DEĞİL."
         )
-        yakinsadi = True
+        yakinsadi = False
+        yakinsama_tanisi = _NVT_YARGILANMADI
         esik = None  # NVT'de sürüklenme hükme girmez: eşik YOK (0.0 değil)
 
     tanilar = {

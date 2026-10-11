@@ -272,10 +272,13 @@ def test_T5_SALINIM_ESIGI_PANELDE_ve_HUKUMDE_AYNI_SAYI():
 def test_T6_KAPI_TB_NVE_S_ZORUNLU_ve_OTEKI_KOSULARDA_YASAK():
     """TB NVE'de S verilmezse HATA ("yok say" yeni bir sahte ✓ kapısıydı);
     NVT'de ve klasik dalda S verilirse HATA; NVT'de eşik `None` (0.0 DEĞİL),
-    hüküm ✓ ve `energy_oscillation()` NVT'de None döner.
+    hüküm ✗ + YARGILANMADI ve `energy_oscillation()` NVT'de None döner.
 
-    Termostatlı TB koşusu HİÇ koşulmadı (G5 beyanı); bu test yalnız panelin
-    ne dediğini kilitler.
+    Bu test yalnız panelin ne dediğini kilitler, dinamiği değil. NVT hükmü
+    eskiden ✓'ydı; NVT'nin kendi sorusu (⟨T⟩ hedefe oturdu mu) hiç
+    hesaplanmadığı için artık ✗ ve tanı YARGILANMADI ile başlar
+    (C1/D3/D2-iv, 11.10.2026). Tanı NVE'nin salınım/omega*dt tanısı DEĞİLDİR:
+    o ölçütler NVT'de hükme girmez.
     """
     tb = _tb_senaryo()
     with pytest.raises(InvalidInputError, match="salınım ölçütü zorunludur"):
@@ -284,7 +287,7 @@ def test_T6_KAPI_TB_NVE_S_ZORUNLU_ve_OTEKI_KOSULARDA_YASAK():
     with pytest.raises(InvalidInputError, match="yalnız TB NVE"):
         provenance_for(nvt, energy_drift=5.0, energy_oscillation=1e-9)
     prov = provenance_for(nvt, energy_drift=5.0)
-    assert prov.converged is True
+    assert prov.converged is False
     assert prov.diagnostics["energy_oscillation"] is None
     assert prov.diagnostics["energy_oscillation_tolerance"] is None
     # Hesaplanmayan S'nin paydası ✓'nin yanında basılmaz (doğrulama, 09.10).
@@ -294,7 +297,10 @@ def test_T6_KAPI_TB_NVE_S_ZORUNLU_ve_OTEKI_KOSULARDA_YASAK():
                     "omega_dt_path_frames", "closest_pair_step", "closest_pair_bohr",
                     "stiffest_frame_step", "omega_dt_tolerance"):
         assert anahtar in prov.diagnostics and prov.diagnostics[anahtar] is None, anahtar
-    assert prov.convergence_diagnosis is None
+    assert prov.convergence_diagnosis.startswith("YARGILANMADI:")
+    # NVE'nin salınım tanısı (sabit yarı `_TB_SALINIM_BEYANI`) NVT'ye sızmaz.
+    assert "GRİ BÖLGE" not in prov.convergence_diagnosis
+    assert "salınım" not in prov.convergence_diagnosis
     with pytest.raises(InvalidInputError, match="negatif olamaz"):
         provenance_for(tb, energy_drift=1e-9, energy_oscillation=-1e-3)
     bos = Trajectory(*(np.zeros(2),) * 5, total_min=0.0, total_max=1.0, kinetic_max=1.0)

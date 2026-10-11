@@ -193,26 +193,49 @@ def test_unmasked_convergence_shows_norm_deviation():
 
 def test_masked_convergence_shows_observed_norm_drop():
     """Maskeli (üniterlik kontrolü yapılmayan) koşular observed_norm_drop
-    etiketi göstermelidir, bu bilgilendirici ölçüdür ve kontrol kanıtı değildir."""
+    etiketi göstermelidir, bu bilgilendirici ölçüdür ve kontrol kanıtı
+    değildir. Ölçülmemiş hüküm ✗ ile basılır ve gerekçesi Yakınsama'nın
+    HEMEN ARDINDAKİ "Yakınsama tanısı" satırındadır (B5, 11.10.2026)."""
     prov = make_provenance(
-        converged=True,
+        converged=False,
         diagnostics={"observed_norm_drop": 7.0e-2, "steps": 100},
+        convergence_diagnosis="YARGILANMADI: üniterlik bu koşuda ölçülmedi",
     )
-    yakinsama_line = dict(prov.as_lines())["Yakınsama"]
+    satirlar = prov.as_lines()
+    etiketler = [etiket for etiket, _ in satirlar]
+    yakinsama_line = dict(satirlar)["Yakınsama"]
+    assert yakinsama_line.startswith("✗")
     assert "observed_norm_drop=" in yakinsama_line
     assert "norm_deviation=" not in yakinsama_line
+    assert etiketler[etiketler.index("Yakınsama") + 1] == "Yakınsama tanısı"
 
 
-def test_masked_case_cannot_be_misread_as_convergence_evidence():
-    """Maskeli koşuda kontrol yapılmadığı için, panel okuyucu norm değerini
-    yakınsama kanıtı olarak yanlış okumamalı. observed_norm_drop etiketinin
-    varlığı ve norm_deviation'ın YOKLUĞU bunu garanti eder."""
-    prov = make_provenance(
-        converged=True,  # Maske varken always True (kontrol yapılmadığı için)
-        diagnostics={"observed_norm_drop": 7.0e-2, "steps": 100},
+def test_masked_case_cannot_be_misread_as_convergence_evidence(tmp_path):
+    """Maskeli koşuda üniterlik kontrolü yapılmadığı için panel ✓ BASAMAZ.
+
+    Eskiden burada `converged=True` elle verilip ✓ kilitleniyordu ve panel
+    %99.99 norm kaybının yanına ✓ basıyordu (B5, 11.10.2026). Artık hüküm
+    GERÇEK fabrikadan (`tdse.factory.provenance_for`) alınır: ✗, norm
+    sapması `observed_norm_drop` (bilgilendirici) anahtarında, ve gerekçe
+    "Yakınsama tanısı" satırında YARGILANMADI (= denenmedi) ile başlar —
+    YARGILANAMAZ (= denendi, sonuçsuz) DEĞİL."""
+    from qlab.engine.tdse import factory
+    from qlab.scenario.loader import load_scenario
+
+    yol = tmp_path / "maskeli.yaml"
+    yol.write_text(
+        "name: maskeli\n"
+        "grid: {n: 256, length_bohr: 100.0}\n"
+        "potential: {kind: free}\n"
+        "packet: {x0_bohr: 0.0, k0: 1.0, sigma_bohr: 5.0}\n"
+        "dt: 0.05\nn_steps: 10\nsave_every: 10\n"
+        "absorbing_width_bohr: 10.0\n",
+        encoding="utf-8",
     )
-    yakinsama_line = dict(prov.as_lines())["Yakınsama"]
-    # Başlangıç ✓ kontrol geçti anlamı değildir maskede, ama norm_deviation
-    # görmemek kontrol yapılmadığını kanıtlar.
-    assert yakinsama_line.startswith("✓")
-    assert "norm_deviation" not in yakinsama_line
+    prov = factory.provenance_for(load_scenario(yol), norm_deviation=7.0e-2)
+    satirlar = dict(prov.as_lines())
+    assert satirlar["Yakınsama"].startswith("✗")
+    assert "observed_norm_drop=" in satirlar["Yakınsama"]
+    assert "norm_deviation" not in satirlar["Yakınsama"]
+    assert satirlar["Yakınsama tanısı"].startswith("YARGILANMADI:")
+    assert "YARGILANAMAZ" not in satirlar["Yakınsama tanısı"]

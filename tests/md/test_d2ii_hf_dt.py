@@ -348,7 +348,10 @@ def test_T5_HF_ESIKLERI_PANELDE_ve_HUKUMDE_AYNI_SAYI():
 def test_T6_HF_KAPI_NVE_ZORUNLU_NVT_YASAK_ve_YOL_ANAHTARLARI():
     """HF NVE'de S, kare-0 ve yol karesi tanıları ZORUNLU (verilmezse "yok say"
     yeni bir sahte ✓ kapısı olurdu); HF NVT'de verilirse HATA, anahtarlar None
-    (0.0 değil), hüküm ✓, tanı satırı yok. Negatif değer hata. HF'nin
+    (0.0 değil), hüküm ✗ ve tanı satırı YARGILANMADI ile başlar (NVT'nin
+    sorusu, ⟨T⟩ hedefe oturdu mu, bu koşuda hesaplanmaz -- C1/D3/D2-iv,
+    11.10.2026; eskiden ✓ ve tanı satırı yoktu). Tanı HF NVE'nin salınım/
+    omega*dt tanısı DEĞİLDİR. Negatif değer hata. HF'nin
     `path_frames`ı en kısa çift ve tür başına en kısa an anahtarlarını taşır:
     `stiffest_frame_step` HF'de BİLİNMEYEN anahtardır (sertlik vekili TB
     yasalarından).
@@ -373,7 +376,8 @@ def test_T6_HF_KAPI_NVE_ZORUNLU_NVT_YASAK_ve_YOL_ANAHTARLARI():
         with pytest.raises(InvalidInputError, match="yalnız TB NVE ve HF NVE"):
             provenance_for(nvt, energy_drift=5.0, **{anahtar: 1e-9})
     prov = provenance_for(nvt, energy_drift=5.0)
-    assert prov.converged is True and prov.convergence_diagnosis is None
+    assert prov.converged is False and prov.convergence_diagnosis.startswith("YARGILANMADI:")
+    assert "salınım" not in prov.convergence_diagnosis
     for anahtar in ("energy_oscillation", "energy_oscillation_scale", "energy_oscillation_tolerance",
                     "omega_max_frame0", "omega_dt_frame0", "omega_max_path_frames", "omega_dt_path_frames",
                     "closest_pair_step", "closest_pair_bohr", "pair_type_steps", "omega_dt_tolerance"):

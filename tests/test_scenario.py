@@ -200,25 +200,39 @@ def test_provenance_declares_periodic_boundary(tmp_path):
     assert prov.converged is True
 
 
-def test_provenance_masked_run_not_marked_unconverged_by_norm_drop(tmp_path):
-    """Soğurucu maskeli bir senaryoda norm bilinçli olarak azalır (evolve()
-    da bu yüzden maske varken norm kontrolünü atlar, bkz. propagator.py
-    check_norm). Büyük bir norm_deviation TEK BAŞINA converged=False'a yol
-    açmamalı — aksi halde panel doğru çalışan bir koşuyu '✗ Yakınsama' diye
-    gösterir."""
+@pytest.mark.parametrize("dusus", [0.2, 2.069e-11])
+def test_provenance_masked_run_is_YARGILANMADI_not_converged(tmp_path, dusus):
+    """Soğurucu maskeli bir senaryoda norm bilinçli olarak azalır ve evolve()
+    maske varken norm kontrolünü atlar (`evolve` içindeki `check_norm`) —
+    yani maskeli koşuda üniterlik HİÇ ÖLÇÜLMEZ. Ölçülmemiş bir hükmün yanına
+    ✓ basılamaz (B5, 11.10.2026): eskiden bu test converged=True'yu
+    kilitliyordu ve panel %99.99 norm kaybının yanına ✓ basıyordu.
+
+    Hüküm düşüşün BÜYÜKLÜĞÜNDEN bağımsızdır: 0.2'lik düşüş de 2.069e-11'lik
+    (32000 adımlık maskeli tünelleme koşusunda ölçülen; maske bölgesinin
+    nüfusu en çok 1.5e-10'a çıktı) düşüş de ✗ + YARGILANMADI'dır. Düşüş `observed_norm_drop`
+    anahtarında bilgilendirici olarak kalır; `norm_deviation` (üniterlik
+    kanıtı) anahtarı maskeli koşuda YOKTUR. YARGILANMADI (= denenmedi)
+    bilerek YARGILANAMAZ'dan (= denendi, sonuçsuz) ayrı bir kelimedir."""
     scenario = load_scenario(write(tmp_path, VALID_YAML + "absorbing_width_bohr: 20.0\n"))
-    prov = factory.provenance_for(scenario, norm_deviation=0.2)
-    assert prov.converged is True
+    prov = factory.provenance_for(scenario, norm_deviation=dusus)
+    assert prov.converged is False
+    assert prov.convergence_diagnosis.startswith("YARGILANMADI:")
+    assert "YARGILANAMAZ" not in prov.convergence_diagnosis
+    assert prov.diagnostics["observed_norm_drop"] == dusus
+    assert "norm_deviation" not in prov.diagnostics
 
 
 def test_provenance_unmasked_run_with_large_norm_deviation_reports_unconverged(tmp_path):
     """Maskesiz bir koşuda norm sapması hâlâ tek üniterlik kanıtıdır; eşiği
-    (1e-8) aşan büyük bir sapma converged=False raporlamalı. Bu test, maskeli
-    koşu için yukarıdaki düzeltmenin kör bir 'her zaman yakınsadı'ya
-    dönüşmediğini kanıtlar."""
+    (1e-8) aşan büyük bir sapma converged=False raporlamalı. Maskesiz koşuda
+    üniterlik ÖLÇÜLDÜĞÜ için YARGILANMADI tanısı da YOKTUR: ✗ burada
+    ölçülmüş bir ihlaldir, maskeli koşunun ✗'i ise ölçülmemiş bir hüküm."""
     scenario = load_scenario(write(tmp_path, VALID_YAML))
     prov = factory.provenance_for(scenario, norm_deviation=0.2)
     assert prov.converged is False
+    assert prov.convergence_diagnosis is None
+    assert prov.diagnostics["norm_deviation"] == 0.2
 
 
 def test_rejects_params_as_string(tmp_path):

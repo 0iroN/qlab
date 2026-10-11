@@ -354,14 +354,51 @@ def model_from_downfold(
 
 
 # Delta'nin "gercekten kirik" sayilmasi icin gereken alt sinir. SECILMEDI,
-# IKI YANDAN OLCULDU (Task 2, tests/tb/test_downfold_cipa.py):
-#   * gecisin ALTINDA olculen en buyuk artik 1.539807e-08 (N=6, d_c - 0.02);
-#     bu `solve_uhf`in artik toleransinin (1e-8) tabanidir, fizik degildir.
-#   * gecisin hemen USTUNDEKI en kucuk FIZIKSEL Delta 1.244899e-02
-#     (N=14, d_c + 0.002).
-# Esik ikisinin arasindadir: tabandan ~6.5 kat yukarida, en kucuk fiziksel
-# degerin bes mertebe altinda.
-SPIN_KIRIK_ESIGI = 1e-7
+# IKI YANDAN OLCULDU -- ve B7dog-2'de (11.10.2026) YENIDEN olculdu. Eski deger
+# 1e-7'ydi ve gerekcesi ("gecisin ALTINDA olculen en buyuk artik 1.539807e-08,
+# N=6, d_c - 0.02") CURUTULDU: d_c'ye yaklastikca kirilmamis durumun artigi
+# BUYUR (yumusak mod; olculen zarf |Delta| * sqrt(lambda) <= 1.70e-8, yani
+# `solve_uhf`in 1e-12 enerji toleransi yumusak modda). 1e-7 su gurultuyu
+# "kirik" sayardi: N6 Rc-0.03 (1.1104e-07), Rc-3e-4 ... Rc-1e-5 (7.58e-7 ...
+# 6.12e-6), N10 Rc10-1e-3 (5.1186e-07). Kamu yolundan olculdu (`python -m
+# qlab.run` ve `build_downfold` bit-bit ayni; Rc6 = 2.233818500, Rc10 =
+# 1.957853161 bohr):
+#   * GURULTU (spin-kirilmamis) en buyuk |Delta| 6.1235e-06: N=6, Rc - 1e-5,
+#     seeds 4/8/12/16/20 (<S^2> 7.1088e-10). seeds 1/2'de ~1e-16.
+#   * KIRIK (kararli donen) en kucuk |Delta| 9.3066e-05: N=6, Rc + 1e-7,
+#     seeds 16/20 (<S^2> 1.6421e-07).
+# Aralik 15.2 kat; esik 2.5e-5 gurultunun 4.08 kat USTUNDE, en kucuk kirik
+# degerin 3.72 kat ALTINDA. Sevk edilen N8 senaryosunun en kucuk |Delta|'si
+# 0.17936 (esigin 7174 kati).
+# GRI BOLGELER (acikca): (1) Rc'nin USTUNDE kirik genlik |Delta| ~ c_N *
+# sqrt(dd) (c_6 = 0.459, c_10 = 0.346, c_14 = 0.278) esigin altina dd < 3.0e-9
+# (N6), 5.2e-9 (N10), 8.1e-9 (N14) bohr'da duser; az yakinsamis kirik
+# durumlarda N6'da ~7e-9'a genisler. N6'da bu bant kararlilik yumusak
+# bandinin (~1.3e-8) icindedir ve orada hicbir arama kirik durum dondurmedi
+# (hepsi |Delta| <= 4.2e-16 eyer); N10'da yumusak bant ~1.5e-8 (lambda ~
+# -0.67 dd) ve 5.2e-9 onun icinde; N14 OLCULMEDI.
+# BLAS BAGIMLILIGI (olculdu, 11.10): yukaridaki gurultu ve en-kucuk-kirik
+# degerleri VARSAYILAN OpenBLAS cekirdeginindir. Prescott / Haswell'de N6
+# Rc - 1e-5 seeds 4 |Delta| ~1e-16 (gurultu yok); Rc + 1e-7 seeds 16
+# Prescott'ta KIRILMAMIS eyer, Haswell'de |Delta| 5.9e-5 ama EYER. Yani
+# Rc'ye 1e-5 bohr'dan yakin noktalarda hangi durumun dondugu cekirdege
+# baglidir; esik testleri bu yuzden SCF'siz (elle kurulan parametrelerle). (2) Rc'nin ALTINDA gurultu zarfi
+# (1.70e-8 / sqrt(lambda), lambda ~ 0.768 |dd|) esige |dd| <~ 6e-7 bohr'da
+# (N6) ulasabilir -- YALNIZ dis-degerleme: -5e-7, -1e-7 ve -1e-6 ... -5e-6'da
+# olculenlerin hepsi <= 4.5e-16.
+# TEK KAYNAK: `fit_distance_laws` (ln|Delta| yalniz bunun ustunde uydurulur)
+# ve `tb.factory.build_downfold`un Delta kapisi (Yakinsama) AYNI sabiti okur.
+SPIN_KIRIK_ESIGI = 2.5e-5
+
+# <S^2> SINIRI: Delta kapisi atesledigi zaman tanida "RHF limiti" denebilmesi
+# icin |<S^2>| bunun ALTINDA olmalidir. Kapinin KENDISI DEGILDIR: <S^2> ~
+# Delta^2, gurultude ve kirik durumda AYNI katsayiyla (N6'da 18.96, N10'da
+# 36.6) -- bagimsiz bilgi tasimaz. Ama "|Delta| < esik" RHF limitini
+# GEREKTIRMEZ: H8 d=3.6 seeds=1'de |Delta| 6.8474e-12 iken <S^2> 3.5606
+# (spin kirik ama AF degil; yapi kapisi da onu dusurur). OLCULDU: gurultu en
+# buyuk 7.1088e-10, kirik en kucuk 1.6421e-07; 1e-8 ikisinin arasinda (14 kat
+# ustte, 16 kat altta).
+RHF_LIMITI_S2_SINIRI = 1e-8
 
 
 def hydrogen_ring(n_site: int, distance_bohr: float) -> Molecule:
@@ -530,7 +567,7 @@ def fit_distance_laws(
     if delta.min() < SPIN_KIRIK_ESIGI:
         raise UnsupportedSystemError(
             f"pencerede spin-KIRILMAMIS nokta var (min |Delta| = "
-            f"{delta.min():.3e} < {SPIN_KIRIK_ESIGI:.0e}); ln|Delta| orada "
+            f"{delta.min():.3e} < {SPIN_KIRIK_ESIGI:.1e}); ln|Delta| orada "
             "tanimsizdir. Gecis noktasinin ustunde bir pencere secin."
         )
     delta_egim, delta_kesisim = np.polyfit(d, np.log(delta), 1)

@@ -18,6 +18,18 @@ from qlab.scenario.schema import TDSEScenario
 
 _NORM_TOLERANCE = 1e-8
 
+# Maskeli koşunun yakınsama tanısı (B5). Maske normu kasten düşürür ve
+# evolve() o koşuda norm kontrolünü atlar; yani üniterlik ÖLÇÜLMEDİ ve
+# panel ✓ basamaz. Gerçek bir hüküm adayı var ama koşulmuyor: maskeden
+# ÖNCEKİ üniter adımın normu (ölçüldü: paket maskeye varmadan |N-1| <=
+# 7.9e-12).
+_MASKELI_YARGILANMADI = (
+    "YARGILANMADI: soğurucu maske normu bilinçli olarak düşürür ve evolve() "
+    "maskeli koşuda norm kontrolünü atlar — üniterlik bu koşuda ÖLÇÜLMEDİ; "
+    "observed_norm_drop bilgilendiricidir, hüküm değildir (gerçek bir hüküm "
+    "adayı maskeden önceki üniter adımın normudur; bu koşu onu ölçmez)"
+)
+
 
 def _build_potential(scenario: TDSEScenario, grid: Grid1D) -> np.ndarray:
     kind = scenario.potential.kind
@@ -80,18 +92,19 @@ def provenance_for(scenario: TDSEScenario, norm_deviation: float) -> Provenance:
     if masked:
         approximations.append("kenarlarda soğurucu maske — norm bilinçli olarak azalır")
 
-    # evolve() norm kontrolünü yalnızca maske yokken yapar (propagator.py,
-    # check_norm) — soğurucu maske normu bilinçli olarak azaltır, bu yüzden
-    # o durumda üniterlik ihlali diye bir şey ölçülmez/raporlanmaz. Burada da
-    # aynı ayrım uygulanmalı: maske varken norm sapması ne "yakınsamadı"
-    # kanıtıdır (norm zaten azalması bekleniyor) ne de "yakınsadı" kanıtıdır
-    # (norm bu durumda hiç kontrol edilmedi). Maskeli koşuda converged=True,
-    # yalnızca "evolve() bu koşuda hiçbir üniterlik ihlali tespit etmedi"
-    # anlamına gelir — fakat diagnostics'teki anahtarı değiştirerek,
-    # "norm_deviation" (üniterlik kanıtı) yerine "observed_norm_drop"
-    # (bilgilendirici) kullanırız, böylece panel okuyucu yanılmaz.
-    # Maskesiz koşuda ise eşik hâlâ tam olarak uygulanır.
-    converged = True if masked else norm_deviation <= _NORM_TOLERANCE
+    # evolve() norm kontrolünü yalnızca maske yokken yapar (`evolve` içindeki
+    # `check_norm`) — soğurucu maske normu bilinçli olarak azaltır, bu yüzden
+    # maskeli koşuda üniterlik HİÇ ÖLÇÜLMEZ. Norm düşüşü ne "yakınsamadı"
+    # kanıtıdır (düşmesi bekleniyor) ne de "yakınsadı" kanıtıdır (kontrol
+    # edilmedi). Eskiden burada converged=True vardı ve "hiçbir ihlal tespit
+    # edilmedi" diye savunuluyordu; ama hiç bakılmamış bir şeyde ihlal
+    # tespit edilemez — panel %99.99 norm kaybının yanına ✓ basıyordu
+    # (B5, 11.10.2026). Artık maskeli koşu ✗ + "YARGILANMADI" tanısıdır
+    # (EM emsali: converged False + convergence_diagnosis). YARGILANMADI
+    # (= denenmedi) bilerek YARGILANAMAZ'dan (= denendi, sonuçsuz) ayrı bir
+    # kelimedir. Maskesiz koşuda eşik tam olarak uygulanır.
+    converged = False if masked else norm_deviation <= _NORM_TOLERANCE
+    convergence_diagnosis = _MASKELI_YARGILANMADI if masked else None
 
     # Diagnostics anahtarını maskelenmiş duruma göre ayarla: üniterlik kontrolü
     # yapıldıysa "norm_deviation" (yakınsama kanıtı), yapılmadıysa
@@ -108,4 +121,5 @@ def provenance_for(scenario: TDSEScenario, norm_deviation: float) -> Provenance:
         expected_error=f"O(dt^2) ~ {scenario.dt**2:.1e} hartree mertebesi",
         converged=converged,
         diagnostics=diagnostics,
+        convergence_diagnosis=convergence_diagnosis,
     )

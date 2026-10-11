@@ -412,7 +412,8 @@ def test_GECIS_ALTINDAKI_pencere_REDDEDILIYOR():
 
     Kontrol olmasaydi `np.polyfit` -inf ile calisir ve butun yasa NaN
     dolardi -- sessizce. OLCULDU: (1.9, 2.0, 2.1) penceresinde min |Delta|
-    = 3.336e-13, yani esigin (1e-7) bes mertebe altinda.
+    = 3.336e-13, yani esigin (`SPIN_KIRIK_ESIGI` = 2.5e-5; 11.10.2026'ya
+    kadar 1e-7) sekiz mertebe altinda.
 
     Bu ikame ayrica F2'yi (eri * 0) de eleyen kontroldur; orada olculen
     min |Delta| 1.110e-16 idi.

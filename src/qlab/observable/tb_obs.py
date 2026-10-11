@@ -19,8 +19,10 @@ aralikli. `band_structure` her k'da SIRALI dondugu icin b. sutun b. banttir
 ve gercek aralik ancak max(bant b-1) < min(bant b) ise vardir.
 
 MUTLAK DEGERLER DAIRESELDIR. `fermi_level`in dondurdugu sayi, girilen
-`onsite` enerjisinin geri okunmasidir (olculdu: yari dolu zincirde
-E_F = -0.194800000, girilen eps ile farki TAM 0.000e+00). Bant genisligi de
+`onsite` enerjisinin geri okunmasidir (olculdu: yari dolu zincirde n = 400
+izgarasinda E_F = -0.194800000, girilen eps ile farki TAM 0.000e+00 -- bu
+TAMLIK izgaraya baglidir: n = 2 (mod 4)'te deger 2|t| sin(pi/n) asagida,
+bkz. `fermi_level`). Bant genisligi de
 t'nin geri okunmasidir. Bu modulden bir DOGRULAMA cikaracaksaniz,
 cikaracaginiz sey `certified_conduction`in sayim hukmu ve `structure_ratio`nun 4z'sidir
 -- degerler degil.
@@ -53,7 +55,30 @@ def _denetle(energies: np.ndarray, n_electron_per_cell: int) -> np.ndarray:
 
 
 def fermi_level(energies: np.ndarray, n_electron_per_cell: int) -> float:
-    """Doldurulan son durumun enerjisi (hartree). MUTLAK DEGERI DAIRESELDIR."""
+    """Doldurulan son durumun enerjisi (hartree). MUTLAK DEGERI DAIRESELDIR.
+
+    IZGARA DEGERIDIR, surekli-k Fermi seviyesi DEGIL: verilen izgaranin sirali
+    ozdegerlerinin round(n_e * n_k / 2). elemani. Yalitkanda son dolu durumdur
+    (VBM), aralik ortasi DEGIL.
+
+    SINIR (K5, 11.10.2026): n_e * n_k CIFT iken |E_F(izgara) - E_F| <= B1
+    (`grid_lipschitz_bound`; kamu yolunda npz'nin `iletkenlik_cozunurluk_ev`
+    alani), E_F = N(E) >= n_e / 2 olan en kucuk E (T = 0). KANITLIDIR, boyut ve
+    doluluktan bagimsizdir: her izgara noktasinin hucresinde sirali her ozdeger
+    en cok B1 oynar, yani E_izgara + B1'de surekli sayim en az n_e / 2,
+    E_izgara - B1'in altinda en cok (N_dolu - 1) / n_k'dir. OLCULDU: 2750
+    (model, doluluk, n) vakasi (1B/2B/3B, 1-4 orbital) ihlal 0, en buyuk
+    |hata| / B1 = 0.995. n_e * n_k TEK iken bir durum yari doludur ve `round`
+    (cifte yuvarlama) onu bir yana atar: sinir KANITLI DEGILDIR (1B'de 395
+    vakanin 8'inde asildi, en cok 1.49 B1).
+
+    Yari dolu 1B en-yakin-komsu zincirde hata kapali formdadir: n = 0 (mod 4)
+    TAM 0, n = 2 (mod 4) TAM -2|t| sin(pi/n), tek n'de en cok ~B1/2. Kamu CLI
+    (eps = -5.3, t = -1.7 eV): k = 6 -> -7.0000, k = 82 -> -5.4302 eV; k = 82'de
+    panelin Yakinsama satiri tik basar, cunku o bant UCLARINA (B2) bakar. Bu
+    formul GENEL DEGILDIR: 2B kare orgude ayni n'lerde hata 0, 3B kubikte
+    n = 10'da -1.475e-02 hartree.
+    """
     e = _denetle(energies, n_electron_per_cell)
     n_k = e.shape[0]
     # Spin dejenereligi 2: hucre basina n elektron, k basina n/2 durum doldurur.
