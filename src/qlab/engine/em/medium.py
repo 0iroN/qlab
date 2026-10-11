@@ -186,13 +186,13 @@ class Medium:
 
         DUAL TE_z'DE (G1-p, 10.10.2026; mu' = eps) bu dizi Ex/Ey'nin gordugu
         eps'tir: aritmetik = teget E'nin kurali = egik p'nin sevk `ey_kural`i.
-        x ekseninde (axis = 0) harmonik yapildiginda hizli EM seridinin 246
-        testinin HEPSI geciyordu (olculdu, elestirmen; dogrulayici yeniden
-        olctu); artik `tests/em/test_g1p_egik_2b_te.py`de yerli TE_z ve kimlik
-        testleri (yavas seritte dogrudan 2B delta_ps testi de) duser. y
-        ekseninde (axis = 1) harmonik ve 2B `dbx`te sol hucre mu'su da hizli
-        seridin 246 testinden geciyor; onlari YALNIZ yerli TE_z testi (tam 2B
-        rastgele eps) dusurur -- y-degismez duzenekler bu eksene kordur.
+        x ekseninde (axis = 0) harmonik yapildiginda hizli EM seridinin TAMAMI
+        geciyordu (10.10.2026'da 246 test; olculdu, elestirmen; dogrulayici
+        yeniden olctu); artik `tests/em/test_g1p_egik_2b_te.py`de yerli TE_z
+        (T0p), transpoz (T0y) ve kimlik (T1p) testleri duser (yavas seritte
+        dogrudan 2B delta_ps testi T3p de). y ekseninde (axis = 1) harmonik
+        ve 2B `dbx`te sol hucre mu'su 10.10.2026'da hizli seritten geciyordu;
+        onlari T0p ve 11.10.2026'dan beri T0y dusurur (y-degismez T1p/T3p kor).
         """
         if self.mu_r.ndim != 2:
             raise InvalidInputError(

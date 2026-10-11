@@ -2,9 +2,9 @@
 
 Deponun `viz/` katmani hep yuk uretir (`frames.py`, `md_frames.py`,
 `density_frames.py`, `band_frames.py`); `.png` yazmak yeni bagimlilik ve yeni
-katman demektir. Ayni uyari `band_frames.py`de yazili: bu bir DISIPLINDIR,
-SOZLESME DEGIL -- `viz` katmaninin import-linter tarafindan korunan bir GUI
-yasagi YOKTUR.
+katman demektir. 11.10.2026'dan beri bu bir SOZLESMEDIR (`pyproject.toml`,
+"viz yukleri GUI'yi bilmez"; bkz. `band_frames.py`): bu modul
+PySide6/pyqtgraph/OpenGL/matplotlib import edemez.
 
 BU MODUL NEDEN VAR -- KATMAN ZORUNLULUGU. Gozlemlenebilirler
 `observable/spin_obs.py`dedir ve `engine/spin/factory.py` onlari IMPORT

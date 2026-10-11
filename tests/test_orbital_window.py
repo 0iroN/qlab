@@ -277,6 +277,45 @@ def test_seffaflik_paneli_izgaranin_cekirdek_kabugunu_cozemedigini_beyan_ediyor(
 
 
 @requires_offscreen
+def test_IHMAL_satiri_cekirdege_yakin_yuzeylerin_NITEL_oldugunu_basiyor(su_penceresi):
+    """Beyanın YERİ ve TAMAMI kilitli; dayandığı sayı pencerenin KENDİ ızgarasında.
+
+    Yukarıdaki test yalnız "çekirdek kabuk" sözcüğünü panelin HERHANGİ bir
+    yerinde arıyor. Ölçüldü (11.10.2026, mutasyon): `_GOSTERIM_IHMALLERI`den
+    "çekirdeğe yakın yüzeyler nitel" yarısını silen mutant da, beyanı
+    "İhmal edilen"den "Yaklaşımlar" satırına taşıyan mutant da o testten
+    geçiyordu. Burada "İhmal edilen" satırı ADIYLA bulunur ve cümle TAM aranır.
+
+    SAYI (ölçüldü, 11.10.2026): pencerenin varsayılan ızgarasında (padding
+    4.0, n = 60) su/STO-3G çekirdek 1s'nin ızgara normu 0.948879 (%5.1 eksik),
+    HOMO'nunki 0.999998 -- "ızgara çözmüyor" yargısının BU ızgaradaki kanıtı.
+    README'nin 0.98760196'sı başka bir ızgaranındır (padding 6.0, n = 120;
+    `tests/hf/test_hf_obs.py` kaba/ince ikilisini kilitler). Pencere ızgarası
+    inceltilirse (n = 120: 0.999373) bu test kırmızıya döner ve beyan o zaman
+    yeniden düşünülür. MALİYET: ~0.12 s (ölçüldü; iki orbital 60³ noktada).
+    KIRMA (ölçüldü, 11.10.2026, `mut.py`): nitel yarısını silen, beyanı
+    "Yaklaşımlar"a taşıyan ve pencere ızgarasını n = 120 yapan üç mutantın
+    üçü de burada düşer; yukarıdaki "çekirdek kabuk" testi üçünden de geçer.
+    """
+    from qlab.observable.hf_obs import evaluate_orbital
+
+    pencere, _ = su_penceresi
+    satirlar = [s for s in pencere.transparency_text().splitlines() if s.startswith("İhmal edilen")]
+    assert len(satirlar) == 1, satirlar
+    assert (
+        "çekirdek kabuklarının uç genliği: ızgara çözmüyor, çekirdeğe yakın yüzeyler nitel"
+        in satirlar[0]
+    )
+    izgara, sonuc = pencere._grid, pencere._result
+
+    def norm(indeks: int) -> float:
+        return float((evaluate_orbital(sonuc, indeks, izgara) ** 2).sum() * izgara.volume_element)
+
+    assert norm(0) == pytest.approx(0.948879, abs=1e-5, rel=0.0)  # çekirdek O 1s
+    assert norm(4) == pytest.approx(0.999998, abs=1e-5, rel=0.0)  # HOMO
+
+
+@requires_offscreen
 def test_gecersiz_orbital_secimi_reddediliyor():
     """Pencere `evaluate_orbital`'ın hatasını YUTMAMALI.
 

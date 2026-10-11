@@ -236,3 +236,76 @@ def test_TOHUMLAR_TEKRARLANABILIR():
     # ...ve rastgele kisim GERCEKTEN kosuldu (deterministik desenlerin otesi)
     assert not np.array_equal(a[n_det], np.zeros(10))
     assert not np.array_equal(a[n_det], a[n_det + 1])
+
+
+# --- IC KANAL KUSURU YAKALIYOR (B6, 11.10.2026) ------------------------------
+#
+# OLCULDU (11.10.2026, VARSAYILAN solve() -- stability=True, sto-3g): kusurlu
+# sekiz geometrinin SEKIZINDE de solve() taban olmayan cozume converged=True
+# diyor ve IC (RHF -> RHF) kararlilik kanali SEKIZINDE de stable=False diyor.
+# (element, R angstrom) -> (tek baslangicli enerji, en kucuk ic Hessian ozdegeri)
+# N2 enerjileri yukaridaki _N2_OLCUM'un ilk sutunuyla AYNI; F2 satirlari README
+# Modul 1C tablosunun (0.4094 / 0.2513 / 0.0812 Ha asagida cozum) geometrileri.
+_IC_KANAL_OLCUM = {
+    ("N", 1.10): (-106.769673858, -1.411549),
+    ("N", 1.30): (-106.935653933, -1.005431),
+    ("N", 1.50): (-106.959406679, -0.689469),
+    ("N", 1.80): (-106.728309698, -0.736268),
+    ("N", 2.00): (-106.772612763, -0.560974),
+    ("F", 1.80): (-195.398493669, -0.438057),
+    ("F", 2.00): (-195.479768902, -0.267516),
+    ("F", 2.40): (-195.548095529, -0.079375),
+}
+
+
+def _dimer(el: str, r_angstrom: float) -> Molecule:
+    return Molecule.from_string(f"{el} 0 0 0; {el} 0 0 {r_angstrom}")
+
+
+@pytest.mark.parametrize(
+    ("el", "r"), list(_IC_KANAL_OLCUM), ids=[f"{e}2-{r:.2f}" for e, r in _IC_KANAL_OLCUM]
+)
+def test_IC_KANAL_kusurlu_SEKIZ_geometrinin_SEKIZINI_de_YAKALIYOR(el, r):
+    """Kusur SESSIZ DEGIL: yakinsama hukmu yanilsa da IC kanal yakaliyor.
+
+    `converged=True` taban durum demek degildir (modul basligi); bu test
+    kusurun VARSAYILAN yolda panele nasil yansidigini kilitler: sekiz
+    geometrinin sekizinde de `stability.stable is False` ve panelin
+    "Kararlilik" satiri isaretle basliyor. Dogru care cok baslangicli
+    arama (`multistart.search_rhf`); solve() kararsizligi YUKSELTMEZ
+    (`analyse_stability` dokstringi).
+
+    PAY (olculdu): en kucuk ozdeger -1.411549 ... -0.079375 (F2 2.40 en
+    dar); karar esigi -EIGENVALUE_TOLERANCE = -1e-8, yani en dar pay bile
+    esikten yedi mertebe uzak -- hukum BLAS cekirdegine bagli degil.
+    Ozdeger kilidi abs 1e-3: kanal degistiren bir mutant (ic yerine ucluye
+    bakan) da stable=False verir, cunku sekizinde de dis ozdeger negatif
+    (-1.96 ... -3.55); onu yalniz SAYI kilidi gorur.
+
+    SURE: cagri basina ~0.2 s (olculdu), yani hizli seritte.
+    """
+    sonuc = solve(_dimer(el, r), "sto-3g")
+    enerji, lam = _IC_KANAL_OLCUM[(el, r)]
+    assert sonuc.provenance.converged is True  # kusur: SESSIZCE yakinsiyor
+    assert sonuc.energy_total == pytest.approx(enerji, abs=1e-8)
+    assert sonuc.stability is not None
+    assert sonuc.stability.stable is False
+    assert sonuc.stability.lowest_eigenvalue < -0.05
+    assert sonuc.stability.lowest_eigenvalue == pytest.approx(lam, abs=1e-3)
+    assert sonuc.provenance.stability.as_line().startswith("\u2717")
+
+
+def test_IC_KANAL_F2_DENGESINDE_KARARLI_diyor():
+    """KARSIT: kanal her seye "kararsiz" demiyor.
+
+    OLCULDU: F2'nin STO-3G minimumu R = 1.314612 A'da (README Modul 1C)
+    tek baslangicli solve() iki kanalda da kararli -- ic +1.304534, dis
+    +0.228959. "Hep stable=False" donduren bir mutant yukaridaki sekiz
+    testi gecerdi; burada duser.
+    """
+    sonuc = solve(_dimer("F", 1.314612), "sto-3g")
+    assert sonuc.energy_total == pytest.approx(-195.981624421, abs=1e-8)
+    assert sonuc.stability.stable is True
+    assert sonuc.stability.lowest_eigenvalue == pytest.approx(1.304534, abs=1e-3)
+    assert sonuc.external_stability.stable is True
+    assert sonuc.provenance.stability.as_line().startswith("\u2713")

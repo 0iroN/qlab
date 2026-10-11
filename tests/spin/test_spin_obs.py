@@ -754,6 +754,22 @@ def test_KORELASYON_UZUNLUGU_KIRILDIGINDA_None_donuyor():
     kırpılsaydı bu kafeslerin YARISI "ξ = 0, doğru!" diye okunurdu ve doğru
     olması TESADÜF olurdu.
 
+    SAYIM RNG AKIŞINA KİLİTLENMEZ (11.10.2026, F6). Eskiden `none_sayisi ==
+    123` idi ve numpy'nin `integers` akışı değişse yanlış alarm verirdi.
+    `None` olasılığı CEBİRSELDİR: bağımsız ±1 sitelerde (MLT) X = S(0)/N →
+    χ²₁, Y = S(k_min)/N → iki bağımsız Exp(1)'in ortalaması (Gamma(2, 1/2)),
+    X'ten bağımsız; `None` ⇔ X ≤ Y, yani
+        p0 = E[(1 + 2X) e^(−2X)] = 5^(−1/2) + 2·5^(−3/2) = 0.6260990.
+    ÖLÇÜLDÜ: aynı tahmincinin vektör kopyası (300/300 tohumda
+    `correlation_length` ile aynı hüküm), bağımsız bir akışla 2·10⁶ L = 16
+    kafes: p = 0.626147 ± 0.000342 (p0'dan 0.14σ). Test tohumları
+    10000 + k, n = 4000: 2523 `None` (z = +0.61); başka tabanlarda
+    (20000…60000, n = 2000) z −1.63 … +1.33. Bant 4σ: ±122 sayım, p'de
+    ±0.031 — ÇÖZÜNÜRLÜK BUDUR. Ölçüldü: S(k_min)'i tek yönden okuyan
+    mutant (p = 1/√3 = 0.577) ve eşiği `oran <= 0.2`ye kaydıran mutant
+    (p ≈ 0.665) kırmızı; `oran <= 0.1` (p ≈ 0.647, Δp = 0.021) bandın
+    içinde kalır — `== 123` onu yakalardı, ama akışa kilitlenerek.
+
     İLK NEGATİF TOHUMLAR (deterministik): L = 16 tohum 10000 → oran
     −0.969563713; L = 32 tohum 10000 → oran −1.000000000 (o kafeste Σs tam
     0 çıkmış).
@@ -770,10 +786,13 @@ def test_KORELASYON_UZUNLUGU_KIRILDIGINDA_None_donuyor():
     # --- ölçülen: ilişkisiz kafesler ---
     assert correlation_length(_beyaz_kafes(16, 10000)) is None
     assert correlation_length(_beyaz_kafes(32, 10000)) is None
+    n = 4000
+    p0 = 5.0 ** -0.5 + 2.0 * 5.0 ** -1.5  # cebirsel, dokstringde türetildi
     none_sayisi = sum(
-        correlation_length(_beyaz_kafes(16, 10000 + k)) is None for k in range(200)
+        correlation_length(_beyaz_kafes(16, 10000 + k)) is None for k in range(n)
     )
-    assert none_sayisi == 123, none_sayisi
+    bant = 4.0 * np.sqrt(n * p0 * (1.0 - p0))
+    assert abs(none_sayisi - n * p0) <= bant, (none_sayisi, n * p0, bant)
 
     # --- ve gerçekten uzun korelasyonlu bir kafeste bir şey SÖYLÜYOR ---
     tc_konfig = run_wolff(

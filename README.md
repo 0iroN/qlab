@@ -327,11 +327,19 @@ kaldığı ölçülüyor. UHF de bir yaklaşımdır ve kendi kusurunu taşır: s
 olmalıydı) ve bu depoda spin projeksiyonu (PUHF) yoktur.
 
 Görselleştirme ızgarası çekirdek orbitallerini ÇÖZMEZ, ve bu ölçülmüştür:
-su/STO-3G'de HOMO'nun ızgara üzerindeki normu 1.00000000 çıkarken çekirdek
-1s orbitalininki **0.98760196**'dır — analitik değeri 1 olan bir büyüklükte
-%1.24 eksik. Aynı orbitalin ızgaradaki maksimum genliği de yakınsamamıştır
-(n=60'ta 4.9041, n=80'de 5.9271). Çekirdeğe yakın gösterilen her yüzey bu
-yüzden niteldir; oradan sayı okunmaz.
+su/STO-3G'de, pencerenin kendi ızgarasında (padding 4 bohr, n=60) HOMO'nun
+ızgara normu 0.99999784 çıkarken çekirdek 1s orbitalininki **0.94887851**'dir
+— analitik değeri 1 olan bir büyüklükte %5.1 eksik. Daha geniş ve daha ince
+bir ızgarada (padding 6 bohr, n=120; HOMO 1.00000000) bile **0.98760196**,
+%1.24 eksik. *(11.10.2026 düzeltmesi: bu paragraf eskiden 0.98760196'yı
+ızgarasını adlandırmadan "görselleştirme ızgarasının" sayısı gibi yazıyordu;
+o sayı padding 6, n=120 ızgarasınındır.)* Aynı orbitalin pencere ızgarasındaki
+maksimum genliği de yakınsamamıştır (n=60'ta 4.9041, n=80'de 5.9271).
+Çekirdeğe yakın gösterilen her yüzey bu yüzden niteldir; oradan sayı okunmaz.
+Panelin "İhmal edilen" satırı bunu söyler ve test bu satırı adıyla, cümleyi
+tam ve 0.948879'u pencerenin kendi ızgarasında kilitler
+(`tests/test_orbital_window.py::test_IHMAL_satiri_cekirdege_yakin_yuzeylerin_NITEL_oldugunu_basiyor`;
+mutasyon 3/3, eski "çekirdek kabuk" testi 0/3).
 
 Yoğunluk farkı haritasının promolekül referansı **gerçek taban durum
 değildir**. RHF serbest atomları genel olarak çözemez (tek elektronlu H açık
@@ -393,7 +401,11 @@ ve bir eksen/Λ beyanına bağlı — ve panel bunu "ölçüldü, sıfır çıkt
 3.40e-05 cm⁻¹) yazılsaydı panel gerçek hatayı **425.84 kat iyimser**
 gösterirdi — ikincisi (analitik ikiz, 1.20e-02 cm⁻¹) gerçek hatanın 0.83'ü.
 Kova tablosu elle listelenmez, koddan türetilir; bayat bir yokluk beyanı bir
-yalandır ve yalanın yanında tik basılmaz.
+yalandır ve yalanın yanında tik basılmaz. Kilit 1 11.10.2026'da kenarsız
+`TAUTOLOJI` çiftlerine uzatıldı: 28.09'da `OLCULMEDI`den taşınan üç çift
+(`tdse → spin`, `md → em`, `tb → em`) kenar tuzağını kaybetmişti — oraya
+yazılan bir kod kenarı, yeni uç `qlab.units`i de import ediyorsa tabloyu
+yeşil bırakıyordu (ölçüldü); artık adıyla kırmızı.
 
 Qt penceresi bu depoda **bir kez** gerçek ekranda açılıp gözle doğrulandı:
 orbital penceresi (su/STO-3G HOMO), Windows platformunda, kabul kriteri 3
@@ -568,7 +580,11 @@ taşır ve hepsi zorunludur; `a` (A1'in fizik-kapatma merdiveni) bir anahtar
 **değildir**. Panel on satır basar; `Yakınsama` burada "hesap bitti" değil,
 "tablo koda karşı tarandı ve tutarlı **ve** kenarın iki tabanı da okunabildi"
 demektir. `Kuram seçici` satırı baz setidir: spec'in 6-31G sayısı yalnız
-6-31G'nin kendi `r_e`sinde çıkar, sevk edilen `r_e`de 275 cm⁻¹ başkadır.
+6-31G'nin kendi `r_e`sinde çıkar, sevk edilen `r_e`de 275 cm⁻¹ başkadır. O
+pencerede dinamik `ω_B` de (spec: 4646.16252) 11.10.2026'dan beri **`slow`
+şeritte canlı kilitli**: ölçülen 4646.162518 cm⁻¹ (pencere 5e-05), tek YOL B
+koşumu ~144 s; ikinci bir OpenBLAS çekirdeğinde 1.1e-08 cm⁻¹ oynadı, ikinci
+bir makinede ölçülmedi. Hızlı şerit yalnız statik `ω_A`'yı kilitler.
 
 Etkileşimli TDSE penceresi:
 
@@ -879,8 +895,8 @@ taşımaz.
 |---|---|---|
 | Izgara örtüşmesi ↔ analitik `overlap_matrix` (H₂/STO-3G, padding 7 bohr, n=80, `np.einsum`) | Motorun kendi analitik integrali | en kötü fark **2.700e-09** |
 | Elektron sayısı: ∫ρ dV (H₂/STO-3G, padding 6 bohr, n=120) | Tam olarak 2 | **1.9999993405** (kalan kutu kuyruğunun kesilmesinden) |
-| Su HOMO'sunun ızgara normu | Analitik 1 | **1.00000000** |
-| Su çekirdek 1s orbitalinin ızgara normu | Analitik 1 | **0.98760196** — %1.24 eksik; ızgaranın çekirdek tepesini çözemediğinin sayısal kanıtı |
+| Su HOMO'sunun ızgara normu | Analitik 1 | padding 6 bohr, n=120'de **1.00000000**; pencerenin kendi ızgarasında (padding 4, n=60) **0.99999784** |
+| Su çekirdek 1s orbitalinin ızgara normu | Analitik 1 | padding 6 bohr, n=120'de **0.98760196** — %1.24 eksik; pencerenin kendi ızgarasında (padding 4, n=60) **0.94887851**, %5.1 eksik; ızgaranın çekirdek tepesini çözemediğinin sayısal kanıtı |
 | Yoğunluk farkı sıfıra integre oluyor mu (H₂) | Molekül ve promolekül aynı elektron sayısını taşır | **−1.411e-08** |
 | **Kovalent bağda elektron birikimi** (H₂, bağ bölgesi \|x\|<1, \|y\|<1, 0.2<z<1.2 bohr) | Yön iddiası: çekirdekler arasında ARTMALI | bağ bölgesinde **+0.055005 elektron**, dış bölgede (z<−1.0 veya z>2.4) **−0.027068 elektron** (ikisi de bölge üzerinden İNTEGRE); haritanın ham tepe değeri ayrı bir büyüklüktür: **+0.042281 e/bohr³** (z=+0.643 bohr), ham dip **−0.064390 e/bohr³** |
 | **Polar bağda yük transferi** (HF, r=0.917 Å, orta düzlem z=0.8664 bohr) | Yön iddiası: elektronegatif atoma GİTMELİ | H yarısı **−0.1841**, F yarısı **+0.1841** — üç ayrı ızgarada ±%0.2 |
@@ -1017,6 +1033,26 @@ F₂'nin **kendi dengesi** etkilenmiyor, ve o denge deneysel bir sayı değil
 E = −195.981624421. Orada 12 tohum tek çözüme iniyor (fark 1.705e-13) ve iki
 kanalda da kararlı (iç **+1.304533**, dış **+0.228957**). Kusur gerilmiş
 geometrilerin kusurudur.
+
+**Kusur sessiz DEĞİL — iç kararlılık kanalı sekiz geometrinin sekizini
+yakalıyor** (ölçüldü 11.10.2026, varsayılan `solve()`, yani
+`stability=True`). Yukarıdaki iki tablonun sekiz geometrisinin (N₂ 1.10 /
+1.30 / 1.50 / 1.80 / 2.00 Å, F₂ 1.80 / 2.00 / 2.40 Å) sekizinde de çözüm
+`converged=True` basarken iç (RHF→RHF) kanal `stable=False` diyor ve panelin
+"Kararlılık" satırı ✗ ile başlıyor. En küçük iç Hessian özdeğeri sırasıyla
+**−1.4115 / −1.0054 / −0.6895 / −0.7363 / −0.5610** ve
+**−0.4381 / −0.2675 / −0.0794**; karar eşiği −1e-8, yani en dar pay
+(F₂ 2.40 Å) bile eşikten yedi mertebe uzak. İkinci bir OpenBLAS
+çekirdeğinde (`OPENBLAS_CORETYPE=Sandybridge`) özdeğerler ≤ 8e-11, enerjiler
+≤ 2e-13 oynadı — hüküm çekirdeğe bağlı değil. Kanal kararsızlığı
+**yükseltmez** (kararsız bir çözüm geçerli bir durağan noktadır); taban
+durumu isteyen çağıran `multistart.search_rhf`'i kullanır. Kilit:
+`tests/hf/test_rhf_sikismasi.py::test_IC_KANAL_kusurlu_SEKIZ_geometrinin_SEKIZINI_de_YAKALIYOR`
+(sekiz hücre, hücre başına ~0.2 s, hızlı şerit; özdeğer abs 1e-3, çünkü
+kanal değiştiren — iç yerine üçlü Hessian'a bakan — bir mutant da
+`stable=False` verir) ve F₂ dengesinde karşıt (iç +1.3045, kararlı).
+Mutasyon 5/5 (iç kanal hep kararlı, varsayılan `stability=False`, kanal
+takası, eşik −0.1, iç kanal hep kararsız).
 
 **Modül 2D bu `solve()` üzerine kuruludur, dolayısıyla etki ÖLÇÜLDÜ:**
 
@@ -1867,9 +1903,11 @@ bulunması gerektiğini söylüyor, kod **denetliyor** (`must_include`).
   Köşegenleştirme gerekmediği için `build_tb` artık iki ızgara hesaplamıyor.
 - **Ortogonal olmayan taban yoktur** (S = I). Bedeli ölçüldü: bant genişliğinin
   %45–65'i.
-- **`viz` katmanının GUI yasağı YOKTUR** — ölçüldü, `viz/band_frames.py →
-  PySide6` rc=0 ile geçiyor ve `viz/isosurface.py:55` zaten pyqtgraph import
-  ediyor. "Bant yükü çizim yapmaz" bir **disiplindir, sözleşme değildir**.
+- **`viz` katmanının GUI yasağı o gün YOKTU (11.10.2026'da sözleşme oldu)** —
+  ölçüldü, `viz/band_frames.py → PySide6` rc=0 ile geçiyordu ve
+  `viz/isosurface.py:55` pyqtgraph import ediyor. "Bant yükü çizim yapmaz" o gün
+  bir **disiplindi**; bugün `viz yükleri GUI'yi bilmez` sözleşmesidir
+  (`isosurface` muaf, muafiyet tek kenar: `density_frames → isosurface`).
   (`engine` tarafındaki `matplotlib` kaçış deliği ise bu modülde kapatıldı:
   enjeksiyon artık rc=1 veriyor ve taranan dosya 67 → 68'e çıkıyor.)
 - **Büyük k'de argument reduction sessizce bozuluyor:** k + 1e12·G →
@@ -1942,7 +1980,11 @@ Ayrıca (24.09.2026, bulgu düzeltme turu):
   elektron** varken geçerli (çift N_e). Tek N_e'de (çiftte 1 ya da 3
   elektron) yasa başka: P₁(x), iki seviyeli kuramda P_max 0.2397, x ≈ 2.087'de.
   zincir(16, 2, 0.05, 3)'te n_e = 15 ve 17 için P_ölçülen/P₁ = 1.000000
-  ölçüldü (x = 1 / 2.087 / 3.087) — **testi yok** (`tb/mermin.py` dokstringi).
+  ölçüldü (x = 1 / 2.087 / 3.087) — *11.10.2026: kilitli,
+  `tests/tb/test_mermin.py` M4-P1 (n_e 15 ve 17 × x 0.2 / 1 / 2.087 / 3.087 /
+  10, en kötü sapma 1.03e-06, kapı 1e-5; aynı ölçüm P'ye göre 0.749 … 0.0137,
+  yani iki yasa ayrılıyor). Tek n_e'yi en yakın çifte yuvarlayan kod mutantı
+  M4'ün beş hücresinden geçer, M4-P1'de düşer.*
 - Hückel C3 (4n+2) ve C4 (4n) eşikleri yalnız çift N'de tanımlı; tek N'de yarı
   dolu halka bir soliton verir (eleştirmen E2). Eşik tek N'de **hiç ölçülmedi**.
 - Kuyruk genişliği r_cut − r_on bütün dinamik pencerelerde 0.8 bohr'a sabit
@@ -2561,8 +2603,11 @@ istisna `ALT SINIR` işaretidir ve o da yazılmaz, fabrikadan **ithal edilir**.
   karşılaştırması bu modülde YENİDEN ÖLÇÜLMEDİ.** Sevk edilen senaryonun
   kendi aralığı ölçüldü (L = 16, 24 tohum: 0.68 … 6.44); "17.5 kat kritik
   yavaşlama" cümlesi spec'in penceresine aittir, buraya taşınmadı.
-- **Bir test tam sayı (123/200) sabitliyor**; deterministiktir ama numpy'nin
-  RNG akışı değişirse kırılır.
+- **`None` sayımı tam sayıya değil bir binom bandına kilitli (11.10.2026)**:
+  olasılık cebirsel, p0 = 5^(−1/2) + 2·5^(−3/2) = 0.6260990 (bağımsız 2·10⁶
+  kafes: 0.626147 ± 0.000342); 4000 tohumda 4σ bandı, p'de ±0.031. Eski
+  `== 123` kilidi numpy'nin RNG akışına bağlıydı. Bedeli: |Δp| ≈ 0.02'lik
+  bir kayma (eşik `oran <= 0.1`) bandın içinde kalır.
 - **Sevk edilen senaryonun T = 2.0 ve T = 2.8 satırları testlerde
   kilitlenmez** (16/24 ve 13/24 — geçiş bölgesi). Tek akıştan okunan bir
   oranı fiziğe yazmak bu depoda üç kez düzeltilmiş bir hatadır.
@@ -3028,7 +3073,15 @@ edilince sınanabilir hâle gelen iddialardı**:
       `mu_yari_2d`'yi harmonik yapan mutant mevcut hızlı EM şeridinin 246
       testinin hepsinden geçiyordu; artık T0p ve T1p'de düşüyor. 2B'nin y
       eksenindeki μ kuralını (ve `dbx`in μ'sünü) hızlı şeritte YALNIZ T0p
-      kilitliyor (doğrulayıcı).
+      kilitliyordu (doğrulayıcı). *11.10.2026 (G1p-b): ikinci, T0p'den
+      bağımsız bekçi T0y — 2B transpoz simetrisi (rastgele ε, μ ve PML'li
+      koşum x ↔ y değişimiyle tekrarlanır, fark bit bit 0.0, kapı 1e-13;
+      0.02 s). Referansı el yazımı TE_z değil motorun kendi x eksenidir.
+      Dokuz eksen mutantının dokuzunda düşer; `d_hx`'i tek taraflı yapan
+      mutant (σ'nın y ortalaması) T0y dışındaki hızlı EM şeridinin 252
+      testinin hepsinden geçiyordu. Kör nokta beyanlı: iki ekseni aynı
+      biçimde bozan mutant simetriyi korur (onu x ekseninin bekçileri
+      öldürür).*
 - ~~**`reflection_coefficient` sıyırma / kritik-yakını açılarda SESSİZ
   protokol hatası.**~~ **KAPANDI 10.10.2026 (sevk geometrisinde) — kuyruk
   kapısı** (kayıt tamlığı); kayıt içi yankı ayrı bir madde (aşağıda; o da KAPANDI, ayrı `echo_gate` ile). Kaydın son periyodundaki genlik (gelen ya da yansıyan seride)
@@ -3575,7 +3628,7 @@ sistemler, Lyapunov üsleri, 3B yörüngeler, Simó'nun öteki koreografileri ·
 yani `PySide6` / `pyqtgraph` / `OpenGL` / `matplotlib`'i de. (`matplotlib`
 Modül 3'te ölçülerek eklendi: `engine/tb/bands.py`ye enjekte edilen
 `import matplotlib.pyplot` rc=0 ile **geçiyordu**, aynı dosyaya konan PySide6
-kontrolü ise rc=1 veriyordu — yani araç çalışıyordu, eksik olan kapsamdı.) Aynısı `observable` için geçerli.
+kontrolü ise rc=1 veriyordu — yani araç çalışıyordu, eksik olan kapsamdı.) Aynısı `observable` için geçerli. `viz` katmanının yük modülleri (`viz/` altındaki sekiz `*frames.py`) de PySide6/pyqtgraph/OpenGL/matplotlib import edemez — 11.10.2026'da ölçülerek eklendi (`band_frames → PySide6` rc=0 ile geçiyordu); `viz/isosurface.py` muaftır ve muafiyet tek bir kenardır (`density_frames → isosurface`; kenar kaybolursa import-linter rc=1 verir).
 Katman sırası `run/app → viz → observable → engine → scenario →
 provenance → types → units/errors`. Kural yorumla değil import-linter ile
 korunur: `pytest tests/test_architecture.py`.
@@ -3609,7 +3662,7 @@ Spec §15'teki yedi maddenin gerçek durumu (ölçüm ayrıntıları
 | 4 | Kaydırıcı ile canlı iletim, analitiğin ±%2'si içinde | **Kapandı** — ölçülen fark %0.07 |
 | 5 | Şeffaflık paneli her hesapta dolu | **Kapandı, referans farkı HARİÇ (bilinçli daraltma, 11.10.2026)** — TDSE tarafında pencere paneli; HF tarafında headless koşucu her senaryoda Yöntem/Yaklaşımlar/İhmal edilen/Beklenen hata/Yakınsama satırlarını basar (`h2_bond_scan.yaml` çıktısı; bugün bunlara Kararlılık ve Dış kararlılık eklenir). Spec'in istediği **referans farkı panelde YOK** — `Provenance`'ta referans alanı yoktur ve `h2_bond_scan` panelinde "Referans" sözcüğü sıfır kez geçer. Bu bir unutma değil bir karardır: `reference/` yalnız 11 kapalı kabuk sistemi taşır (He, H₂ ×4, LiH, HF, H₂O ×2, NH₃, CH₄; PySCF bu makinede kurulu değil), yani keyfi bir girdinin panelinde satır hemen her zaman "referans yok" derdi. Referans farkı panelde değil **testlerde** ölçülür (`reference/hf_energies.json` kayıtlarına karşı) |
 | 6 | Yakınsamayan SCF sessizce sayı döndürmez, test edilmiş | **Kapandı** — `SCFConvergenceError`, `test_non_convergence_raises_rather_than_returning` ile test edilmiştir |
-| 7 | `engine`'in `viz`/`app` bağımlılığı yok, import-linter ile doğrulandı | **Kapandı** — üç sözleşme (`engine görselleştirmeyi bilmez`, `observable görselleştirmeyi ve GUI'yi bilmez`, `Katmanlı mimari`), hepsi KEPT. Sözleşmenin kendisinin diş taşıdığı da ölçülüyor: enjekte edilen 13 ihlalin 13'ü adı geçen sözleşmeyi BROKEN yapıyor (11.08'de 8'di) (bkz. "Mimari kuralı") |
+| 7 | `engine`'in `viz`/`app` bağımlılığı yok, import-linter ile doğrulandı | **Kapandı** — dört sözleşme (`engine görselleştirmeyi bilmez`, `observable görselleştirmeyi ve GUI'yi bilmez`, `viz yükleri GUI'yi bilmez`, `Katmanlı mimari`), hepsi KEPT. Sözleşmenin kendisinin diş taşıdığı da ölçülüyor: enjekte edilen 18 ihlalin 18'i adı geçen sözleşmeyi BROKEN yapıyor (11.08'de 8'di, 11.10'dan önce 13) (bkz. "Mimari kuralı") |
 
 **7/7 madde kapalıdır.** Kriter 3 Modül 1B2 ile kapandı; yukarıdaki tablonun
 yedi satırı da "Kapandı" der — 5. satır bilinçli bir daraltmayla (referans

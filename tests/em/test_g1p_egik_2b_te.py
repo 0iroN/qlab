@@ -47,10 +47,13 @@ ve dal T2p'deki tek satırlık assert'le kilitlidir (hiçbir çağrı o bölgeye
 girmez). Hata numpy skaler yolunda çıkar; `cmath` ile karma aritmetik doğru
 dalı tesadüfen seçebilir (doğrulayıcı).
 
-DÖRT TEST:
+BEŞ TEST (T0y 11.10.2026'da, G1p-b):
 
 * T0p (hızlı) dual = 2B TE_z Yee'nin KENDİSİ: testte elle yazılmış yerli
   TE_z (Hz, Ex, Ey) ile `run_2d`-dual, TAM 2B rastgele ε(x, y)'de alan alan.
+* T0y (hızlı) 2B TRANSPOZ SİMETRİSİ: rastgele ε, μ ve PML'li koşum x <-> y
+  değişimiyle tekrarlanır; y ekseninin kuralları motorun KENDİ x eksenine
+  bağlanır (T0p'den bağımsız ikinci y bekçisi).
 * T1p (hızlı) KİMLİK: dual 2B'nin `sin(ky_m j)` kipi, eğik p'nin
   `K = 2 sin(ky/2)` hâlidir — G1-s T1'in p eşi, aynı düzenek.
 * T2p (hızlı) sevk edilen alet iki açıda da ayrık r_p'ye oturur; bedelin
@@ -69,9 +72,9 @@ olarak çıkar; yeri "2B TE_z yolunun tek fizik çıpası" olmasıdır. Kapalı
 formlar ve sınır nesnesi testte elle yazılır, kaynaktan import edilmez; özel
 (`_ad`) import YOK.
 
-KAPSAM TAVANI: μ = 1; y-değişmez ortam (T0p hariç); soğurucu içinde ε sabit;
-duvar ve maske PMC; kontrastlar 1↔2.25, 1→4, 4→1, 1↔9, 6.25↔2.25, 1→6.25 ve
-S 0.3–0.6 dışı ölçülmedi; T3p yalnız 4→1, 45°.
+KAPSAM TAVANI (T0y HARİÇ: μ ∈ [1, 9], soğurucu dahil rastgele ε): μ = 1; y-değişmez
+ortam (T0p hariç); soğurucu içinde ε sabit; duvar ve maske PMC; kontrastlar 1↔2.25,
+1→4, 4→1, 1↔9, 6.25↔2.25, 1→6.25 ve S 0.3–0.6 dışı ölçülmedi; T3p yalnız 4→1, 45°.
 
 MUTANTLAR — ölçüldü (10.10.2026, `.superpowers/sdd/araclar/mut.py`, kopya
 ağaçta kaynak yaması; `g1p-olcum/uygulama/mut_g1p*.log`, test başına ayrı):
@@ -109,11 +112,21 @@ eğik p'nin `el_yb`si) orada kaynak yamasıyla 4 testte düşer (doğrulayıcı,
 `dogrulama/m_serit_A.log`); eleştirmenin 5'i daha geniş bir monkeypatch'in
 sayısıdır.
 
-T0p 2B'NİN y EKSENİNİ KİLİTLEYEN TEK HIZLI TESTTİR (doğrulayıcı,
+T0p 2B'NİN y EKSENİNİ KİLİTLEYEN TEK HIZLI TESTTİ (10.10.2026; doğrulayıcı,
 `dogrulama/m_yeni_*.log`, `m_serit_*.log`): `mu_yari_2d` y ekseni (axis = 1)
 harmonik ve 2B `dbx`te sol hücrenin μ'sü hızlı EM şeridinin 246 testinin
-HEPSİNDEN geçiyor, bu dosyada YALNIZ T0p'de düşüyor — y-değişmez düzenekler
-(T1p, T3p) bu eksene kördür. T0p silinirse bu eksen yeniden kilitsiz kalır.
+HEPSİNDEN geçiyordu, bu dosyada YALNIZ T0p'de düşüyordu — y-değişmez
+düzenekler (T1p, T3p) bu eksene kördür. 11.10.2026 (G1p-b): ikinci, T0p'den
+BAĞIMSIZ bekçi T0y (transpoz simetrisi; referansı el yazımı TE_z değil
+motorun kendi x ekseni). Ölçüldü (`mut.py`): T0y şu dokuz mutantın dokuzunda
+düşer -- y'de harmonik μ, `dbx` sol μ, `d_hx` tek taraflı (Y6), Hx işareti,
+x'te harmonik μ (M2), `d_hy` tek taraflı (M6), Hy işareti (M8), `dby` sol μ
+(M12) ve iki eksende harmonik μ (SON maddede ısırık TESADÜFİ: simetri
+kapısından değil, karşıt ortamın x ekseni de harmonik olunca karşıtın 0'a
+inmesinden; T0y dokstringi). Y6'yı (σ'nın y ortalaması) T0p GÖREMEZ --
+PEC'te σ = 0; T0y PML'li olduğu için görür. Ölçüldü: Y6, T0y dışındaki hızlı
+EM şeridinin 252 testinin HEPSİNDEN geçiyordu (`mut.py`, 11.10.2026). Artık
+T0p silinse de y ekseni kilitsiz kalmaz.
 Doğrulayıcının 12 ek kaynak mutantından 10'u öldü (T1p: p'de Hz/Ey kaybı,
 kaynak bağlaşımı, geri besleme; T0p/T1p: 2B kayıt hizası, kaynak zamanı,
 kaynak genliği; T2p: `reflection_coefficient` ön ortamı); hayatta kalan
@@ -235,7 +248,8 @@ def test_DUAL_2B_YERLI_TE_z_YEE_ILE_AYNI():
     (Python `max`ı NaN'ı yutuyordu — doğrulayıcı S1). KARŞIT: yerli TE_z
     harmonik teğet-E kuralıyla koşulunca kayıtta bağıl 0.367 uzak (kapı
     >= 1e-3) — test ortalama kuralını GÖRÜR. Tam 2B rastgele ε olduğu için
-    bu dosyada 2B'nin y eksenini (Ex'in ε'si) gören TEK testtir (başlık).
+    bu dosyada 2B'nin y eksenini (Ex'in ε'si) gören İLK testtir; ikincisi
+    11.10.2026'dan beri T0y (transpoz simetrisi; başlık).
 
     MALİYET: pytest çağrısı 0.02 s (ölçüldü).
     """
@@ -264,6 +278,79 @@ def test_DUAL_2B_YERLI_TE_z_YEE_ILE_AYNI():
     k_har, *_ = _yerli_te_z(eps, S=S, steps=steps, darbe=darbe, kaynak=kaynak, probes=probes,
                             kural="harmonik")
     karsit = float(np.max(np.abs(k_har - rec.probes))) / tepe
+    assert karsit >= 1e-3, karsit
+
+
+# ---------------------------------------------------------------------------
+# T0y — 2B TRANSPOZ SİMETRİSİ (y ekseninin İKİNCİ hızlı bekçisi, G1p-b)
+# ---------------------------------------------------------------------------
+class _YHarmonik(Medium):
+    """KARŞIT için: yalnız y ekseninde (axis = 1) harmonik yarı hücre μ."""
+
+    def mu_yari_2d(self, axis: int) -> np.ndarray:
+        if axis == 1:
+            return 2.0 / (1.0 / self.mu_r[:, :-1] + 1.0 / self.mu_r[:, 1:])
+        return super().mu_yari_2d(axis)
+
+
+def test_2B_TRANSPOZ_SIMETRISI_y_EKSENI_x_EKSENININ_AYNASI():
+    """SINIF: ŞEMA ÇIPASI (simetri); G7'de çıpa DEĞİL. G1p-b (11.10.2026).
+
+    NEDEN: T0p'den önce 2B'nin y eksenindeki μ kuralı (`mu_yari_2d(1)`) ve
+    `dbx`in μ'sü hızlı şeritte kilitsizdi; T0p tek bekçiydi (başlık). Bu test
+    ikinci, T0p'den BAĞIMSIZ bir bekçidir: el yazımı TE_z'ye değil, motorun
+    KENDİ x eksenine dayanır. Kare hücreli TM_z Yee x <-> y değişimi altında
+    değişmezdir: (Ez, Hx, Hy)(x, y) -> (Ez, −Hy, −Hx)(y, x). Ortam (ε VE μ
+    tam 2B rastgele), kaynak ve problar transpoze edilip ikinci koşum
+    yapılınca kayıt AYNI çıkmalı; y ekseninin her kuralı böylece x ekseninin
+    (T1p, T3p, G1-s'in kilitlediği) kuralına bağlanır.
+
+    DÜZENEK: 40×30 (kare DEĞİL: transpoz şekli de değiştirir), ε ∈ [1, 4],
+    μ ∈ [1, 9] (tohum 5), `PML(6)` -- dört kenarda AYNI profil, yani σ da
+    transpozla değişir ve `d_hx`/`d_hy` ortalaması da sınanır (PEC'te σ = 0
+    ve o iki satır görünmez); S 0.5, 300 adım, kaynak (20, 15), λ 8, sgf 1.
+
+    ÖLÇÜLDÜ (11.10.2026): fark 0.0 (bit bit; ε = 1 dual ortam + PEC ile
+    40×30, 24×18, 30×22
+    düzeneklerinde de 0.0). Kapı 1e-13: işlem sırası değişince kırılmasın;
+    `np.max` NaN'ı yayar. KARŞIT: transpoze koşum yalnız y'de harmonik μ'lü
+    ortamla yapılınca kayıtta bağıl 1.62 uzak (kapı >= 1e-3).
+
+    KÖR NOKTA (beyan): iki ekseni AYNI biçimde bozan mutant simetriyi KORUR
+    ve simetri kapısından geçer; simetri yalnız eksenler ARASI farkı görür.
+    Ölçüldü (iki eksende harmonik μ): test yine kırmızı, ama SİMETRİ
+    kapısından değil (fark 0.0) KARŞIT kapısından -- karşıt ortamın x ekseni
+    de harmonik olunca karşıt 0.0'a iner. Bu tesadüfi ısırığa güvenilmez;
+    öyle mutantları x ekseninin bekçileri (T0p, T1p, T3p) öldürür.
+    KIRMA (ölçüldü, 11.10.2026, `mut.py`): başlıktaki dokuz mutantın dokuzu.
+    MALİYET: üç koşum, pytest çağrısı 0.02 s (ölçüldü).
+    """
+    rng = np.random.default_rng(5)
+    nx, ny, S, steps, lam = 40, 30, 0.5, 300, 8.0
+    eps = 1.0 + 3.0 * rng.random((nx, ny))
+    mu = 1.0 + 8.0 * rng.random((nx, ny))
+    kaynak = (20, 15)
+    probes = ((10, 7), (20, 15), (31, 22), (5, 25))
+    probes_t = tuple((j, i) for i, j in probes)
+
+    def darbe(t):
+        return gauss_cos(t, wavelength=lam, sgf=1.0, t0=5.0 * lam)
+
+    def kos(ortam, kay, pr):
+        return run_2d(ortam, courant=S, boundary=PML(thickness=6, m=3.0), steps=steps,
+                      source=darbe, source_index=kay, probes=pr, wavelength=lam, sgf=1.0)
+
+    a = kos(Medium(eps.copy(), mu.copy()), kaynak, probes)
+    b = kos(Medium(eps.T.copy(), mu.T.copy()), kaynak[::-1], probes_t)
+    tepe = float(np.max(np.abs(a.probes)))
+    assert tepe > 1e-3, tepe
+    olc = float(np.max([
+        np.max(np.abs(a.probes - b.probes)), np.max(np.abs(a.final.e - b.final.e.T)),
+        np.max(np.abs(a.final.hx + b.final.hy.T)), np.max(np.abs(a.final.hy + b.final.hx.T)),
+    ])) / tepe
+    assert olc <= 1e-13, olc
+    c = kos(_YHarmonik(eps.T.copy(), mu.T.copy()), kaynak[::-1], probes_t)
+    karsit = float(np.max(np.abs(a.probes - c.probes))) / tepe
     assert karsit >= 1e-3, karsit
 
 

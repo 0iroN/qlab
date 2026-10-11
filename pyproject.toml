@@ -73,6 +73,35 @@ source_modules = ["qlab.observable"]
 forbidden_modules = ["PySide6", "pyqtgraph", "OpenGL"]
 
 [[tool.importlinter.contracts]]
+name = "viz yükleri GUI'yi bilmez"
+type = "forbidden"
+# ÖLÇÜLEREK eklendi (11.10.2026). Önceden "viz'in GUI yasağı yok, bu bir
+# disiplin" yazıyordu ve doğruydu: `viz/band_frames.py`ye enjekte edilen
+# `from PySide6 import QtWidgets` rc=0 ile geçiyordu (üç sözleşme de KEPT).
+# Kaynaklar `viz/` altındaki her `*frames.py` yük modülüdür (sekiz);
+# `tests/test_architecture.py` listeyi dizinle karşılaştırır, yeni bir yük
+# modülü sessizce dışarıda kalamaz. `viz/isosurface.py` MUAFTIR: ağ çıkarımı
+# `pyqtgraph.isosurface` ile yapılır ve modül pyqtgraph'ı gerçekten import
+# eder. Muafiyet bir modül değil TEK BİR KENARDIR. Ölçüldü: o satır olmadan
+# temiz ağaç BROKEN (density_frames -> isosurface -> pyqtgraph zinciri);
+# satırla temiz ağaç KEPT, ama `density_frames`e DOĞRUDAN `import pyqtgraph`
+# ve `band_frames`e `from qlab.viz import isosurface` (dolaylı yol) yine
+# BROKEN. Kenar kaybolursa import-linter "No matches for ignored import"
+# diyerek rc=1 verir: muafiyet bayatlayamaz.
+source_modules = [
+    "qlab.viz.band_frames",
+    "qlab.viz.bridge_frames",
+    "qlab.viz.density_frames",
+    "qlab.viz.em_frames",
+    "qlab.viz.frames",
+    "qlab.viz.grav_frames",
+    "qlab.viz.md_frames",
+    "qlab.viz.spin_frames",
+]
+forbidden_modules = ["PySide6", "pyqtgraph", "OpenGL", "matplotlib"]
+ignore_imports = ["qlab.viz.density_frames -> qlab.viz.isosurface"]
+
+[[tool.importlinter.contracts]]
 name = "Katmanlı mimari"
 type = "layers"
 # Parantez, katmanı "opsiyonel" olarak işaretler: modül henüz mevcut değilse

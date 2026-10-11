@@ -255,6 +255,85 @@ def test_M4_OMEGA_E_farki_EKSI_P_x_grad_gap(x):
     assert abs(oran - 1.0) < 1e-5, oran
 
 
+def _P1(x: float) -> float:
+    """P_1(x) = 2 x df_1/dx, f_1 = f(a), f(a) + f(a + x) = 1/2 (`mermin.py` dokstringi).
+
+    TESTTE ELLE, kuramdan: f(y) = 1/(1 + e^y) = expit(-y), f' = -f(1 - f).
+    Kisit turevlenince a'(x) = -f'(a + x)/(f'(a) + f'(a + x)), yani
+    df_1/dx = -f'(a) f'(a + x)/(f'(a) + f'(a + x)) > 0. Kok `brentq`la;
+    parantez [-x - 50, 50] kokun iki yaninda (toplam ~2 ve ~0).
+    """
+    a = brentq(lambda a: expit(-a) + expit(-(a + x)) - 0.5, -x - 50.0, 50.0)
+    d0 = -expit(-a) * expit(a)
+    d1 = -expit(-(a + x)) * expit(a + x)
+    return 2.0 * x * (-(d0 * d1) / (d0 + d1))
+
+
+def test_M4_P1_kapali_bicimin_TEPESI_dokstringdeki_sayi():
+    """`_P1` yardimcisinin kendisi: P_max = 0.23967, x = 2.0873'te (dokstring).
+
+    OLCULDU (11.10.2026): tepe 0.2396657050, x = 2.0872913189'da (sinirli
+    `minimize_scalar` ile; burada Nelder-Mead ayni noktaya iner). Bu bir
+    CEVIRI denetimidir (yardimci <-> dokstring);
+    fizik isirigi asagidaki M4-P1'dedir.
+    """
+    tepe = minimize(lambda v: -_P1(float(v[0])), x0=[2.0], method="Nelder-Mead",
+                    options={"xatol": 1e-9, "fatol": 1e-15})
+    assert abs(-tepe.fun - 0.23967) < 5e-6, -tepe.fun
+    assert abs(float(tepe.x[0]) - 2.0873) < 5e-5, tepe.x
+
+
+@pytest.mark.parametrize("ne", [15, 17])
+@pytest.mark.parametrize("x", [0.2, 1.0, 2.0872913188686844, 3.086809276836417, 10.0])
+def test_M4_P1_TEK_Ne_ciftte_1_ya_da_3_elektron_P1_YASASI(ne, x):
+    """M4'un TEK ELEKTRONLU KOLU: n_e = 15 ve 17'de F_HF - F_FD(E) = -P_1(x) grad(gap).
+
+    MAKINE (iki seviyeli yasanin kapali bicimi; D8, 11.10.2026). Pencere M4'un
+    AYNISI (zincir(16, 2, 0.05, 3), L = 32, bilesen (atom 1, x), Fermi cifti
+    8. ve 9. seviye, ayni sonlu farklar); degisen yalniz n_e: 15'te ciftte 1,
+    17'de 3 elektron. mu artik bosluk ortasinda DEGIL (P_1'in kisiti).
+    OLCULDU (11.10.2026): oran - 1 = +1.03e-06 / +1.6e-08 / +5.2e-09 /
+    -8.6e-09 / +7.04e-07 (x = 0.2 / 1 / 2.087 / 3.087 / 10); 15 ile 17 basilan
+    dort hanede AYNI. Tolerans M4'unki, 1e-5. x = 20 PENCERE DISI: P_1(20)
+    ustel kucuk ve fark sonlu fark tabanina iner (olculdu oran - 1 = 7.0e-02
+    / 1.1e-02); M4'un P(20)'si ise hala okunur.
+    KARSIT (ayni olcum, iki elektron yasasina gore): P_olculen/P = 0.749 /
+    0.715 / 0.596 / 0.437 / 0.0137 -- 1'den en az 0.25 uzak; test iki yasayi
+    AYIRIR. KIRMA (olculdu, `mut.py`): dolumda tek n_e'yi en yakin cifte
+    yuvarlayan kod mutanti (tek elektronlu kolu SILER) burada kirmizi, M4'un
+    bes hucresinde YESIL; testte P_1 yerine P, ya da kisitta 1/2 yerine 1
+    (iki elektron kosulu) yazan mutantlar da kirmizi.
+    """
+    R = _zincir(16, 2.0, 0.05, 3)
+    assert _dikise_uzaklik(R, 32.0) >= 1e-3
+    gap = _gap(R)
+    kT = gap / x
+    s = _om(R, ne, kT, 32.0)
+    i, c = 1, 0
+    h = 1e-7
+    arti = R.copy()
+    arti[i, c] += h
+    eksi = R.copy()
+    eksi[i, c] -= h
+    grad_gap = (_gap(arti) - _gap(eksi)) / (2 * h)
+    h = 1e-6
+    arti = R.copy()
+    arti[i, c] += h
+    eksi = R.copy()
+    eksi[i, c] -= h
+
+    def enerji(Rx):
+        q = _om(Rx, ne, kT, 32.0)
+        return q.E_band + q.E_rep
+
+    F_E = -(enerji(arti) - enerji(eksi)) / (2 * h)
+    olculen = (s.kuvvet[i, c] - F_E) / (-grad_gap)
+    P1 = _P1(x)
+    assert abs(olculen / P1 - 1.0) < 1e-5, olculen / P1
+    P = x / (4.0 * math.cosh(x / 4.0) ** 2)
+    assert abs(olculen / P - 1.0) > 0.2, olculen / P
+
+
 # --------------------------------------------------------------------- M5 --
 
 

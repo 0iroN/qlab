@@ -1013,8 +1013,8 @@ KOVA_TABLOSU: tuple[EdgeFact, ...] = (
 #: 28.09.2026'DA YINE DEGISTI -> 3 / 8 / 8 / 0 / 2 (olculmedi bosaltma on olcumu):
 #: `tdse -> spin`, `md -> em`, `tb -> em` KENARSIZ, HUKUMLE TAUTOLOJI'ye gecti; `tdse -> tb`
 #: ve `spin -> em` OLCULMEDI'de KALDI ama gerekceleri "sayi geldi, hukum gelmedi" degil
-#: OLCULMUS NEDENDIR. Yeni kova yine ACILMADI. KOR KOL BEYANI: tasinan uc cift kilit 1'in
-#: kenar tuzagini kaybeder -- TAUTOLOJI'de kod kenari yazilirsa tablo kirmiziya DONMEZ.
+#: OLCULMUS NEDENDIR. Yeni kova yine ACILMADI. KOR KOL KAPANDI (11.10.2026): tasinan uc cift
+#: kilit 1'in kenar tuzagini kaybetmisti; geri verildi, bkz. `TAUTOLOJI_KENARLI_CIFTLER`.
 #: Bu esleme bir testle hem tabloya hem `MODULLER`in kombinasyonlarina karsi
 #: sinanir.
 KOVA_SAYILARI: dict[str, int] = {
@@ -1074,6 +1074,26 @@ GERCEK_KOPRU_KENAR_SINIFLARI: dict[tuple[str, str], str] = {
     ("tdse", "md"): KENAR_YALNIZ_TIP,
 }
 
+#: TAUTOLOJI KOVASINDA KOD KENARI TASIYAN CIFTLER (11.10.2026) -- kilit 1'in
+#: TAUTOLOJI uzantisi. Anahtar YONSUZ `EdgeFact.cift`tir. TAUTOLOJI iki cins
+#: cift tasir: kenari olup hukmu yine TAUTOLOJI olan (`hf -> tb`: kenar var,
+#: boru hattinda akis yok) ve gerekcesi "SIFIR kod kenari" diye baslayan
+#: KENARSIZ ciftler. Kilit 1 eskiden yalniz YAPISAL_YOK / OLCULMEDI'ye dusen
+#: kenari yakaliyordu; 28.09.2026'da OLCULMEDI'den TAUTOLOJI'ye tasinan uc
+#: cift (`tdse -> spin`, `md -> em`, `tb -> em`) bu tuzagi KAYBETTI. OLCULDU
+#: (11.10.2026, gercek agacin kopyasi): `em/` altina md'yi ya da tb'yi,
+#: `spin/` altina tdse'yi import eden bir dosya, `qlab.units`i de import
+#: ediyorsa sorun listesi BOS donuyordu (kilit 4 yalniz units importu
+#: YOKSA, ilgisiz bir mesajla, rastlantisal olarak ateslenirdi) ve panel
+#: bayat "SIFIR kod kenari" hukmunun yanina tik basardi. Simdi kenarsiz bir
+#: TAUTOLOJI ciftine dusen kenar ADIYLA kirmizidir. Ters yon de kilitli: bu
+#: kumedeki bir ciftin taranan kenari kaybolursa "KOD KENARI VAR" gerekcesi
+#: bayatlar ve tablo yine kirmizidir; kume SESSIZCE buyuyemez de (taranan
+#: kenari olmayan bir cifti buraya eklemek gercek agacta kirmizidir).
+#: BENZERLIK kovasi bos (0, literal kilitli); bir cift oraya gecerse bu
+#: uzanti onu KAPSAMAZ ve o gecis bu kumeyi yeniden dusunmeyi gerektirir.
+TAUTOLOJI_KENARLI_CIFTLER: frozenset[tuple[str, str]] = frozenset({("hf", "tb")})
+
 
 # --- `qlab.units` ekseni (Task 5) ------------------------------------------
 
@@ -1117,7 +1137,9 @@ def tablo_tutarsizliklari(
     yalandir ve bir yalanin yaninda tik basilmaz. Bes kilit:
 
       1. taranan her kod kenari tabloda olmali ve YAPISAL_YOK ya da
-         OLCULMEDI kovasinda OLAMAZ,
+         OLCULMEDI kovasinda OLAMAZ; TAUTOLOJI'de yalniz
+         `TAUTOLOJI_KENARLI_CIFTLER`deki bir ciftte olabilir ve o kumedeki
+         her ciftin taranan bir kenari OLMALI (11.10.2026 uzantisi),
       2. GERCEK_KOPRU kovasindaki her ciftin bir kod kenari OLMALI (yalniz
          tip kenari da kod kenari SAYILIR; kilit 2'nin calisma zamani
          kenari isteyip istemeyecegi Osman'in karari: HAYIR, 08.10.2026),
@@ -1138,6 +1160,8 @@ def tablo_tutarsizliklari(
 
     `tests/bridge/test_kova_tablosu.py` ilk iki kilidi kendi bagimsiz
     kopyasiyla da kurar; bu fonksiyon panel icindir ve testin yerini tutmaz.
+    Kilit 1'in TAUTOLOJI uzantisi o kopyada YOKTUR; baglayiciligi
+    `tests/bridge/test_kenar_tarayici.py`deki sentetik kenar enjeksiyonudur.
     """
     kova_of = {f.cift: f.kova for f in KOVA_TABLOSU}
     sorunlar: list[str] = []
@@ -1149,7 +1173,13 @@ def tablo_tutarsizliklari(
             sorunlar.append(
                 f"taranan kenar {cift} tabloda {kova_of[cift]} kovasinda"
             )
+        elif kova_of[cift] == Kova.TAUTOLOJI and cift not in TAUTOLOJI_KENARLI_CIFTLER:
+            sorunlar.append(
+                f"taranan kenar {cift} tabloda KENARSIZ beyanli TAUTOLOJI ciftinde"
+            )
     yonsuz = {tuple(sorted(k)) for k in kenarlar}
+    for cift in sorted(TAUTOLOJI_KENARLI_CIFTLER - yonsuz):
+        sorunlar.append(f"TAUTOLOJI {cift} KENARLI beyanli ama taranan kenari bulunamadi")
     for f in KOVA_TABLOSU:
         if f.kova == Kova.GERCEK_KOPRU and f.cift not in yonsuz:
             sorunlar.append(f"GERCEK_KOPRU {f.cift} icin kod kenari YOK")
@@ -1380,9 +1410,10 @@ _DURUST_OLUMSUZLAR = (
     "DEVRALINDI ve bu gorevde yeniden olculmedi (damgalari tabloda "
     "yazilidir); (3) makineler arasi tekrarlanabilirlik OLCULMEDI -- bit bit "
     "sayilar (22 kabugun 10'u, 2.276e-15) bu makinenin ve numpy 2.5.1'in "
-    "kaydidir; (4) `omega_B`nin 6-31G degeri (spec 4: 4646.16252) bu depoda "
-    "suite ALINMADI (HF YOL B'nin 6-31G kosumu ~5.4 kat pahali), suit yalniz "
-    "statik `omega_A`(6-31G)'yi kilitler; (5) izotropik hicbir sey yok bu "
+    "kaydidir; (4) `omega_B`nin 6-31G degeri (spec 4: 4646.16252) YALNIZ "
+    "`slow` seritte kilitli (11.10.2026; HF YOL B'nin 6-31G kosumu ~144 s, "
+    "STO-3G'ninkinin ~5 kati; yalniz 6-31G'nin KENDI `r_e`sinde), hizli serit "
+    "yalniz statik `omega_A`(6-31G)'yi kilitler; (5) izotropik hicbir sey yok bu "
     "modulde ama bir ikinci boru da yok -- tabani olculen tek kenarin "
     "(`hf -> md`) capraz kontrolu "
     "kurulamaz, hukum tek borunun tabanindan okunur"
@@ -1453,7 +1484,7 @@ _KURAM_SECICI_BEYANI = (
     "(k = 0.461848). Spec 4'un 4646.18'i yanlis degildi, PENCERESI (`r_e`) "
     "yazilmamisti: ayni sayi iki pencerede 275 cm^-1 ayrisiyor. Iki deger de "
     "testte ucuz (statik, 3 SCF) kilitlidir; `omega_B`nin 6-31G kosumu "
-    "suite alinmadi"
+    "(kendi `r_e`sinde 4646.16252) yalniz `slow` seritte kilitli"
 )
 
 _PENCERE_BEYANI = (

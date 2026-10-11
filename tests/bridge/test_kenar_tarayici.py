@@ -3,7 +3,7 @@ ADI SAYILAN yükleme biçimleri motor ağacında YASAKTIR (liste sonlu).
 
 Osman'ın kararı "sadeleştir": 25-26.09'daki ağır analizcinin (kaydı:
 `.superpowers/sdd/kenar-tarayici-AGIR-surum-2026-09-26/`) yerine bir
-YASAKLAMA POLİTİKASI kondu. Bu dosya beş şeyi sınar:
+YASAKLAMA POLİTİKASI kondu. Bu dosya altı şeyi sınar:
 
 (a) düz biçimler — 648f03b'nin tarayıcısı (git'ten okunur) kaçırır, yenisi
     yakalar; eskinin zaten gördüğü biçimler iki sürümde de aynı sonucu verir;
@@ -15,7 +15,9 @@ YASAKLAMA POLİTİKASI kondu. Bu dosya beş şeyi sınar:
     DEĞERLENDİREN tüketici `src/qlab` çapında sıfır (yalnız-tip hükmü buna
     koşullu);
 (e) YÜK TAŞIMA ÇIPASI — `from_md.py`nin md importu silinince çıktı bit bit
-    aynı; pozitif kontrol `tb_kuvvet.py`nin tb importu silinince NameError.
+    aynı; pozitif kontrol `tb_kuvvet.py`nin tb importu silinince NameError;
+(f) (11.10.2026) kilit 1'in TAUTOLOJİ uzantısı — kenarsız bir TAUTOLOJİ
+    çiftine yazılan kenar tabloyu kırmızıya çevirir (sentetik enjeksiyon).
 
 Sentetik ağaçlar `tmp_path` altında kurulur; hiçbir test `src/`ye yazmaz.
 """
@@ -23,6 +25,7 @@ Sentetik ağaçlar `tmp_path` altında kurulur; hiçbir test `src/`ye yazmaz.
 from __future__ import annotations
 
 import ast
+import shutil
 import subprocess
 import sys
 import types
@@ -503,3 +506,128 @@ def test_e_POZITIF_KONTROL_md_tb_importu_silinince_NameError(monkeypatch):
     e1, f1 = arac.SsSigmaTBKuvveti(ss, itme, 4.0, 2e-3, 16.0)(konum)
     e0, f0 = tb_kuvvet_gercek.SsSigmaTBKuvveti(ss, itme, 4.0, 2e-3, 16.0)(konum)
     assert float(e1).hex() == float(e0).hex() and f1.tobytes() == f0.tobytes()
+
+
+# ---------------------------------------------------------------------------
+# (f) KİLİT 1'İN TAUTOLOJİ UZANTISI (11.10.2026) — kör kol kapandı
+# ---------------------------------------------------------------------------
+
+#: 28.09.2026'da `OLCULMEDI`den kenarsız `TAUTOLOJI`ye taşınan üç çift. Kilit 1
+#: yalnız `YAPISAL_YOK`/`OLCULMEDI`ye düşen kenarı yakaladığı için bu üçü onun
+#: kenar tuzağını KAYBETMİŞTİ; kapanışı `bridge_map`te "KOR KOL KAPANDI" ve
+#: `TAUTOLOJI_KENARLI_CIFTLER` yorumu.
+TASINAN_UC = [("em", "md"), ("em", "tb"), ("spin", "tdse")]
+
+#: Uçtan uca testin TERS yöndeki kenarı (md -> em): diğer üçü alfabetik yönde.
+TERS_KENAR = ("md", "em")
+
+#: Kenarsız TAUTOLOJİ çiftlerinin TAMAMI — LİTERAL, `bridge_map`ten türetilmez:
+#: türetilseydi bir çifti `TAUTOLOJI_KENARLI_CIFTLER`e ekleyen düzenleme bu
+#: listeyi de sessizce kısaltırdı.
+KENARSIZ_TAUTOLOJI = [
+    ("em", "hf"), ("em", "md"), ("em", "tb"), ("hf", "spin"),
+    ("md", "spin"), ("spin", "tb"), ("spin", "tdse"),
+]
+
+
+def _kenarsiz_mesaji(cift: tuple[str, str]) -> str:
+    return f"taranan kenar {cift} tabloda KENARSIZ beyanli TAUTOLOJI ciftinde"
+
+
+@pytest.fixture(scope="module")
+def gercek_tarama():
+    """Gerçek ağacın kenar / eksen / sınıf taraması, modül başına BİR kez."""
+    return olculen_kenarlar(), olculen_units_ekseni(), olculen_kenar_siniflari()
+
+
+def test_f_TAUTOLOJI_KENAR_BEYANI_GEREKCEYLE_ve_TARAMAYLA_AYNI(gercek_tarama):
+    """Beyan üç bağımsız yerden okunur: (1) literal — kenarlı tek çift
+    `hf - tb`, kenarsız YEDİ çift; (2) gerekçe metni — kenarlı çiftin gerekçesi
+    "KOD KENARI VAR" der, kenarsızlarınki "SIFIR kod kenari" diye başlar;
+    (3) tarama — gerçek ağaçta TAUTOLOJİ çiftlerine düşen kenar kümesi
+    beyanın KENDİSİ."""
+    assert bm.TAUTOLOJI_KENARLI_CIFTLER == {("hf", "tb")}
+    tautoloji = [f for f in bm.KOVA_TABLOSU if f.kova == bm.Kova.TAUTOLOJI]
+    kenarsiz = sorted(f.cift for f in tautoloji if f.cift not in bm.TAUTOLOJI_KENARLI_CIFTLER)
+    assert kenarsiz == KENARSIZ_TAUTOLOJI and set(TASINAN_UC) <= set(kenarsiz)
+    for f in tautoloji:
+        kenarli = f.cift in bm.TAUTOLOJI_KENARLI_CIFTLER
+        assert ("KOD KENARI VAR" in f.gerekce) == kenarli, f.cift
+        assert f.gerekce.startswith("SIFIR kod kenari") == (not kenarli), f.cift
+    yonsuz = {tuple(sorted(k)) for k in gercek_tarama[0]}
+    assert yonsuz & {f.cift for f in tautoloji} == bm.TAUTOLOJI_KENARLI_CIFTLER
+
+
+@pytest.mark.parametrize("yon", ["alfabetik", "ters"])
+@pytest.mark.parametrize("cift", KENARSIZ_TAUTOLOJI, ids=["-".join(c) for c in KENARSIZ_TAUTOLOJI])
+def test_f_KENARSIZ_TAUTOLOJIYE_YAZILAN_KENAR_TABLOYU_KIRMIZIYA_cevirir(gercek_tarama, cift, yon):
+    """Sentetik kenar enjeksiyonu (tarayıcının ÇIKTISINA): gerçek ağacın
+    kenarlarına kenarsız bir TAUTOLOJİ çiftinin kenarı eklenir ve yeni uç
+    düğüme bir `qlab.units` importu verilir — kilit 4 böylece SUSAR (yeni
+    düğüm eksenli olur). Kalan TEK sorun kilit 1'in uzantısıdır, adıyla.
+    Uzantıdan ÖNCE aynı girdi BOŞ sorun listesi veriyordu (ölçüldü,
+    11.10.2026): panel bayat "SIFIR kod kenari" hükmünün yanına tik basardı.
+
+    İKİ YÖN: kenar hem `cift` hem `cift[::-1]` olarak enjekte edilir; mesaj
+    yönsüz çifti adlandırır. Ölçüldü (11.10.2026, `mut.py`): kenarı YALNIZ
+    alfabetik yönde işaretleyen mutant (`and (kaynak, hedef) == cift`) yalnız
+    alfabetik yön enjekte edilirken bu dosyanın hızlı şeridinin TAMAMINDAN
+    geçiyordu (git'siz kopyada 76 geçti, 11 atlandı; doğrulayıcıda bridge hızlı
+    şeridi 172 geçti); "ters" hücreleri ve uçtan uca testin dördüncü dosyası
+    onu AYRI AYRI düşürür."""
+    kenarlar, eksen, siniflar = gercek_tarama
+    kenar = cift if yon == "alfabetik" else cift[::-1]
+    eksen = dict(eksen)
+    for motor in cift:
+        if motor not in bm.OLCEKSIZ_KENAR_DUGUMLERI:
+            eksen[motor] = max(eksen.get(motor, 0), 1)
+    sorunlar = tablo_tutarsizliklari(
+        kenarlar | {kenar}, eksen, taranamayan=(), siniflar={**siniflar, kenar: CZ}
+    )
+    assert sorunlar == (_kenarsiz_mesaji(cift),), sorunlar
+
+
+def test_f_KOR_KOL_GERCEK_AGAC_KOPYASINDA_KAPANDI(tmp_path, gercek_tarama):
+    """Uçtan uca: gerçek `engine/` ağacının kopyasına taşınan üç çiftin
+    kenarını yazan üç dosya konur (her biri `qlab.units`i de import eder).
+    ÖLÇÜLDÜ (11.10.2026, uzantıdan ÖNCE, aynı kurgu — her dosya ayrı ayrı):
+    sorun listesi `()`, yani tablo YEŞİL kalıyordu; units importu olmadan
+    yalnız kilit 4 ateşleniyordu, ilgisiz bir mesajla ("olceksiz kenar
+    dugumleri"), rastlantısal olarak. Şimdi üç kenar da ADIYLA kırmızı ve
+    başka sorun yok.
+
+    Dördüncü dosya `md/kenar_em.py` aynı `em - md` çiftine TERS yönden
+    (md -> em) kenar yazar: kilit 1 taranan HER kenar için bir mesaj basar,
+    yani `em - md` mesajı İKİ kez beklenir (sıralı kenar düzeninde). Yalnız
+    alfabetik yönü işaretleyen mutant ikinci mesajı düşürür."""
+    kok = tmp_path / "engine"
+    shutil.copytree(bm._MOTOR_KOKU, kok, ignore=shutil.ignore_patterns("__pycache__"))
+    birim = "from qlab import units\n"
+    _agac(kok, {
+        "em/kenar_md.py": "from qlab.engine.md.state import MDState\n" + birim,
+        "em/kenar_tb.py": "from qlab.engine.tb.radyal import UsselRadyalYasa\n" + birim,
+        "spin/kenar_tdse.py": "from qlab.engine.tdse.grid import Grid1D\n" + birim,
+        "md/kenar_em.py": "from qlab.engine.em.medium import Medium\n" + birim,
+    })
+    yazilan = set(TASINAN_UC) | {TERS_KENAR}
+    assert olculen_kenarlar(kok) == gercek_tarama[0] | yazilan
+    beklenen = tuple(_kenarsiz_mesaji(tuple(sorted(k))) for k in sorted(yazilan))
+    assert beklenen.count(_kenarsiz_mesaji(("em", "md"))) == 2 and len(beklenen) == 4
+    assert _tutarsizliklar(kok) == beklenen
+
+
+@pytest.mark.parametrize("bozma", ["kenar_kayboldu", "beyan_buyudu"])
+def test_f_TERS_YON_KENARLI_BEYAN_BAYATLARSA_KIRMIZI(monkeypatch, gercek_tarama, bozma):
+    """Beyan iki yönlü: kümedeki çiftin taranan kenarı kaybolursa ("KOD KENARI
+    VAR" gerekçesi bayatlar) ya da küme kenarı olmayan bir çiftle SESSİZCE
+    büyütülürse (kilit 1'i o çift için susturmanın tek yolu) tablo kırmızı."""
+    kenarlar, eksen, siniflar = gercek_tarama
+    if bozma == "kenar_kayboldu":
+        kenarlar, cift = kenarlar - {("tb", "hf")}, ("hf", "tb")
+    else:
+        cift = ("em", "md")
+        monkeypatch.setattr(bm, "TAUTOLOJI_KENARLI_CIFTLER", bm.TAUTOLOJI_KENARLI_CIFTLER | {cift})
+    sorunlar = tablo_tutarsizliklari(
+        kenarlar, eksen, taranamayan=(), siniflar={k: siniflar[k] for k in kenarlar}
+    )
+    assert sorunlar == (f"TAUTOLOJI {cift} KENARLI beyanli ama taranan kenari bulunamadi",)

@@ -854,7 +854,8 @@ def test_6_8_YONTEM_HEDEF_UYUSMAZLIGININ_IKI_TURU_AYRI_ve_GRAVDAN_FARKLI(sevk_pa
 def test_DURUST_OLUMSUZLAR_BESI_DE_PANELDE(sevk_panel):
     """Beyan edilmiş, düzeltilmemiş beş kalem SAKLANMAZ — biri sessizce
     düşerse test kırılır. Dördüncüsü bu görevde bulundu (6-31G `ω_B`
-    süite alınmadı) ve panel onu da taşır."""
+    süite alınmadı) ve panel onu da taşır; 11.10.2026'dan beri DARALDI:
+    `ω_B` 6-31G YALNIZ `slow` şeritte kilitli (I8), hızlı şerit görmez."""
     hata = dict(sevk_panel.as_lines())["Beklenen hata"]
     for parca in (
         "(1) spec 7.2 HALA ACIK ama DARALDI: 22.09.2026'da sekiz ciftin sekizi "
@@ -863,7 +864,7 @@ def test_DURUST_OLUMSUZLAR_BESI_DE_PANELDE(sevk_panel):
         "(2) `md -> spin` ve `hf -> em` tautoloji hukumleri 29.08.2026 on olcumunden DEVRALINDI",
         "(3) makineler arasi tekrarlanabilirlik OLCULMEDI",
         "numpy 2.5.1",
-        "(4) `omega_B`nin 6-31G degeri (spec 4: 4646.16252) bu depoda suite ALINMADI",
+        "(4) `omega_B`nin 6-31G degeri (spec 4: 4646.16252) YALNIZ `slow` seritte kilitli",
         "(5) izotropik hicbir sey yok bu modulde ama bir ikinci boru da yok",
     ):
         assert parca in hata, f"dürüst olumsuz eksik: {parca!r}"
@@ -915,6 +916,42 @@ def test_KURAM_SECICI_baz_seti_ve_6_31G_IKI_PENCEREDE_CANLI(sevk_panel):
         bracket=(1.30, 1.346, 1.40), tol=1e-10,
     ).x)
     assert abs(re3 - R_E_BOHR) < 5e-8
+
+
+@pytest.mark.slow
+def test_omega_B_6_31G_KENDI_r_e_SINDE_4646_16252_CANLI():
+    """Spec §4'ün `ω_B` 5481.22946 → 4646.16252 kaymasının 6-31G yarısı CANLI (I8).
+
+    11.10.2026'ya kadar bu sayı yalnız spec'te ve `_DURUST_OLUMSUZLAR`
+    (4)'te yaşıyordu ("suite ALINMADI"); hiçbir assert kilitlemiyordu.
+    PENCERE: HF/6-31G alanı (`step = 5e-5`), `r_e` 6-31G'nin KENDİ Brent
+    minimumu 1.3794239789 bohr (yukarıdaki test kilitler), N = 200, 6
+    periyot, genlikler 0.01/0.02/0.04 -- YOL B borusu `test_aimd.py`'ninkinin
+    aynısı. Sevk edilen `r_e`de (STO-3G'nin) bu sayı ÜRETİLMEZ.
+
+    ÖLÇÜLDÜ (11.10.2026, bu makine): ω_B = 4646.162518464472 cm⁻¹ (spec'in
+    4646.16252'sinden 1.5e-06 uzak), ω_A (aynı `r_e`) 4646.186936607,
+    ω_B/ω_A − 1 = −5.2555e-06 (STO-3G'de −4.3608e-06). TAŞINABİLİRLİK, ucuz
+    vekil: ikinci bir OpenBLAS çekirdeğiyle (`OPENBLAS_CORETYPE=Sandybridge`)
+    ω_B 1.1e-08 cm⁻¹, ω_A 1.3e-06 cm⁻¹, oran − 1 bağıl 5.2e-05 oynadı.
+    Pencere ω_B'de 5e-05 cm⁻¹ (spec'in son hanesi; çekirdek oynamasının
+    ~5000 katı), oranda bağıl 1e-3. İkinci bir MAKİNEDE ölçülmedi
+    (`_DURUST_OLUMSUZLAR` (3)). Kuram seçici kayması: STO-3G'nin ω_B'si
+    (5481.229456091029, `test_kenar_tabani.py`de bit bit) 835.0669 cm⁻¹ =
+    %17.97 yukarıda -- spec §4'ün "835.07 cm⁻¹ = %17.97"si.
+    MALİYET: tek YOL B koşumu 143.5 s (ölçüldü; STO-3G'ninkinin ~5 katı) →
+    `slow`.
+    """
+    a6 = HartreeFockGradient(["H", "H"], basis="6-31g")
+    re6 = 1.3794239789
+    wa = _omega_a(a6, r_e=re6)
+    _, wb = _a2_uydurmasi(a6, r_e=re6)
+    wb_cm = wb * HARTREE_TO_WAVENUMBER
+    assert wb_cm == pytest.approx(4646.16252, abs=5e-5, rel=0.0)
+    assert wb / wa - 1.0 == pytest.approx(-5.2555e-06, rel=1e-3, abs=0.0)
+    wb_sto3g = 5481.229456091029
+    assert wb_sto3g - wb_cm == pytest.approx(835.07, abs=5e-3, rel=0.0)
+    assert wb_sto3g / wb_cm - 1.0 == pytest.approx(0.1797, abs=1e-4, rel=0.0)
 
 
 # ---------------------------------------------------------------------------

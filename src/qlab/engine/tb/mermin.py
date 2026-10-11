@@ -26,8 +26,8 @@ OLCULDU (24.09.2026; zincir(16, 2, 0.05, 3), L = 32, bilesen (1, x), Fermi
 cifti 8. ve 9. seviye): n_e = 16'da P_olculen/P = 1 (M4, x in [0.2, 20],
 sapma <= 6.1e-07); n_e = 15 ve 17'de P_olculen/P_1 = 1.000000 (x = 1,
 2.087, 3.087; 0.2 ve 10'da 1.000001) ve P_olculen/P = 0.715 / 0.596 /
-0.437 / 0.0137 (x = 1 / 2.087 / 3.087 / 10). Tek elektronlu kolun TESTI
-YOKTUR (ayri is; README acik kalanlar). Iki durumda da P > 0: smearing
+0.437 / 0.0137 (x = 1 / 2.087 / 3.087 / 10). Tek elektronlu kolun testi
+M4-P1'dir (`tests/tb/test_mermin.py`). Iki durumda da P > 0: smearing
 bosluk ACAN degil KAPATAN yone iter, yani Peierls'e karsi calisir. NVE
 MD'de korunan buyukluk KE + Omega'dir, KE + E degil (KE + E = KE + Omega +
 kT S); termostatli kosuda toplam enerji zaten korunmaz.

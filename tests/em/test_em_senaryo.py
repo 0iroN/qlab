@@ -522,8 +522,9 @@ def test_BEYAN_PARCASININ_KOPYASI_da_YASAK():
     Bu yüzden kural parça seviyesine indirildi: `src/` ağacında (fabrika
     hariç) hiçbir dize sabiti bir beyan cümlesinin İÇİNDE geçemez.
 
-    Aynı delik Modül 4'ün `test_spin_senaryo.py`sinde de var; orası bu turda
-    ölçülmedi ve bu bir dürüst olumsuzdur.
+    Aynı delik Modül 4'ün `test_spin_senaryo.py`sinde de vardı ve o gün
+    ölçülmedi; 11.10.2026'da kural oraya taşındı, eşik orada yeniden ölçüldü
+    ve `run.py`'ye enjekte edilen parça orada da kırmızı oldu.
     """
     import ast
 

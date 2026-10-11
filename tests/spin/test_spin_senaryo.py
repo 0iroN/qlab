@@ -66,6 +66,7 @@ kilitlenebilir.
 
 from __future__ import annotations
 
+import ast
 import dataclasses
 import inspect
 import json
@@ -386,6 +387,63 @@ def test_BEYAN_TEK_KAYNAKTAN_geliyor():
             if yol.resolve() != bu_dosya
         )
         assert test_sayim == 0, f"BASKA bir test dosyasinda kopya var: {cumle[:60]!r}"
+
+
+#: Bir dize sabitinin "beyan parçası" sayılması için gereken en kısa uzunluk.
+#: Kural EM'den (`tests/em/test_em_senaryo.py`) TAŞINDI (11.10.2026), ama eşik
+#: DEVRALINMADI, BURADA YENİDEN ÖLÇÜLDÜ: `src/` ağacındaki her dize sabiti
+#: (spin fabrikası hariç) on iki spin beyan cümlesinin içinde arandı —
+#:
+#:     eşik  4 -> 72 eşleşme
+#:     eşik  6 -> 12
+#:     eşik  8 ->  8  (`'coupling'` beş kez, `'belirsiz'` iki kez, `', kafes '`)
+#:     eşik 10 ->  0
+#:     eşik 16 ->  0
+#:     eşik 20 ->  0
+#:
+#: Sekizdeki eşleşmeler kopya DEĞİL, paylaşılan SÖZCÜKLERDİR (girdi adı
+#: `coupling`, `tb_obs`un bir etiketi, metropolis'in hata metni). Yanlış pozitif
+#: tabanı 8 ile 10 arasındadır; deponun ortak eşiği 16 korundu (EM, grav ve
+#: köprü aynı sayıyı kullanır) ve burada da sıfır eşleşme veriyor.
+_BEYAN_PARCASI_ESIGI = 16
+
+
+def test_BEYAN_PARCASININ_KOPYASI_da_YASAK():
+    """EM'İN MUTASYON TURUNDA BULUNAN DELİK — BU DOSYADA DA VARDI.
+
+    `test_BEYAN_TEK_KAYNAKTAN_geliyor` **tam cümle** sayar. EM'de `run.py`'ye
+    bir beyan cümlesinin 55 karakterlik bir PARÇASI enjekte edilince mutant
+    hayatta kalmıştı ve EM dokstringi aynı deliğin burada da olduğunu, ama
+    ölçülmediğini yazıyordu. ÖLÇÜLDÜ (11.10.2026): `run.py::_run_spin`in
+    başına `_DAIRESELLIK_BEYANI`nin 42 karakterlik bir parçası (ayrı bir
+    mutantta bir f-string'in 18 karakterlik sabit parçası) enjekte edilince
+    tam cümle testi İKİSİNDE de YEŞİL kaldı — `src/` sayımı hâlâ 1 — ve bu
+    test ikisinde de kırmızı oldu.
+
+    Korunan şey "aynı cümle iki kez yazılmasın" değil, **panelin iki farklı
+    şey iddia edememesi**dir: bir cümlenin yarısını kopyalayıp sonra
+    fabrikadaki asıl cümleyi düzeltmek tam olarak o arızayı üretir. Bu yüzden
+    kural parça seviyesindedir: `src/` ağacında (spin fabrikası hariç) hiçbir
+    dize sabiti — dokstringler ve f-string parçaları dahil — bir beyan
+    cümlesinin İÇİNDE geçemez.
+    """
+    beyanlar = _tum_beyanlar()
+    fabrika_yolu = (PROJE_KOKU / "src/qlab/engine/spin/factory.py").resolve()
+    kopyalar = []
+    for yol in (PROJE_KOKU / "src").rglob("*.py"):
+        if yol.resolve() == fabrika_yolu:
+            continue
+        agac = ast.parse(yol.read_text(encoding="utf-8"))
+        for dugum in ast.walk(agac):
+            if not isinstance(dugum, ast.Constant) or not isinstance(dugum.value, str):
+                continue
+            if len(dugum.value) < _BEYAN_PARCASI_ESIGI:
+                continue
+            for cumle in beyanlar:
+                if dugum.value in cumle:
+                    kopyalar.append((yol.name, dugum.lineno, dugum.value[:60]))
+    assert kopyalar == [], f"beyan PARCASI kopyalanmis: {kopyalar}"
+    assert _BEYAN_PARCASI_ESIGI == 16
 
 
 def test_MODULUN_ETIK_CEKIRDEGI_metinde_YAZILI():

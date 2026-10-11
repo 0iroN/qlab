@@ -5,10 +5,10 @@ Deponun `viz/` katmani hep yuk uretir (`frames.py`, `md_frames.py`,
 Olculdu: `src/` altinda matplotlib/savefig/imsave/.png icin SIFIR eslesme --
 cizim tamamen `app` katmaninda, canli.
 
-DIKKAT: bu bir DISIPLINDIR, SOZLESME DEGIL. Olculdu, `viz` katmaninin GUI
-yasagi YOK (`viz/band_frames.py -> PySide6` rc=0) ve mevcut
-`viz/isosurface.py:55` zaten pyqtgraph import ediyor. Yani bu modulun cizim
-yapmamasi import-linter tarafindan KORUNMUYOR.
+11.10.2026'DAN BERI BU BIR SOZLESMEDIR (`pyproject.toml`, "viz yukleri GUI'yi
+bilmez"): o gune kadar bir disiplindi -- olculdu, `viz/band_frames.py ->
+PySide6` rc=0 ile geciyordu. `viz/isosurface.py:55` pyqtgraph import eder ve
+MUAFTIR; muafiyet tek bir kenardir (`density_frames -> isosurface`).
 
 OZVEKTOR SAKLANMAZ -- ve gerekce bellek DEGIL, ANLAM. Olculdu (SSH, hucre
 gauge'u vs atom gauge'u):

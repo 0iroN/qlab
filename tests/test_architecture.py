@@ -172,6 +172,42 @@ def test_import_contracts_hold():
             "Katmanlı mimari",
             id="viz-bridge-run",
         ),
+        # 11.10.2026: `viz` yük modüllerinin GUI yasağı. Sözleşmeden ÖNCE
+        # ölçüldü: `band_frames -> PySide6` rc=0 (üç sözleşme de KEPT). Son
+        # iki satır muafiyetin DAR olduğunu gösterir: `density_frames`in
+        # DOĞRUDAN pyqtgraph importu ve `band_frames`in isosurface üzerinden
+        # DOLAYLI yolu muaf DEĞİL — yok sayılan tek şey
+        # `density_frames -> isosurface` kenarıdır.
+        pytest.param(
+            "src/qlab/viz/band_frames.py",
+            "from PySide6 import QtWidgets",
+            "viz yükleri GUI'yi bilmez",
+            id="viz-band-PySide6",
+        ),
+        pytest.param(
+            "src/qlab/viz/spin_frames.py",
+            "import matplotlib.pyplot",
+            "viz yükleri GUI'yi bilmez",
+            id="viz-spin-matplotlib",
+        ),
+        pytest.param(
+            "src/qlab/viz/em_frames.py",
+            "import OpenGL",
+            "viz yükleri GUI'yi bilmez",
+            id="viz-em-OpenGL",
+        ),
+        pytest.param(
+            "src/qlab/viz/density_frames.py",
+            "import pyqtgraph",
+            "viz yükleri GUI'yi bilmez",
+            id="viz-density-pyqtgraph-dogrudan",
+        ),
+        pytest.param(
+            "src/qlab/viz/band_frames.py",
+            "from qlab.viz import isosurface",
+            "viz yükleri GUI'yi bilmez",
+            id="viz-band-isosurface-dolayli",
+        ),
     ],
 )
 def test_import_sozlesmesi_gercekten_REDDEDIYOR(tmp_path, hedef, ihlal, sozlesme):
@@ -241,3 +277,26 @@ def test_import_sozlesmesi_gercekten_REDDEDIYOR(tmp_path, hedef, ihlal, sozlesme
         f"ihlal rc!=0 üretti ama {sozlesme!r} sözleşmesi KIRILMADI "
         f"(başka bir sözleşme yakalamış olabilir):\n{cikti}"
     )
+
+
+def test_viz_SOZLESMESI_KAPSAMI_DIZINLE_AYNI_ve_MUAFIYET_TEK_KENAR():
+    """`viz yükleri GUI'yi bilmez` sözleşmesinin kaynak listesi `viz/`
+    altındaki `*frames.py` modüllerinin TAMAMIDIR (sekiz). import-linter
+    listede olmayan bir modülü denetlemez: listeye yazılmadan eklenen yeni
+    bir yük modülü GUI import etse bütün sözleşmeler KEPT kalırdı — bu test
+    o sessiz kaçışı kapatır. Muafiyet tek bir KENARDIR (`density_frames ->
+    isosurface`) ve `isosurface` kaynak listesinde değildir. Alt süreç
+    koşmaz; `pyproject.toml` `tomllib` ile okunur."""
+    import tomllib
+
+    ayar = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    sozlesmeler = ayar["tool"]["importlinter"]["contracts"]
+    (viz,) = [s for s in sozlesmeler if s["name"] == "viz yükleri GUI'yi bilmez"]
+    yukler = {f"qlab.viz.{p.stem}" for p in (PROJECT_ROOT / "src/qlab/viz").glob("*frames.py")}
+    assert len(yukler) == 8, sorted(yukler)
+    assert viz["type"] == "forbidden"
+    assert set(viz["source_modules"]) == yukler
+    assert set(viz["forbidden_modules"]) == {"PySide6", "pyqtgraph", "OpenGL", "matplotlib"}
+    assert viz["ignore_imports"] == ["qlab.viz.density_frames -> qlab.viz.isosurface"]
+    assert not viz.get("allow_indirect_imports", False)
+    assert len(sozlesmeler) == 4

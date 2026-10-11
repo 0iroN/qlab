@@ -345,8 +345,8 @@ def test_B1_P_x_YASASININ_PENCERESI_mermin_DOKSTRINGINDE():
     İlk sürümde `mermin.py` dokstringi yasayı penceresiz, koşulsuz
     yazıyordu (fizik incelemesi bulgusu). Bu bir METİN VARLIĞI kilididir,
     bir sayı çıpası değil: sayıların ölçümü dokstringin kendisinde ve
-    `tests/tb/test_mermin.py` M4'te; tek elektronlu kolun testi YOKTUR
-    (ayrı iş, README açık kalanlar).
+    `tests/tb/test_mermin.py` M4'te; tek elektronlu kolun testi aynı
+    dosyada M4-P1'dir (11.10.2026, D8: n_e = 15 ve 17, P_ölçülen/P_1 = 1).
     KIRMA (ölçüldü, 24.09.2026, sk/duz/mut_md.log): dokstringden çift
     elektron sayısına bağlılık paragrafını silen mutant kırmızı.
     """
@@ -356,7 +356,7 @@ def test_B1_P_x_YASASININ_PENCERESI_mermin_DOKSTRINGINDE():
         "Ciftte 2 elektron (f_ust = 1 - f_alt, mu bosluk ortasinda): P(x) = x/(4 cosh^2(x/4))",
         "Ciftte 1 ya da 3 elektron: P_1(x) = 2 x df_1/dx",
         "P_max = 0.23967, x = 2.0873'te",
-        "Tek elektronlu kolun TESTI YOKTUR",
+        "Tek elektronlu kolun testi M4-P1'dir (`tests/tb/test_mermin.py`)",
     ):
         assert parca in dok, f"mermin dokstringinde yok: {parca!r}"
 
