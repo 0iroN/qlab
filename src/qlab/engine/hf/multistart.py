@@ -79,6 +79,9 @@ from qlab.types import Molecule
 # TEK kume sayardi; Haar baslangiclarindan 17 SCF'in buldugu pi-delik kumesi de
 # 1.04e-9 icinde. Sayi DEGISMEDI: esik hukum tasimaz, izlemenin buldugu cozum
 # `n_distinct`e eklenmez ve donen cozumun ne oldugunu `stability` soyler.
+# BEYAN (11.10.2026): bu yuzden iki `as_line` sayimi COZUNURLUGUYLE basar
+# ("N ayri cozum (1e-06 Ha cozunurlukte)"); esigin altindaki ayrik durumlar
+# (yukaridaki pi/sigma delik) o sayida TEK kumedir.
 _AYRIM_ESIGI = 1e-6
 
 # Varsayilan tohum sayisi. SECILMEDI, OLCULDU: N2'nin bes geometrisinde
@@ -102,7 +105,8 @@ class SearchReport:
         """Seffaflik panelinin basacagi tek satir."""
         return (
             f"{self.n_seeds} tohum, {self.n_converged} yakinsadi, "
-            f"{self.n_distinct} ayri cozum, yayilim {self.spread:.3e} hartree"
+            f"{self.n_distinct} ayri cozum ({_AYRIM_ESIGI:g} Ha cozunurlukte), "
+            f"yayilim {self.spread:.3e} hartree"
         )
 
 
@@ -222,7 +226,8 @@ class UHFSearchReport:
     def as_line(self) -> str:
         satir = (
             f"{self.n_seeds} tohum, {self.n_converged} yakinsadi, "
-            f"{self.n_distinct} ayri cozum, yayilim {self.spread:.3e} hartree"
+            f"{self.n_distinct} ayri cozum ({_AYRIM_ESIGI:g} Ha cozunurlukte), "
+            f"yayilim {self.spread:.3e} hartree"
         )
         if self.follow_cycles > 0:
             satir += (

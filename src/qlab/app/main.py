@@ -229,8 +229,8 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         scenario = load_scenario(args.scenario)
-        # `load_scenario` artık TDSEScenario ya da HFScanScenario döndürebiliyor
-        # (Modül 1B), ama bu pencere yalnızca TDSE'yi çizer: `TDSEWindow`
+        # `load_scenario` bugün dokuz türden birini döndürür (`_KNOWN_KINDS`;
+        # Modül 1B'de ikiydi), ama bu pencere yalnızca TDSE'yi çizer: `TDSEWindow`
         # doğrudan `scenario.potential`a dokunur. Tür kontrolü QApplication
         # KURULMADAN ÖNCE yapılır — aksi halde kullanıcı bir Qt penceresi
         # açılırken çıplak bir AttributeError görürdü. Hata, projenin kendi

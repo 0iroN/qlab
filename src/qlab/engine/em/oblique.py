@@ -47,7 +47,16 @@ katsayisi COZULUR, yazilmaz. Bedeli tam 2B ile OLCULDU (G1: s / TM_z kolu
     (rampada 9e-7..6e-5 sapar); duvar ve ic maske PMC -- TE_z'de PEC cisim
     bu yolla KURULAMAZ. Kapali form (aritmetik Ey, I-1/2 referansli):
     r_p = (eps2 a1 c2 - eps1 a2 c1) / (eps2 a1 c2 + eps1 a2 c1), a_j ve
-    c_j = cos(k_j/2) s'tekiyle ayni. Genlik bedelinin ISARETI Brewster'de
+    c_j = cos(k_j/2) s'tekiyle ayni. HER `ey_kural` ICIN GENEL FORM (bilgi
+    notu, 11.10.2026; KILITSIZ -- testte yalniz aritmetik form elle yazili):
+    ea arayuz yari-hucresinin kuraldan gelen eps'i, delta = ea -
+    (eps1+eps2)/2 iken Q = (eps2 a1 c2 - 2i delta a1 a2) / (eps1 a2 c1),
+    r_p = (Q-1)/(Q+1); delta = 0 (aritmetik) ustteki forma iner. Sevk aleti
+    (`reflection_coefficient`, p, T2p penceresi yalniz `ey_kural` degisik)
+    dort kuralda da |r|'de <= 1.5e-7 oturur (1 -> 2.25 40 der lam 10,
+    1 -> 6.25 30 der lam 12, 2.25 -> 1 20 der lam 20); aritmetik form
+    aritmetik-disi kurallarda 2.5e-3..0.21 sapar.
+    Genlik bedelinin ISARETI Brewster'de
     doner (sevk aleti, 1 -> 2.25, lam 20, 30/45/60 der: -1.05e-4 /
     -7.28e-4 / +3.82e-3; s'de hep pozitif). Kritik aci bandi s ile ORTAK
     (dispersiyon ayni); bantta p'nin bedel tepesi 0.303 (2.25 -> 1, lam 20;
@@ -514,10 +523,14 @@ def run_oblique_1d(
     ||rho|-1| = 0.5237 ile 1.0321'i ikisini de KESER, yani `None` doner.
     Kapi yalniz TIY'de ve aynada kosar: KISMI YANSIMADA (ornegin ayni
     ortamlarda beyan edilen theta = 20 der, `total_internal_reflection`
-    False) hicbir kapi yoktur ve yanlis sayi SESSIZCE geri doner. (10.10.2026:
-    `reflection_coefficient`in kuyruk kapisi kismi yansimada da kosar, ama
-    KAYDIN TAMLIGINI sinar, cevaplanan acinin dogrulugunu degil; bu yol icin
-    olculmedi.) Ustelik
+    False) bir imkan kapisi YOKTU ve `dx != 1`in yanlis sayisi SESSIZCE geri
+    donerdi. (11.10.2026: bu yol artik yukaridaki `dx_kapisi` ile GIRISTE
+    kapalidir; kismi yansimada |rho| < 1 fizigin kendisidir, imkan kapisi
+    gerekmez. Kismi yansimada OLCULEN yanlis sayi kaynagi -- KAYIT UZUNLUGU
+    -- `reflection_coefficient`in KUYRUK ve IKINCI VARIS kapilarindadir
+    (10.10.2026; kuyruk kapisi kaydin tamligini, ikinci varis kapisi kayit
+    ici sogurucu yankisini sinar), cevaplanan acinin
+    dogrulugunu degil -- buradaki aci hatasi `dx`ten geliyordu.) Ustelik
     `em_obs` cozucuye `dx` HIC gecirmez -- yani bu yol pratikte de hic
     acilmamisti. Kapinin gerekcesi bu satirlar degil, `grid.dx_kapisi`daki
     BIT BIT cokme olcumudur.

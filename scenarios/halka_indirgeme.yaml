@@ -4,8 +4,8 @@
 # ozdegeri -0.399689718; olculdu, tests/tb/test_downfold_yasa.py). N=8 bir 4n
 # halkasidir ve TB spektrumunun HOMO/LUMO'su tam dejeneredir; RHF dejenere
 # seviyeyi cift isgale zorlayinca spin kararsizligi doguyor. Bu senaryonun
-# alti mesafesinin de altisinda ayni isaret olculdu, yani RHF indirgemesi
-# burada HF'in taban durumunu DEGIL bir eyer noktasini indirgerdi.
+# bes mesafesinin besinde de ayni isaret olculdu (11.10.2026), yani RHF
+# indirgemesi burada HF'in taban durumunu DEGIL bir eyer noktasini indirgerdi.
 #
 # Mesafeler bohr'dur ve DONUSUM YOKTUR: girdi bir geometridir.
 kind: downfold

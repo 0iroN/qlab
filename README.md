@@ -37,8 +37,8 @@ Tasarım belgesi: `../docs/superpowers/specs/2026-08-05-qlab-kuantum-cekirdegi-d
   `viz/isosurface.py` (marching cubes ağ çıkarımı, ±faz için işaretli çift) ve
   `app/orbital_window.py` (döndürülebilir 3B pencere). Görselleştirme yığını
   **PyVista değil `pyqtgraph.opengl` + PyOpenGL**: ~150 MB yerine ~2 MB ve
-  depoda zaten kullanılan tek render yığını — spec'ten bilinçli sapma.
-  Kabul kriteri 3 kapandı ve bu, depodaki **ilk gerçek-ekran doğrulamasıdır**.
+  depoda zaten kullanılan tek render yığını — spec'ten bilinçli sapmaydı; spec
+  (§8, §12) bunu 02.10.2026'da düzeltti. Kabul kriteri 3 kapandı ve bu, depodaki **ilk gerçek-ekran doğrulamasıdır**.
 - **Modül 1C — kısıtlanmamış Hartree-Fock (UHF): tamam.** `engine/hf/uhf.py`
   (α/β Fock, birleşik DIIS, ⟨S²⟩), `engine/hf/multistart.py` (çok başlangıçlı
   RHF/UHF arama protokolü), `solve()`'a `initial_bias`, ve
@@ -956,7 +956,7 @@ küçüldükçe fark *büyüyor* (3e-3 → 3.736e-10, 1e-3 → 1.275e-09, 3e-4 �
 3.734e-09), yani h=1e-3 zaten yuvarlamanın hâkim olduğu bölgede.
 Rc = 1.153444811624 Å.
 
-Çatallanma üsleri hiçbir yerden verilmedi, uyumdan çıktı:
+Çatallanma üsleri hiçbir yerden verilmedi, uyumdan çıktı (protokol: `search_uhf`, 12 tohum):
 
 | pencere | \|ΔE\| | \|spin\| | ⟨S²⟩ |
 |---|---|---|---|
@@ -979,12 +979,12 @@ tutuyor).
 | iddia | ölçülen | sınıf |
 |---|---|---|
 | **Coulson-Fischer noktası** | üç bağımsız yol, fark 1.578e-10 | **dairesel değil — en güçlü** |
-| **Çatallanma üsleri** | 1.9960 / 0.4970 / 0.9953 (beklenti 2 / ½ / 1) | **dairesel değil** |
+| **Çatallanma üsleri** | 1.9960 / 0.4970 / 0.9953 (`search_uhf` 12 tohum; beklenti 2 / ½ / 1) | **dairesel değil** |
 | Parça toplamı (boyut tutarlılığı) | H₂ +5.551e-16, LiH −9.592e-14, N₂ +1.421e-14 | dairesel değil, **güçlü** |
-| Ayrışma limiti | UHF(H₂, 20 bohr) − 2E_H = **4.441e-16**; RHF aynı yerde **9.85877 eV** sapıyor | dairesel değil, **zayıf** (iki mutant geçiyor) |
+| Ayrışma limiti | UHF(H₂, 20 bohr) − 2E_H = **4.441e-16**; RHF aynı yerde **9.85877 eV** sapıyor | dairesel değil, **zayıf** (iki mutant geçiyor; izlemesiz protokol, B7 öncesi) |
 | Triplet Hessian = enerjinin 2. türevi | bağıl fark 1.305e-10 … 6.659e-10, beş sistemde | transkripsiyon denetimi (**taşıyıcı**) |
 | λ_triplet < 0 ⟺ UHF kazancı var | gerçek sistemlerde **18/18**; fizik-dışı girdide de **51/53** | **muhafız** — sahte-çıpa sınavını geçiyor, çıpa DEĞİL |
-| E_UHF ≤ E_RHF | 0 karşı örnek | transkripsiyon denetimi, **zayıf** (10 mutantın 7'sini kaçırıyor) |
+| E_UHF ≤ E_RHF | 0 karşı örnek | transkripsiyon denetimi, **zayıf** (10 mutantın 7'sini kaçırıyor; izlemesiz protokol, B7 öncesi) |
 | RHF kararlıyken UHF özdeş | fark < 1e-12 | **TAUTOLOJİ** — muhafız, "çıpa" değil |
 
 Son satırdaki sahte-çıpa sınavı **iki ayrı soruyu** ayırıyor ve ikisinin
