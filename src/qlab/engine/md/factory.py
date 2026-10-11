@@ -185,11 +185,19 @@ def _tb_ss_sigma_alani(p: dict) -> SsSigmaTBKuvveti:
             )
         yasalar[rol] = UsselRadyalYasa(**alanlar)
     kelvin = p["electron_temperature_kelvin"]
+    # NP-BOOL (11.10.2026, grup 6; ölçüldü HEAD a9ec48a, `MDScenario(...)`
+    # doğrudan): `np.True_` ve `np.array(True)` 1 K diye geçiyordu,
+    # `np.complex128` uyarıyla gerçel kısmına iniyordu, `10**400` (YAML'da
+    # 401 haneli tamsayı da) ham `OverflowError` veriyordu.
     try:
-        if isinstance(kelvin, (bool, str, bytes)) or np.ndim(kelvin) != 0:
+        if (
+            isinstance(kelvin, (bool, str, bytes))
+            or np.ndim(kelvin) != 0
+            or np.asarray(kelvin).dtype.kind in "bc"
+        ):
             raise TypeError
         kelvin = float(kelvin)
-    except (TypeError, ValueError) as hata:
+    except (TypeError, ValueError, OverflowError) as hata:
         raise ScenarioError(
             f"electron_temperature_kelvin tek bir sayı (KELVİN) olmalı: {kelvin!r}"
         ) from hata
@@ -231,16 +239,97 @@ def _fcc_kafes(n_particles: int, density_reduced: float, sigma: float):
     return konumlar, float(kenar)
 
 
+def _bool_iceriyor(deger: object) -> bool:
+    """İç içe liste/demet/dizide bool ya da karmaşık öğe (Python ya da numpy) var mı."""
+    if isinstance(deger, (bool, np.bool_, complex, np.complexfloating)):
+        return True
+    if isinstance(deger, np.ndarray):
+        if deger.dtype.kind == "O":
+            return any(_bool_iceriyor(x) for x in deger.ravel())
+        return deger.dtype.kind in "bc"
+    if isinstance(deger, (list, tuple)):
+        return any(_bool_iceriyor(x) for x in deger)
+    return False
+
+
+def _fcc_tam_sayisi(deger: object) -> int:
+    """fcc `n_particles`: tam sayı ya da tam değerli float; bool, dize, kesir REDDEDİLİR.
+
+    Ölçüldü (11.10.2026, grup 6, HEAD a9ec48a, kamu yolu): `int()`
+    `n_particles: 108.5`i ve `108.9`u SESSİZCE 108'e kesiyor, `'108'`i 108
+    yapıyordu (koşu 108 atomla rc = 0). Yükleyicinin `_yaml_tam_sayisi`
+    kuralının aynısı (`108.0` kabul); hata `ScenarioError`a çağıran çevirir.
+
+    Grup 6 düzeltmesi (11.10.2026, ölçüldü HEAD a9ec48a, kamu yolu):
+    `n_particles: 10**400` (401 haneli) `_fcc_kafes`te ham `OverflowError`,
+    `0` ham `ZeroDivisionError`, `-108` ham `TypeError` (karmaşık küp kök)
+    veriyordu. Kafes hesabı float'tır: sayı pozitif ve float'a sığmalı.
+    """
+    if isinstance(deger, (bool, np.bool_)) or not isinstance(
+        deger, (int, np.integer, float, np.floating)
+    ):
+        raise TypeError(f"n_particles tam sayı olmalı, verilen: {deger!r}")
+    if isinstance(deger, (float, np.floating)) and not float(deger).is_integer():
+        raise ValueError(f"n_particles tam sayı olmalı, kesir kesilmez: {deger!r}")
+    if deger <= 0:
+        raise ValueError(f"n_particles pozitif olmalı: {deger!r}")
+    try:
+        float(deger)
+    except OverflowError as hata:
+        raise ValueError(
+            f"n_particles float'a sığmıyor ({len(str(int(deger)))} hane)"
+        ) from hata
+    return int(deger)
+
+
+def _bool_degil(ad: str, deger: object) -> float:
+    """`float(deger)`; bool (Python ya da numpy) `TypeError` -- `true` 1.0 okunmaz."""
+    if isinstance(deger, (bool, np.bool_)):
+        raise TypeError(f"{ad} sayı olmalı, bool verildi: {deger!r}")
+    return float(deger)
+
+
+def _fcc_olcegi(ad: str, deger: object) -> float:
+    """fcc kafes ölçeği (`density_reduced`, `sigma`): bool değil, sonlu ve > 0.
+
+    Ölçüldü (11.10.2026, grup 6, HEAD a9ec48a, `argon_nvt.yaml`ın tek satırı
+    bozularak): `density_reduced: 10**400` ham `OverflowError`, `0` ham
+    `ZeroDivisionError`, `-0.8442` ham `TypeError` (karmaşık kenar) veriyordu;
+    `.nan` / `.inf` rc = 1 ama yanlış nedenle ("konumlar sonlu olmalı",
+    "kutu kenarı ... 0.0"); `sigma: true` kafesi 1 bohr ölçekle kuruyordu.
+    Hata `ScenarioError`a çağıran çevirir (`ValueError` / `TypeError`).
+    """
+    try:
+        sayi = _bool_degil(ad, deger)
+    except OverflowError as hata:
+        raise ValueError(f"{ad} float'a sığmıyor ({len(str(deger))} hane)") from hata
+    if not (np.isfinite(sayi) and sayi > 0.0):
+        raise ValueError(f"{ad} pozitif ve sonlu olmalı: {deger!r}")
+    return sayi
+
+
 def _senaryo_dizisi(ad: str, deger: object) -> np.ndarray:
     """`initial` bloğundan sayısal dizi; çevrilemeyen girdi `ScenarioError`.
 
     C6 (11.10.2026, ölçüldü `python -m qlab.run`): `positions_bohr`daki bir
     dize (`"np.float64(0.0)"`), `masses_amu: [abc, ...]` ve `velocities`
     içindeki bir harf ham `ValueError` traceback'i veriyordu.
+
+    NP-BOOL (11.10.2026, grup 6; ölçüldü HEAD a9ec48a, kamu yolu): YAML
+    `true`/`yes` (bool) `dtype=float`ta SESSİZCE 1.0 oluyordu --
+    `masses_amu: [true]` 1 amu'luk koşu, `positions_bohr`da `true` 1.0 bohr.
+    bool ve karmaşık öğe (Python ya da numpy) artık `ScenarioError`.
+    Float'a sığmayan öğe (401 haneli konum / kütle / hız) ham `OverflowError`
+    veriyordu (ölçüldü HEAD a9ec48a, `tb_zincir_md.yaml`); o da artık burada.
     """
+    if _bool_iceriyor(deger):
+        raise ScenarioError(
+            f"initial.{ad} sayısal bir dizi olmalı; bool ve karmaşık öğe sayıya "
+            f"çevrilmez (true → 1.0), verilen: {deger!r}"
+        )
     try:
         return np.asarray(deger, dtype=float)
-    except (TypeError, ValueError) as hata:
+    except (TypeError, ValueError, OverflowError) as hata:
         raise ScenarioError(
             f"initial.{ad} sayısal bir dizi olmalı, verilen: {deger!r} ({hata})"
         ) from hata
@@ -255,11 +344,30 @@ def _senaryo_nesnesi(sinif, ad: str, params: dict, yaml_params: dict | None = No
     numpy `isfinite` TypeError'ı) ham traceback veriyordu. Sınıfların değer
     kapıları (`InvalidInputError`) olduğu gibi geçer. `yaml_params` mesajda
     gösterilen (YAML'ın yazdığı) sözlüktür; verilmezse `params`.
+
+    NP-BOOL (11.10.2026, grup 6; ölçüldü HEAD a9ec48a, kamu yolu): sınıfların
+    `isfinite(x) and x > 0` kapısı bool'u sayı sanıyordu -- `h2_morse.yaml`da
+    `d_e: true`, `a: true`, `r_e: yes`; `argon_nvt.yaml`da LJ `epsilon: true`,
+    `cutoff: true`, Langevin `friction: true`, `seed: true` koşusu rc = 0
+    bitip .npz YAZIYORDU (1.0 / 1 ile). Tipi `bool` OLMAYAN bir sınıf
+    alanında bool ya da karmaşık değer (iç içe de: `center`) artık
+    `ScenarioError` ve anahtarı ADIYLA söylenir. Tipi `bool` olan alan
+    (`HartreeFockGradient.stability`) muaf: `false` geçerli bir değerdir.
+    Sınıfta olmayan anahtar burada denetlenmez, sınıfın kendi `TypeError`ı
+    ("unexpected keyword argument") ona düşer.
     """
+    verilen = params if yaml_params is None else yaml_params
+    alan_tipleri = {f.name: f.type for f in dataclasses.fields(sinif)}
+    for anahtar, deger in params.items():
+        tip = alan_tipleri.get(anahtar)
+        if tip is not None and tip not in (bool, "bool") and _bool_iceriyor(deger):
+            raise ScenarioError(
+                f"{ad} parametresi `{anahtar}`: bool (true/yes) ve karmaşık değer "
+                f"sayıya çevrilmez (true → 1.0). Verilen: {verilen!r}"
+            )
     try:
         return sinif(**params)
     except (TypeError, ValueError) as hata:
-        verilen = params if yaml_params is None else yaml_params
         raise ScenarioError(
             f"{ad} parametreleri geçersiz: {hata}. Verilen: {verilen!r}"
         ) from hata
@@ -283,7 +391,9 @@ def build(scenario: MDScenario):
     elif fcc:
         try:
             fcc_sayilari = (
-                int(ilk["n_particles"]), float(ilk["density_reduced"]), float(p["sigma"])
+                _fcc_tam_sayisi(ilk["n_particles"]),
+                _fcc_olcegi("density_reduced", ilk["density_reduced"]),
+                _fcc_olcegi("sigma", p["sigma"]),
             )
         except (KeyError, TypeError, ValueError) as hata:
             raise ScenarioError(

@@ -446,7 +446,8 @@ def test_CAKISIK_atom_UC_kurucuda_da_HATA(orgu):
     ayni kapidan gecer. Kapinin ORADA kurulabilecegi olculdu: sessiz atmayi
     hataya cevirmek `tests/tb`'nin 342 testinin hicbirini kirmadi.
     `0.1 * 3` ornegi goruntu cakismasinin kayan noktada TAM 0 olmadigini
-    (5.55e-17) gosterir; MD yolunun `d == 0.0` kapisi bunu gormezdi.
+    (5.55e-17) gosterir; MD yolunun eski `d == 0.0` kapisi bunu gormezdi
+    (D14, 11.10.2026'dan beri MD yolu da ayni 1e-9 esigini kullanir).
     KIRMA (olculdu): kapiyi `continue`ya geri ceviren mutant dort ornegin
     dordunde; esigi 0.0'a indiren mutant 5e-10 ve 5.55e-17 orneklerinde;
     "atomun kendisi"ni yalniz `cell == 0` ile taniyan mutant ayni-yerde ve
@@ -529,8 +530,10 @@ def test_CAKISMA_esigi_ESKI_sessiz_atma_esigi_ve_MD_yolu_ile_uyum():
     kafes yolunun Omega'sini -0.5318024310 yapiyordu, MD yolu +18.3188990775;
     fark -18.85 hartree. d = 2e-9'da cift tutuluyordu ve iki yol ayniydi
     (|dOmega| 3.6e-15, Omega ~ 18.3; tolerans 1e-13). Yeni: 1e-9 hata,
-    2e-9 eskisi gibi. MD yolu yalniz d == 0.0'i reddeder: 0 < d <= 1e-9
-    bandinda kafes yolu hata verir, MD yolu hesaplar (beyanli fark).
+    2e-9 eskisi gibi. D14 (11.10.2026, Osman karari): MD yolu da AYNI
+    esikte hata verir -- HEAD a9ec48a'da yalniz d == 0.0'i reddediyor ve
+    0 < d <= 1e-9 bandinda hesapliyordu (bu test o farki 'beyanli fark'
+    diye kilitliyordu); iki yol artik bantta da tutarli.
     KIRMA (olculdu): esigi 0.0'a indiren mutant d = 1e-9'da hata vermiyor;
     1e-8'e cikaran mutant d = 2e-9'da hata veriyor; distance_model mesafeyi
     x(1 + 1e-13) okuyan mutant 2e-9 kolunda |dOmega| 1.5e-13 veriyor.
@@ -541,8 +544,9 @@ def test_CAKISMA_esigi_ESKI_sessiz_atma_esigi_ve_MD_yolu_ile_uyum():
         if hata_beklenir:
             with pytest.raises(InvalidInputError, match="cakisik atom"):
                 _kafes_yolu(R, 16.0, SS_SIGMA, ITME, 8.0, 2e-3)
-            # MD yolu bu bantta hesaplar (beyanli fark)
-            tek_orbital_mermin(R, SS_SIGMA, ITME, 8.0, 2e-3, 16.0)
+            # D14: MD yolu da bu bantta hata verir (iki yol tutarli)
+            with pytest.raises(InvalidInputError, match="cakisik atom"):
+                tek_orbital_mermin(R, SS_SIGMA, ITME, 8.0, 2e-3, 16.0)
         else:
             om = _kafes_yolu(R, 16.0, SS_SIGMA, ITME, 8.0, 2e-3)[0]
             md = tek_orbital_mermin(R, SS_SIGMA, ITME, 8.0, 2e-3, 16.0)

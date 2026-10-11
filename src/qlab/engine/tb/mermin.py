@@ -109,7 +109,8 @@ verir, kristal degil.
 
 SERT CEKIRDEK YOK (spec B9). Ussel yasa d = 0'da sonludur ve orada kuvvetin
 yonu tanimsizdir (gradyan yok). Cakisik cift (en-yakin-goruntu sonrasi
-d = 0.0) `InvalidInputError`. Duvar sonludur. d = 0'da bir V-KUYUSU
+d <= `_CAKISMA_ESIGI_BOHR` = 1e-9 bohr; kafes yolunun esigi, D14)
+`InvalidInputError`. Duvar sonludur. d = 0'da bir V-KUYUSU
 olabilir: dimerde (n_e = 2, kT -> 0, d < r_on; t = t0 e^(-k(d/d0 - 1)),
 itme = A e^(-krep(d/d0 - 1))) kosul 2|t0| k e^k > A krep e^krep'tir (Omega'nin
 d = 0'daki egimi pozitif); krep <= k ve 2|t0| k > A krep bunun YETER
@@ -154,17 +155,47 @@ _BISEKSIYON_TAVANI = 400
 #: mu parantezini genisleten katlama tavani (5e-324'ten 1.8e308'e ~2100).
 _PARANTEZ_TAVANI = 2200
 
+#: Cakisik atom esigi (MUTLAK, bohr): en-yakin-goruntu sonrasi d <= esik olan
+#: cift `InvalidInputError`. Kafes yolunun (`tb/lattice.py`) esiginin BILINCLI
+#: IKIZI (D14, 11.10.2026, Osman karari: iki yol tutarli). Bu esige inen bir
+#: yorunge zaten fiziksiz bolgededir (B9: V-kuyusu d'yi bariyersiz 0'a
+#: cekebilir); yorungenin oraya girip girmedigi OLCULMEDI -- kapi bir
+#: fizik iddiasi degil, iki yolun ayni girdiye ayni cevabi.
+#: Oradan import EDILMEZ: bu dosyanin import kumesi spec 2.1(2)
+#: geregi tam esitlikle kilitli (`tests/tb/test_mermin.py` M10, `ast` ve alt
+#: surec); iki sabitin esitligi `tests/tb/test_cakisma_ve_bool_kapilari.py`de
+#: kilitli. OLCULDU (HEAD a9ec48a): kapi yalniz d == 0.0'di; 8 atomlu zincirde
+#: (a = 2, L = 16, n_e = 8, kT = 2e-3) atom 1 atom 0'a d = 1e-9 / 5e-10 /
+#: 1e-12 yaklasinca MD yolu Omega = 18.318899 hesapliyordu, kafes yolu ayni
+#: bantta hata veriyordu.
+_CAKISMA_ESIGI_BOHR = 1e-9
+
 
 def _skaler(ad: str, deger: object) -> float:
     """Tek bir sonlu gercel sayi; aksi halde `InvalidInputError`.
 
     Bilincli ikizi `md/tb_kuvvet.py::_sayi` (D17; gerekce orada, ikizlik testle kilitli).
+
+    NP-BOOL (11.10.2026, grup 6; olculdu HEAD a9ec48a, kamu fonksiyonlari):
+    numpy'nin bool'u (`np.True_`, `np.array(True)`) Python `bool`unun alt
+    sinifi DEGILDIR ve 1.0 diye geciyordu; `np.complex128` bir uyariyla gercel
+    kismina iniyordu, `10**400` ham `OverflowError`, duzensiz ic ice liste ham
+    `ValueError` veriyordu. Dordu de artik `InvalidInputError`; desen
+    `spin/factory.py::_skaler`in (grup 2) aynisi. Ayni govde
+    `md/tb_kuvvet.py::_sayi` ve `tb/radyal.py::_sonlu_skaler`de (ast ikizlik
+    kilidi `tests/tb/test_cakisma_ve_bool_kapilari.py`).
     """
-    if isinstance(deger, (str, bytes, bool)) or np.ndim(deger) != 0:
-        raise InvalidInputError(f"{ad} tek bir sayi olmali: {deger!r}")
+    try:
+        dizi = np.asarray(deger)
+    except (TypeError, ValueError, OverflowError) as hata:  # duzensiz ic ice liste
+        raise InvalidInputError(f"{ad} tek bir sayi olmali: {deger!r}") from hata
+    if isinstance(deger, (str, bytes, bool)) or dizi.ndim != 0 or dizi.dtype.kind == "b":
+        raise InvalidInputError(f"{ad} tek bir sayi olmali (bool ve dizge DEGIL): {deger!r}")
+    if dizi.dtype.kind == "c":
+        raise InvalidInputError(f"{ad} sayiya cevrilemiyor (karmasik): {deger!r}")
     try:
         sayi = float(deger)  # type: ignore[arg-type]
-    except (TypeError, ValueError) as hata:
+    except (TypeError, ValueError, OverflowError) as hata:
         raise InvalidInputError(f"{ad} sayiya cevrilemiyor: {deger!r}") from hata
     if not np.isfinite(sayi):
         raise InvalidInputError(f"{ad} sonlu olmali: {sayi}")
@@ -385,7 +416,7 @@ def tek_orbital_mermin(
 
     H_ij = ss_sigma(d_ij) (i != j), H_ii = 0; E_rep = sum_{i<j} itme(d_ij).
     `kutu_x_bohr` verilirse x ekseninde en-yakin-goruntu (y, z acik) ve
-    2 max(r_cut) < L sart. Cakisik cift (d = 0) hata. Ayrintilar modul
+    2 max(r_cut) < L sart. Cakisik cift (d <= 1e-9 bohr, D14) hata. Ayrintilar modul
     dokstringinde (B1, B2, B5, B6, B9).
     """
     for ad, yasa in (("ss_sigma", ss_sigma), ("itme", itme)):
@@ -410,13 +441,14 @@ def tek_orbital_mermin(
     i, j = np.triu_indices(n_atom, 1)
     vektor = fark[i, j]
     d = np.sqrt(np.sum(vektor * vektor, axis=1))
-    cakisik = np.flatnonzero(d == 0.0)
+    cakisik = np.flatnonzero(d <= _CAKISMA_ESIGI_BOHR)
     if cakisik.size:
         k = int(cakisik[0])
         raise InvalidInputError(
-            f"cakisik atom cifti ({int(i[k])}, {int(j[k])}): d = 0 "
-            "(en-yakin-goruntu sonrasi). Ussel yasada sert cekirdek yok; "
-            "d = 0'da kuvvetin yonu tanimsiz."
+            f"cakisik atom cifti ({int(i[k])}, {int(j[k])}): d = {float(d[k])!r} <= "
+            f"{_CAKISMA_ESIGI_BOHR} bohr (en-yakin-goruntu sonrasi; kafes yolunun "
+            "esigi, D14). Ussel yasada sert cekirdek yok; d = 0'da kuvvetin yonu "
+            "tanimsiz."
         )
 
     t, dt = ss_sigma.deger_ve_turev(d)

@@ -45,8 +45,10 @@ _KESME_TOLERANSI = 1e-9
 # Omega'sini MD yolundan -18.85 hartree ayiriyordu (cift yok sayildigi icin);
 # 2e-9'da iki yol hala ayniydi. (2) Atmayi hataya cevirmek `tests/tb`'nin
 # 342 testinin HICBIRINI kirmadi (kapinin kopyada gercekten calistigi ayrica
-# dogrulandi). MD yolu (`mermin.py`) yalniz d == 0.0'i reddeder; 0 < d <=
-# 1e-9 bandinda kafes yolu hata verir, MD yolu hesaplar (beyanli fark).
+# dogrulandi). MD yolu (`mermin.py`) AYNI esigi kullanir (D14, 11.10.2026,
+# Osman karari): eskiden yalniz d == 0.0'i reddediyor, 0 < d <= 1e-9
+# bandinda hesapliyordu (beyanli farkti); iki yol artik tutarli. Ikiz sabit
+# `mermin._CAKISMA_ESIGI_BOHR` (import kilidi yuzunden kopya, esitligi testli).
 _CAKISMA_ESIGI_BOHR = 1e-9
 
 #: `neighbour_shells`in tarayabilecegi en buyuk HUCRE sayisi, (2 max_cell + 1)^d.

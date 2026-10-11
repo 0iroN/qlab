@@ -72,7 +72,8 @@ merkezi fark O(h)'dir.
 
 SERT CEKIRDEK YOK (spec B9). Ussel yasa d = 0'da sonludur ve duvar da
 sonludur (Morse beyaninin esi); cakisik cift (en-yakin-goruntu sonrasi
-d = 0) `InvalidInputError`. d = 0'da bir V-KUYUSU olabilir: dimerde (n_e =
+d <= 1e-9 bohr: kafes yolunun esigi, D14 11.10.2026) `InvalidInputError`.
+d = 0'da bir V-KUYUSU olabilir: dimerde (n_e =
 2, kT -> 0, d < r_on) kosul 2|t0| k e^k > A krep e^krep'tir (t0, k hoplama
 yasasinin genligi ve ussu; A, krep itmeninki); krep <= k ve 2|t0| k > A
 krep bunun YETER kosuludur ve o zaman Omega d0'dan d = 0'a bariyersiz
@@ -125,7 +126,7 @@ _KELVIN_TUZAGI_HARTREE = 1.0
 
 
 def _sayi(ad: str, deger: object) -> float:
-    """Tek bir sonlu gercel sayi (bool ve dizge DEGIL); aksi halde hata.
+    """Tek bir sonlu gercel sayi (bool -- numpy'ninki de --, dizge, karmasik DEGIL); aksi halde hata.
 
     `tb/mermin.py::_skaler`in BILINCLI KOPYASI (D17, 11.10.2026). Oradan
     import EDILMEZ: bu dosyanin mermin importu yalniz hesap cagrisini tasir ve
@@ -134,13 +135,20 @@ def _sayi(ad: str, deger: object) -> float:
     `_skaler`i ayni satirdan almak kenari kurulus dogrulamasina da tasir --
     olculdu: tekillestiren yamada o test kirmizi. Ikizlik
     `tests/tb/test_dusuk_tb_kapilari.py`de `ast` ile kilitli (biri degisip
-    oteki degismezse kirmizi).
+    oteki degismezse kirmizi). NP-BOOL (grup 6) gerekcesi `_skaler`in
+    dokstringinde.
     """
-    if isinstance(deger, (str, bytes, bool)) or np.ndim(deger) != 0:
-        raise InvalidInputError(f"{ad} tek bir sayi olmali: {deger!r}")
+    try:
+        dizi = np.asarray(deger)
+    except (TypeError, ValueError, OverflowError) as hata:  # duzensiz ic ice liste
+        raise InvalidInputError(f"{ad} tek bir sayi olmali: {deger!r}") from hata
+    if isinstance(deger, (str, bytes, bool)) or dizi.ndim != 0 or dizi.dtype.kind == "b":
+        raise InvalidInputError(f"{ad} tek bir sayi olmali (bool ve dizge DEGIL): {deger!r}")
+    if dizi.dtype.kind == "c":
+        raise InvalidInputError(f"{ad} sayiya cevrilemiyor (karmasik): {deger!r}")
     try:
         sayi = float(deger)  # type: ignore[arg-type]
-    except (TypeError, ValueError) as hata:
+    except (TypeError, ValueError, OverflowError) as hata:
         raise InvalidInputError(f"{ad} sayiya cevrilemiyor: {deger!r}") from hata
     if not np.isfinite(sayi):
         raise InvalidInputError(f"{ad} sonlu olmali: {sayi}")

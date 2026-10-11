@@ -532,6 +532,51 @@ def test_RUN_METROPOLIS_ELLE_KOSULAN_SWEEPLERLE_BIRE_BIR_AYNI():
     assert np.array_equal(sonuc.final_state.spins, durum.spins)
 
 
+def test_SERI_ISARETSIZ_ve_BILINEN_DURUMDA_mutlak_toplam_bolu_N():
+    """BK-20-m (Osman kararı 11.10.2026): kaydedilen seri İŞARETSİZ `|m|`dir.
+
+    BİLİNEN DURUM, rastgelelik YOK: L = 4 Ising, 10 site +1 / 6 site -1
+    (`|sum s| / N = 4 / 16 = 0.25`), J = 0 ve h = 0. O zaman her önerinin
+    dE'si 0, kabul olasılığı 1'dir; her yarı-adım bir alt-örgüyü bütünüyle
+    çevirir, yani her sweep BÜTÜN kafesi çevirir (s -> -s). İşaretli m
+    -0.25 / +0.25 salınır ve ortalaması TAM 0.0 -- kararın gerekçesinin
+    ("sonlu kafeste işaretli m ortalaması sıfıra gider") deterministik
+    örneği. Kaydedilen seri her ölçümde 0.25 olmalı: negatif değil ve
+    `|sum s| / N`ye eşit. Durum gerçekten çevrildi mi diye de bakılır (yoksa
+    seri 0.25'i çevrilmemiş durumdan da okurdu).
+    """
+    spins = np.ones((4, 4, 1))
+    spins.reshape(-1)[:6] = -1.0
+    baslangic = SpinState(spins)
+    N = spins.size
+    rng = np.random.default_rng(TOHUM)
+    sonuc = run_metropolis(
+        baslangic,
+        IsingModel(),
+        temperature=1.0,
+        coupling=0.0,
+        field=0.0,
+        rng=np.random.default_rng(TOHUM),
+        n_sweep=4,
+        n_burn=0,
+    )
+
+    seri = sonuc.magnetisation_series
+    assert seri.shape == (4,)
+    assert np.all(seri >= 0.0), seri
+    assert np.array_equal(seri, np.full(4, abs(spins.sum()) / N)), seri
+
+    durum, isaretli = baslangic, []
+    for _ in range(4):
+        durum = metropolis_sweep(
+            durum, IsingModel(), temperature=1.0, coupling=0.0, field=0.0, rng=rng
+        )
+        isaretli.append(float(magnetisation(durum)[0]))
+    assert isaretli == [-0.25, 0.25, -0.25, 0.25], "her sweep bütün kafesi çevirmeli"
+    assert float(np.mean(isaretli)) == 0.0
+    assert np.array_equal(sonuc.final_state.spins, durum.spins)
+
+
 def test_AYNI_TOHUM_AYNI_SONUC_ve_FARKLI_TOHUM_FARKLI_SONUC():
     """Tekrarlanabilirlik pazarlık konusu değildir (Global Constraints)."""
     ortak = dict(temperature=1.2, coupling=1.0, field=0.0, n_sweep=15, n_burn=5)

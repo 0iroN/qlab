@@ -522,7 +522,15 @@ python -m qlab.run scenarios/spin_tarama.yaml -o spin.npz
 Çıktı `.npz`'si `temperatures`, `magnetisation`, `magnetisation_error`,
 `plateau_reached`, `tau_int`, `binder`, `susceptibility`, `heat_capacity`,
 `coupling` ve `provenance_json` taşır (`susceptibility` enerji⁻¹ birimindedir:
-coupling'ler arası karşılaştırılacak sayı `coupling · susceptibility`'dir). **Sıcaklıklar enerji birimindedir, kelvin değil** —
+coupling'ler arası karşılaştırılacak sayı `coupling · susceptibility`'dir).
+`magnetisation` **işaretsiz** `⟨|m|⟩`dir (panel de `<|m|>` basar) ve bu
+**bilinçli bir seçimdir** (11.10.2026, BK-20-m): sonlu kafeste kendiliğinden
+simetri kırılması yoktur, `h = 0`'da işaretli `⟨m⟩` dengede tam sıfırdır ve bir
+zincirin işaretli ortalaması `+m ↔ −m` tünelleme sıklığına bağlı bir sayı olurdu;
+sonlu-boyut analizinin standart düzen parametresi `⟨|m|⟩`dir (Binder çift
+momentli olduğu için iki seride aynı, `susceptibility` değil — bkz.
+`spin_obs.susceptibility` dokstringi). Bedeli: alanın işareti (`h < 0`'da
+`m < 0`) bu sütunda görünmez. **Sıcaklıklar enerji birimindedir, kelvin değil** —
 `k_B = 1` bir birim seçimidir; `coupling` (J) bir girdidir ve Onsager'le
 karşılaştırılacak sayı `kT/J = T/coupling`'dir (`Yöntem` satırı onu basar;
 27.09.2026'ya kadar "`J = k_B = 1`, sıcaklık `kT/J`" yazıyordu ve coupling ≠ 1'de
@@ -1988,7 +1996,9 @@ Maliyet (bu makine, x'te N atomlu süperhücre, a = 2): kafes yolu N = 16 … 12
 boyunca MD yolundan **9.5 – 51 kat** yavaş; MD bu yüzden kafes yolundan
 geçmez ve iki yolun eşitliği yukarıdaki satırla kilitlidir. Çakışık atom artık
 sessizce atılmıyor: `neighbour_shells` d ≤ 1e-9 bohr çiftinde
-`InvalidInputError` verir (eskiden çifti atıyordu).
+`InvalidInputError` verir (eskiden çifti atıyordu); MD yolu (`tek_orbital_mermin`,
+`SsSigmaTBKuvveti`) da aynı eşiği kullanır (D14, 11.10.2026 — eskiden yalnız
+d = 0'ı reddediyor, 0 < d ≤ 1e-9 bandında hesaplıyordu; iki yol artık tutarlı).
 
 **Açık kalanlar (beyanlı, ayrı iş):** tek N_e ve tek N'de Kohn seçim kuralı
 farklıdır ve pencere dışıdır; `uniform_model`in `max_cell = 2` kabuk kaybı (1B'de
@@ -2016,14 +2026,37 @@ Ayrıca (24.09.2026, bulgu düzeltme turu):
 - Kuyruk genişliği r_cut − r_on bütün dinamik pencerelerde 0.8 bohr'a sabit
   kaldı (yalnız C3'ün negatif testleri r_on'u statik olarak oynatır); konuma
   bağlı onsite (düzensizlik) sınıf onsite almadığı için denenemez.
-- `observable/tb_obs.py` üzerinden hiçbir md-tb ölçümü yapılmadı; ön ölçümdeki
+- ~~`observable/tb_obs.py` üzerinden hiçbir md-tb ölçümü yapılmadı; ön ölçümdeki
   P6'nın üç mercekli yeniden koşusu ayrı iş (kova artık kilitle belirlendiği
-  için büyük ölçüde eskidi).
+  için büyük ölçüde eskidi).~~ **KAPANDI 11.10.2026 — KONUSUZ (Osman kararı,
+  D11).** P6, `md-tb`nin henüz kod kenarı yokken (22.09) çiftin KOVASINI seçmek
+  içindi: üç mercek TAUTOLOJI (0.0) / YAPISAL_YOK / kovayı düşüren
+  tekrar-üretim (`tb_obs` üzerinden) diye çatışıyordu. (P6'nın YAPISAL_YOK için
+  andığı 17023.67 GERİ ÇEKİLDİ: aynı ön ölçümün md-tb bölümü onu TAŞINAMAZ diye
+  sildi — h → 0'da ıraksayan bir oran; yerine engelin yüksekliği 0.269 hartree
+  kondu.) 25.09.2026'dan beri (648f03b; `engine/md/tb_kuvvet.py`'nin `md → tb`
+  kod kenarını işleyen commit, işin kendi metinleri 24.09 tarihli) kova ölçümle
+  değil KİLİTLE belirlenir: kenar varken `bridge_map.tablo_tutarsizliklari`
+  kilit 1 çifti OLCULMEDI'ye ve YAPISAL_YOK'a koymayı reddeder (bu iki kol
+  09.09.2026'dan, ab7d68c'den beri var); kilit 2 GERCEK_KOPRU'yu kenara bağlar.
+  Kilit 1'in TAUTOLOJI kolu (kenarlı TAUTOLOJI listesinde olmayan çifti
+  reddeder) ise ancak 11.10.2026'da (80eb21c, grup 4) eklendi: 25.09 ile 11.10
+  arasında md-tb'yi TAUTOLOJI'ye taşımak kilit 1'den geçerdi. Kilitler
+  `tests/bridge/test_kova_tablosu.py`deki
+  `test_KOVA_TABLOSU_KODDAN_TURETILIYOR_elle_listelenmiyor` ve
+  `test_MD_TB_GERCEK_KOPRU_BUYUKLUK_YOK_MODEL_CIPASI_DOGA_CIPASI_YOK` (TAUTOLOJI
+  kolunu bu ikisi değil `tests/bridge/test_kenar_tarayici.py`deki sentetik kenar
+  enjeksiyonu bağlar); P6'nın üç kovasını gerçek taramada tek tek deneyen kilit
+  `tests/bridge/test_d11_p6_konusuz.py`.
+  `tb_obs` üzerinden bir mercek koşusu bu kovayı değiştiremez. Kenarın kendi
+  TABANI (ör. dimer optik modunun iki bağımsız yoldan frekansı) ayrı bir
+  sorudur ve `KOVA_TABLOSU` gerekçesinde "kenar tabani OLCULMEDI" diye beyanlıdır.
 - kT > 0'da raporlanan μ kayan-nokta platosunun ortasıdır: kuyruklar yuvarlamanın
   altındayken (boşluk/kT ≳ 70) fiziksel kanonik kökten kT'nin bir kesri kadar
   sapar (ölçüldü: en çok 0.394 kT; Ω, F ve n etkilenmez). Log uzayında kök adımı
   yazılmadı.
 - `mermin_dolum` çok büyük kT'de (μ parantezi taşınca) artık `InvalidInputError` verir (D16, 11.10.2026); eskiden kT = 1e308'de sessizce nan dönüyordu. 6.5e307 hâlâ sonlu ve doğru (f = 1/2, S = 8 ln 2).
+- Girdi kapıları (NP-BOOL, 11.10.2026): `np.True_`/`np.array(True)`, numpy karmaşık sayı, float'a sığmayan tamsayı ve düzensiz iç içe liste `tek_orbital_mermin`, `SsSigmaTBKuvveti` ve `UsselRadyalYasa`'da artık `InvalidInputError` (eskiden 1.0 / gerçel kısım / ham hata; yasa Python `True`'yu da 1.0 okuyordu). MD `initial` içindeki `true`/`yes` ve float'a sığmayan öğe (konum, kütle, hız; eskiden 1.0 ya da ham `OverflowError`), fcc `n_particles: 108.5` (eskiden sessizce 108) ve `density_reduced: true` artık `ScenarioError`. Aynı turda (ölçüldü HEAD a9ec48a, `python -m qlab.run`): kuvvet alanı ve termostat parametresindeki `true`/`yes` (Morse `d_e`/`a`/`r_e`, LJ `epsilon`/`cutoff`, harmonik `k`/`center`, Langevin `friction`/`seed`; eskiden 1.0 / 1 okunup koşu rc = 0 bitiyor ve .npz yazıyordu) anahtarını adıyla söyleyen `ScenarioError` verir (tipi `bool` olan `stability` muaf); fcc `n_particles` / `density_reduced` / `sigma`nın float'a sığmayan, sıfır, negatif ya da sonlu olmayan değeri de `ScenarioError` (eskiden bunların çoğu ham `OverflowError` / `ZeroDivisionError` / `TypeError` ya da yanlış nedenli hata veriyordu). Açık kalan (beyanlı): 0 boyutlu nesne dizisi `np.array(True, dtype=object)` skaler kapılardan (`_skaler` / `_sayi` / `_sonlu_skaler`, MD Kelvin denetimi ve spin'in `_skaler`i) 1.0 diye geçer — YAML bunu üretmez, `initial` ve parametre kapısı (`_bool_iceriyor`) onu yakalar; kuvvet sınıfları (`Morse(d_e=True, …)`) doğrudan kurulunca bool'u hâlâ kabul eder, kapı fabrikadadır.
 
 ### Modül 3H — UHF indirgemesi / downfolding (Plan H)
 

@@ -63,12 +63,26 @@ from qlab.errors import InvalidInputError
 
 
 def _sonlu_skaler(ad: str, deger: object) -> float:
-    """Tek bir sonlu gercel sayi; aksi halde `InvalidInputError`."""
-    if isinstance(deger, (str, bytes)) or np.ndim(deger) != 0:
-        raise InvalidInputError(f"{ad} tek bir sayi olmali: {deger!r}")
+    """Tek bir sonlu gercel sayi; aksi halde `InvalidInputError`.
+
+    NP-BOOL (11.10.2026, grup 6; olculdu HEAD a9ec48a): bool HIC
+    reddedilmiyordu -- YAML'da `genlik_hartree: true` yasayi genlik 1.0
+    hartree ile kuruyordu (`tb_ss_sigma` kamu yolu), `np.True_` da 1.0;
+    `np.complex128` uyariyla gercel kismina iniyordu, `10**400` ham
+    `OverflowError`. Govde `tb/mermin.py::_skaler` ile AYNIDIR (gerekce
+    orada; `ast` ikizlik kilidi `tests/tb/test_cakisma_ve_bool_kapilari.py`).
+    """
+    try:
+        dizi = np.asarray(deger)
+    except (TypeError, ValueError, OverflowError) as hata:  # duzensiz ic ice liste
+        raise InvalidInputError(f"{ad} tek bir sayi olmali: {deger!r}") from hata
+    if isinstance(deger, (str, bytes, bool)) or dizi.ndim != 0 or dizi.dtype.kind == "b":
+        raise InvalidInputError(f"{ad} tek bir sayi olmali (bool ve dizge DEGIL): {deger!r}")
+    if dizi.dtype.kind == "c":
+        raise InvalidInputError(f"{ad} sayiya cevrilemiyor (karmasik): {deger!r}")
     try:
         sayi = float(deger)  # type: ignore[arg-type]
-    except (TypeError, ValueError) as hata:
+    except (TypeError, ValueError, OverflowError) as hata:
         raise InvalidInputError(f"{ad} sayiya cevrilemiyor: {deger!r}") from hata
     if not np.isfinite(sayi):
         raise InvalidInputError(f"{ad} sonlu olmali: {sayi}")

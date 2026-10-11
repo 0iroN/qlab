@@ -221,6 +221,24 @@ def run_metropolis(
     ama spin ayni kaldi" olayinin olcusu SIFIRDIR (oneri surekli bir
     dagilimdan gelir), yani orada da tamdir. Yalniz burn-in SONRASI sweep'ler
     sayilir: burn-in'deki kabul orani denge degeri DEGILDIR.
+
+    SERI ISARETSIZDIR -- BILINCLI SECIM (BK-20-m, Osman karari 11.10.2026).
+    `magnetisation_series` olcum basina `|m|`yi kaydeder (bilesen
+    vektorunun normu; Ising'de `|sum s| / N`), isaretli `m`yi DEGIL.
+    Gerekce: sonlu kafeste kendiliginden simetri kirilmasi YOKTUR. h = 0'da
+    denge dagiliminda isaretli `<m>` TAM sifirdir (Z2) ve bir zincirin
+    isaretli ortalamasi +m ile -m arasindaki tunelleme sikligina bagli bir
+    sayi olurdu -- denge niceligi degil, ornekleyicinin ozelligi. Sonlu-boyut
+    analizinin standart duzen parametresi `<|m|>`dir; Binder kumulanti ve
+    suseptibilite ayni seriden kurulur (bkz. `observable/spin_obs.py`
+    dokstringleri; Binder cift momentli oldugu icin iki seride ayni, chi
+    DEGIL). Deterministik ornek, kilitli: L = 4, J = 0, h = 0'da her sweep
+    butun kafesi cevirir; `|sum s| / N = 0.25` olan bir durumda isaretli m
+    -0.25 / +0.25 salinir ve ortalamasi tam 0.0, kaydedilen seri 0.25 /
+    0.25 (tests/spin/test_metropolis.py,
+    `test_SERI_ISARETSIZ_ve_BILINEN_DURUMDA_mutlak_toplam_bolu_N`). BEDELI:
+    alanin isareti (h < 0'da m < 0) seride GORUNMEZ; isaret `final_state`ten
+    okunur. Wolff serisi de ayni anlamdadir (`run_wolff` dokstringi).
     """
     _dogrula(state, model, temperature, coupling, field)
     if n_sweep < 1:

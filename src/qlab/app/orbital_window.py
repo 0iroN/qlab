@@ -77,7 +77,13 @@ import pyqtgraph.opengl as gl
 from PySide6 import QtCore, QtWidgets
 
 from qlab.app.transparency import TransparencyPanel
-from qlab.engine.hf.analysis import AnalysisReport, analyse
+from qlab.engine.hf.analysis import (
+    _CHARGED_DIPOLE_NOTE,
+    _NO_HOMO_NOTE,
+    _NO_LUMO_NOTE,
+    AnalysisReport,
+    analyse,
+)
 from qlab.engine.hf.basis import build_basis
 from qlab.engine.hf.integrals import overlap_matrix
 from qlab.engine.hf.scf import HFResult
@@ -421,6 +427,17 @@ def _promolekul_referans_beyani(molecule: Molecule, basis_name: str) -> str:
         f"fark haritasının referansı ÖLÇÜLDÜ ({basis_name.upper()} serbest "
         "atomları, küresel ortalamalı ve kesirli işgalli): " + " · ".join(parcalar)
     )
+
+
+#: `analyse()`in KOŞULLU gerekçe notları, raporun kendi sırasıyla (yüklü dipol,
+#: LUMO yok, HOMO yok). Metin motorda TEK yerde yaşar ve buraya kopyalanmaz;
+#: pencere hangisinin basılacağına da KENDİSİ karar vermez (bkz.
+#: `_okuma_satirini_guncelle`).
+_KOSULLU_ANALIZ_NOTLARI: tuple[str, ...] = (
+    _CHARGED_DIPOLE_NOTE,
+    _NO_LUMO_NOTE,
+    _NO_HOMO_NOTE,
+)
 
 
 class OrbitalWindow(QtWidgets.QMainWindow):
@@ -856,6 +873,32 @@ class OrbitalWindow(QtWidgets.QMainWindow):
         basmak "boşluk yok, metalik" diye okunurdu -- aynı gerekçe
         `AnalysisReport` ve `StabilityVerdict` dokstringlerinde zaten yazılı.
         Ölçüldü, ulaşılabilir: He/STO-3G'nin tek orbitali var, LUMO yok.
+
+        KOŞULLU GEREKÇE NOTLARI DA BU SATIRDA (K1, Osman kararı 11.10.2026).
+        `analyse()` yüklü sistemde `_CHARGED_DIPOLE_NOTE`, boş orbitali
+        olmayan sistemde `_NO_LUMO_NOTE`, işgal edilmiş orbitali olmayan
+        sistemde `_NO_HOMO_NOTE` ekler; bunlar bu satırın sayılarının
+        (dipol, HOMO, LUMO, aralık) GEREKÇESİDİR ve her biri kendi satırında
+        "Analiz notu:" önekiyle basılır. Önceden hiçbir pencerede
+        görünmüyordu (ölçüldü, HEAD a9ec48a: He/STO-3G "LUMO yok" basıyor ama
+        notun metni ne bu satırda ne panelde; HeH+ 2.8368 D basıyor ve
+        dipolün orijine bağlı olduğu hiçbir yerde yazmıyordu). Hangi notun
+        basılacağına pencere KARAR VERMEZ: not raporun `expected_error`ında
+        ise basılır -- koşulu (charge != 0, n_occupied ...) burada yeniden
+        türetmek, motorun kararının ikinci bir kopyası olurdu. Nötr ve
+        LUMO'su olan bir sistemde (su) hiçbir not basılmaz: koşulsuz bir
+        uyarı, doğru sayıya duyulan güveni boşa harcatırdı (`analyse()`
+        dokstringindeki gerekçenin aynısı).
+
+        Ulaşılabilirlik: `main.py` yolu charge=0 kurar, yani GUI'den yalnız
+        `_NO_LUMO_NOTE`e ulaşılır; yüklü dipol ve HOMO yok notlarına yalnız
+        bu sınıfın kurucusundan (yüklü bir `HFResult` ile) ulaşılır. Sıfır
+        elektronlu sistem orbital alanında açılmaz (HOMO indeksi -1,
+        `InvalidInputError`), yoğunluk alanlarında açılır. Bedeli ölçüldü
+        (1400x950, ekransız `show()`): okuma satırı su 40 px, He 54 px, HeH+
+        138 px; 3B görünüm su ve He'de 523 px, HeH+'da 425 px. Notsuz HEAD'e
+        (a9ec48a) göre: su DEĞİŞMEDİ (523), He 551 -> 523, HeH+ 523 -> 425,
+        H2++ (yoğunluk alanı, iki not; okuma satırı 40 -> 166 px) 565 -> 439 px.
         """
         rapor = self._analiz
         etiketler = [
@@ -888,6 +931,12 @@ class OrbitalWindow(QtWidgets.QMainWindow):
         # okunurdu (ölçüldü: He/STO-3G'de tek atom, sıfır çift).
         if baglar:
             satirlar.append(f"Mayer bağ mertebeleri: {baglar}")
+        beklenen = rapor.provenance.expected_error
+        satirlar.extend(
+            f"Analiz notu: {not_}"
+            for not_ in _KOSULLU_ANALIZ_NOTLARI
+            if not_ in beklenen
+        )
         self._okuma.setText("\n".join(satirlar))
 
     def _ag_itemlerini_ciz(self, meshes: tuple[Mesh, ...]) -> None:
@@ -956,12 +1005,17 @@ class OrbitalWindow(QtWidgets.QMainWindow):
         Koopmans düzeyinde kalması. Ekranda -0.3655 yazıp bu üçünü yazmamak,
         sayıya hak etmediği bir kesinlik verirdi.
 
-        `analyse().provenance.expected_error` BİLİNÇLİ OLARAK katılmıyor:
-        taşıdığı üç uyarı yukarıdaki `approximations`/`neglected` maddelerinin
-        yeniden ifadesidir (aynı LiH sayısı, aynı Mayer ve Koopmans hükmü) ve
-        panelin "Beklenen hata" satırı alanın KENDİ hata bütçesini taşımak
-        zorunda -- ikisini birleştirmek, hangi hatanın hangi büyüklükte olduğu
-        sorusunu bulandırırdı. Buna karşılık `stability` MOTORUN sonucundan
+        `analyse().provenance.expected_error` PANELE BİLİNÇLİ OLARAK
+        katılmıyor: KOŞULSUZ kısmının taşıdığı üç uyarı yukarıdaki
+        `approximations`/`neglected` maddelerinin yeniden ifadesidir (aynı LiH
+        sayısı, aynı Mayer ve Koopmans hükmü) ve panelin "Beklenen hata"
+        satırı alanın KENDİ hata bütçesini taşımak zorunda -- ikisini
+        birleştirmek, hangi hatanın hangi büyüklükte olduğu sorusunu
+        bulandırırdı. Bu gerekçe KOŞULLU notları (yüklü dipol, LUMO yok, HOMO
+        yok) KAPSAMIYORDU: onlar hiçbir maddenin yeniden ifadesi değil, okuma
+        satırındaki sayıların gerekçesidir ve 11.10.2026'dan beri koşulları
+        oluştuğunda o satırda basılır (bkz. `_okuma_satirini_guncelle`; K1).
+        Panel yine alanın bütçesini taşır. Buna karşılık `stability` MOTORUN sonucundan
         alınır, alanın beyanından değil: `electron_density`/`density_difference`
         onu `None` bırakıyor ve olduğu gibi taşınsaydı panel kararlılık satırını
         alan değişince hiç basmazdı -- okuyucu bunu "sorun yok" diye okurdu

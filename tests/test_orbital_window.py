@@ -2163,11 +2163,12 @@ def test_LUMOSUZ_sistemde_okuma_satiri_YOK_diyor(su_sonucu):
     `AnalysisReport` bu durumu None ile taşır ve okuma satırı da onu None'a
     sadık basmalı.
 
-    KAPSAM DIŞI, açıkça: gerekçenin uzun metni (`_NO_LUMO_NOTE`) `analyse()`in
-    `expected_error`'ındadır ve o alan panele KATILMIYOR (bkz. `_provenance`
-    dokstring'i). Burada aranan şey de o değil: "yok" kelimesi kendini
-    açıklar, `AnalysisReport`'un reddettiği şey 0.000000 BASMAKTI -- çünkü
-    okuyan onu "boşluk yok, metalik" diye okurdu. Test o farkı sınıyor.
+    Gerekçenin uzun metni (`_NO_LUMO_NOTE`) 11.10.2026'dan beri okuma
+    satırında da basılır (K1); o kilit
+    `test_KOSULLU_ANALIZ_NOTU_kosulu_olusunca_OKUMA_SATIRINDA_yoksa_HIC`dedir.
+    Burada aranan şey o değil: "yok" kelimesi kendini açıklar,
+    `AnalysisReport`'un reddettiği şey 0.000000 BASMAKTI -- çünkü okuyan onu
+    "boşluk yok, metalik" diye okurdu. Test o farkı sınıyor.
 
     Bağ ÇİFTİ olmayan tek atomlu bir sistem aynı zamanda "Mayer bağ
     mertebeleri:" başlığının boş basılmadığını da sınar.
@@ -2181,6 +2182,74 @@ def test_LUMOSUZ_sistemde_okuma_satiri_YOK_diyor(su_sonucu):
         assert "aralık yok" in metin, metin
         assert "0.000000" not in metin, f"olmayan bir aralık sayı gibi basılmış:\n{metin}"
         assert "Mayer" not in metin, f"bağ çifti yokken boş liste basılmış:\n{metin}"
+    finally:
+        pencere.close()
+
+
+_KOSULLU_NOTLAR = ("_CHARGED_DIPOLE_NOTE", "_NO_LUMO_NOTE", "_NO_HOMO_NOTE")
+
+
+@requires_offscreen
+@pytest.mark.parametrize(
+    ("geometri", "yuk", "alan", "beklenen"),
+    [
+        # `main.py` yolu charge=0 kurar: GUI'den ulaşılan TEK koşullu not bu.
+        ("He 0 0 0", 0, "orbital", ("_NO_LUMO_NOTE",)),
+        # Aşağıdaki ikisine YALNIZ kurucudan ulaşılır (yüklü `HFResult`).
+        ("He 0 0 0; H 0 0 0.774", 1, "orbital", ("_CHARGED_DIPOLE_NOTE",)),
+        # Sıfır elektron: orbital alanında açılmaz (HOMO indeksi -1,
+        # `InvalidInputError`), yoğunluk alanında açılır.
+        (
+            "H 0 0 0; H 0 0 0.74",
+            2,
+            "elektron yoğunluğu",
+            ("_CHARGED_DIPOLE_NOTE", "_NO_HOMO_NOTE"),
+        ),
+        # Nötr ve LUMO'su var: HİÇBİR not basılmaz (koşulsuz uyarı mutantı).
+        (_SU, 0, "orbital", ()),
+        # Yüklü VE LUMO'suz (tek baz fonksiyonu, iki elektron): iki notun
+        # SIRASINI kilitler. Doğrulayıcı (11.10.2026): yüklü-dipol ve
+        # LUMO-yok notlarının yerini değiştiren mutant bu durum olmadan
+        # sağ kalıyordu (hiçbir vaka ikisini birden taşımıyordu).
+        ("H 0 0 0", -1, "orbital", ("_CHARGED_DIPOLE_NOTE", "_NO_LUMO_NOTE")),
+    ],
+    ids=["He-LUMO-yok", "HeH+-yuklu-dipol", "H2++-HOMO-yok", "su-not-yok", "H--yuklu-LUMO-yok"],
+)
+def test_KOSULLU_ANALIZ_NOTU_kosulu_olusunca_OKUMA_SATIRINDA_yoksa_HIC(
+    geometri, yuk, alan, beklenen
+):
+    """K1 (Osman kararı 11.10.2026): `analyse()`in koşullu gerekçe notları
+    koşulları oluştuğunda okuma satırında basılır.
+
+    ÖLÇÜLDÜ (HEAD a9ec48a, kamu kurucusu): He/STO-3G "LUMO yok" basıyor ama
+    `_NO_LUMO_NOTE` ne okuma satırında ne panelde; HeH+ 2.8368 D basıyor ve
+    `_CHARGED_DIPOLE_NOTE` hiçbir yerde yok; H2++ (yoğunluk alanı) "HOMO yok"
+    basıyor, `_NO_HOMO_NOTE` yok. Üç notun hiçbiri hiçbir pencerede yoktu.
+
+    Testin ÖNCÜLÜ de sınanır: beklenen not kümesi `analyse()`in kendi
+    kararıyla (raporun `expected_error`ı) AYNI olmalı -- pencere koşulu
+    yeniden türetmez, raporu yansıtır. Sıra raporun sırasıdır.
+    """
+    from qlab.engine.hf import analysis
+
+    sonuc = solve(Molecule.from_string(geometri, charge=yuk), "sto-3g")
+    rapor_notlari = analysis.analyse(sonuc).provenance.expected_error
+    for ad in _KOSULLU_NOTLAR:
+        assert (getattr(analysis, ad) in rapor_notlari) == (ad in beklenen), (
+            f"testin öncülü çürük: {ad} için motorun kararı farklı"
+        )
+
+    pencere = OrbitalWindow(sonuc, field=alan)
+    try:
+        metin = pencere.analysis_text()
+        for ad in _KOSULLU_NOTLAR:
+            not_ = getattr(analysis, ad)
+            if ad in beklenen:
+                assert f"Analiz notu: {not_}" in metin, f"{ad} okuma satırında yok:\n{metin}"
+            else:
+                assert not_ not in metin, f"koşulu olmayan {ad} basılmış:\n{metin}"
+        konumlar = [metin.index(getattr(analysis, ad)) for ad in beklenen]
+        assert konumlar == sorted(konumlar), "notlar raporun sırasında değil"
     finally:
         pencere.close()
 

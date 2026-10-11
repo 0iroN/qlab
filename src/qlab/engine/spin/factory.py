@@ -126,6 +126,14 @@ class SpinScanResult:
     burada hesaplanmaz cunku `engine` katmani `observable`i import edemez;
     onlar `viz/spin_frames.py`de kurulur.
 
+    `samples[i].magnetisation_series` ISARETSIZDIR (`|m|`) ve bu BILINCLI
+    BIR SECIMDIR (BK-20-m, Osman karari 11.10.2026): sonlu kafeste
+    kendiliginden simetri kirilmasi yoktur, h = 0'da isaretli `<m>` dengede
+    sifirdir ve sonlu-boyut analizinin standart duzen parametresi `<|m|>`dir.
+    Panelin `<|m|>` sutunu ve npz'nin `magnetisation` dizisi bu serinin
+    ortalamasidir; alanin isareti (h < 0'da m < 0) orada gorunmez. Gerekce
+    ve deterministik kilit `run_metropolis` dokstringindedir.
+
     `eq=False`: alanlar ndarray tasiyan dataclass'lardir; uretilen `__eq__`
     dizi dondurur ve `__hash__` `TypeError` verir. Depo bu tuzagi
     `engine/hf/integrals.py`, `engine/md/state.py` ve `spin/lattice.py`de
@@ -157,8 +165,11 @@ def _skaler(ad: str, deger: object) -> float:
     coupling/field/temperatures icin `np.True_` -> 1.0, oysa tam sayi
     alanlarinda `np.True_` zaten reddediliyordu); `np.complex128` de bir
     uyariyla gercel kismina iniyordu. Ikisi dtype turunden ('b', 'c')
-    reddedilir. Ayni delik `tb/mermin.py::_skaler`, `md/tb_kuvvet.py::_sayi`
-    ve `md/factory.py`deki Kelvin denetiminde de var; orada DOKUNULMADI.
+    reddedilir. Ayni delik `tb/mermin.py::_skaler`, `md/tb_kuvvet.py::_sayi`,
+    `tb/radyal.py::_sonlu_skaler` ve `md/factory.py`deki Kelvin denetiminde
+    de vardi; grup 6'da (11.10.2026) ayni desenle kapandi. Dordunde de ve
+    burada ACIK kalan: 0 boyutlu nesne dizisi (`np.array(True, dtype=object)`,
+    dtype turu 'O') 1.0 diye gecer (olculdu 11.10.2026; YAML bunu uretmez).
     """
     if (
         isinstance(deger, (str, bytes, bool))
