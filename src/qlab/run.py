@@ -290,7 +290,7 @@ def _run_downfold(scenario: DownfoldScenario, output: str | None) -> int:
     panelin iki farklı şey iddia etmesine yol açtı (bkz.
     `tests/hf/test_hf_scenario.py`); kopya sayısı testle kilitlidir.
     """
-    from qlab.engine.tb.factory import build_downfold
+    from qlab.engine.tb.factory import build_downfold, mesafe_etiketi
 
     parametreler, provenance = build_downfold(scenario)
 
@@ -303,7 +303,7 @@ def _run_downfold(scenario: DownfoldScenario, output: str | None) -> int:
             f"t{m + 1}={t:+.6f}" for m, t in enumerate(p.hoppings)
         )
         print(
-            f"  d={d:.3f} bohr  eps={p.epsilon_bar:+.6f}  "
+            f"  d={mesafe_etiketi(d)} bohr  eps={p.epsilon_bar:+.6f}  "
             f"Delta={p.delta:+.6f}  {hoplamalar}  "
             f"<S^2>={p.s_squared:.6f}  E_UHF={p.energy_uhf:+.6f}"
         )
@@ -321,6 +321,13 @@ def _run_downfold(scenario: DownfoldScenario, output: str | None) -> int:
             energy_uhf=np.array([p.energy_uhf for p in parametreler]),
             staggering_residual=np.array(
                 [p.staggering_residual for p in parametreler]
+            ),
+            # B7dog-3 (11.10.2026): mesafe basina UHF kararlilik hukmu, bool.
+            # True YALNIZ kanitli kararlida (`search_stable is True`); eyer
+            # (False) da olculmemis (None) da False yazilir. Eskiden bu hukum
+            # yalniz `provenance_json`daki arama dizgesinden okunabiliyordu.
+            search_stable=np.array(
+                [p.search_stable is True for p in parametreler], dtype=bool
             ),
             provenance_json=json.dumps(
                 dataclasses.asdict(provenance), ensure_ascii=False

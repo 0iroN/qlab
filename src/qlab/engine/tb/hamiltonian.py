@@ -32,11 +32,62 @@ from qlab.errors import InvalidInputError
 # "metal ✓" basiyordu ve bant genisligi YARIYA iniyordu (3.4 eV, dogrusu
 # 6.8): `eigvalsh` yalniz alt ucgeni okur, eksik es sessizce yok sayilir.
 # OLCULDU: testlerin kurdugu 1904 modelde en buyuk sapma 7.22e-16 (yuvarlama;
-# distance_model'in iki yonu ayri hesaplamasindan), es-eksik 0 -- yani esik
+# distance_model'in iki yonu ayri hesaplamasindan -- H0-1'de, 11.10.2026,
+# kapandi: iki yon artik bit bit ayni), es-eksik 0 -- yani esik
 # 1000 kattan fazla pay birakir. Eleman-basina bagil olcut SECILMEDI: kucuk
 # bir elemanin bagil yuvarlamasi (6e-14) ozdegeri etkilemez, olcege gore
 # sapma etkiler.
+# H0-2 (11.10.2026): ESI HIC YAZILMAMIS sifirdan farkli bir anahtar artik
+# OLCEKTEN BAGIMSIZ reddedilir. Olculdu: R = 0'da 1e11 hartree'lik bir terim
+# olcegi buyutup tek yonlu 0.05 hartree'lik R != 0 hoplamasini tolerans icine
+# aliyordu (kabul, alt bant genisligi 0.1 -> 0.05). Yuvarlama bir esi YOK
+# EDEMEZ (H0-1'den beri `neighbour_shells` iki yonu bit bit ayni hesaplar),
+# yani bu dalda tolerans gereksizdi. Esi VAR ama degeri farkli anahtarda
+# olcek BILINCLI olarak butun anahtarlardir, R = 0 (k'dan bagimsiz) dahil:
+# asimetri delta ise ozdeger hatasi <= delta (Weyl) ve delta <= 1e-12 max|t|,
+# yani hata H olceginin 1e-12'sini asamaz. Olcegi k'ya bagli terimlerle
+# sinirlamak sinifi KAPATMAZDI (dev bir R != 0 terimi ayni isi gorur) --
+# beyan, kapi degil.
 _HERMIT_TOLERANSI = 1e-12
+
+# E4 (11.10.2026): `bloch_hamiltonian` fazi double'da k . kayma olarak kurar
+# (kayma = sum_e c_e a_e; atom gauge'unda + tau_j - tau_i). k ilk Brillouin
+# bolgesinden N ters orgu vektoru oteyse hata N ile DOGRUSAL buyur, ucurum
+# yoktur. OLCULDU (HEAD 80eb21c, kapisiz; tam faz referansi Fraction +
+# Decimal): 2 orbitalli zincirde (k0 = 0.37, a = 2.5) k + N G'nin ozdeger farki
+# N = 1e4 / 1e6 / 1e8 / 1e10 / 1e12'de 1.0e-11 / 5.3e-10 / 5.5e-09 / 1.2e-06 /
+# 2.0e-04 eV; tek orbitalli `_zincir`de (test_hamiltonian) 1e12'de 6.57e-04 eV.
+# Birincil hucreye double'da INDIRGEMEK duzeltmez (ayni zincir, N = 1e12:
+# 2.5e-04 eV): k'nin k . a carpimi ve G ayni mertebede yuvarlanir. Bu yuzden
+# KAPI.
+# OLCU TERIM BASINA VE KARTEZYENDIR (dogrulama turunda duzeltildi, ayni gun):
+# yuvarlama hatasi fazin DEGERIYLE degil, toplanan CARPIMLARIN buyuklugu
+# P_h(k) = sum_x |k_x| M[h, x] ile olceklenir; M[h, x] = sum_e |c_e| |a_e,x|
+# (+ |tau_j,x| + |tau_i,x| atom gauge'unda). Kesin ust sinir |hata| <= 11 u P_h
+# (u = 2^-53; kayma birikimi, atom gauge'unun iki toplamasi ve 3'lu nokta
+# carpimi ~8 u eder). M modelde bir kez kurulur, kapi O(n_hoplama). max_h P_h
+# 8.2e5'i (11 u P = 1e-9 radyan; ozdegerde <= 1e-9 x satir basina sum|t|,
+# Weyl) asan k `InvalidInputError` -- KABUL edilen her k'de her terimin faz
+# hatasi <= 1e-9 rad. Sinir muhafazakardir: bu yorumdaki olcumlerde gercek
+# faz hatasi 11 u P'nin 17-400 kat altinda (2 orbitalli zincirde 1e5 G'de
+# hucre gauge'u P = 6.3e5 kabul, atom gauge'u P = 9.0e5 red).
+# Ilk olcu (k'nin KESIRLI koordinati x max_h sum_e |c_e| [+ taban kolu]) iki
+# DELIK birakiyordu (olculdu, kamu yolu): (1) EGIK taban a2 = (3e4 a, a)'da k
+# 1e5 hucre oteden GECIYORDU -- kesirli koordinat kucuk, ama k_x a_2,x ve
+# k_y a_2,y carpimlari birbirini goturur, hatalari goturmez (faz hatasi
+# 1.5e-06 rad; 11 u P = 4.6e-05); (2) atom gauge'unda duzlem DISI taban farki
+# (tau_z = 0.7, 1B orgu) ile k_z = 1e14 GECIYORDU (ters orgu vektorleri
+# duzlemde, k_z'yi gormez): sessiz 2.3e-03 eV kayma. Terim basina olcu ikisini
+# de reddeder. Kaba Kartezyen sinirin (max|k| sum|c| ||a||_1; N'de KARESEL)
+# kusurunu da tasimaz: indirgenmemis tabanda ilk bolgedeki izgaranin P'si
+# ~4 pi N |c| (N'de DOGRUSAL, gercek hata gibi) -- N = 1000 / 3e4 / 6e4'te
+# 1.2e4 / 3.6e5 / 7.2e5 (kabul; olculen faz hatasi 2.5e-13 / 1.5e-12 /
+# 3.1e-12 rad). Hucre gauge'unda dik k (1B/2B orguda k_z) carpima girmez
+# (kayma_z TAM 0: faz tam, kapi da bakmaz). Ilk bolgede P ~2 pi |c|max (uzun
+# menzilde 1e2-1e3). O kosul gurultusu (E2; 17 derece donuk tabanda N = 3e4'te
+# 1.2e-7 W) KAPIDA DEGIL, `band_edges` kesirli yoldan gider -- beyan.
+_FAZ_HATASI_SINIRI = 1e-9
+_FAZ_OLCEGI_SINIRI = _FAZ_HATASI_SINIRI / (11 * 2.0**-53)
 
 
 @dataclass(frozen=True, eq=False)
@@ -89,14 +140,28 @@ class TBModel:
                     f"hucre bilesenleri tam sayi olmali: cell={list(h.cell)}"
                 )
         self._hermit_kapisi()
+        # E4: faz carpimlarinin terim basina buyuklugu M (`_FAZ_HATASI_SINIRI`
+        # yorumu), bir kez: M[h, x] = sum_e |c_e| |a_e,x|; atom gauge'unda
+        # + |tau_j,x| + |tau_i,x|. Kapi max_h sum_x |k_x| M[h, x]'e bakar.
+        d = self.lattice.dimension
+        hucre = np.array(
+            [[abs(float(h.cell[e])) for e in range(d)] for h in self.hoppings], dtype=float
+        ).reshape(-1, d)
+        m_hucre = hucre @ np.abs(self.lattice.vectors)
+        taban = np.abs(self.lattice.basis)
+        i_ler = np.array([h.i for h in self.hoppings], dtype=int)
+        j_ler = np.array([h.j for h in self.hoppings], dtype=int)
+        m_atom = m_hucre + taban[j_ler] + taban[i_ler]
+        object.__setattr__(self, "_faz_carpimlari", (m_hucre, m_atom))
 
     def _hermit_kapisi(self) -> None:
         """Her (i, j, R) toplami (j, i, -R) toplamina esit olmali (t gercel).
 
         Anahtar yalniz ilk `dimension` hucre bilesenidir -- `bloch_hamiltonian`
         otekilerini okumaz. Ayni (i, j, R) birden cok kez yazilabilir;
-        karsilastirilan TOPLAMDIR. Esi yazilmamis bir anahtarin esi 0 sayilir:
-        tek yonlu SIFIR hoplama H'yi degistirmez ve reddedilmez.
+        karsilastirilan TOPLAMDIR. Esi yazilmamis bir anahtar: toplami TAM 0
+        ise kabul (tek yonlu SIFIR hoplama H'yi degistirmez), degilse olcekten
+        bagimsiz red (H0-2; modul yorumu `_HERMIT_TOLERANSI`).
         """
         d = self.lattice.dimension
         toplam: dict[tuple, float] = {}
@@ -106,7 +171,7 @@ class TBModel:
         olcek = max((abs(t) for t in toplam.values()), default=0.0)
         for (i, j, hucre), t in toplam.items():
             es = toplam.get((j, i, tuple(-c for c in hucre)))
-            if abs(t - (0.0 if es is None else es)) > _HERMIT_TOLERANSI * olcek:
+            if (t != 0.0) if es is None else (abs(t - es) > _HERMIT_TOLERANSI * olcek):
                 raise InvalidInputError(
                     f"hoplama listesi Hermityen degil: (i={i}, j={j}, "
                     f"cell={list(hucre)}) toplami {t!r} hartree, esi (i={j}, j={i}, "
@@ -130,6 +195,21 @@ def bloch_hamiltonian(
     k = np.asarray(k, dtype=float)
     if k.shape != (3,):
         raise InvalidInputError(f"k (3,) olmali, verilen: {k.shape}")
+    if not np.all(np.isfinite(k)):
+        raise InvalidInputError(f"k sonlu olmali: {k}")
+    m_hucre, m_atom = model._faz_carpimlari
+    carpimlar = (m_atom if gauge == "atom" else m_hucre) @ np.abs(k)
+    faz_olcegi = float(np.max(carpimlar, initial=0.0))
+    if not faz_olcegi <= _FAZ_OLCEGI_SINIRI:
+        h = model.hoppings[int(np.argmax(carpimlar))]
+        raise InvalidInputError(
+            f"k cok buyuk: faz carpimlarinin buyuklugu max_h sum_x |k_x| M[h, x] = "
+            f"{faz_olcegi:.3e} > {_FAZ_OLCEGI_SINIRI:.3e} (en buyugu i={h.i}, j={h.j}, "
+            f"cell={list(h.cell)}, gauge={gauge!r}); double faz hatasi "
+            f"{_FAZ_HATASI_SINIRI:g} rad'i asabilir ve ozdeger SESSIZCE kayardi (E4). "
+            "Birincil hucreye double'da indirgemek de kurtarmaz: k'yi ilk Brillouin "
+            "bolgesinde ve orgu vektorlerini indirgenmis (kisa) verin."
+        )
 
     n = model.n_orbital
     H = np.zeros((n, n), dtype=complex)

@@ -1253,8 +1253,9 @@ def test_CLI_UCTAN_UCA(tmp_path):
     # Sayı tablosu: None ile 0.0 AYRI basılıyor; iki taban iki satır.
     assert "hf -> md    None" in sonuc.stdout
     assert "tb -> spin  0.000000e+00" in sonuc.stdout
-    assert "hf -> tb    2.276006e-15" in sonuc.stdout
-    assert sonuc.stdout.count("None") == 9  # tdse-md, hf-spin (27.09), tdse-spin (28.09) SAYI tasiyor
+    # E6 (11.10.2026): `hf -> tb` 2.276e-15 bir toplama-sirasi kaydi -> None (K3).
+    assert "hf -> tb    None" in sonuc.stdout and "2.276006e-15" not in sonuc.stdout
+    assert sonuc.stdout.count("None") == 10  # tdse-md, hf-spin (27.09), tdse-spin (28.09) SAYI tasiyor
     assert "hf -> spin  0.000000e+00" in sonuc.stdout and "tdse -> spin  0.000000e+00" in sonuc.stdout
     assert "taban A1 aritmetik" in sonuc.stdout and "taban A2 hata-cubugu" in sonuc.stdout
     assert "TABLO ≠ KOD" not in sonuc.stdout
@@ -1264,8 +1265,8 @@ def test_CLI_UCTAN_UCA(tmp_path):
 
     with np.load(cikti, allow_pickle=False) as veri:
         assert list(veri["kova"]) == [f.kova for f in KOVA_TABLOSU]
-        assert int(veri["magnitude_is_none"].sum()) == 9  # 28.09: tdse-spin 0.0 tasir
-        assert int(np.isfinite(veri["magnitude"]).sum()) == 12
+        assert int(veri["magnitude_is_none"].sum()) == 10  # 28.09: tdse-spin 0.0 tasir; 11.10: hf-tb None (E6)
+        assert int(np.isfinite(veri["magnitude"]).sum()) == 11
         assert np.all(np.isnan(veri["magnitude"][veri["magnitude_is_none"]]))
         # KONUMSAL DEGIL ADLA. `index("TAUTOLOJI") + 1` bugun tb -> spin'e denk
         # geliyor ama bu bir RASTLANTIDIR. OLCULDU (22.09.2026): tabloda DORT

@@ -37,7 +37,7 @@ from qlab.engine.tb.downfold import (
     downfold_uhf,
     hydrogen_ring,
 )
-from qlab.engine.tb.factory import build_downfold
+from qlab.engine.tb.factory import build_downfold, mesafe_etiketi
 from qlab.errors import ScenarioError, UnsupportedSystemError
 from qlab.scenario.loader import load_scenario
 from qlab.scenario.schema import DownfoldScenario
@@ -614,7 +614,8 @@ def test_ARAMA_SATIRI_her_MESAFE_icin_konusuyor():
         assert arama == f"{len(parametreler)} mesafenin hepsinde: {satirlar[0]}"
     else:
         for d, s in zip(UCUZ.distances_bohr, satirlar):
-            assert f"d={d:.3f}: {s}" in arama
+            # Etiket `mesafe_etiketi` (B7dog-4): yakin mesafeler ayri etiket alir.
+            assert f"d={mesafe_etiketi(d)}: {s}" in arama
 
 
 @pytest.mark.slow

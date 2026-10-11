@@ -251,12 +251,13 @@ def build_downfold(
     # verirse tek satir yazilir; vermezse HEPSI mesafesiyle birlikte yazilir.
     # "Ilkini yaz" secenegi REDDEDILDI: bir kosumun ozeti otekilerin adina
     # konusamaz, ve bu modulun butun sayilari bir ARAMA protokolunden gelir.
+    # Etiket `mesafe_etiketi`dir: ayri mesafeler AYRI etiket alir (B7dog-4).
     satirlar = tuple(p.search_line for p in parametreler)
     if len(set(satirlar)) == 1:
         arama = f"{len(parametreler)} mesafenin hepsinde: {satirlar[0]}"
     else:
         arama = "; ".join(
-            f"d={d:.3f}: {s}"
+            f"d={mesafe_etiketi(d)}: {s}"
             for d, s in zip(scenario.distances_bohr, satirlar)
         )
 
@@ -302,7 +303,7 @@ def _delta_kapisi_tanisi(
         return None
 
     def _olcu(d: float, p: DownfoldedParameters) -> str:
-        return f"d={d:.3f}: |Delta|={abs(p.delta):.3e}, <S^2>={p.s_squared:.3e}"
+        return f"d={mesafe_etiketi(d)}: |Delta|={abs(p.delta):.3e}, <S^2>={p.s_squared:.3e}"
 
     rhf = [_olcu(d, p) for d, p in kirilmamis if abs(p.s_squared) < RHF_LIMITI_S2_SINIRI]
     kirik = [
@@ -322,3 +323,21 @@ def _delta_kapisi_tanisi(
         + f" -- spin kirilmasi esigi |Delta| >= {SPIN_KIRIK_ESIGI:.1e} hartree; "
         "bu mesafelerde iki-siteli AF hucre indirgenmedi"
     )
+
+
+def mesafe_etiketi(d: float) -> str:
+    """Panelin mesafe etiketi (bohr): uc ondalik, YETMEZSE tam `repr`.
+
+    B7dog-4 (11.10.2026): etiket eskiden `f"{d:.3f}"`ti ve yakin mesafeler
+    AYNI etiketi basiyordu -- olculdu, kamu CLI: N=6, (2.2340, 2.23401, 2.5),
+    seeds 1 -> arama satirinda "d=2.234:" iki kez, tablo satirinda
+    "d=2.234 bohr" iki kez; iki AYRI aramanin ozeti ayni adla yazilinca hangi
+    mesafeye ait oldugu okunamaz. Kural: uc ondalik `d`yi TAM geri veriyorsa
+    o (sevk edilen ve depodaki butun senaryolar bu daldadir, etiketleri
+    degismez), vermiyorsa en kisa geri-donuslu `repr`. Bu esleme BIREBIRDIR:
+    iki etiket ayniysa `float(etiket)` iki mesafeyi de verir, yani mesafeler
+    aynidir (yukleyici tekrarlanan mesafeyi zaten reddeder).
+    """
+    d = float(d)
+    kisa = f"{d:.3f}"
+    return kisa if float(kisa) == d else repr(d)

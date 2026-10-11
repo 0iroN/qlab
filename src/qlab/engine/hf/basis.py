@@ -131,8 +131,12 @@ def build_basis(molecule: Molecule, name: str) -> list[BasisFunction]:
     fonksiyonlar: list[BasisFunction] = []
     for atom_index, atom in enumerate(molecule.atoms):
         if atom.symbol not in veri:
+            # K3 (11.10.2026): mesaj o bazin element listesini tasir; eskiden
+            # listesizdi ve tek liste `types.Atom`un "taninan" tablosuydu
+            # (Be, B, Ne orada var, hicbir bazda verileri yok).
             raise BasisNotAvailableError(
-                f"{atom.symbol!r} elementi icin {name!r} baz setinde veri yok"
+                f"{atom.symbol!r} elementi icin {name!r} baz setinde veri yok; "
+                f"bu bazda veri olan elementler: {sorted(veri)}"
             )
         for kabuk in veri[atom.symbol]:
             angular_momentum = kabuk["angular_momentum"]

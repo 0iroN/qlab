@@ -727,7 +727,7 @@ def _ikinci_varis(
 ) -> float:
     """GELEN kaydinda ana darbe BITTIKTEN SONRA kalanin SPEKTRAL agirligi.
 
-    c = |F(gelen[i:])| / |F(gelen[:i])|; F, `window_fn` penceresiyle tam
+    c = |F(gelen[i:])| / |F(gelen[:i])|; F, PENCERESIZ (dikdortgen) tam
     f = 1/lam'daki DTFT (FFT binine ozdes, bkz. `_spektrum`), i ana darbenin
     son ornegi: darbe prob'a `t_dir = t0 + |prob - kaynak| / vx`te varir ve
     `t_dir + 5 sg`de biter (`_record_steps`in zamanlariyla AYNI: surekli
@@ -739,6 +739,12 @@ def _ikinci_varis(
     1'de KIRPILIR (`echo_gate` = 1 her kaydi kabul etsin: kapi kapali =
     eski alet). Kayit sifirsa ya da i kaydin disindaysa 0; ana darbenin
     agirligi sifirsa 1 doner.
+    PENCERE YOK (RC-f, 11.10.2026): `reflection_coefficient` dikdortgen
+    disini kosumdan ONCE reddettigi (RC-d) icin buraya yalniz dikdortgen
+    ulasiyordu ve `window_fn` carpani `np.ones` idi; carpan kaldirildi.
+    1.0 ile carpma tam oldugundan kamu yolu BIT BIT aynidir (olculdu: 121
+    cagri, `reflection_coefficient` / `tir_phase_difference` /
+    `tir_phase_ladder`).
     """
     n = gelen.shape[-1]
     if n == 0 or not np.any(gelen):
@@ -750,7 +756,7 @@ def _ikinci_varis(
     if i >= n:
         return 0.0
     faz = np.exp(-2j * np.pi * (window.courant / wavelength) * np.arange(n))
-    s = gelen * _FFT_PENCERELERI[window.window_fn](n) * faz
+    s = gelen * faz
     ana = abs(complex(np.sum(s[:i])))
     if ana == 0.0:
         return 1.0
@@ -763,13 +769,6 @@ def _spektrum(seri: np.ndarray, courant: float, f: float) -> tuple[complex, floa
     fr = np.fft.fftfreq(len(seri), d=courant)
     i = int(np.argmin(np.abs(fr - f)))
     return complex(F[i]), float(fr[i])
-
-
-_FFT_PENCERELERI = {
-    "dikdortgen": np.ones,
-    "hann": np.hanning,
-    "blackman": np.blackman,
-}
 
 
 def _kosum(
@@ -1132,10 +1131,10 @@ def reflection_coefficient(
     if yanki > w.echo_gate:
         return None
 
-    pen = _FFT_PENCERELERI[w.window_fn](steps)
+    # Pencere carpani YOK (RC-f): yalniz dikdortgen buraya ulasir (yukaridaki ret).
     f = 1.0 / wavelength
-    Fi, f_bin = _spektrum(gelen * pen, w.courant, f)
-    Fr, _ = _spektrum(yansiyan * pen, w.courant, f)
+    Fi, f_bin = _spektrum(gelen, w.courant, f)
+    Fr, _ = _spektrum(yansiyan, w.courant, f)
     if abs(f_bin * wavelength - 1.0) > 1e-9 or Fi == 0:
         return None
     rho = Fr / Fi

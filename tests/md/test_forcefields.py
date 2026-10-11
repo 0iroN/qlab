@@ -22,6 +22,8 @@ from qlab.engine.md.forcefields import Harmonic, LennardJones, Morse
 from qlab.errors import InvalidInputError
 from qlab.units import HARTREE_TO_WAVENUMBER
 
+from .h2_morse_sabitleri import H2_A, H2_DE, H2_MU, H2_RE
+
 
 def _sayisal_kuvvet(alan, konumlar: np.ndarray, h: float = 1e-6) -> np.ndarray:
     """-dV/dx, merkezi fark. Kuvvet/potansiyel tutarsızlığı klasik bir hatadır."""
@@ -105,11 +107,9 @@ def test_harmonik_gecersiz_yay_sabitini_reddediyor():
         with pytest.raises(InvalidInputError, match="yay sabiti"):
             Harmonic(k=kotu, center=np.zeros((1, 3)))
 
-#: H2, Huber & Herzberg 1979 / NIST WebBook (tasarım §4.2).
-H2_DE = 0.174434333      # hartree (4.7466 eV)
-H2_RE = 1.401118538      # bohr (0.74144 A)
-H2_A = 1.028997701       # bohr^-1, a = omega_e*sqrt(mu/(2*De))
-H2_MU = 918.576324       # m_e
+#: H2 Morse sabitleri (Huber & Herzberg 1979 / NIST WebBook, tasarım §4.2)
+#: `h2_morse_sabitleri.py`den okunur (C6: eskiden burada ve
+#: `test_dissociation.py`de iki ayrı literal kopyaydı).
 
 
 def test_morse_denge_uzunlugunda_enerji_ve_kuvvet_sifir():

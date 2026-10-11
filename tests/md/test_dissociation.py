@@ -15,10 +15,8 @@ from qlab.engine.md.forcefields import Morse
 from qlab.engine.md.integrator import run
 from qlab.engine.md.state import MDState
 
-H2_DE = 0.174434333
-H2_RE = 1.401118538
-H2_A = 1.028997701
-H2_MU = 918.576324
+from .h2_morse_sabitleri import H2_A, H2_DE, H2_MU, H2_RE
+
 M_H = 1837.152647
 T0 = 313.322876909  # küçük genlik periyodu, atomik zaman birimi
 

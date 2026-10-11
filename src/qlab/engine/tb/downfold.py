@@ -522,6 +522,18 @@ def fit_distance_laws(
     SPIN-KIRIK REJIM SARTTIR: Delta = 0 iken ln|Delta| tanimsizdir. Gecisin
     altindaki bir pencere sessizce -inf uretir; burada `UnsupportedSystemError`
     firlatilir.
+
+    KARARLILIK SARTTIR (B7-d, 11.10.2026): her mesafede donen UHF cozumu
+    UHF-kararli olmalidir (`search_stable is True`); EYER donen bir mesafe
+    yasaya GIRMEZ ve `UnsupportedSystemError` firlatilir. Neden: Delta esigi
+    yalniz Delta = 0 eyerlerini yakalar; spin-KIRIK bir eyer onu gecer.
+    OLCULDU (kamu yolu, varsayilan OpenBLAS): N=6, pencere (Rc + 1e-5, 2.6,
+    3.0) bohr, seeds = 2 -- ilk mesafede eyer (lambda_min -7.184e-06, |Delta|
+    2.127e-04) ve bu kapi yokken yasa HATASIZ donuyordu: delta_growth 9.40
+    bohr^-1, ln|Delta| artigi 1.677 RMS. Ayni pencerede `build_downfold`
+    `converged = False` verir (B7-c); kutuphane API'si artik ayni hukmu verir. Hangi
+    durumun Rc yakininda dondugu BLAS cekirdegine baglidir (`SPIN_KIRIK_ESIGI`
+    notu), bu yuzden kapinin testi SCF'sizdir.
     """
     if len(distances) < 3:
         raise InvalidInputError(
@@ -542,6 +554,19 @@ def fit_distance_laws(
         )
         for x in d
     ]
+
+    eyerler = [
+        f"d={x!r}: {p.search_line}"
+        for x, p in zip(d.tolist(), parametreler)
+        if p.search_stable is not True
+    ]
+    if eyerler:
+        raise UnsupportedSystemError(
+            f"pencerede UHF-kararli OLMAYAN mesafe var ({len(eyerler)}/{len(d)}): "
+            + "; ".join(eyerler)
+            + ". Eyer bir minimum degildir; parametreleri mesafe yasasina "
+            "GIRMEZ (B7-d). Baska bir pencere ya da daha cok tohum deneyin."
+        )
 
     t_prefactors: list[float] = []
     t_decays: list[float] = []

@@ -496,7 +496,12 @@ python -m qlab.run scenarios/halka_indirgeme.yaml -o indirgeme.npz
 ```
 
 Çıktı `.npz`'si `distances_bohr`, `epsilon_bar`, `delta`, `hoppings`,
-`s_squared`, `energy_uhf`, `staggering_residual` ve `provenance_json` taşır.
+`s_squared`, `energy_uhf`, `staggering_residual`, `search_stable` ve
+`provenance_json` taşır (`search_stable`, 11.10.2026, B7dog-3: mesafe başına
+bool — True yalnız dönen UHF çözümü kanıtlı YEREL minimumsa; eyer False).
+Panel ve tanı satırları mesafeyi üç ondalıkla yazar, üç ondalık mesafeyi tam
+geri vermiyorsa tam değerle (B7dog-4: `2.234` ile `2.23401` eskiden ikisi de
+`d=2.234` basılıyordu).
 Panelin `Yakınsama` satırı burada "SCF durdu" demez — modelin varsaydığı
 iki-siteli antiferromanyetik yapının her mesafede gerçekten bulunduğunu ve
 her mesafede dönen UHF çözümünün bir UHF **YEREL** minimumu olduğunu söyler
@@ -574,7 +579,12 @@ python -m qlab.run scenarios/kopru_haritasi.yaml -o kopru.npz
 `converged` ve `provenance_json` taşır. **`magnitude` `nan` taşıdığında yanında
 `magnitude_is_none` maskesi vardır** — ölçülmemiş bir büyüklük (`None`) ile
 bit bit sıfır ölçülmüş bir büyüklük (`tb → spin`, `0.0`) aynı değerle
-gösterilemez. Senaryo bir tablo taşımaz: tablo koddan gelir, YAML yalnız kenar
+gösterilemez. 11.10.2026'dan beri (E6) `hf → tb` de `None` taşır: eskiden
+sevk ettiği 2.276e-15 (bağıl özdeşlik artığı) bir **toplama-sırası kaydıdır**
+— aynı kabuk elemanları başka sırayla ortalanınca sayı değişir (ölçüldü, bu
+makine: ters sıra 2.113e-15, 50 rastgele sıra 3 ayrı değer) — ve K3 kuralı
+`tdse → tb`nin 7.03e-16'sını aynı gerekçeyle taşımamıştı; sayı gerekçede kayıt
+olarak durur. Senaryo bir tablo taşımaz: tablo koddan gelir, YAML yalnız kenar
 tabanının **penceresini** (`n_bolme`, `periyot_sayisi`, `genlikler`, `a_ikiz`)
 taşır ve hepsi zorunludur; `a` (A1'in fizik-kapatma merdiveni) bir anahtar
 **değildir**. Panel on satır basar; `Yakınsama` burada "hesap bitti" değil,
@@ -1348,7 +1358,7 @@ yasalar seçildi, yasadan geri okunan bağ, genlik ve eşik fizik iddiası deği
 |---|---|---|
 | KE + Ω salınımı O(dt²) | N = 16, a = 2, L = 32, n_e = 16, kT = 0.002, x'te gevşetilmiş Peierls minimumu + 100 K x-hızları (tohum 7), ω_max·dt ∈ {0.2, 0.1, 0.05}, 1.5 T_min | oranlar **4.016312** ve **4.000702**, tolerans 4 ± 0.1 |
 | KE + E korunmuyor, kT·ΔS'de doyuyor | aynı zincir düzgün, **metalik kT = 0.02** (M11 penceresinde kT·ptp(S) yalnız 2.6e-08 ve E ile Ω ayırt edilemiyor) | tt(KE+Ω) oranları **4.0178 / 4.0044**, tt(KE+E) oranları **1.0881 / 1.0215**; ω_max·dt = 0.05'te tt(KE+E)/(kT·ptp S) = **1.0072** |
-| Kelvin tuzağı | zincir(16, 2, 0.05, 3), n_e = 16, L = 32, yalnız bant | max\|F\| kT = 0.002'de **1.054e-01**, kT = 300 "hartree"de **2.803e-05** (3759 kat, sessizce) — sınıf kT ≥ 1 hartree'yi reddeder; 1 K altındaki bir Kelvin sayısı ve ters tuzak yakalanmaz (beyanlı) |
+| Kelvin tuzağı | zincir(16, 2, 0.05, 3), n_e = 16, L = 32, yalnız bant | max\|F\| kT = 0.002'de **1.054e-01**, kT = 300 "hartree"de **2.803e-05** (3759 kat, sessizce) — sınıf kT ≥ 1 hartree'yi reddeder; 1 K altındaki bir Kelvin sayısı ve ters tuzak yakalanmaz (beyanlı; D1, 11.10.2026: kapı daraltılmadı — bastırma kT/\|genlik\|'e bağlı, F(kT = \|g\|)/F(kT = 1e-3\|g\|) g = 0.01 / 0.1 / 1.0'da hep 0.51336) |
 | HF'e dokunmuyor | alt süreçte yalnız `import qlab.engine.md.tb_kuvvet`; fabrikadan kurulan TB alanında 20 adım NVE | yüklenen hf modülü **0**; `hf.scf.solve` çağrısı **0** (pozitif kontrol: aynı sayaçla HF alanında 1 adım **14**) |
 | Sürüklenme hükmü enerjinin sıfırından bağımsız | zincir(16, 2, 0.05, 3), 631.6 K, L = 32, dt = 15, 267 adım; Ω + c (D2'den önce dt = 20, 200 adım: orada S 4.138e-02, eşiğin yalnız 1.2 katı altı) | eski ölçüt (\|blok[0]\|'a bölen) c = 0'da **1.09e-05** ✓, c = −Ω₀'da **5.35e-02** ✗ (dt = 20'de 3.26e-05 / 9.13e-02); TB ölçütü (max KE'ye bölen) c boyunca bağıl **≤ 5.1e-11**, S **≤ 2.9e-13** aynı; S **2.297e-02** ✓ |
 | Eşik TB'ye özgü sürüklenmeyi yakalıyor | aynı zincir, n_e = 15, v₀ = 0, dt = 10, 400 adım | T_e = 3.16 K'de **5.48e-02** ✗ (Fermi seviyesindeki geçiş adımda çözülmüyor), 631.6 K'de **5.97e-04** ✓; eşik **1e-02**. D2'den beri 3.16 K'de S de ✗ (7.30e-02); test sürüklenme hükmünü S'den ayrı okur |
@@ -1768,7 +1778,7 @@ ve kanıt `tb_obs.fermi_level` dokstringindedir.
 yazılmış bir zincir rc=0 ile "metal ✓" basıyor ve bant genişliği yarıya
 iniyordu (3.4 eV, doğrusu 6.8), çünkü `eigvalsh` yalnız alt üçgeni okur.
 `TBModel` artık bunu reddediyor. Tolerans ölçeğe göre 1e-12; testlerin
-kurduğu 1904 modelde en büyük yuvarlama sapması 7.22e-16.
+kurduğu 1904 modelde en büyük yuvarlama sapması 7.22e-16 — kaynağı `neighbour_shells`in (i, j, R) ve (j, i, −R) mesafesini 1 ulp ayrı hesaplamasıydı, 11.10.2026'da kapandı (H0-1: iki yön bit bit aynı; eskiden kesme o pencereye düşünce `uniform_model` kendi listesini reddedip suçu kullanıcıya yüklüyordu). Eşi hiç yazılmamış sıfırdan farklı hoplama artık ölçekten bağımsız reddedilir (H0-2: R = 0'da 1e11 hartree'lik terim tek yönlü 0.05'lik hoplamayı kabul ettirip bant genişliğini yarıya indiriyordu); eşi olup değeri farklı olanda ölçek bilinçli olarak bütün terimlerdir (özdeğer hatası ≤ asimetri ≤ 1e-12·max|t|).
 
 #### Tautoloji-çıpa — bu depoda üçüncü kez
 
@@ -1910,8 +1920,24 @@ bulunması gerektiğini söylüyor, kod **denetliyor** (`must_include`).
   (`isosurface` muaf, muafiyet tek kenar: `density_frames → isosurface`).
   (`engine` tarafındaki `matplotlib` kaçış deliği ise bu modülde kapatıldı:
   enjeksiyon artık rc=1 veriyor ve taranan dosya 67 → 68'e çıkıyor.)
-- **Büyük k'de argument reduction sessizce bozuluyor:** k + 1e12·G →
-  özdeğer farkı 2.387652e-03 eV mertebesinde, hiçbir uyarı yok.
+- **Büyük k'de faz hassasiyeti — 11.10.2026'dan beri KAPI (E4):**
+  `bloch_hamiltonian` fazı double'da k·R olarak kurar; hata k'nin ilk
+  bölgeden uzaklığıyla doğrusal büyür, uçurum yok (ölçüldü, HEAD 80eb21c,
+  tam faz referansına karşı: iki orbitalli zincirde k + N·G,
+  N = 1e4/1e6/1e8/1e10/1e12 → 1.0e-11/5.3e-10/5.5e-09/1.2e-06/2.0e-04 eV;
+  tek orbitalli test zincirinde 1e12'de 6.57e-04 eV — eski beyanın sayısı
+  bu makinede yeniden üretilemedi). Birincil hücreye double'da indirgemek
+  kurtarmaz (ölçüldü 2.5e-04 eV). Kapı terim başına Kartezyen çarpım
+  büyüklüğüne bakar: P = max_h Σ_x |k_x|·M[h, x], M[h, x] = Σ_e |c_e|·|a_e,x|
+  (atom gauge'unda + |τ_j,x| + |τ_i,x|); 11·u·P (u = 2⁻⁵³) faz hatasının
+  kesin üst sınırıdır ve 1e-9 rad'ı aşan k artık `InvalidInputError` —
+  kabul edilen her k'de her terimin faz hatası ≤ 1e-9 rad (bu ölçümlerde
+  gerçek hata sınırın 17–400 kat altında). İlk ölçü (k'nin kesirli
+  koordinatı) iki delik bırakıyordu, ikisi de kapandı: eğik taban
+  a2 = (3e4·a, a)'da 1e5 hücre öteki k (faz hatası 1.5e-06 rad) ve atom
+  gauge'unda düzlem dışı taban farkıyla k_z = 1e14 (sessiz 2.3e-03 eV
+  kayma). İndirgenmemiş taban ilk bölgede kapıya takılmaz (P ≈ 4πN|c|;
+  N = 3e4'te 3.6e5 < 8.2e5).
 - **Bu ULP sayıları taşınabilir değildir** — tek makine, tek yığın
   (Python 3.14.7, numpy 2.5.1, scipy 1.18.0, Windows 11).
 
@@ -1997,8 +2023,7 @@ Ayrıca (24.09.2026, bulgu düzeltme turu):
   altındayken (boşluk/kT ≳ 70) fiziksel kanonik kökten kT'nin bir kesri kadar
   sapar (ölçüldü: en çok 0.394 kT; Ω, F ve n etkilenmez). Log uzayında kök adımı
   yazılmadı.
-- `mermin_dolum` çok büyük kT'de nan döner (kT = 1e308 ölçüldü; fizik penceresi
-  dışı, kapı yok).
+- `mermin_dolum` çok büyük kT'de (μ parantezi taşınca) artık `InvalidInputError` verir (D16, 11.10.2026); eskiden kT = 1e308'de sessizce nan dönüyordu. 6.5e307 hâlâ sonlu ve doğru (f = 1/2, S = 8 ln 2).
 
 ### Modül 3H — UHF indirgemesi / downfolding (Plan H)
 
@@ -2331,7 +2356,14 @@ durum 9.3066e-05 (N6, Rc + 1e-7) — eşik birincinin 4.08 katı, ikincinin 3.72
 biri. Gri bölgeler (Rc'nin hemen üstünde ≲ 3e-9 bohr, altında ≲ 6e-7 bohr
 dış-değerleme) sabitin yanında yazılıdır. Aynı sabit `fit_distance_laws`ın
 "spin-KIRILMAMIŞ nokta" kapısıdır (eskiden 1e-7'ydi ve Rc'ye yakın gürültüyü
-geçirirdi).
+geçirirdi). **`fit_distance_laws` eyeri de reddeder (B7-d, 11.10.2026):** Δ
+kapısı yalnız Δ = 0 eyerlerini yakalar; spin-kırık bir eyer onu geçer ve
+yasaya giriyordu (ölçüldü, kamu API'si, varsayılan OpenBLAS: N = 6, pencere
+(Rc + 1e-5, 2.6, 3.0), seeds 2 — ilk mesafede λ −7.184e-06, |Δ| 2.127e-04;
+yasa hatasız dönüyordu, `delta_growth` 9.40, ln|Δ| artığı 1.677 RMS). Artık
+her mesafede `search_stable is True` istenir, yoksa `UnsupportedSystemError`
+(panelin B7-c hükmüyle aynı; kapı testi SCF'siz, çünkü Rc yakınında dönen durum
+BLAS çekirdeğine bağlı).
 
 Beyan metninin **tek kaynağı** `engine/tb/factory.py`dir ve bu bir disiplin
 değil bir **test**tir: her beyan cümlesi `src/` ağacında tam bir kez geçer;
@@ -3241,6 +3273,11 @@ edilince sınanabilir hâle gelen iddialardı**:
     aynalı, `tir_phase_ladder`; ret koşumdan önce) ve gerekçe testi (iç
     koşum çifti kamu yolunun sayısına bit bit eşit; hann/blackman hataları
     ve mekanizma oranı); dosyanın hızlı şeridi 19 → 40 test.
+  - RC-f (11.10.2026): yankı kapısının iç ölçütü (`_ikinci_varis`) ve
+    oranın spektrumları artık pencere çarpanı taşımaz — kamu yolundan
+    yalnız dikdörtgen geliyordu ve çarpan `np.ones`tu; 121 kamu çağrısında
+    (`reflection_coefficient` / `tir_phase_difference` / `tir_phase_ladder`)
+    sonuç öncesiyle bit bit aynı.
 - **`-m "not slow"` koşumunda modülün doğa çıpalarının TAMAMI atlanıyor.**
   İşaret fixture yüzünden geniş (Bessel tarafında `kayitlar`ı tüketen 11
   test), ve Rayleigh/yarık tarafı da `slow`. G7 (09.10.2026) hızlı şeride

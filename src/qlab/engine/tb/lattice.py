@@ -230,7 +230,16 @@ def neighbour_shells(
             kayma = kayma + hucre[eksen] * lattice.vectors[eksen]
         for i in range(lattice.n_atom):
             for j in range(lattice.n_atom):
-                fark = lattice.basis[j] + kayma - lattice.basis[i]
+                # (tau_j - tau_i) + kayma: (j, i, -R)'nin farki bunun TAM
+                # negatifidir (IEEE yuvarlamasi isarete simetrik; -R'nin kaymasi
+                # da tam -kayma), yani iki yonun mesafesi BIT BIT ayni ve kesme
+                # karari ortak. H0-1 (11.10.2026, olculdu): eski sira
+                # (tau_j + kayma - tau_i) iki yonu 1 ulp ayri hesapliyordu ve
+                # kesme o pencereye dusunce `uniform_model` tek yonlu liste kurup
+                # H0 kapisinda "her hoplama iki yonde yazilmali" diye KULLANICIYI
+                # suclayan hatayi veriyordu (rastgele 2B iki atomlu 200 orguden
+                # 146'sinda asimetrik cift; 1 ulp kesmesinde 292/292 hata).
+                fark = (lattice.basis[j] - lattice.basis[i]) + kayma
                 mesafe = float(np.linalg.norm(fark))
                 if mesafe <= _CAKISMA_ESIGI_BOHR:
                     if i == j and not any(hucre):

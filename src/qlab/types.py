@@ -29,10 +29,16 @@ class Atom:
     position: np.ndarray
 
     def __post_init__(self) -> None:
+        # K3 (11.10.2026): liste "Desteklenenler" DEGIL "Taninan elementler"dir.
+        # Bu tablo yalniz atom numarasini bilir; Be, B ve Ne'nin hicbir bazda
+        # verisi yok (kamu CLI: BasisNotAvailableError). Baz verisini bilen
+        # katman `engine/hf/basis.build_basis`tir ve listesini KENDISI basar.
         if self.symbol not in ATOMIC_NUMBERS:
             raise InvalidInputError(
                 f"Bilinmeyen element: {self.symbol!r}. "
-                f"Desteklenenler: {sorted(ATOMIC_NUMBERS)}"
+                f"Taninan elementler (atom numarasi tablosu): {sorted(ATOMIC_NUMBERS)}. "
+                "Taninmak HF destegi DEGILDIR: baz verisi elemente ve baza gore "
+                "ayrica gerekir (yoksa BasisNotAvailableError o bazin listesini verir)."
             )
         if np.shape(self.position) != (3,):
             raise InvalidInputError(

@@ -43,7 +43,16 @@ max|F| kT = 0.002'de 1.054e-01, kT = 300'de 2.803e-05 (3759 kat). Savunma:
 kT_hartree >= 1 hartree (315775 K) reddedilir. Kelvin cinsinden 1 K ve
 ustu her sicaklik hartree yerine yazilinca bu kapiya takilir; 1 K'in altindaki
 bir Kelvin sayisi (ornegin 0.5) ve ters tuzak (hartree sayisini Kelvin diye
-yazmak: 0.002 K = 6.3e-09 hartree) YAKALANMAZ -- beyan.
+yazmak: 0.002 K = 6.3e-09 hartree) YAKALANMAZ -- beyan. KAPI DARALTILMADI
+(D1, 11.10.2026, olculdu): bant kuvvetinin kT ile bastirilmasi kT'ye degil
+kT/|genlik|'e baglidir -- ayni zincir, itme 0, hoplama genligi -0.01 / -0.1 /
+-1.0 hartree: max|F|(kT = |genlik|) / max|F|(kT = 1e-3 |genlik|) UCUNDE DE
+0.51336 (`tests/tb/test_dusuk_tb_kapilari.py` olcek degismezligini kilitler).
+Genlik SECIMDIR (B4): sabit bir hartree esigi
+Kelvin sayisini sicak elektron gazindan ayiramaz; 0.1'e daraltilan kapi genlik
+-1.0'in hala soguk kT = 0.1-0.99'unu (F orani 0.80-0.51) reddederdi. Ters
+tuzagin 6.3e-09 hartree'si gecerli bir smearing'dir. Ikisini de ancak birimli
+bir sarmalayici yakalar -- yapilmadi.
 
 PERIYODIK KUTU (spec B5). `kutu_x_bohr` verilirse yalniz x ekseni periyodik
 (en-yakin-goruntu), y ve z acik; 2 max(r_cut) < L kesin kosuldur ve kurulusta
@@ -116,7 +125,17 @@ _KELVIN_TUZAGI_HARTREE = 1.0
 
 
 def _sayi(ad: str, deger: object) -> float:
-    """Tek bir sonlu gercel sayi (bool ve dizge DEGIL); aksi halde hata."""
+    """Tek bir sonlu gercel sayi (bool ve dizge DEGIL); aksi halde hata.
+
+    `tb/mermin.py::_skaler`in BILINCLI KOPYASI (D17, 11.10.2026). Oradan
+    import EDILMEZ: bu dosyanin mermin importu yalniz hesap cagrisini tasir ve
+    kopru testinin pozitif kontrolu (`tests/bridge/test_kenar_tarayici.py`)
+    o satir silinince NameError'in `tek_orbital_mermin`den geldigini kilitler.
+    `_skaler`i ayni satirdan almak kenari kurulus dogrulamasina da tasir --
+    olculdu: tekillestiren yamada o test kirmizi. Ikizlik
+    `tests/tb/test_dusuk_tb_kapilari.py`de `ast` ile kilitli (biri degisip
+    oteki degismezse kirmizi).
+    """
     if isinstance(deger, (str, bytes, bool)) or np.ndim(deger) != 0:
         raise InvalidInputError(f"{ad} tek bir sayi olmali: {deger!r}")
     try:

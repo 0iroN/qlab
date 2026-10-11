@@ -156,7 +156,10 @@ _PARANTEZ_TAVANI = 2200
 
 
 def _skaler(ad: str, deger: object) -> float:
-    """Tek bir sonlu gercel sayi; aksi halde `InvalidInputError`."""
+    """Tek bir sonlu gercel sayi; aksi halde `InvalidInputError`.
+
+    Bilincli ikizi `md/tb_kuvvet.py::_sayi` (D17; gerekce orada, ikizlik testle kilitli).
+    """
     if isinstance(deger, (str, bytes, bool)) or np.ndim(deger) != 0:
         raise InvalidInputError(f"{ad} tek bir sayi olmali: {deger!r}")
     try:
@@ -250,13 +253,21 @@ def _fermi(eps: np.ndarray, n_elektron: float, kT: float) -> MerminDolum:
     # Tavan (~2100 katlama: 5e-324'ten 1.8e308'e) asilirsa girdi gecersiz
     # sayilir. OLCULDU: `mermin_dolum`un n-araligi ya da eps-sonluluk
     # kapisi kaldirilinca sinirsiz dongu SONSUZA gidiyordu (300 s zaman
-    # asimi); tavan ikinci bir kapidir. SINANMADI: adimin tasip sonsuz
-    # oldugu yol (buyuk kT); kT = 1e308'de dolum nan donuyor (olculdu,
-    # acik kalan).
+    # asimi); tavan ikinci bir kapidir. TASMA KAPISI (D16, 11.10.2026):
+    # sinir sonsuza tasarsa (buyuk kT: kT y > 1.8e308) girdi gecersizdir.
+    # Eskiden mu = -inf/+inf parantezinin ortasi nan'di ve dolum SESSIZCE
+    # nan donuyordu (olculdu: eps = [-1, 0, 1, 2], n = 4, kT = 1e308; 6.5e307
+    # sonlu ve dogru: f = 1/2, S = 8 ln 2). `float(y)`: Python float'i tasinca
+    # uyarisiz inf verir, bitler numpy carpimiyla ayni.
     def parantez(uc: float, isaret: float, y: float, kosul) -> float:
-        adim = kT * y
+        adim = kT * float(y)
         for _ in range(_PARANTEZ_TAVANI):
             sinir = uc + isaret * adim
+            if not np.isfinite(sinir):
+                raise InvalidInputError(
+                    f"mu parantezi kayan nokta araligini asti: kT = {kT} hartree cok "
+                    f"buyuk (sinir {sinir}; n = {n_elektron}, {eps.size} seviye)"
+                )
             if kosul(say(sinir)):
                 return sinir
             adim *= 2.0

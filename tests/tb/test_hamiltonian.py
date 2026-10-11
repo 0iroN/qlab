@@ -3,7 +3,7 @@
 (1) `eigh` varsayilan UPLO='L' ile UST ucgeni HIC OKUMUYOR. (2) Gauge secimi
 H'nin elemanlarini degistiriyor ama ozdegerleri degistirmiyor -- yani H
 karsilastirmasi yaniltici, ozdeger karsilastirmasi dogru. (3) Buyuk k'de
-argument reduction sessizce hata uretiyor.
+faz sessizce hata uretiyordu; E4'ten (11.10.2026) beri `InvalidInputError`.
 """
 
 from __future__ import annotations
@@ -118,21 +118,23 @@ def test_Bloch_periyodikligi():
         assert np.allclose(e1, e2, atol=1e-13)
 
 
-def test_BUYUK_k_de_argument_reduction_BOZULUYOR():
-    """Dogrudan olculmus bir sinir -- kod duzeltmez, BEYAN eder.
+def test_BUYUK_k_de_faz_hatasi_KAPIDA_reddediliyor():
+    """E4 (11.10.2026): eskiden BEYANDI (kod duzeltmiyordu), artik KAPI.
 
-    OLCULDU: k -> k + 1e12*G donusumunde ozdegerlerin max farki
-    2.387652e-03 eV mertebesine cikiyor ve HICBIR uyari verilmiyor.
-    Kaynagi trigonometrik argument reduction'dir, model degil.
+    OLCULDU (HEAD 80eb21c, bu zincir): k -> k + 1e12*G'de ozdegerlerin max
+    farki 6.57e-04 eV ve HICBIR uyari verilmiyordu (eski beyanin sayisi bu
+    makinede yeniden uretilemedi). Kaynak
+    double'daki k . R carpimidir; birincil hucreye indirgemek de kurtarmaz
+    (`hamiltonian.py`, `_FAZ_OLCEGI_SINIRI` yorumu). k + 10 G etkilenmez.
     """
     model = _zincir()
     G = reciprocal_vectors(model.lattice)[0]
     k = np.array([0.37, 0.0, 0.0])
     e0 = np.linalg.eigvalsh(bloch_hamiltonian(model, k))
     kucuk = np.abs(np.linalg.eigvalsh(bloch_hamiltonian(model, k + 10 * G)) - e0).max()
-    buyuk = np.abs(np.linalg.eigvalsh(bloch_hamiltonian(model, k + 1e12 * G)) - e0).max()
     assert kucuk < 1e-12
-    assert buyuk > 1e-9
+    with pytest.raises(InvalidInputError, match="k cok buyuk"):
+        bloch_hamiltonian(model, k + 1e12 * G)
 
 
 def test_zincir_analitik_dispersiyon_KABA_kontrol():

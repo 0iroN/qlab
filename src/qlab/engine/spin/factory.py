@@ -437,7 +437,9 @@ def provenance_for(
             f"spin Monte Carlo ({scenario.name}); {scenario.model} modeli, "
             f"{scenario.algorithm}, L = {scenario.lattice_size}, "
             f"{n_t} sicaklik, J = {scenario.coupling:g} (girdi), "
-            f"h = {scenario.field:g}; kT/J = T/J: "
+            # F7-a: `+ 0.0` eksi sifiri arti sifira cevirir (YAML `field: -0.0`
+            # "h = -0" basiyordu); sifir olmayan her h'de bit bit aynidir.
+            f"h = {scenario.field + 0.0:g}; kT/J = T/J: "
             + ", ".join(f"{t / scenario.coupling:.6g}" for t in scenario.temperatures)
         ),
         approximations=_SPIN_YAKLASIMLAR

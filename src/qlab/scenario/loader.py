@@ -478,14 +478,27 @@ def _load_md_scenario(raw: dict, file_path: Path) -> MDScenario:
                 f"Geçerli termostatlar: {list(MD_THERMOSTAT_KINDS)}"
             )
 
+    # C6 (11.10.2026, ölçüldü `python -m qlab.run`): `initial: [1, 2]` ve
+    # `params: [1, 2]` fabrikadaki `dict(...)`te ham TypeError veriyordu;
+    # `dt: abc` ve `n_steps: dort` ham ValueError, `n_steps: 40.7` ise SESSİZCE
+    # 40'a kesiliyordu. `_yaml_sayisi`/`_yaml_tam_sayisi` spin yükleyicisinin kapısı.
+    for ad, blok in (
+        ("initial", raw["initial"]),
+        ("force_field.params", force_field.get("params", {})),
+        ("thermostat.params", thermostat.get("params", {}) if thermostat else {}),
+    ):
+        if not isinstance(blok, dict):
+            raise ScenarioError(
+                f"'{ad}' bir sözlük olmalı, verilen: {type(blok).__name__}"
+            )
     return MDScenario(
         name=str(raw["name"]),
         force_field=dict(force_field),
         initial=dict(raw["initial"]),
         thermostat=dict(thermostat) if thermostat else None,
-        dt=float(raw["dt"]),
-        n_steps=int(raw["n_steps"]),
-        save_every=int(raw.get("save_every", 1)),
+        dt=_yaml_sayisi("dt", raw["dt"]),
+        n_steps=_yaml_tam_sayisi("n_steps", raw["n_steps"]),
+        save_every=_yaml_tam_sayisi("save_every", raw.get("save_every", 1)),
     )
 
 
@@ -501,7 +514,7 @@ def _load_tb_scenario(raw: dict, file_path: Path) -> TBScenario:
         raise ScenarioError(f"Eksik anahtar(lar): {sorted(missing)}")
 
     hoplamalar = []
-    for indis, ham in enumerate(raw["hoppings"]):
+    for indis, ham in enumerate(_tb_listesi("hoppings", raw["hoppings"])):
         if not isinstance(ham, dict):
             raise ScenarioError(
                 f"'hoppings[{indis}]' bir sözlük olmalı, "
@@ -528,25 +541,51 @@ def _load_tb_scenario(raw: dict, file_path: Path) -> TBScenario:
             )
         hoplamalar.append(
             TBHopping(
-                i=int(ham["i"]),
-                j=int(ham["j"]),
+                i=_yaml_tam_sayisi(f"hoppings[{indis}].i", ham["i"]),
+                j=_yaml_tam_sayisi(f"hoppings[{indis}].j", ham["j"]),
                 cell=hucre,
-                t_ev=float(ham["t_ev"]),
+                t_ev=_yaml_sayisi(f"hoppings[{indis}].t_ev", ham["t_ev"]),
             )
+        )
+
+    # LOADER-VE (11.10.2026, ölçüldü `python -m qlab.run`): sayı olmayan
+    # girdi (`lattice_vectors_bohr: [[abc, ...]]`, `basis_bohr`, `onsite_ev`,
+    # `n_electron_per_cell: bir`, `k_points`, `t_ev`, `i`) ham ValueError,
+    # liste yerine sayı ham TypeError veriyordu; `n_electron_per_cell: 1.5`
+    # SESSİZCE 1'e, `k_points: 100.7` 100'e kesiliyor, `true` 1.0 ve tırnaklı
+    # `'-5.3'` sayı oluyordu. Kapılar spin yükleyicisininkiler.
+    def _vektorler(ad: str) -> tuple[tuple[float, ...], ...]:
+        return tuple(
+            tuple(
+                _yaml_sayisi(f"{ad}[{s}][{b}]", x)
+                for b, x in enumerate(_tb_listesi(f"{ad}[{s}]", v))
+            )
+            for s, v in enumerate(_tb_listesi(ad, raw[ad]))
         )
 
     return TBScenario(
         name=str(raw["name"]),
-        lattice_vectors_bohr=tuple(
-            tuple(float(x) for x in v) for v in raw["lattice_vectors_bohr"]
+        lattice_vectors_bohr=_vektorler("lattice_vectors_bohr"),
+        basis_bohr=_vektorler("basis_bohr"),
+        onsite_ev=tuple(
+            _yaml_sayisi(f"onsite_ev[{s}]", x)
+            for s, x in enumerate(_tb_listesi("onsite_ev", raw["onsite_ev"]))
         ),
-        basis_bohr=tuple(tuple(float(x) for x in v) for v in raw["basis_bohr"]),
-        onsite_ev=tuple(float(x) for x in raw["onsite_ev"]),
         hoppings=tuple(hoplamalar),
-        n_electron_per_cell=int(raw["n_electron_per_cell"]),
-        k_points=int(raw["k_points"]),
+        n_electron_per_cell=_yaml_tam_sayisi(
+            "n_electron_per_cell", raw["n_electron_per_cell"]
+        ),
+        k_points=_yaml_tam_sayisi("k_points", raw["k_points"]),
     )
 
+
+def _tb_listesi(ad: str, deger: object) -> list:
+    """TB senaryosunda liste beklenen alan; sayı/dize/sözlük `ScenarioError`."""
+    if not isinstance(deger, (list, tuple)):
+        raise ScenarioError(
+            f"'{ad}' bir liste olmalı, verilen: {deger!r} ({type(deger).__name__})"
+        )
+    return list(deger)
 
 
 def _load_downfold_scenario(raw: dict, file_path: Path) -> DownfoldScenario:

@@ -1257,9 +1257,9 @@ def test_KAYAN_NOKTA_DIBI_parantez_KATLANIR_entropi_KIRPILIR():
     KIRMA (olculdu, sk/duz/b8_mut.log): katlamayan mutant (adim *= 1.0)
     (a)'yi ve (c)'nin n = 1 ve 3 hucrelerini kiriyor (`InvalidInputError`:
     parantez kapanmadi); kirpmasiz mutant (ax = |x|) (b)'yi (entropi nan)
-    ve (c)'nin uc hucresini (Omega nan) kiriyor. SINANMADI: buyuk kT'de
-    adimin tasip sonsuz oldugu yol -- kT = 1e308'de dolum nan donuyor
-    (olculdu; acik kalan, `mermin.py` yorumu).
+    ve (c)'nin uc hucresini (Omega nan) kiriyor. Buyuk kT'de adimin tasip
+    sonsuz oldugu yol (eskiden kT = 1e308'de dolum nan) D16'da (11.10.2026)
+    `InvalidInputError` oldu: `tests/tb/test_dusuk_tb_kapilari.py`.
     """
     with np.errstate(over="ignore"):
         d = mermin_dolum(np.array([1.0, 2.0]), 1.0, 1e-20)

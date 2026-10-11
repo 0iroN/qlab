@@ -107,7 +107,6 @@ from qlab.engine.em.medium import Medium
 from qlab.errors import InvalidInputError
 from qlab.observable import em_obs
 from qlab.observable.em_obs import (
-    _FFT_PENCERELERI,
     DEFAULT_ECHO_GATE,
     DEFAULT_TAIL_GATE,
     ObliqueWindow,
@@ -443,12 +442,13 @@ def test_IKINCI_VARIS_SPEKTRAL_ve_PENCERESI_ANA_DARBENIN_SONUNDAN_BASLAR():
     solda = dataclasses.replace(w, interface=500, probe_offset=200, source_index=400)
     assert solda.probe == 300 and solda.source_index > solda.probe
     assert _ikinci_varis(dizi(500, i500=5.0), **dict(k, window=solda)) == pytest.approx(0.01)
-    # FFT penceresi de uygulanır (`Fi` ile AYNI ağırlık): hann'da ana parçanın
-    # ağırlığı sum(hann[:500]), kalan örneğinki 5 hann[500]. (RC-d'den beri
-    # kamu yolundan yalnız dikdörtgen gelir; burada sınanan ağırlık kuralıdır.)
-    hann = np.hanning(n)
-    assert _ikinci_varis(dizi(500, i500=5.0), **dict(k, window=dataclasses.replace(
-        w, window_fn="hann"))) == pytest.approx(5.0 * hann[500] / hann[:500].sum())
+    # PENCERE YOK (RC-f, 11.10.2026): RC-d'den beri kamu yolundan yalnız
+    # dikdörtgen gelir ve `_ikinci_varis` pencere çarpanını taşımaz; `window_fn`
+    # alanı burada HİÇBİR ŞEY değiştirmez (eskiden hann ağırlığı uygulanırdı:
+    # 5 hann[500] / sum(hann[:500])).
+    for ad in ("hann", "blackman"):
+        assert _ikinci_varis(dizi(500, i500=5.0), **dict(k, window=dataclasses.replace(
+            w, window_fn=ad))) == _ikinci_varis(dizi(500, i500=5.0), **k) == pytest.approx(5.0 / 500)
     # faz uyumsuz kalan: tepe genliği ana darbeninkine eşit ama frekansı 0.2
     # devir/örnek (ton 0.04): 500 örnekte tam devir sayısı -> F_f = 0
     b = np.zeros(n, dtype=complex)
@@ -628,8 +628,10 @@ def test_GEREKCE_PENCERE_IKI_DARBEYI_FARKLI_AGIRLIKLA_CARPAR():
     λ = 20, s:
       * ayrık-tam r'ye hata: dikdörtgen 1.4e-07, hann 2.56e-02, blackman
         3.56e-02;
-      * kapılar KÖR: kuyruklar 4.8e-06 / 1.7e-05, pencereli ikinci varış
-        <= 2.4e-09;
+      * kapılar KÖR: kuyruklar 4.8e-06 / 1.7e-05, ikinci varış (dikdörtgen)
+        8.6e-07 -- RC-d öncesi pencereli ikinci varış hann'da 2.4e-09'du; RC-f
+        (11.10.2026) `_ikinci_varis`ten pencereyi kaldırdı, pencere oranları
+        burada YEREL `np.hanning` / `np.blackman` ile kurulur;
       * MEKANİZMA: hata ≈ |r| |w(t_y)/w(t_g) - 1| (w pencere; t_g, t_y gelen
         ve yansıyan kaydın enerji ağırlık merkezleri). Ön ölçümde 638
         durumda hata/tahmin medyanı 0.95 (hann, %10..%90 0.93..1.08),
@@ -657,24 +659,25 @@ def test_GEREKCE_PENCERE_IKI_DARBEYI_FARKLI_AGIRLIKLA_CARPAR():
         return Fr / Fi
 
     r = _r_prob(e1, e2, th, lam, T2)
-    dik = oran(_FFT_PENCERELERI["dikdortgen"](n))
+    dik = oran(np.ones(n))
     assert dik == reflection_coefficient(eps1=e1, eps2=e2, theta_deg=th, wavelength=lam,
                                          polarization="s", window=T2)
     assert abs(dik - r) < 1e-6
     assert max(_kuyruk(g, wavelength=lam, courant=T2.courant),
                _kuyruk(y, wavelength=lam, courant=T2.courant)) < 1e-4
+    # İkinci varış (dikdörtgen; RC-f'den beri `_ikinci_varis` pencere taşımaz)
+    # da kapının çok altında: hata yankıdan gelmez.
+    assert _ikinci_varis(g, theta_deg=th, wavelength=lam, eps1=e1, window=T2) < 1e-6
     k = np.arange(n)
 
     def merkez(s):
         e = np.abs(s) ** 2
         return float((k * e).sum() / e.sum())
 
-    for ad, beklenen in (("hann", 2.56e-2), ("blackman", 3.56e-2)):
-        pen = _FFT_PENCERELERI[ad](n)
+    for ad, pencere, beklenen in (("hann", np.hanning, 2.56e-2), ("blackman", np.blackman, 3.56e-2)):
+        pen = pencere(n)
         hata = abs(oran(pen) - r)
         assert hata == pytest.approx(beklenen, rel=0.01), ad
-        assert _ikinci_varis(g, theta_deg=th, wavelength=lam, eps1=e1,
-                             window=dataclasses.replace(T2, window_fn=ad)) < 1e-6
         wg, wy = np.interp([merkez(g), merkez(y)], k, pen)
         assert 0.85 < hata / (abs(r) * abs(wy / wg - 1.0)) < 1.15, ad
 

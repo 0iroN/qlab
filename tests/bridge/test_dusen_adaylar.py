@@ -58,6 +58,7 @@ PENCERELER (her sayı bunların içindedir, dışına taşınamaz):
 from __future__ import annotations
 
 import ast
+import dataclasses
 import re
 from pathlib import Path
 
@@ -306,6 +307,12 @@ def test_HF_TB_OZDESLIK_ON_BES_HANE_ve_SISTEME_BAGLI_yedi_mertebe(n, d):
     seeds = 12/16'da bit bit aynı çıktı; başka BLAS'ta aynı çıkıp
     çıkmayacağı ÖLÇÜLMEDİ). Referans pencerenin sayısı `bridge_map`in
     literaliyle ve gerekçe metniyle de karşılaştırılır.
+
+    E6 (11.10.2026): o sayı tabloda `buyukluk` DEĞİLDİR (None) — K3
+    `tdse → tb`ye nasıl uygulandıysa buraya da: bağıl artık bir TOPLAMA-SIRASI
+    KAYDIDIR. Referans pencerede aynı kabuk elemanları ters ve 50 rastgele
+    sırayla ortalanır; ayrı değerlerin sayısı >= 2 kilitlenir (değerlerin
+    kendisi son-ulp kaydıdır, kilitlenmez).
     """
     mol = _halka(n, d)
     h_a, _, _, _, _ = _effective_hamiltonians(mol, BAZ, SEEDS)
@@ -336,7 +343,26 @@ def test_HF_TB_OZDESLIK_ON_BES_HANE_ve_SISTEME_BAGLI_yedi_mertebe(n, d):
     gerekce = _girdi("hf", "tb").gerekce
     if (n, d) == (6, 2.6):
         assert bagil == pytest.approx(_HF_TB_OZDESLIK_BAGIL, rel=1e-3, abs=0.0)
-        assert _girdi("hf", "tb").buyukluk == _HF_TB_OZDESLIK_BAGIL
+        # E6 (11.10.2026): sayi bir TOPLAMA-SIRASI KAYDIDIR -> tabloda buyukluk
+        # None (K3, `tdse -> tb` ile ayni). Kanit canli: ayni kabuk elemanlari
+        # baska sirayla ortalaninca ayni tanim BASKA bir sayi verir. Kilit
+        # yalniz "en az iki ayri deger"dir; degerlerin kendisi son-ulp
+        # kaydidir ve kilitlenmez (gerekcedeki 2.113e-15 / 3 deger bu makinenin).
+        sira_sayilari = {bagil}
+        rastgele = np.random.default_rng(0)
+        for sirala in [lambda k: np.arange(k)[::-1]] + [rastgele.permutation] * 50:
+            hop = []
+            for m in range(1, n // 2 + 1):
+                el = np.array(_kabuk(h_a, n, m))
+                hop.append(float(np.mean(el[sirala(len(el))])))
+            yeni = finite_ring_matrix(
+                model_from_downfold(dataclasses.replace(p, hoppings=tuple(hop)), spin="alpha"), n // 2
+            )
+            artik_i = float(np.abs(yeni - h_a).max())
+            sira_sayilari.add(abs(artik_i - yarim) / artik_i)
+        assert len(sira_sayilari) >= 2, "bagil artik siradan BAGIMSIZ cikti -- E6 gerekcesi curudu"
+        assert _girdi("hf", "tb").buyukluk is None
+        assert "TOPLAMA-SIRASI KAYDIDIR" in gerekce and "E6" in gerekce
         assert repr(_HF_TB_OZDESLIK_BAGIL) in gerekce
         assert artik == pytest.approx(0.010670502034857853, rel=1e-9, abs=0.0)
         assert yarim == pytest.approx(0.010670502034857829, rel=1e-9, abs=0.0)
@@ -957,8 +983,11 @@ def test_TABLODA_IKI_GIRDI_DOLDU_TEK_SATIR_DAMGA_KALKTI_ETIKET_ICERIDE():
         sayımı 3/5/8/0/5, 28.09.2026'da 3/8/8/0/2 -- TAUTOLOJİ 8: `hf → spin`,
         `tdse → spin`, `md → em`, `tb → em` kenarsız hükümle eklendi; bu test
         yalnız TAUTOLOJİ sayısını kilitler)
-      * ikisinin `buyukluk`u artık `None` değil — biri 2.276e-15 (bağıl
-        özdeşlik artığı), öteki 0.0 (bit bit ölüm) — ve ikisi de `float`
+      * Task 4'te ikisinin `buyukluk`u doldu — biri 2.276e-15 (bağıl
+        özdeşlik artığı), öteki 0.0 (bit bit ölüm). E6 (11.10.2026): ilki
+        bir TOPLAMA-SIRASI KAYDI olduğu için yeniden `None` (K3, `tdse → tb`
+        ile aynı kural); sayı gerekçede kayıt olarak durur. `tb → spin`in
+        0.0'ı bir ölçüm sonucudur ve `float` kalır.
       * ikisinden `YENIDEN_URETILMEDI` damgası KALKTI; damga TAUTOLOJİ
         kovasının öteki üç girdisinden ikisinde (`md → spin`, `hf → em`)
         DURUYOR; `hf → spin` damgasız (27.09.2026'da ölçüldü)
@@ -971,9 +1000,11 @@ def test_TABLODA_IKI_GIRDI_DOLDU_TEK_SATIR_DAMGA_KALKTI_ETIKET_ICERIDE():
     assert KOVA_SAYILARI[Kova.TAUTOLOJI] == 8
     assert sum(1 for f in KOVA_TABLOSU if f.kova == Kova.TAUTOLOJI) == 8
 
-    assert isinstance(hf_tb.buyukluk, float) and hf_tb.buyukluk == _HF_TB_OZDESLIK_BAGIL
+    assert hf_tb.buyukluk is None  # E6: toplama-sirasi kaydi (K3)
+    # K3 iki kenara AYNI uygulanir: `tdse -> tb`nin 7.03e-16'si de tasinmadi.
+    assert _girdi("tdse", "tb").buyukluk is None and "`tdse -> tb`" in hf_tb.gerekce
     assert isinstance(tb_spin.buyukluk, float) and tb_spin.buyukluk == _TB_SPIN_M_FARKI == 0.0
-    assert hf_tb.buyukluk > 0.0
+    assert repr(_HF_TB_OZDESLIK_BAGIL) in hf_tb.gerekce and _HF_TB_OZDESLIK_BAGIL > 0.0
 
     assert YENIDEN_URETILMEDI not in hf_tb.gerekce
     assert YENIDEN_URETILMEDI not in tb_spin.gerekce

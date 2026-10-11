@@ -231,21 +231,66 @@ def _fcc_kafes(n_particles: int, density_reduced: float, sigma: float):
     return konumlar, float(kenar)
 
 
+def _senaryo_dizisi(ad: str, deger: object) -> np.ndarray:
+    """`initial` bloğundan sayısal dizi; çevrilemeyen girdi `ScenarioError`.
+
+    C6 (11.10.2026, ölçüldü `python -m qlab.run`): `positions_bohr`daki bir
+    dize (`"np.float64(0.0)"`), `masses_amu: [abc, ...]` ve `velocities`
+    içindeki bir harf ham `ValueError` traceback'i veriyordu.
+    """
+    try:
+        return np.asarray(deger, dtype=float)
+    except (TypeError, ValueError) as hata:
+        raise ScenarioError(
+            f"initial.{ad} sayısal bir dizi olmalı, verilen: {deger!r} ({hata})"
+        ) from hata
+
+
+def _senaryo_nesnesi(sinif, ad: str, params: dict, yaml_params: dict | None = None):
+    """Kuvvet alanı / termostat kurulumu; YAML `params` hatası `ScenarioError`.
+
+    C6 (11.10.2026, ölçüldü `python -m qlab.run`): yanlış yazılmış anahtar
+    (`de:` -> `Morse.__init__() got an unexpected keyword argument 'de'`,
+    `sigmaa`, termostatta `surtunme`) ve sayı yerine dize (`d_e: abc` ->
+    numpy `isfinite` TypeError'ı) ham traceback veriyordu. Sınıfların değer
+    kapıları (`InvalidInputError`) olduğu gibi geçer. `yaml_params` mesajda
+    gösterilen (YAML'ın yazdığı) sözlüktür; verilmezse `params`.
+    """
+    try:
+        return sinif(**params)
+    except (TypeError, ValueError) as hata:
+        verilen = params if yaml_params is None else yaml_params
+        raise ScenarioError(
+            f"{ad} parametreleri geçersiz: {hata}. Verilen: {verilen!r}"
+        ) from hata
+
+
 def build(scenario: MDScenario):
     """Senaryodan motoru kurar. Kütle dönüşümü BURADA, sınırda yapılır."""
     tur = scenario.force_field["kind"]
-    p = dict(scenario.force_field.get("params", {}))
+    # `yaml_p` KULLANICININ yazdigidir; `p` fabrikanin ekledigini de tasir
+    # (fcc dalinda `box_length`). Hata mesajlari yalniz `yaml_p`'yi gosterir.
+    yaml_p = dict(scenario.force_field.get("params", {}))
+    p = dict(yaml_p)
     ilk = scenario.initial
 
     # İKİ BAŞLANGIÇ BİÇİMİ. Bu dal eskiden YOKTU ve `argon_nvt.yaml` ham
     # `KeyError: 'positions_bohr'` veriyordu -- Global Constraint "sessiz
     # başarısızlık yok / ham hata tüketiciye ulaşmaz" ihlali.
+    fcc = "positions_bohr" not in ilk and ilk.get("lattice") == "fcc"
     if "positions_bohr" in ilk:
-        konumlar = np.asarray(ilk["positions_bohr"], dtype=float)
-    elif ilk.get("lattice") == "fcc":
-        konumlar, kenar = _fcc_kafes(
-            int(ilk["n_particles"]), float(ilk["density_reduced"]), float(p["sigma"])
-        )
+        konumlar = _senaryo_dizisi("positions_bohr", ilk["positions_bohr"])
+    elif fcc:
+        try:
+            fcc_sayilari = (
+                int(ilk["n_particles"]), float(ilk["density_reduced"]), float(p["sigma"])
+            )
+        except (KeyError, TypeError, ValueError) as hata:
+            raise ScenarioError(
+                "lattice: fcc için `n_particles` (tam sayı), `density_reduced` ve "
+                f"kuvvet alanının `sigma`sı sayı olmalı: {hata!r}"
+            ) from hata
+        konumlar, kenar = _fcc_kafes(*fcc_sayilari)
         p["box_length"] = kenar  # yoğunluktan türetilen kenar YAML'ı EZER
     else:
         raise ScenarioError(
@@ -254,18 +299,31 @@ def build(scenario: MDScenario):
             f"verilen anahtarlar: {sorted(ilk)}"
         )
 
-    ham_kutle = np.asarray(ilk["masses_amu"], dtype=float)
+    if "masses_amu" not in ilk:
+        raise ScenarioError(f"initial bloğunda `masses_amu` yok: {sorted(ilk)}")
+    ham_kutle = _senaryo_dizisi("masses_amu", ilk["masses_amu"])
     if ham_kutle.size == 1 and konumlar.shape[0] > 1:
         ham_kutle = np.full(konumlar.shape[0], ham_kutle.item())
     kutleler = amu_to_electron_mass(ham_kutle)
 
-    hizlar = np.asarray(
-        ilk.get("velocities", np.zeros_like(konumlar)), dtype=float
-    )
+    hizlar = _senaryo_dizisi("velocities", ilk.get("velocities", np.zeros_like(konumlar)))
     durum = MDState(positions=konumlar, velocities=hizlar, masses=kutleler)
 
     if tur == "harmonic":
-        alan = Harmonic(k=p["k"], center=p.get("center", np.zeros_like(konumlar)))
+        # `center` verilmezse orijin; bilinmeyen anahtar artık SESSİZCE
+        # yutulmaz (eskiden yalnız `k` ve `center` okunuyordu, `kk:` yok sayılıp
+        # ham `KeyError: 'k'` geliyordu). fcc dalında `sigma` KAFESİ kurar
+        # (yukarıda tüketildi) ve `box_length` fabrikanın kendi eklemesidir:
+        # ikisi de yaya GEÇMEZ -- HEAD de geçirmiyordu. Doğrulama turu
+        # (11.10.2026, ölçüldü): onlar geçince harmonic + fcc + {k, sigma}
+        # rc = 1 "unexpected keyword argument 'sigma'" veriyor ve mesaj
+        # kullanıcının yazmadığı `box_length`'i "Verilen" diye gösteriyordu.
+        yay_p = dict(yaml_p)
+        if fcc:
+            yay_p.pop("sigma", None)
+        alan = _senaryo_nesnesi(
+            Harmonic, "harmonic", {"center": np.zeros_like(konumlar), **yay_p}, yaml_p
+        )
         # velocity-Verlet omega*dt = 2.0'da patlar (ölçüldü: 2.001 -> 4.3e+54).
         # Harmonikte omega analitiktir, o yüzden burada denetlenebilir.
         omega = float(np.sqrt(alan.k / kutleler.min()))
@@ -276,19 +334,21 @@ def build(scenario: MDScenario):
                 f"patlar. dt < {2.0 / omega:.4g} seçin."
             )
     elif tur == "morse":
-        alan = Morse(**p)
+        alan = _senaryo_nesnesi(Morse, "morse", p, yaml_p)
     elif tur == "lennard_jones":
-        alan = LennardJones(**p)
+        alan = _senaryo_nesnesi(LennardJones, "lennard_jones", p, yaml_p)
     elif tur == "hartree_fock":
         # dt kararlılık denetimi BU DALDA YOK: omega analitik değil.
         # Atlandığı _HF_YAKLASIMLAR'da beyan edilir (sessiz atlama değil).
-        alan = HartreeFockGradient(**p)
+        alan = _senaryo_nesnesi(HartreeFockGradient, "hartree_fock", p, yaml_p)
     elif tur == "tb_ss_sigma":
         # dt kararlılık denetimi BU DALDA DA YOK (spec B10): omega analitik
         # değil. Atlandığı _TB_YAKLASIMLAR'da beyan edilir. Koşu reddedilmez;
         # kare-0 ve yol karelerinin omega*dt'si NVE panelinin hükmüne girer
-        # (D2-i `omega_max_frame0`, D2-vi `omega_max_path_frames`).
-        alan = _tb_ss_sigma_alani(p)
+        # (D2-i `omega_max_frame0`, D2-vi `omega_max_path_frames`). Kutusu
+        # `box_x_bohr`dir: fcc'nin eklediği `box_length` ona geçmez (geçseydi
+        # "bilinmeyen" listesinde kullanıcının yazmadığı anahtar görünürdü).
+        alan = _tb_ss_sigma_alani(yaml_p)
     else:
         raise ScenarioError(f"bilinmeyen kuvvet alanı: {tur!r}")
 
@@ -297,9 +357,9 @@ def build(scenario: MDScenario):
         t_tur = scenario.thermostat["kind"]
         t_p = dict(scenario.thermostat.get("params", {}))
         if t_tur == "langevin":
-            termostat = Langevin(**t_p)
+            termostat = _senaryo_nesnesi(Langevin, "langevin", t_p)
         elif t_tur == "nose_hoover":
-            termostat = NoseHoover(**t_p)
+            termostat = _senaryo_nesnesi(NoseHoover, "nose_hoover", t_p)
         else:
             raise ScenarioError(f"bilinmeyen termostat: {t_tur!r}")
 

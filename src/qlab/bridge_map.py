@@ -465,6 +465,10 @@ _HF_TDSE_NOKTA = 4.096e09
 #: yani ON BES anlamli hane -- spec'in "on alti hane"si DARALTILDI. Bu sayi
 #: SISTEME BAGLIDIR (N = 8 d = 2.0'da 1.0898620259967446e-08, yedi mertebe
 #: kotu); gerekcede alti sistemin altisi da yazilidir.
+#: E6 (11.10.2026): bu sayi artik `buyukluk` DEGILDIR (girdi None tasir) --
+#: bir TOPLAMA-SIRASI KAYDIDIR (K3; `tdse -> tb`nin 7.03e-16'si ayni
+#: gerekceyle tasinmamisti). Literal, motorun KENDI sirasinin kaydi olarak
+#: gerekcede durur ve testte canli olcume karsi sinanir.
 _HF_TB_OZDESLIK_BAGIL = 2.276006188306662e-15
 
 #: `tb -> spin` koprusunun CIKTIYI NE KADAR KIPIRDATTIGI: bes farkli `J`de
@@ -820,10 +824,18 @@ KOVA_TABLOSU: tuple[EdgeFact, ...] = (
             "eig(H_eff^alfa) ile UHF alfa orbital enerjileri arasindaki fark "
             "(6, 2.6)'da 3.490441824460788e-10, ALTI sistemin EN KUCUGU; en "
             "buyugu (8, 2.6) 2.8906645410664566e-09 (8.28 kat). PENCERE "
-            "(N, d, baz, seeds) YAZILMADAN bu sayilar tasinamaz; buyukluk, "
-            "referans pencerenin bagil ozdeslik artigidir."
+            "(N, d, baz, seeds) YAZILMADAN bu sayilar tasinamaz. BUYUKLUK "
+            "None (E6, 11.10.2026): K3 `tdse -> tb`ye nasil uygulandiysa "
+            "buraya da AYNI uygulandi -- bagil ozdeslik artigi bir TOPLAMA-"
+            "SIRASI KAYDIDIR, sira-bagimsiz bir sayi degil: ayni kabuk "
+            "elemanlari baska sirayla ortalaninca (6, 2.6)'daki sayi DEGISIR "
+            "(olculdu, bu makine: ters sira 2.113e-15; 50 rastgele sira 3 "
+            "ayri deger, 1.951e-15 ... 2.276e-15). Yukaridaki "
+            "2.276006188306662e-15 motorun KENDI sirasinin kaydidir; "
+            "`tdse -> tb`nin 7.03e-16'si ayni gerekceyle buyukluk olarak "
+            "tasinmamisti ve bu girdi 11.10.2026'ya kadar o kurali cigniyordu."
         ),
-        buyukluk=_HF_TB_OZDESLIK_BAGIL,
+        buyukluk=None,
     ),
     EdgeFact(
         kaynak="tb",
@@ -1427,7 +1439,9 @@ _DUSEN_ADAYLAR_BEYANI = (
     "geri okunuyor, 6/6 sistemde; ozdeslik 15 hane yalniz N = 6'da ((6, 2.6) "
     "bagil 2.276e-15), N >= 8'de ~1e-8, yani SISTEME BAGLI; ayni elemanlar "
     "ters sirayla toplaninca `==` 22 kabugun 10'unda dusuyor (1 ulp) -- 'on "
-    "alti hane' toplama sirasinin kaydiydi; `model_from_downfold` `src/`de 0 "
+    "alti hane' toplama sirasinin kaydiydi ve 2.276e-15 de oyledir, bu yuzden "
+    "tabloda buyukluk olarak TASINMAZ (K3 `tdse -> tb` ile ayni, 11.10.2026); "
+    "`model_from_downfold` `src/`de 0 "
     "cagri. Pencere: (N, d) altili, STO-3G, seeds = 12. (2) `tb -> spin` -- "
     "bes `J`de (U/|t| = 2.033100 ... 13.630622) `m` serisi bit bit "
     "ayni, `E == J * E(1)` bit bit, kabul orani `==` 0.187216796875 = "
