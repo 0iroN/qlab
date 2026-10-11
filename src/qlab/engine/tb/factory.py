@@ -185,6 +185,23 @@ def build_downfold(
     ve hepsi `STAGGERING_TOLERANCE`in altinda kalmalidir. Yani panel
     "yakinsadi" derken "SCF durdu" degil, "modelin varsaydigi iki-siteli
     antiferromanyetik yapi GERCEKTEN bulundu" demis olur.
+
+    IKINCI KOSUL (B7-c, 11.10.2026): her mesafede DONEN UHF cozumu UHF-kararli
+    (YEREL minimum) olmalidir; biri EYER ise panel ✗ basar. Neden: arama
+    satiri bu satirin ICINDE, isaretin hemen ardinda basilir ve once
+    "Yakinsama : ✓ ... ✗ donen cozum UHF EYERI" mumkundu (olculdu, kamu
+    CLI: N=6 halka, d = Rc + 1e-6 / 1e-5 bohr, seeds = 1 -- izlemenin
+    1e-9 kabul esiginin kor bolgesi). Depodaki emsaller (`stability`,
+    `sampling`, `convergence_diagnosis`, `theory_selector`) uyariyi AYRI
+    satira tasidi ve `converged`a dokunmadi; burada kapi dogrudur cunku bu
+    modulun varlik sebebi bir eyeri indirgememektir (modul dokstringi:
+    "RHF indirgemesi bir eyer noktasini indirgerdi") ve `converged` zaten
+    bulunan YAPIYA baglidir. "UHF-kararli" KURESEL demek DEGILDIR: olculen
+    kuresel-olmayan minimumlarin hepsi (kamu yolunda seeds = 1, H8 d = 3.6 /
+    4.0; Haar baslangiclarinda N6/N8) iki-siteli AF yapida degildi ve yapi
+    kapisinda dustu -- bu bir GOZLEMDIR, garanti degil. KOR BANT (olculdu):
+    lambda (-1e-8, 0) yumusak mod bandindaysa eyer de "kararli" sayilir ve
+    ✓ basilir -- N=6'da Rc'nin ~1.3e-8 bohr ustune kadar.
     """
     parametreler = tuple(
         downfold_uhf(
@@ -221,7 +238,10 @@ def build_downfold(
         + (f"menzil {scenario.n_neighbour} kesmesi",),
         neglected=_INDIRGEME_IHMAL,
         expected_error=_INDIRGEME_BEKLENEN_HATA,
-        converged=bool(artik_max < STAGGERING_TOLERANCE),
+        converged=bool(
+            artik_max < STAGGERING_TOLERANCE
+            and all(p.search_stable is True for p in parametreler)
+        ),
         diagnostics={
             "staggering_residual_max": artik_max,
             "s_squared_max": s2_max,

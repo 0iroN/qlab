@@ -10,7 +10,7 @@ import edemez, o yüzden sayılar orada literal, doğrulama burada canlı.
 
 DÖRT TAUTOLOJİ (Task 4'ün ikisi + 27.09.2026 `hf → spin` + 28.09.2026 `tdse → spin`), İKİ MEKANİZMA + BİR AYAR ETİKETİ:
 
-  `hf → tb`   `t_m` bir `np.mean` olarak TANIMLANIYOR (`downfold.py:256-268`)
+  `hf → tb`   `t_m` bir `np.mean` olarak TANIMLANIYOR (`downfold.py:259-271`)
               ve aynı ortalama `==` ile geri okunuyor. Uyum değil, tanımın
               yeniden koşulması: aynı elemanlar TERS sırayla toplanınca 22
               kabuğun 10'unda `==` düşüyor (en çok 1 ulp). "On altı hane"
@@ -241,7 +241,7 @@ def test_HF_TB_t_m_GERI_OKUMASI_ALTI_SISTEMDE_TAM_ESIT_ve_bu_bir_TANIMDIR(n, d):
     """SINIF: TAUTOLOJİ BEYANI. Bir fizik iddiası TAŞIMAZ; tam tersini yazar.
 
     `downfold_uhf` `t_m`'yi halka kabuğu üzerinde `np.mean` olarak TANIMLAR
-    (`downfold.py:256-268`). Bu test aynı kabuğu aynı sırada toplayıp
+    (`downfold.py:259-271`). Bu test aynı kabuğu aynı sırada toplayıp
     `p.hoppings[m-1]` ile Python `==`'inde karşılaştırır: ALTI sistemde, HER
     kabukta True, |fark| = 0.0 — `eps_bar` ve `delta` da öyle.
 
@@ -389,7 +389,7 @@ def test_model_from_downfold_SRC_ICINDE_HIC_CAGRILMIYOR_ast_ile_ve_SATIRLAR_GERC
     dersi: regex sayardı).
 
     Gerekçenin yazdığı satır numaraları da gerçektir: tanım
-    `downfold.py:283`, `t_m` ataması `downfold.py:256-268` — ikisi de
+    `downfold.py:287`, `t_m` ataması `downfold.py:259-271` — ikisi de
     gerekçe METNİNDEN ayrıştırılıp `ast`nin `lineno`suyla karşılaştırılır,
     yani gerekçe bayatlarsa bu test kırmızı olur.
     """

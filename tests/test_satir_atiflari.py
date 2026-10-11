@@ -34,8 +34,8 @@ ATIFLAR = {
     "src/qlab/engine/tb/downfold.py:20": ("ANTIFERROMANYETIKTIR",),
     "src/qlab/engine/tb/downfold.py:130-132": ("qlab.engine.hf.basis", "qlab.engine.hf.multistart"),
     "pyproject.toml:27": ('markers = ["slow',),
-    "src/qlab/engine/tb/downfold.py:256-268": ("hoppings = tuple(",),  # son satır `)`: ucu YALNIZ bridge_map atfı için ast kilitli
-    "src/qlab/engine/tb/downfold.py:283": ("def model_from_downfold(",),
+    "src/qlab/engine/tb/downfold.py:259-271": ("hoppings = tuple(",),  # son satır `)`: ucu YALNIZ bridge_map atfı için ast kilitli
+    "src/qlab/engine/tb/downfold.py:287": ("def model_from_downfold(",),
     "src/qlab/engine/tb/factory.py:143": ("iki-siteli antiferromanyetik hucre",),
     "src/qlab/engine/tb/factory.py:183-187": ("`converged` OLCULEBILIR", "yapi GERCEKTEN bulundu"),
     "src/qlab/observable/hf_obs.py:371-377": ("Ayni dik-olmama", "S^-1'in yaptigi is budur"),

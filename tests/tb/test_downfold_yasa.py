@@ -310,6 +310,8 @@ def test_YASALAR_pencere_icinde_oturuyor():
     assert np.isnan(yasa.energy_uhf)
     assert np.isnan(yasa.staggering_residual)
     assert "SCF KOSULMADI" in yasa.search_line
+    # Hukum de UYDURULMAZ (B7-c): SCF yok -> "olculmedi" (None), True DEGIL.
+    assert yasa.search_stable is None
 
 
 @pytest.mark.slow

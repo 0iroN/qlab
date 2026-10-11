@@ -353,8 +353,17 @@ def test_T11_UHF_KANALI_KENDI_CUMLESINI_kuruyor_bilinmeyen_kanal_HATA():
     izlemeli, izlemesiz = _hf20(1, True), _hf20(1, False)
     assert "✗" not in izlemeli.as_line()
     assert "kararlilik izlemesi 1 dongude" in izlemeli.as_line()
-    assert "UHF-kararli" in izlemeli.as_line()
-    assert "✗ donen cozum UHF EYERI" in izlemesiz.as_line()
+    # B7-a: arama satiri da "YEREL" der ve kuresel iddia etmez (downfold
+    # paneli Kararlilik satirini basmaz, YALNIZ bu satiri basar).
+    kararli_satir, eyer_satir = izlemeli.as_line(), izlemesiz.as_line()
+    assert "donen cozum UHF YEREL minimum" in kararli_satir
+    assert "KURESEL minimum iddia EDILMEZ" in kararli_satir
+    assert "|lambda| < 1e-8 yumusak modlar ayirt edilmez" in kararli_satir
+    assert "UHF-kararli" not in kararli_satir
+    # CLI testi arama satirinda "tohum" SAYIYOR (mesafe basina bir kez).
+    assert kararli_satir.count("tohum") == 1
+    assert "✗ donen cozum UHF EYERI" in eyer_satir
+    assert "YEREL" not in eyer_satir and "KURESEL" not in eyer_satir
     panel = dict(izlemeli.result.provenance.as_lines())
     assert "UHF YEREL minimum" in panel["Kararlılık"]
 
@@ -631,7 +640,7 @@ def test_T6_CATALLANMA_seeds1_IZLEMEYLE_cokmuyor_izlemesiz_HER_NOKTADA_cokuyor()
 
 @pytest.mark.slow
 def test_T7_KARARLI_KURESEL_DEGILDIR_H8_halkasinda():
-    """T7. "UHF-kararli" = YEREL minimum, KURESEL degil -- olculerek.
+    """T7. UHF-kararlilik = YEREL minimum, KURESEL degil -- olculerek.
 
     H8 halkasi d = 3.0 bohr, STO-3G. Baslangiclar KAMU yolundan:
     solve_uhf(initial_orbitals = (S^-1/2 Q_a, S^-1/2 Q_b), stability=True),

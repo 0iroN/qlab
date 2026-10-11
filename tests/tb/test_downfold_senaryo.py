@@ -376,6 +376,9 @@ def test_YAKINSAMA_KADEMELI_YAPININ_DOGRULANMASINA_bagli():
     parametreler, kaynak = build_downfold(UCUZ)
 
     assert kaynak.converged is True
+    # B7-c: ✓ ayrica her mesafenin UHF-kararli dondugunu gerektirir; eyerli
+    # durum tests/tb/test_downfold_uhf_hukmu.py'de (burada hic eyer yok).
+    assert [p.search_stable for p in parametreler] == [True, True]
     artiklar = [p.staggering_residual for p in parametreler]
     artik = kaynak.diagnostics["staggering_residual_max"]
     # EN BUYUGU, en kucugu DEGIL: iki mesafenin artiklari gercekten farkli

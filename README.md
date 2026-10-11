@@ -473,7 +473,10 @@ python -m qlab.run scenarios/halka_indirgeme.yaml -o indirgeme.npz
 Çıktı `.npz`'si `distances_bohr`, `epsilon_bar`, `delta`, `hoppings`,
 `s_squared`, `energy_uhf`, `staggering_residual` ve `provenance_json` taşır.
 Panelin `Yakınsama` satırı burada "SCF durdu" demez — modelin varsaydığı
-iki-siteli antiferromanyetik yapının her mesafede gerçekten bulunduğunu söyler.
+iki-siteli antiferromanyetik yapının her mesafede gerçekten bulunduğunu ve
+her mesafede dönen UHF çözümünün bir UHF **YEREL** minimumu olduğunu söyler
+(eyer dönen tek bir mesafe satırı ✗ yapar; küresel minimum iddia edilmez;
+|λ| < 1e-8 yumuşak modlar ayırt edilmez).
 
 Spin Monte Carlo (Modül 4) — 2B Ising kafesinde altı sıcaklıklık bir tarama
 (ölçüldü, 0.56 s):
@@ -1109,7 +1112,7 @@ diye soran bir test bunu kaçırırdı).
   gereken tek bileşenli bias ise 7.33 < B* ≤ 7.34 (Hcore köşegeninde F 2p ile
   H 1s arası 7.334 Ha). Ailenin bulduğu iki durum da UHF **eyeridir** ve depo
   bunu görmüyordu — UHF → UHF kararlılık analizi yoktu; izlemesiz yol bugün
-  aynı sayıları bit bit verir ama panelde "✗ dönen çözüm UHF EYERİ" basar.
+  aynı sayıları bit bit verir ama panelde "✗ donen cozum UHF EYERI" basar.
   **N atomu:** tek `solve_uhf` bir durağan nokta döndürür ve bias'a bağlıdır
   (tekbiçim −53.719010163, alternan −53.259271159, **0.46 Ha** fark) — bu
   tasarım gereğidir ama artık sessiz değildir: `stability=True` alternan
@@ -1129,15 +1132,29 @@ diye soran bir test bunu kaçırırdı).
   eğiminde ağırlığı sıfır — ⟨S²⟩ orada 1.3e-15'e düştüğü hâlde üs aynı
   çıkıyor (orta nokta atılınca da 0.995360). Çöküşü üs değil ayrı |ΔE|
   denetimi yakalar.
-- **"UHF-kararlı" YEREL minimum demektir, KÜRESEL değil — ölçüldü.** H8
+- **UHF kararlılığı YEREL minimum demektir, KÜRESEL değil — ölçüldü.** H8
   halkası d = 3.0 bohr STO-3G'de Haar-rastgele başlangıçlardan (kamu
   `solve_uhf(initial_orbitals=…, stability=True)`, 20 başlangıç × DIIS'li /
   DIIS'siz) 8 ayrı durağan nokta, **3 yerel minimum** bulundu: −3.8572719930
   (küresel), −3.7773306557 (+0.0799) ve −3.7762350559 (+0.0810); izleme
   (depodaki özel `_follow_instability` ile, eyerlerden doğrudan) beş eyerin
   ikisinden küresel olmayan minimuma iniyor. `search_uhf(≥ 4)` bugün
-  küreseli buluyor ama bu bir garanti değildir; panel "UHF YEREL minimum —
-  küresel minimum iddia EDİLMEZ" der.
+  küreseli buluyor ama bu bir garanti değildir. Kamu yolunda da ölçüldü:
+  H8 d = 3.6 bohr'da `search_uhf(seeds=1)` kararlı ama `seeds=2`'nin
+  ≈0.0328 Ha üstünde (inilen yerel minimum OpenBLAS çekirdeğine bağlı:
+  −3.743723 ya da −3.743708), d = 4.0'da +0.0165. 210 aramalık halka
+  taramasında (N = 6/8/10 × on mesafe, d = 1.4 … 4.0 × yedi tohum ayarı
+  seeds ∈ {1, 2, 3, 4, 8, 12, 40}; varsayılan OpenBLAS çekirdeği) aynı
+  noktadaki yedi aramanın en iyisinden yukarıda kalan kararlı sonuç yalnız
+  bu ikisi, eyer dönen hiç yok. İkisi de iki-siteli antiferromanyetik yapıda
+  değil (Δ = 0, kademeli artık 0.755 … 0.768) ve indirgeme panelinde yapı
+  ölçütünde ✗ düşüyor. Haar başlangıçlarında görülen küresel olmayan
+  minimumların hepsi de (N6 / N8) iki-siteli AF yapıda değildi — bu bir
+  gözlemdir, garanti değil. Panelin iki yolu da bunu söyler (B7-a,
+  11.10.2026): HF panelinin Kararlılık satırı "UHF YEREL minimum — küresel
+  minimum iddia EDİLMEZ", indirgeme panelinin arama satırı (orada Kararlılık
+  satırı yok) "donen cozum UHF YEREL minimum (…; KURESEL minimum iddia
+  EDILMEZ, |lambda| < 1e-8 yumusak modlar ayirt edilmez)" der.
 - **Yumuşak mod bandı: |λ| < 1e-8'de kararlılık ayırt edilmez.** Ölçülen
   bant [2.6e-10, 2.1e-7]: kararlı bir çözümde sıfır moda bulaşan SCF artığı
   en çok −2.579e-10 (HF/6-31G, 20 bohr), en küçük gerçek kararsızlık
@@ -1156,14 +1173,23 @@ diye soran bir test bunu kaçırırdı).
   H2/STO-3G, R = Rc + d, varsayılan `search_uhf(seeds=1)`: d ≤ 6e-5'te (λ =
   −7.7e-7 … −4.6e-5, yumuşak mod bandının 77–4600 katı **dışında**) kırık
   simetrili minimum RHF eyerinin yalnız 1.7e-13 … 6.3e-10 Ha altında; izleme
-  bu inişi reddediyor (iniş 0) ve panel "✗ dönen çözüm UHF EYERİ" basıyor.
+  bu inişi reddediyor (iniş 0) ve panel "✗ donen cozum UHF EYERI" basıyor.
   Aynı noktalarda `search_uhf(12)` minimumu buluyor (✓); d = 8e-5'te iniş
   1.12e-9 ve kabul ediliyor. Engel SCF değil eşiktir: depodaki özel yolda
   eşik 1e-13'e indirilince d = 1e-6 / 1e-5 / 6e-5'te tek inişle minimuma
   iniliyor. Eşik düşürülmedi — alt sınırı yumuşak yüzeyde SCF durma
   ölçütünün enerji izi (kuramsal ≈2.5e-10) ve geri çöküşü iniş saymama
-  görevi. Hüküm dürüst (sessizlik yok) ama sınır açıktır; genişliği yalnız
-  H2 çatallanmasında ölçüldü (halkalar, LiF, 6-31G ölçülmedi).
+  görevi. Hüküm dürüst (sessizlik yok) ama sınır açıktır; genişliği H2
+  çatallanmasında ölçüldü. Halkada da var (B7-c, 11.10.2026): N = 6
+  halkasının çatallanmasının (Rc = 2.233818500 bohr) hemen üstünde
+  `seeds=1` eyer döndürüyor (λ −7.68e-7 / −7.68e-6, Rc + 1e-6 / 1e-5; altı
+  OpenBLAS yapılandırmasında aynı). İndirgeme paneli bunu önce
+  "Yakınsama : ✓ … ✗ donen cozum UHF EYERI" diye basıyordu; artık eyer
+  dönen tek bir mesafe satırın işaretini ✗ yapar. Kalan kör bant ölçüldü
+  (λ ≈ −0.77·d, doğrusal): Rc + 5e-9'da λ = −3.76e-9 ve Rc + 1e-8'de
+  −7.60e-9 yumuşak mod bandında (−1e-8, 0) kalıyor ve panel ✓ basıyor
+  (satırda "UHF YEREL minimum … lambda_min=-7.602e-09"); Rc + 2e-8'de
+  −1.53e-8 ile ✗. Bant genişliği ≈1.3e-8 bohr. LiF ve 6-31G ölçülmedi.
 - **PySCF bu makinede kurulu değil** (yalnız kaynak tarball); `reference/`
   kayıtları PySCF **2.14.0** ile başka bir yerde üretilmiştir. Dahası 11
   referans kaydının **hepsi kapalı kabuktur**, yani UHF'in **spin kırılan
@@ -2175,7 +2201,11 @@ python -m qlab.run scenarios/halka_indirgeme.yaml -o indirgeme.npz
 satırlarını basar. `Yakınsama` burada "SCF durdu" **demek değildir**: ölçüt,
 modelin varsaydığı iki-siteli antiferromanyetik yapının her mesafede
 gerçekten bulunmasıdır (`staggering_residual_max` < 1e-7; sevk edilen
-senaryoda ölçülen **7.526e-09**).
+senaryoda ölçülen **7.526e-09**) **ve** her mesafede dönen UHF çözümünün
+UHF-kararlı, yani YEREL minimum olmasıdır (B7-c; sevk edilen senaryoda beş
+mesafenin beşi, λ +0.248 … +0.850; |λ| < 1e-8 yumuşak modlar ayırt
+edilmez, bkz. Modül 1C kör bant notu). Eyer dönen tek bir mesafe ✗ yapar —
+yoksa ✓ satırın içinde "✗ donen cozum UHF EYERI" yazıyordu.
 
 Beyan metninin **tek kaynağı** `engine/tb/factory.py`dir ve bu bir disiplin
 değil bir **test**tir: her beyan cümlesi `src/` ağacında tam bir kez geçer;

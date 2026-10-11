@@ -74,8 +74,8 @@ NE SINANMAZ / NE IDDIA EDILMEZ
   * UHF bir spin ozdurumu DEGILDIR; <S^2> sonuca ilistirilir ama
     DUZELTILMEZ (spin projeksiyonu yoktur). OLCULDU: N=8 d=2.0'da
     <S^2> = 1.220731, yani cozum ne singlet ne triplet.
-  * Parametreler bir ARAMA protokolunden gelir (`search_uhf`, B7'den beri
-    izlemeli), tek SCF'ten degil; `search_line` aramayi VE donen cozumun UHF hukmunu tasir.
+  * Parametreler bir ARAMA protokolunden gelir (`search_uhf`, izlemeli); `search_line` aramayi ve
+    UHF hukmunu (YEREL minimum / EYER) tasir, `search_stable` hukmu bool olarak (B7-a/B7-c).
 
 MESAFE YASALARI (`DistanceLaws`) -- SINIRLARI OLCULMUSTUR
 ---------------------------------------------------------
@@ -129,7 +129,7 @@ import numpy as np
 
 from qlab.engine.hf.basis import build_basis
 from qlab.engine.hf.integrals import core_hamiltonian, eri_tensor, overlap_matrix
-from qlab.engine.hf.multistart import search_uhf
+from qlab.engine.hf.multistart import UHFSearchReport, search_uhf
 from qlab.engine.tb.hamiltonian import Hopping, TBModel
 from qlab.engine.tb.lattice import Lattice
 from qlab.errors import InvalidInputError, UnsupportedSystemError
@@ -153,6 +153,8 @@ class DownfoldedParameters:
     staggering_residual : |diag(H^a) - roll(diag(H^b), 1)| -- yapinin OLCUSU
     s_squared           : UHF'in <S^2>'si; spin kirlenmesi RAPORLANIR
     search_line         : arama protokolunun tek satirlik ozeti
+    search_stable       : donen UHF cozumu UHF-kararli mi (False = EYER; |lambda|
+                          < 1e-8 ayirt edilmez); None = SCF KOSULMADI (`.at`)
     """
 
     epsilon_bar: float
@@ -164,6 +166,7 @@ class DownfoldedParameters:
     energy_uhf: float
     staggering_residual: float
     search_line: str
+    search_stable: bool | None = None
 
 
 def _ring_distance(i: int, j: int, n: int) -> int:
@@ -172,8 +175,8 @@ def _ring_distance(i: int, j: int, n: int) -> int:
 
 def _effective_hamiltonians(
     molecule: Molecule, basis_name: str, seeds: int
-) -> tuple[np.ndarray, np.ndarray, float, float, str]:
-    """(H_eff^alfa, H_eff^beta, <S^2>, E_UHF, arama ozeti).
+) -> tuple[np.ndarray, np.ndarray, float, float, UHFSearchReport]:
+    """(H_eff^alfa, H_eff^beta, <S^2>, E_UHF, arama raporu).
 
     Fock matrisleri UHF cozumunun yogunluklarindan YENIDEN kurulur --
     `UHFResult` onlari saklamaz, yalnizca katsayi ve yogunluk tasir.
@@ -197,7 +200,7 @@ def _effective_hamiltonians(
         x @ fock_beta @ x,
         float(result.s_squared),
         float(report.energy),
-        report.as_line(),
+        report,
     )
 
 
@@ -236,7 +239,7 @@ def downfold_uhf(
             f"verilen: {n_neighbour}"
         )
 
-    h_alpha, h_beta, s_squared, energy, line = _effective_hamiltonians(
+    h_alpha, h_beta, s_squared, energy, report = _effective_hamiltonians(
         molecule, basis_name, seeds
     )
     if h_alpha.shape[0] != n_site:
@@ -276,7 +279,8 @@ def downfold_uhf(
         s_squared=s_squared,
         energy_uhf=energy,
         staggering_residual=residual,
-        search_line=line,
+        search_line=report.as_line(),
+        search_stable=bool(report.stability.stable),
     )
 
 

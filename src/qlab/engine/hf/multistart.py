@@ -233,9 +233,14 @@ class UHFSearchReport:
             lam = self.stability.lowest_eigenvalue
             lam_metin = "donme yok" if lam is None else f"lambda_min={lam:.3e}"
             if self.stability.stable:
+                # B7-a: "kararli" YEREL demektir -- olculdu, H8 halkasi d = 3.6
+                # bohr'da seeds = 1 kararli ama seeds = 2'nin 0.0328 Ha
+                # USTUNDE bir minimum donduruyor. Yumusak mod cumlesi de
+                # burada: bu dal lambda_min > -1e-8'de (negatif olsa da) acilir.
                 satir += (
-                    f"; donen cozum UHF-kararli (reel alfa/beta donmeleri, "
-                    f"{lam_metin})"
+                    f"; donen cozum UHF YEREL minimum (reel alfa/beta "
+                    f"donmelerine karsi, {lam_metin}; KURESEL minimum iddia "
+                    f"EDILMEZ, |lambda| < 1e-8 yumusak modlar ayirt edilmez)"
                 )
             else:
                 satir += f"; ✗ donen cozum UHF EYERI ({lam_metin})"
