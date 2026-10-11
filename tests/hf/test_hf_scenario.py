@@ -1,3 +1,4 @@
+import re
 import textwrap
 from pathlib import Path
 
@@ -317,14 +318,150 @@ def test_scan_with_only_stable_points_reports_a_stable_verdict(tmp_path):
 
 def test_scan_rejects_template_with_extra_placeholder(tmp_path):
     """{value} disinda cozulemeyen bir alan (kopyala-yapistir kalintisi gibi)
-    str.format()'da ciplak KeyError firlatirdi -- ScenarioError'a cevrilmeli."""
+    str.format()'da ciplak KeyError firlatirdi -- ScenarioError'a cevrilmeli.
+
+    11.10.2026'dan beri (B4) YAML yolunda YUKLEYICI bunu tarama baslamadan
+    reddeder (eskiden `load_scenario` geciyor, hata `run_scan`de geliyordu);
+    fabrika kapisi Python yolu (`HFScanScenario(...)` dogrudan) icin DURUR
+    ve orada kilitlenir -- katman ayrimi."""
     broken = VALID.replace(
         'molecule_template: "H 0 0 0; H 0 0 {value}"',
         'molecule_template: "H 0 0 0; H 0 0 {value} {oops}"',
     )
-    scenario = load_scenario(write(tmp_path, broken))
+    with pytest.raises(ScenarioError, match="oops"):
+        load_scenario(write(tmp_path, broken))
+    scenario = HFScanScenario(
+        name="kalinti",
+        molecule_template="H 0 0 0; H 0 0 {value} {oops}",
+        basis="sto-3g",
+        parameter="bond_length",
+        values=(0.74,),
+    )
     with pytest.raises(ScenarioError, match="molecule_template"):
         run_scan(scenario)
+
+
+def _sablonlu(sablon: str, degerler: str) -> str:
+    return VALID.replace("{value}", sablon).replace(
+        "values: [0.5, 0.6, 0.7, 0.74, 0.8, 1.0]", f"values: [{degerler}]"
+    )
+
+
+def test_B4_BICIMLI_yer_tutucu_KABUL_ve_BICIMLENMIS_molekul_cozulur(tmp_path):
+    """`{value:.2f}` str.format icin gecerlidir ve fabrika str.format kullanir.
+
+    OLCULDU (HEAD ef18615, kapi duz alt-dize testiyken): `load_scenario` bu
+    sablonu ScenarioError ile REDDEDIYORDU ("{value} yer tutucusu
+    bulunmali"); ayni sablon `format(value=0.7412)` ile 'H 0 0 0; H 0 0 0.74'
+    veriyor. Kamu yolu `load_scenario` -> `run_scan`: 0.7412'nin enerjisi
+    `{value}` ile 0.74'te cozulen molekulunkine BIT BIT esit ve 0.7412'dekinden
+    FARKLI -- bicim belirteci gercekten uygulandi.
+    """
+    bicimli = run_scan(load_scenario(write(tmp_path, _sablonlu("{value:.2f}", "0.7412"))))
+    kisa = run_scan(load_scenario(write(tmp_path, _sablonlu("{value}", "0.74"))))
+    uzun = run_scan(load_scenario(write(tmp_path, _sablonlu("{value}", "0.7412"))))
+    assert bicimli.energies[0] == kisa.energies[0]
+    assert bicimli.energies[0] != uzun.energies[0]
+    assert bicimli.values[0] == 0.7412
+    donusumlu = load_scenario(write(tmp_path, _sablonlu("{value!r}", "0.74")))
+    assert donusumlu.molecule_template == "H 0 0 0; H 0 0 {value!r}"
+
+
+@pytest.mark.parametrize(
+    "sablon,desen",
+    [
+        ("{val}", "yer tutucusu bulunmal"),
+        ("0.74", "yer tutucusu bulunmal"),
+        ("{}", "yer tutucusu bulunmal"),
+        ("{{value}}", "yer tutucusu bulunmal"),
+        ("{value} {oops}", r"dışında yer tutucu içeriyor: \['oops'\]"),
+        ("{value:{w}}", "biçimlenemiyor"),
+        ("{value:d}", "biçimlenemiyor"),
+        ("{value", "ayrıştırılamadı"),
+        ("{value:{value[0]}}", "biçimlenemiyor"),
+        ("{value:{value.foo}}", "biçimlenemiyor"),
+    ],
+)
+def test_B4_yer_tutucu_kapisi_STR_FORMAT_DILBILGISIYLE_reddeder(tmp_path, sablon, desen):
+    """Kapı `string.Formatter().parse` ile okur: alan adı TAM OLARAK `value`.
+
+    OLCULDU (HEAD ef18615): `{{value}}` (kacisli, yer tutucu DEGIL -- format
+    sonrasi duz metin '{value}') ve `{value} {oops}` yukleyiciden GECIYORDU;
+    ikincisi ancak `run_scan`de dusuyordu. `{value:{w}}`, `{value:d}` ve
+    `{value` ayni genel mesajla reddediliyordu (nedeni anilmadan). `{val}`,
+    yer tutucusuz ve `{}` zaten reddediliyordu -- burada gerileme kilidi.
+    `{value:{value[0]}}` / `{value:{value.foo}}` kapinin ilk surumunden HAM
+    `TypeError` / `AttributeError` ile kaciyordu (dogrulayici, 11.10.2026).
+    """
+    with pytest.raises(ScenarioError, match=desen):
+        load_scenario(write(tmp_path, _sablonlu(sablon, "0.74")))
+
+
+@pytest.mark.parametrize(
+    "sablon,degerler,carpisan",
+    [
+        ("{value:.0f}", "0.6, 0.7, 0.9, 1.4", "[0.6, 0.7, 0.9, 1.4]"),
+        ("{value:.2f}", "0.74, 0.7412, 0.8", "[0.74, 0.7412]"),
+    ],
+)
+def test_B4_CARPISAN_bicim_FARKLI_DEGERLERI_AYNI_MOLEKULE_indiremez(
+    tmp_path, sablon, degerler, carpisan
+):
+    """Bicim belirteci farkli tarama degerlerini AYNI molekule bicimleyemez.
+
+    OLCULDU (dogrulayici, B4 kapisinin ilk surumu, kamu yolu): `{value:.0f}`
+    ile values [0.6, 0.7, 0.9, 1.4] dort OZDES enerji (-1.0661086493089347)
+    verdi; CLI "4 nokta", her denetim ✓, rc = 0. Mesaj carpisan degerleri
+    ADIYLA sayar; yukleme SCF kosmadan duser.
+    """
+    with pytest.raises(ScenarioError, match=re.escape(carpisan)) as hata:
+        load_scenario(write(tmp_path, _sablonlu(sablon, degerler)))
+    assert "AYNI moleküle" in str(hata.value)
+
+
+def test_B4_BICIM_sonrasi_FARKLI_kalan_degerler_GECER(tmp_path):
+    """Kapi fazla siki degil: bicim sonrasi ayri kalan degerler yuklenir.
+
+    `{value:.2f}` ile 0.7412 / 0.8 -> '0.74' / '0.80' (ayri). `0.0` ile `-0.0`
+    ESIT deger ama `{value}` ile FARKLI metindir ('0.0' / '-0.0'); kume
+    boylarini karsilastiran bir kapi (`len(metinler) == len(set(values))`,
+    2 != 1) onu yanlislikla carpisma sayardi -- kapi metne gore gruplar.
+    """
+    bicimli = load_scenario(write(tmp_path, _sablonlu("{value:.2f}", "0.7412, 0.8")))
+    assert bicimli.values == (0.7412, 0.8)
+    sifir = load_scenario(write(tmp_path, _sablonlu("{value}", "0.0, -0.0")))
+    assert len(sifir.values) == 2
+
+
+@pytest.mark.parametrize(
+    "sablon,degerler,desen",
+    [
+        ("H 0 0 0; H 0 0 {value:.0f}", (0.6, 0.7, 0.9, 1.4), "AYNI molekule"),
+        ("H 0 0 0; H 0 0 0.74", (0.6, 0.7), "AYNI molekule"),
+        ("H 0 0 0; H 0 0 {value:{value[0]}}", (0.74,), "molecule_template"),
+        ("H 0 0 0; H 0 0 {value:{value.foo}}", (0.74,), "molecule_template"),
+    ],
+)
+def test_B4_PYTHON_YOLU_carpisma_ve_ic_ice_alan_SCF_KOSMADAN_reddedilir(
+    monkeypatch, sablon, degerler, desen
+):
+    """Yukleyici kapisinin Python esi: `HFScanScenario(...)` dogrudan.
+
+    OLCULDU (kapi yokken): fabrika yalniz str.format hatalarini ceviriyordu;
+    carpisan bir bicim ve yer tutucusuz bir sablon (yukleyicinin "{value} yer
+    tutucusu bulunmali" kuralinin fabrikada karsiligi yoktu) her degerde
+    AYNI molekulu sessizce cozuyordu; ic ice alanlar ham TypeError /
+    AttributeError veriyordu.
+    """
+    import qlab.engine.hf.factory as hf_fabrika
+
+    monkeypatch.setattr(hf_fabrika, "solve", lambda *a, **k: pytest.fail("kapi SCF'ten sonra"))
+    senaryo = HFScanScenario(
+        name="b4", molecule_template=sablon, basis="sto-3g",
+        parameter="bond_length", values=degerler,
+    )
+    with pytest.raises(ScenarioError, match=desen):
+        run_scan(senaryo)
 
 
 def test_scan_propagates_configuration_error_immediately(tmp_path):

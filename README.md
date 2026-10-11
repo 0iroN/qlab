@@ -510,6 +510,9 @@ coupling'ler arası karşılaştırılacak sayı `coupling · susceptibility`'di
 karşılaştırılacak sayı `kT/J = T/coupling`'dir (`Yöntem` satırı onu basar;
 27.09.2026'ya kadar "`J = k_B = 1`, sıcaklık `kT/J`" yazıyordu ve coupling ≠ 1'de
 yanlıştı). `coupling` sonlu ve pozitif olmalı (YAML'da da Python yolunda da);
+sayısal alanlar YAML sayısı olmalı — `true`/`yes` ve tırnaklı `'2'` sessizce
+sayıya çevrilmez, reddedilir (11.10.2026; PyYAML'ın tırnaksız da dize okuduğu
+`1e-6` gibi üstel yazım sayı kabul edilir);
 Ising checkerboard Metropolis `T/J → ∞`'da donar (ölçülen pencerelerde
 `T/J ≳ 1e3`) ve panel o zaman ✗ basar.
 Panel iki ek satır basar: `Dairesellik`

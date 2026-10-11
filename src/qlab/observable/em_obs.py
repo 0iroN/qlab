@@ -1528,6 +1528,17 @@ def mode_spectrum(
             f"kayit (dedektor, adim) sekilli ve en az 8 adim olmali, verilen: "
             f"{seri.shape}"
         )
+    # SONLULUK KAPISI (11.10.2026). Olculdu (kapi yokken, R = 5 sevk penceresi):
+    # temiz kayit 28 tepe; TEK bir NaN/+inf/-inf eklenince dedektor toplami `M`
+    # sonlu olmaktan cikiyor, tepe karsilastirmalarinin hicbiri dogru olmuyor ve
+    # alet HATASIZ bos demet donduruyordu -- cagiran bunu "tepe bulunamadi" diye
+    # okurdu.
+    if not np.all(np.isfinite(seri)):
+        raise InvalidInputError(
+            f"kayit sonlu olmali; {int(np.count_nonzero(~np.isfinite(seri)))} "
+            "sonlu olmayan deger var (patlamis bir FDTD kosumu sessizce tepe "
+            "URETEMEZ)"
+        )
     w = record.window
     dt = float(w.courant) * float(w.dx)
     n = seri.shape[1]

@@ -142,12 +142,123 @@ def _model_kur(scenario: SpinScenario) -> SpinModel:
     return IsingModel()
 
 
+def _skaler(ad: str, deger: object) -> float:
+    """Tek bir gercel sayi (bool, dizge, karmasik DEGIL); aksi halde `InvalidInputError`.
+
+    `float()` ikisini de SESSIZCE cevirirdi -- olculdu (11.10.2026, kapi
+    yokken): `SpinScenario(coupling=True)` panele kadar kosuyordu, dizge ise
+    ham `TypeError` veriyordu. Desen `tb/mermin.py::_skaler` ve
+    `md/tb_kuvvet.py::_sayi`nin aynisidir; oradan IMPORT EDILMEZ, cunku
+    motorlar arasi her import `bridge_map`in olctugu bir kenardir. Sonluluk
+    burada denetlenmez: her alanin adini anan kendi kapisi vardir.
+
+    numpy'nin bool'u (`np.True_`, `np.array(True)`) Python `bool`unun alt
+    sinifi DEGILDIR ve ilk surumden geciyordu (dogrulayici, 11.10.2026:
+    coupling/field/temperatures icin `np.True_` -> 1.0, oysa tam sayi
+    alanlarinda `np.True_` zaten reddediliyordu); `np.complex128` de bir
+    uyariyla gercel kismina iniyordu. Ikisi dtype turunden ('b', 'c')
+    reddedilir. Ayni delik `tb/mermin.py::_skaler`, `md/tb_kuvvet.py::_sayi`
+    ve `md/factory.py`deki Kelvin denetiminde de var; orada DOKUNULMADI.
+    """
+    if (
+        isinstance(deger, (str, bytes, bool))
+        or np.ndim(deger) != 0
+        or np.asarray(deger).dtype.kind in "bc"
+    ):
+        raise InvalidInputError(
+            f"spin senaryosu: {ad} tek bir gercel sayi olmali (bool, dizge ve "
+            f"karmasik DEGIL), verilen: {deger!r}"
+        )
+    try:
+        return float(deger)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError) as hata:
+        raise InvalidInputError(
+            f"spin senaryosu: {ad} sayiya cevrilemiyor: {deger!r}"
+        ) from hata
+
+
 def _coupling_kapisi(scenario: SpinScenario) -> None:
-    if not (np.isfinite(scenario.coupling) and scenario.coupling > 0.0):
+    coupling = _skaler("coupling", scenario.coupling)
+    if not (np.isfinite(coupling) and coupling > 0.0):
         raise InvalidInputError(
             f"spin senaryosu sonlu ve pozitif coupling ister, verilen: "
             f"{scenario.coupling}. J <= 0 bu modulun KAPSAM DISIDIR (dort cipanin "
             "dordu de ferromanyetik); motor J < 0'i kosar ama DOGRULANMAMISTIR."
+        )
+
+
+def _girdi_kapisi(scenario: SpinScenario) -> None:
+    """`build_spin` ve `provenance_for` girisi: yukleyici kapilarinin Python esi.
+
+    KATMAN AYRIMI (`loader.py::_load_spin_scenario`): yukleyici YAML'in
+    hatasini `ScenarioError` ile, bu kapi CAGRININ hatasini
+    `InvalidInputError` ile yakalar. OLCULDU (11.10.2026, kapi yokken):
+    `field` nan/inf ve `heisenberg_step` nan/inf `build_spin`den HATASIZ
+    geciyordu -- alan enerji serisini nan/-inf yapiyor ve hata ancak panelde,
+    adsiz geliyordu; adim Heisenberg onerisini SESSIZCE donduruyordu
+    (<|m|> = 1). `coupling = 1e308` / `field = 1e308` de hatasiz kosuyor ve
+    enerji serisi -inf cikiyordu.
+
+    E_max TASMA KAPISI yalniz Metropolis'te: enerji serisi panelde isi
+    sigasinin KARE ortalamasina girer, yani n_sweep * E_max^2 sonlu
+    kalmalidir; E_max = L^2 (2J + |h|) bir konfigurasyonun en buyuk
+    |E|'sidir. Wolff enerji serisi kaydetmez AMA bag olasiligi
+    p = 1 - exp(-2J/T) 2J'yi hesaplar: 2J KAPISI HER algoritmada durur.
+    OLCULDU (dogrulayici, 11.10.2026, kapi yokken, kT/J = 1.7): Wolff'ta
+    coupling >= 9e307 -> 2J = inf, p = 1, <|m|> = 1.000000 ve tau = inf,
+    HATASIZ; 8e307'de sonuc J = 1 ile ayni. Tam sayi alanlari float'a
+    cevrilirken tasarsa (`n_sweep` > ~1.8e308, `lattice_size` > ~1.3e154)
+    ham `OverflowError` yerine alanin adi soylenir.
+    """
+    _coupling_kapisi(scenario)
+    coupling = float(scenario.coupling)
+    field = _skaler("field", scenario.field)
+    adim = _skaler("heisenberg_step", scenario.heisenberg_step)
+    if not (np.isfinite(field) and np.isfinite(adim)):
+        raise InvalidInputError(
+            f"spin senaryosu sonlu field ve heisenberg_step ister, verilen: "
+            f"field = {field}, heisenberg_step = {adim}. Sonlu olmayan field "
+            "hatayi ancak panelde, adini anmadan verirdi; heisenberg_step ise "
+            "oneriyi SESSIZCE dondururdu (<|m|> = 1)."
+        )
+    for sicaklik in scenario.temperatures:
+        _skaler("temperatures", sicaklik)  # pozitiflik ve sonluluk motorda
+    for ad in ("lattice_size", "n_sweep", "n_burn", "seed"):
+        deger = getattr(scenario, ad)
+        if isinstance(deger, bool) or not isinstance(deger, (int, np.integer)):
+            raise InvalidInputError(
+                f"spin senaryosu: {ad} tam sayi olmali (bool DEGIL), verilen: {deger!r}"
+            )
+    if scenario.algorithm == "metropolis":
+        L = int(scenario.lattice_size)
+        n_olcum = max(int(scenario.n_sweep), 1)
+        try:
+            tavan = float(np.sqrt(np.finfo(float).max / n_olcum))
+        except OverflowError as hata:
+            raise InvalidInputError(
+                f"spin senaryosu: n_sweep float araligini asiyor "
+                f"(~2^{n_olcum.bit_length()})"
+            ) from hata
+        try:
+            e_max = L * L * (2.0 * coupling + abs(field))
+        except OverflowError as hata:
+            raise InvalidInputError(
+                f"spin senaryosu: lattice_size cok buyuk, L^2 float araligini "
+                f"asiyor (L ~2^{L.bit_length()})"
+            ) from hata
+        if not e_max <= tavan:
+            raise InvalidInputError(
+                f"spin senaryosu: coupling/field cok buyuk, enerji olcegi tasiyor: "
+                f"E_max = L^2 (2J + |h|) = {e_max!r} (L = {L}, coupling = "
+                f"{coupling!r}, field = {field!r}); isi sigasi {scenario.n_sweep} "
+                f"olcumde E^2'yi toplar ve E_max en cok {tavan:.6g} olabilir"
+            )
+    if not np.isfinite(2.0 * coupling):  # HER algoritma (dokstring: 2J KAPISI)
+        raise InvalidInputError(
+            f"spin senaryosu: coupling cok buyuk, 2J = {2.0 * coupling} tasiyor "
+            f"(coupling = {coupling!r}, en cok {float(np.finfo(float).max) / 2.0!r}); "
+            "Wolff'un bag olasiligi p = 1 - exp(-2J/T) sessizce 1 olur, "
+            "<|m|> = 1 ve tau = inf basilir"
         )
 
 
@@ -165,7 +276,9 @@ def build_spin(scenario: SpinScenario) -> SpinScanResult:
     girislerinde de uygulanir (`_coupling_kapisi`), sonluluk dahil;
     `SpinScenario(coupling=-1)` eskiden panele kadar kosuyor ve tekbicim
     m'den AFM icin anlamsiz bir Binder basiyordu. Motor (`run_metropolis`)
-    `J < 0`i BILEREK kabul etmeye devam eder.
+    `J < 0`i BILEREK kabul etmeye devam eder. Yukleyicinin oteki kapilari
+    (field/heisenberg_step sonlulugu, bool/dizge reddi, tasma) da ayni
+    girislerde durur (`_girdi_kapisi`, 11.10.2026).
 
     HER SICAKLIK AYRI BIR AKIS ALIR. Tek bir `default_rng(seed)` butun
     sicakliklarda yeniden kullanilsaydi tarama noktalari AYNI rastgele diziyi
@@ -220,7 +333,7 @@ def build_spin(scenario: SpinScenario) -> SpinScanResult:
     `.superpowers/sdd/f7-olcum/` (elestirmen/ e1-e6, uygulama/ u0-u6,
     dogrulama/ v_*).
     """
-    _coupling_kapisi(scenario)
+    _girdi_kapisi(scenario)
     model = _model_kur(scenario)
     akislar = np.random.SeedSequence(scenario.seed).spawn(
         len(scenario.temperatures)
@@ -287,7 +400,7 @@ def provenance_for(
     L = 32 / 8000'de 0/24. "Metropolis plato yapmaz" bir ALGORITMA cumlesi
     olarak YANLIStir.
     """
-    _coupling_kapisi(scenario)  # Yontem satiri T/coupling boler (0'a, eksiye)
+    _girdi_kapisi(scenario)  # Yontem satiri T/coupling boler (0'a, eksiye)
     plato = np.asarray(plateau_reached, dtype=bool)
     tau = np.asarray(tau_int, dtype=float)
     n_t = len(scenario.temperatures)

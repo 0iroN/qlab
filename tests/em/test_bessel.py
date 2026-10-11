@@ -1148,6 +1148,27 @@ def test_MODE_SPECTRUM_GIRDI_DENETIMLERI(kucuk_kayit):
     assert set(WINDOW_FNS) == set(WINDOW_SIDELOBE)
 
 
+@pytest.mark.parametrize("bozuk", [float("nan"), float("inf"), -float("inf")])
+def test_MODE_SPECTRUM_SONLU_OLMAYAN_KAYDI_REDDEDER(kucuk_kayit, bozuk):
+    """SINIF: TRANSKRİPSİYON DENETİMİ (G15, 11.10.2026).
+
+    ÖLÇÜLDÜ (HEAD ef18615, kapı yokken; `em_tarama.yaml` penceresi, R = 5):
+    temiz kayıt 28 tepe; TEK bir NaN / +inf / −inf eklenince alet HATASIZ boş
+    demet döndürüyordu — çağıran bunu "tepe bulunamadı" diye okurdu. Kapı
+    modülün `values sonlu olmali` deseninde, sayımı ile; temiz kayıt aynı
+    tepeleri vermeye devam eder.
+    """
+    from dataclasses import replace
+
+    once = mode_spectrum(kucuk_kayit, **SEVK)
+    probes = kucuk_kayit.probes.copy()
+    probes[0, probes.shape[1] // 2] = bozuk
+    with pytest.raises(InvalidInputError, match="kayit sonlu olmali; 1 sonlu olmayan"):
+        mode_spectrum(replace(kucuk_kayit, probes=probes), **SEVK)
+    assert mode_spectrum(kucuk_kayit, **SEVK).frequencies == once.frequencies
+    assert len(once.frequencies) >= 2
+
+
 def test_RUN_2D_GIRDI_DENETIMLERI():
     """SINIF: TRANSKRİPSİYON DENETİMİ."""
     med = Medium.uniform_2d(21, 21)

@@ -1200,6 +1200,283 @@ def test_BINNING_PLATOSU_METASTABILITEYI_DISLAMAZ(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# F2 (11.10.2026): bool/metin reddi, TAŞMA KAPISI, Python yolunda sonluluk.
+# Her "ÖLÇÜLDÜ" HEAD ef18615'te, kapı YOKKEN, kamu yolundan alındı (kayıtlar
+# depo dışında). Ret testleri hiç sweep koşmaz.
+# ---------------------------------------------------------------------------
+
+
+def _f2_yaml(**ek: str) -> str:
+    alanlar = {
+        "kind": "spin", "name": "f2", "model": "ising", "algorithm": "metropolis",
+        "lattice_size": "4", "temperatures": "[2.0]", "n_sweep": "64",
+        "n_burn": "0", "seed": "7",
+    }
+    alanlar.update(ek)
+    return "".join(f"{k}: {v}\n" for k, v in alanlar.items())
+
+
+@pytest.mark.parametrize(
+    "ek,ad",
+    [
+        (dict(coupling="true"), "coupling"),
+        (dict(coupling="yes"), "coupling"),
+        (dict(coupling="'2'"), "coupling"),
+        (dict(coupling="'1.0e-6'"), "coupling"),
+        (dict(field="'0.1'"), "field"),
+        (dict(model="heisenberg", heisenberg_step="'0.5'"), "heisenberg_step"),
+        (dict(temperatures="['2.0']"), "temperatures[0]"),
+        (dict(temperatures="[3.0, true]"), "temperatures[1]"),
+        (dict(lattice_size="'4'"), "lattice_size"),
+        (dict(lattice_size="4.7"), "lattice_size"),
+        (dict(n_sweep="true"), "n_sweep"),
+        (dict(n_burn="false"), "n_burn"),
+        (dict(seed="'5'"), "seed"),
+    ],
+)
+def test_F2_SAYISAL_ALAN_bool_ve_METNI_SESSIZCE_CEVIRMIYOR(tmp_path, ek, ad):
+    """YAML'ın bayrağı ve metni sayıya ÇEVRİLMEZ; mesaj alanı ADIYLA anar.
+
+    ÖLÇÜLDÜ: her satır `load_scenario`dan GEÇİYORDU — `coupling: true`/`yes`
+    → 1.0 (CLI rc = 0, panel "J = 1 (girdi)"), `'2'` → 2.0, `'1.0e-6'` →
+    1e-06, `[true]` → T = 1.0, `n_sweep: true` → 1, `lattice_size: 4.7` → 4,
+    `seed: '5'` → 5.
+    """
+    with pytest.raises(ScenarioError, match=re.escape(f"'{ad}'")):
+        load_scenario(_yaz(tmp_path, _f2_yaml(**ek)))
+
+
+def test_F2_GERCEK_YAML_SAYILARI_hala_GECIYOR(tmp_path):
+    """Kapı fazla sıkı değil — ve PyYAML'ın üstel yazım açığı KIRILMADI.
+
+    PyYAML (YAML 1.1) `1e-6` ve `-5e-324`ü tırnaksız da DİZE döndürür
+    (`repr(float)` tam bu biçimi yazar; F7 kilidi `field: -5e-324` yazar).
+    Onlar eskiden doğru okunuyordu ve hâlâ sayıdır; tam değerli float da
+    tam sayı alanına geçer.
+    """
+    s = load_scenario(
+        _yaz(tmp_path, _f2_yaml(coupling="1e-6", field="-5e-324", n_sweep="64.0"))
+    )
+    assert (s.coupling, s.field, s.n_sweep) == (1e-6, -5e-324, 64)
+    assert s.field < 0.0 and type(s.n_sweep) is int and type(s.coupling) is float
+    assert load_scenario(_yaz(tmp_path, _f2_yaml(coupling="1.0e-6"))).coupling == 1e-6
+
+
+@pytest.mark.parametrize(
+    "ek", [dict(coupling="1.0e+308"), dict(field="1.0e+308"), dict(field="-1.0e+308")]
+)
+def test_F2_TASMA_KAPISI_YAML_da_ve_CLI_da_ADIYLA(tmp_path, capsys, ek):
+    """Sonlu ama TAŞAN coupling/field YAML okunurken, adıyla düşer.
+
+    ÖLÇÜLDÜ (CLI, L = 4, 64 ölçüm): üçü de yükleniyordu ve `qlab.run` rc = 1
+    ile YALNIZ "enerji serisi sonlu olmali; 64 sonlu olmayan deger var"
+    diyordu — hangi girdinin taştığını anmadan, sweep'lerden SONRA.
+    """
+    yol = _yaz(tmp_path, _f2_yaml(**ek))
+    with pytest.raises(ScenarioError, match="enerji ölçeği taşıyor"):
+        load_scenario(yol)
+    from qlab.run import main
+
+    assert main([str(yol), "-o", str(tmp_path / "x.npz")]) == 1
+    hata = capsys.readouterr().err
+    assert "enerji ölçeği taşıyor" in hata and "enerji serisi" not in hata
+
+
+def test_F2_TASMA_ESIGI_GECERLI_KOSUMU_KESMIYOR_ve_TASANI_KESIYOR(tmp_path):
+    """Eşik `n_sweep · E_max² <= float max`, `E_max = L²(2J + |h|)`; iki yanı.
+
+    `(J, T) → (2^500 J, 2^500 T)` IEEE'de KESİNDİR: geçen koşumun paneli J = 1
+    koşumuyla BİT BİT aynı (kapı geçerli bir koşumu kesmiyor). 2^510'da
+    `E_max² · 64` taşar; ÖLÇÜLDÜ (kapı yokken, aynı pencere, J = 1.0e+153):
+    rc = 0 ve panelde C=nan, uyarısız. Kapı onu yükleyicide adıyla keser.
+    """
+    def panel(J, T):
+        senaryo = load_scenario(
+            _yaz(tmp_path, _f2_yaml(coupling=repr(J), temperatures=f"[{T!r}]"))
+        )
+        yuk = build_spin_payload(build_spin(senaryo))
+        return yuk.magnetisation[0], yuk.binder[0], yuk.heat_capacity[0]
+
+    taban = panel(1.0, 2.0)
+    assert panel(2.0**500, 2.0**501) == taban and np.isfinite(taban[2])
+    with pytest.raises(ScenarioError, match="enerji ölçeği taşıyor"):
+        panel(2.0**510, 2.0**511)
+
+
+@pytest.mark.parametrize(
+    "alanlar,ad",
+    [
+        (dict(field=float("nan")), "sonlu field"),
+        (dict(field=float("inf")), "sonlu field"),
+        (dict(model="heisenberg", heisenberg_step=float("nan")), "heisenberg_step"),
+        (dict(model="heisenberg", heisenberg_step=float("inf")), "heisenberg_step"),
+        (dict(coupling=True), "coupling"),
+        (dict(coupling="2"), "coupling"),
+        (dict(field="0.1"), "field"),
+        (dict(temperatures=(True, 4.0)), "temperatures"),
+        (dict(n_sweep=True), "n_sweep"),
+        (dict(seed="5"), "seed"),
+        (dict(coupling=1e308), "coupling/field"),
+        (dict(field=1e308), "coupling/field"),
+        (dict(coupling=np.True_), "coupling tek bir gercel"),
+        (dict(field=np.array(True)), "field tek bir gercel"),
+        (dict(temperatures=(np.True_, 4.0)), "temperatures tek bir gercel"),
+        (dict(coupling=np.complex128(2.0)), "coupling tek bir gercel"),
+        (dict(n_sweep=np.True_), "n_sweep tam sayi"),
+        (dict(seed=np.True_), "seed tam sayi"),
+    ],
+)
+def test_F2_PYTHON_YOLU_SONLULUK_TIP_ve_TASMA_KAPISI(monkeypatch, alanlar, ad):
+    """Yükleyici kapılarının Python eşi (`InvalidInputError`), HESAPTAN ÖNCE.
+
+    ÖLÇÜLDÜ (`build_spin` doğrudan, L = 4, 20 ölçüm): field nan/inf ve
+    heisenberg_step nan/inf HATASIZ geçiyordu (alan: enerji serisi nan/-inf;
+    adım: Heisenberg önerisi DONUK, |m| hep 1); `coupling=True` J = 1 diye
+    koşuyordu; `'2'`/`'0.1'` ham `TypeError`; 1e308 enerji serisini -inf
+    yapıyordu. `provenance_for` da aynı kapıdan geçer.
+
+    field nan/inf satırları SONLULUK mesajını ("sonlu field") eşler: taşma
+    kapısı da nan/inf alanı reddeder ve mesajı "coupling/field" der, yani
+    yalnız "field" eşlemek sonluluk denetiminin silinmesini (doğrulayıcının
+    M28'i) yakalamıyordu. numpy bool'u (`np.True_`, `np.array(True)`) Python
+    `bool`unun alt sınıfı değildir ve kapının ilk sürümünden coupling /
+    field / temperatures için 1.0 diye geçiyordu (tam sayı alanlarında zaten
+    reddediliyordu — o iki satır gerileme kilidi); `np.complex128` bir
+    uyarıyla gerçel kısmına iniyordu.
+    """
+    monkeypatch.setattr(fabrika, "run_metropolis", lambda *a, **k: pytest.fail("kapi hesaptan sonra"))
+    senaryo = dataclasses.replace(UCUZ_METRO, **alanlar)
+    with pytest.raises(InvalidInputError, match=re.escape(ad)):
+        build_spin(senaryo)
+    with pytest.raises(InvalidInputError, match=re.escape(ad)):
+        provenance_for(senaryo, plateau_reached=np.ones(2, bool), tau_int=np.ones(2))
+
+
+#: Eşik testlerinin penceresi: L = 4, 64 ölçüm, tek sıcaklık. Kapı sınırı
+#: E_max = 32 J <= sqrt(float max / 64) = 1.676e153, yani J <= 5.237e151.
+KUCUK_METRO = SpinScenario(
+    name="esik", model="ising", algorithm="metropolis", lattice_size=4,
+    temperatures=(2.0,), n_sweep=64, n_burn=0, seed=7,
+)
+KUCUK_WOLFF = dataclasses.replace(KUCUK_METRO, algorithm="wolff", temperatures=(1.7,))
+
+
+def _panel(sonuc):
+    """(<|m|>, Binder, C); Wolff enerji kaydetmez, C orada `None`."""
+    yuk = build_spin_payload(sonuc)
+    C = None if yuk.heat_capacity is None else yuk.heat_capacity[0]
+    return yuk.magnetisation[0], yuk.binder[0], C
+
+
+def test_F2_TASMA_ESIGI_IKI_CARPANI_DA_SAYIYOR_YAML_ve_PYTHON(tmp_path):
+    """Eşik SIKI: J = 5.2e151 geçer, J = 1.0e152 düşer (L = 4, n = 64).
+
+    E_max = L²·2J: 5.2e151 → 1.664e153 <= 1.676e153 (geçer), 1e152 → 3.2e153
+    (düşer). Kapıdan `n_sweep` çarpanı düşerse tavan 1.34e154'e, `L²` düşerse
+    E_max 2e152'ye iner ve 1e152 GEÇER — doğrulayıcının M02/M03 (yükleyici)
+    ve M18/M27 (fabrika) mutantları 2^500/2^510 çatalından ve 1e308'den
+    sağ çıkıyordu, çünkü o çatal iki çarpanı da fark etmeyecek kadar geniş.
+    ÖLÇÜLDÜ (kapı yokken, aynı pencere): J = 1e152'de C = inf, rc = 0.
+
+    Geçen koşum J = 1 ile aynı fiziktir (T = 2J): <|m|> ve Binder BİT BİT
+    aynı (kabul kararları ΔE/T = 2, 4 oranlarına bağlı), C yalnız son
+    basamaklarda ayrışır (ölçüldü: göreli 2.9e-15; J 2'nin kuvveti değil).
+    """
+    J_gecer, J_duser = 5.2e151, 1.0e152
+    taban = _panel(build_spin(KUCUK_METRO))
+    assert np.isfinite(taban[2])
+
+    def yaml_senaryo(J):
+        return load_scenario(
+            _yaz(tmp_path, _f2_yaml(coupling=repr(J), temperatures=f"[{2.0 * J!r}]"))
+        )
+
+    for senaryo in (
+        yaml_senaryo(J_gecer),
+        dataclasses.replace(KUCUK_METRO, coupling=J_gecer, temperatures=(2.0 * J_gecer,)),
+    ):
+        m, U, C = _panel(build_spin(senaryo))
+        assert (m, U) == taban[:2]
+        assert C == pytest.approx(taban[2], rel=1e-12)
+
+    with pytest.raises(ScenarioError, match="enerji ölçeği taşıyor"):
+        yaml_senaryo(J_duser)
+    with pytest.raises(InvalidInputError, match="enerji olcegi tasiyor"):
+        build_spin(
+            dataclasses.replace(KUCUK_METRO, coupling=J_duser, temperatures=(2.0 * J_duser,))
+        )
+
+
+def test_F2_WOLFF_2J_KAPISI_YAML_da_ve_PYTHON_da(tmp_path, monkeypatch):
+    """2J taşarsa Wolff'un bağ olasılığı p = 1 - exp(-2J/T) sessizce 1 olur.
+
+    ÖLÇÜLDÜ (doğrulayıcı, kapının ilk sürümü, kT/J = 1.7): coupling >= 9e307
+    Wolff'ta rc = 0 ile <|m|> = 1.000000 ve tau = inf basıyordu — E_max kapısı
+    "Wolff enerji ölçmez" diye yalnız Metropolis'teydi. 8e307'de 2J sonludur
+    ve panel J = 1 ile BİT BİT aynıdır (bu testte ölçülür); 1e308 iki yolda
+    da adıyla, HİÇBİR küme çevrilmeden düşer.
+    """
+    taban = _panel(build_spin(KUCUK_WOLFF))
+
+    def yaml_senaryo(J):
+        return load_scenario(
+            _yaz(
+                tmp_path,
+                _f2_yaml(algorithm="wolff", coupling=repr(J), temperatures=f"[{1.7 * J!r}]"),
+            )
+        )
+
+    gecen = (
+        yaml_senaryo(8e307),
+        dataclasses.replace(KUCUK_WOLFF, coupling=8e307, temperatures=(1.7 * 8e307,)),
+    )
+    for senaryo in gecen:
+        assert _panel(build_spin(senaryo))[:2] == taban[:2]
+
+    monkeypatch.setattr(fabrika, "run_wolff", lambda *a, **k: pytest.fail("kapi hesaptan sonra"))
+    with pytest.raises(ScenarioError, match=r"'coupling' çok büyük: 2J = inf"):
+        yaml_senaryo(1.0e308)
+    senaryo = dataclasses.replace(KUCUK_WOLFF, coupling=1.0e308, temperatures=(1.7e308,))
+    with pytest.raises(InvalidInputError, match=r"coupling cok buyuk, 2J = inf"):
+        build_spin(senaryo)
+    with pytest.raises(InvalidInputError, match=r"2J = inf"):
+        provenance_for(senaryo, plateau_reached=np.ones(1, bool), tau_int=np.ones(1))
+
+
+_COK_BUYUK_N = 10**309  # > float max (~1.8e308): float'a çevrilirken OverflowError
+_COK_BUYUK_L = 10**155  # L² = 1e310 > float max; çift (Metropolis kuralı)
+
+
+@pytest.mark.parametrize(
+    "alan,deger,desen",
+    [
+        ("n_sweep", _COK_BUYUK_N, "n_sweep' float aralığını aşıyor"),
+        ("lattice_size", _COK_BUYUK_L, "lattice_size' çok büyük"),
+    ],
+    ids=["n_sweep_1e309", "lattice_size_1e155"],
+)
+def test_F2_TASMA_KAPISI_DEV_TAM_SAYIDA_HAM_OVERFLOW_SIZDIRMAZ(
+    tmp_path, monkeypatch, alan, deger, desen
+):
+    """Taşma kapısının KENDİSİ float'a çevirirken taşmamalı — alan adıyla düşer.
+
+    ÖLÇÜLDÜ (doğrulayıcı, kapının ilk sürümü): `n_sweep` tam sayı yazımı
+    > ~1.8e308 ya da `lattice_size` > ~1.3e154, kapının içinden ham
+    `OverflowError: int too large to convert to float` sızdırıyordu (CLI'da
+    traceback; `build_spin`/`provenance_for` aynı).
+    """
+    with pytest.raises(ScenarioError, match=desen):
+        load_scenario(_yaz(tmp_path, _f2_yaml(**{alan: str(deger)})))
+    monkeypatch.setattr(fabrika, "run_metropolis", lambda *a, **k: pytest.fail("kapi hesaptan sonra"))
+    senaryo = dataclasses.replace(KUCUK_METRO, **{alan: deger})
+    python_deseni = {"n_sweep": "n_sweep float araligini asiyor", "lattice_size": "lattice_size cok buyuk"}
+    with pytest.raises(InvalidInputError, match=python_deseni[alan]):
+        build_spin(senaryo)
+    with pytest.raises(InvalidInputError, match=python_deseni[alan]):
+        provenance_for(senaryo, plateau_reached=np.ones(1, bool), tau_int=np.ones(1))
+
+
+# ---------------------------------------------------------------------------
 # `slow` İŞARETİNİN GEREKÇESİ -- ÖLÇÜM.
 #
 # Deponun eşiği: kendi `call` süresi 2 s ve ÜSTÜNDE olan test işaretlenir

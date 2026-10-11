@@ -54,21 +54,54 @@ class ScanResult:
     provenance: Provenance
 
 
-def _molecule_for(scenario: HFScanScenario, value: float) -> Molecule:
-    """Tarama degerini molekul sablonuna yerlestirir ve Molecule'e cevirir.
+def _sablon_metni(scenario: HFScanScenario, value: float) -> str:
+    """Tarama degerini molekul sablonuna yerlestirir (yalniz metin).
 
     Sablon {value} disinda bir yer tutucu iceriyorsa (kopyala-yapistir
     kalintisi, yanlis alan adi, ...) str.format() KeyError/IndexError
     firlatir -- bu ciplak haliyle sizdirilmaz, ScenarioError'a cevrilir.
+    Ic ice alanlar (`{value:{value[0]}}`, `{value:{value.foo}}`)
+    TypeError/AttributeError firlatir; onlar da cevrilir (11.10.2026).
     """
     try:
-        spec = scenario.molecule_template.format(value=value)
-    except (KeyError, IndexError, ValueError) as exc:
+        return scenario.molecule_template.format(value=value)
+    except (KeyError, IndexError, ValueError, TypeError, AttributeError) as exc:
         raise ScenarioError(
             f"'molecule_template' {{value}} disinda gecersiz bir yer tutucu "
             f"iceriyor: {exc}"
         ) from exc
-    return Molecule.from_string(spec, unit=scenario.unit)
+
+
+def _molecule_for(scenario: HFScanScenario, value: float) -> Molecule:
+    """Tarama degerini molekul sablonuna yerlestirir ve Molecule'e cevirir."""
+    return Molecule.from_string(_sablon_metni(scenario, value), unit=scenario.unit)
+
+
+def _carpisma_kapisi(scenario: HFScanScenario) -> None:
+    """FARKLI tarama degerleri AYNI molekule bicimlenemez -- Python yolu.
+
+    Yukleyicinin (`loader.py::_load_hf_scan_scenario`) carpisma kapisinin
+    esi; `HFScanScenario(...)` dogrudan kurulunca yukleyici hic calismaz.
+    OLCULDU (dogrulayici, 11.10.2026, kamu yolu, kapi yokken): `{value:.0f}`
+    ile values [0.6, 0.7, 0.9, 1.4] dort OZDES enerji verdi ve tarama rc = 0
+    ile "4 nokta" basti. Ayni kapi Python yolunda yer tutucusuz bir sablonu
+    da (her deger ayni metin) birden fazla degerle yakalar -- yukleyicinin
+    "{value} yer tutucusu bulunmali" kuralinin fabrikada karsiligi yoktu.
+    Degerler bicimlenmis METNE gore gruplanir: `0.0` ile `-0.0` esit deger
+    ama farkli metindir ve carpisma DEGILDIR.
+    """
+    gruplar: dict[str, list[float]] = {}
+    for value in scenario.values:
+        grup = gruplar.setdefault(_sablon_metni(scenario, value), [])
+        if value not in grup:
+            grup.append(value)
+    carpisan = {metin: grup for metin, grup in gruplar.items() if len(grup) > 1}
+    if carpisan:
+        raise ScenarioError(
+            "'molecule_template' farkli 'values' degerlerini AYNI molekule "
+            f"bicimliyor: {carpisan}. Tarama ayni molekulu birden cok kez "
+            "cozer ve egri sessizce duzlesirdi."
+        )
 
 
 def run_scan(scenario: HFScanScenario) -> ScanResult:
@@ -76,8 +109,10 @@ def run_scan(scenario: HFScanScenario) -> ScanResult:
 
     Yakinsama davranisi icin modul dokstringine bakin: nokta-bazli SCF
     yakinsamama NaN olarak isaretlenip taramaya devam edilir, yapilandirma
-    hatalari ise taramanin tumunu durdurur.
+    hatalari ise taramanin tumunu durdurur. Carpisan sablon (`_carpisma_kapisi`)
+    da bir yapilandirma hatasidir ve HICBIR SCF kosmadan reddedilir.
     """
+    _carpisma_kapisi(scenario)
     values = np.array(scenario.values, dtype=float)
     energies = np.full(values.shape, np.nan)
     lowest_eigenvalues = np.full(values.shape, np.nan)

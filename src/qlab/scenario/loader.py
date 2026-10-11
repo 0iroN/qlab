@@ -21,6 +21,9 @@ parametre anahtarları → TB_SS_SIGMA_* ve RADIAL_LAW_FIELDS.
 from __future__ import annotations
 
 import math
+import re
+import string
+import sys
 from pathlib import Path
 
 import yaml
@@ -251,6 +254,51 @@ def _load_tdse_scenario(raw: dict, file_path: Path) -> TDSEScenario:
         raise ScenarioError(f"Senaryo alanları hatalı ({file_path}): {exc}") from exc
 
 
+def _sablon_kapisi(sablon: str) -> None:
+    """`molecule_template`in yer tutucu kapısı — `str.format`ın KENDİ ayrıştırıcısıyla.
+
+    Fabrika şablonu `str.format(value=...)` ile doldurur; kapı aynı dilbilgisini
+    okur. Eskiden düz alt-dize testiydi (`"{value}" in şablon`) ve İKİ YÖNDE
+    yanılıyordu (ölçüldü 11.10.2026, kamu yolu): `{value:.2f}` (geçerli: 0.7412
+    → `0.74`) REDDEDİLİYORDU; `{{value}}` (yer tutucu DEĞİL, düz metin) ve
+    `{value} {oops}` KABUL ediliyordu — ikincisi ancak tarama başlayınca düşüyordu.
+
+    Kural: en az bir alan ve her alanın adı TAM OLARAK `value` (biçim belirteci
+    ve dönüşüm serbest: `{value:.2f}`, `{value!r}`); `{val}`, `{}`, `{value.real}`
+    reddedilir. Sonra şablon bir kez `value=1.0` ile biçimlenir: geçersiz bir
+    biçim belirteci (`{value:d}`) ya da iç içe bir alan (`{value:{w}}`,
+    `{value:{value[0]}}`, `{value:{value.foo}}`) da YAML okunurken düşer —
+    sonuncu ikisi `TypeError`/`AttributeError` fırlatır ve ham sızıyordu
+    (doğrulayıcı, 11.10.2026). Fabrikanın `_molecule_for` kapısı Python yolu
+    (`HFScanScenario(...)` doğrudan) için DURUR — katman ayrımı.
+
+    Bu kapı tek bir şablonu sınar; FARKLI değerlerin AYNI moleküle
+    biçimlenmesini (`{value:.0f}`) `_load_hf_scan_scenario`daki çarpışma
+    kapısı yakalar, çünkü o değerleri görmeyi gerektirir.
+    """
+    try:
+        adlar = [ad for _, ad, _, _ in string.Formatter().parse(sablon) if ad is not None]
+    except ValueError as exc:
+        raise ScenarioError(f"'molecule_template' ayrıştırılamadı: {exc}") from exc
+    if "value" not in adlar:
+        raise ScenarioError(
+            "'molecule_template' içinde {value} yer tutucusu bulunmalı — "
+            "aksi halde tarama aynı molekülü m kez çözerdi"
+        )
+    yabanci = sorted({ad for ad in adlar if ad != "value"})
+    if yabanci:
+        raise ScenarioError(
+            f"'molecule_template' {{value}} dışında yer tutucu içeriyor: {yabanci}. "
+            "Fabrika şablonu yalnız value= ile doldurur."
+        )
+    try:
+        sablon.format(value=1.0)
+    except (KeyError, IndexError, ValueError, TypeError, AttributeError) as exc:
+        raise ScenarioError(
+            f"'molecule_template' biçimlenemiyor (value = 1.0 ile sınandı): {exc!r}"
+        ) from exc
+
+
 def _load_hf_scan_scenario(raw: dict, file_path: Path) -> HFScanScenario:
     unknown = set(raw) - _HF_TOP_LEVEL
     if unknown:
@@ -269,11 +317,7 @@ def _load_hf_scan_scenario(raw: dict, file_path: Path) -> HFScanScenario:
             "'molecule_template' bir metin olmalı, verilen: "
             f"{type(molecule_template).__name__}"
         )
-    if "{value}" not in molecule_template:
-        raise ScenarioError(
-            "'molecule_template' içinde {value} yer tutucusu bulunmalı — "
-            "aksi halde tarama aynı molekülü m kez çözerdi"
-        )
+    _sablon_kapisi(molecule_template)
 
     # values'ı tek tek dönüştürerek hangi girdinin bozuk olduğunu tanılayabilelim.
     # Liste-olmayan (skaler, None, ...) bir değer TypeError, sayıya çevrilemeyen
@@ -291,6 +335,31 @@ def _load_hf_scan_scenario(raw: dict, file_path: Path) -> HFScanScenario:
     if len(values_tuple) == 0:
         raise ScenarioError(
             "'values' listesi boş olamaz — en az bir tarama noktası gerekli"
+        )
+
+    # ÇARPIŞMA KAPISI (B4, 11.10.2026): biçim belirteci FARKLI değerleri AYNI
+    # moleküle indirebilir. ÖLÇÜLDÜ (doğrulayıcı, kamu yolu, kapı yokken):
+    # `{value:.0f}` ile values [0.6, 0.7, 0.9, 1.4] dört ÖZDEŞ enerji
+    # (-1.0661086493089347) verdi; CLI "4 nokta", her denetim ✓, rc = 0 —
+    # yer tutucu kapısının önlemek için var olduğu sessiz yolun ta kendisi.
+    # Biçimlenmiş moleküller, farklı değerler kadar farklı olmalı. Değerler
+    # biçimlenmiş METNE göre gruplanır, küme boylarının eşitliğine göre değil:
+    # `0.0` ile `-0.0` eşit değer ama farklı metindir ve çarpışma DEĞİLDİR.
+    # Fabrikanın `run_scan`i aynı kapıyı Python yolu için tekrarlar. Biçimleme
+    # burada fırlatamaz: `_sablon_kapisi` şablonu bir float ile sınadı ve bir
+    # float biçim belirtecinin geçerliliği değere bağlı değildir.
+    gruplar: dict[str, list[float]] = {}
+    for deger in values_tuple:
+        grup = gruplar.setdefault(molecule_template.format(value=deger), [])
+        if deger not in grup:
+            grup.append(deger)
+    carpisan = {metin: grup for metin, grup in gruplar.items() if len(grup) > 1}
+    if carpisan:
+        raise ScenarioError(
+            "'molecule_template' farklı 'values' değerlerini AYNI moleküle "
+            f"biçimliyor: {carpisan}. Tarama aynı molekülü birden çok kez çözer "
+            "ve eğri sessizce düzleşirdi; biçim belirtecinin hassasiyetini "
+            "artırın (ör. {value:.0f} yerine {value:.2f}) ya da değerleri ayırın."
         )
 
     # Not: HFScanScenario __post_init__ taşımayan sade bir frozen dataclass'tır
@@ -557,6 +626,66 @@ def _load_downfold_scenario(raw: dict, file_path: Path) -> DownfoldScenario:
     )
 
 
+#: YAML 1.2'nin ÜSTEL kayan nokta yazımı. PyYAML YAML 1.1 çözücüsüyle bunların
+#: noktasız ya da işaretsiz olanlarını (`1e-6`, `5e-324`, `1.0e308`, `1e+100`)
+#: TIRNAKSIZ yazılsa bile DİZE döndürür; Python'un `repr(float)`u da tam bu
+#: biçimi üretir. Bunlar kullanıcının metni değil çözücünün açığıdır.
+_YAML12_USTEL = re.compile(r"[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)[eE][-+]?[0-9]+")
+
+
+def _yaml_sayisi(ad: str, deger: object) -> float:
+    """YAML'dan gelen TEK bir gerçel sayı — bool ve TIRNAKLI metin REDDEDİLİR.
+
+    `float()` ikisini de SESSİZCE çevirir; ölçüldü (11.10.2026, kamu yolu):
+    `coupling: true` → 1.0 ve panel "J = 1 (girdi)" basıyordu, `coupling: '2'`
+    → 2.0, `temperatures: [true]` → T = 1.0. YAML'da `true` (ve `yes`/`on`)
+    bir bayraktır, tırnaklı `'2'` bir metindir.
+
+    TEK İSTİSNA bilinçlidir: PyYAML'ın tırnaksız olsa da dize döndürdüğü üstel
+    yazım (`_YAML12_USTEL`; `coupling: 1e-6`, F7 kilidinin `field: -5e-324`ü)
+    sayı olarak okunur — o dizenin tırnaklı mı tırnaksız mı yazıldığı
+    `safe_load`dan sonra ayırt edilemez ve reddetmek, eskiden doğru okunan
+    YAML'ları kırardı. Dize tırnaksız yazılınca çözücünün ZATEN sayı yapacağı
+    bir biçimdeyse (`'2'`, `'0.1'`, `'1.0e-6'`) tırnak bilinçlidir ve reddedilir.
+    Sonluluk BURADA denetlenmez: her alanın adını anan kendi kapısı vardır.
+    Motor katmanındaki eşi `engine/spin/factory.py::_skaler`dır.
+    """
+    if (
+        isinstance(deger, str)
+        and _YAML12_USTEL.fullmatch(deger)
+        and isinstance(yaml.safe_load(deger), str)
+    ):
+        return float(deger)
+    if isinstance(deger, bool) or not isinstance(deger, (int, float)):
+        raise ScenarioError(
+            f"'{ad}' bir sayı olmalı, verilen: {deger!r} ({type(deger).__name__}). "
+            "bool ve tırnaklı metin sessizce sayıya çevrilmez (true → 1.0, '2' → 2.0)."
+        )
+    try:
+        return float(deger)
+    except OverflowError as exc:
+        raise ScenarioError(f"'{ad}' float aralığını aşıyor: {deger!r}") from exc
+
+
+def _yaml_tam_sayisi(ad: str, deger: object) -> int:
+    """YAML'dan gelen bir TAM SAYI — bool, metin ve kesirli sayı REDDEDİLİR.
+
+    `int()` `true`yu 1'e, `'5'`i 5'e çevirir ve `4.7`yi 4'e KESER; ölçüldü
+    (11.10.2026, kamu yolu): `n_sweep: true` → 1 ölçüm, `seed: '5'` → 5,
+    `lattice_size: 4.7` → 4. Tam değerli bir float (`1000.0`) kabul edilir —
+    `hoppings[].cell` kapısının kuralı.
+    """
+    if (
+        isinstance(deger, bool)
+        or not isinstance(deger, (int, float))
+        or (isinstance(deger, float) and not deger.is_integer())
+    ):
+        raise ScenarioError(
+            f"'{ad}' tam sayı olmalı, verilen: {deger!r} ({type(deger).__name__})"
+        )
+    return int(deger)
+
+
 def _load_spin_scenario(raw: dict, file_path: Path) -> SpinScenario:
     """Spin Monte Carlo senaryosu.
 
@@ -584,11 +713,22 @@ def _load_spin_scenario(raw: dict, file_path: Path) -> SpinScenario:
     uygulanır. `coupling: .inf` 27.09.2026'ya kadar bu kapıdan GEÇİYORDU
     (`not coupling > 0` +inf'i kabul eder) ve hata ancak enerji serisinde,
     coupling adını anmadan geliyordu; artık `coupling`, `field` ve
-    `heisenberg_step`in sonluluğu da denetlenir. AÇIK KALAN (ölçüldü
-    27.09.2026, düzeltilmedi): sonlu ama taşan `coupling`/`field` (1e308) hâlâ
-    geç ve adsız hatayla düşer; `float()` bool/str'i kabul eder (`coupling:
-    true` → 1.0, `'2'` → 2.0 — `md/factory.py`deki reddin karşılığı yok);
-    Python yolunda (`build_spin`) `field`/`heisenberg_step` sonluluğu kapısızdır.
+    `heisenberg_step`in sonluluğu da denetlenir. 27.09.2026'da AÇIK KALAN
+    üç kapı 11.10.2026'da KAPANDI (her biri önce kamu yolundan yeniden
+    ölçüldü): (1) bool/tırnaklı metin artık sayıya çevrilmez — `coupling:
+    true` → 1.0 ve `'2'` → 2.0 geçiyordu, aynısı her sayısal alanda
+    (`_yaml_sayisi`, `_yaml_tam_sayisi`; `md/factory.py`deki Kelvin reddinin
+    karşılığı; PyYAML'ın üstel yazım açığı bilinçli istisna);
+    (2) sonlu ama TAŞAN `coupling`/`field` adıyla düşer — Metropolis'te
+    E_max TAŞMA KAPISINDA (n_sweep · E_max² sonlu), HER algoritmada 2J
+    kapısında (Wolff'un bağ olasılığı 2J'yi hesaplar; kapının ilk sürümü
+    Wolff'u "enerji ölçmez" diye dışarıda bırakmıştı ve coupling >= 9e307
+    orada <|m|> = 1, tau = inf basıyordu); (3) Python yolunda (`build_spin`, `provenance_for`) `field` ve
+    `heisenberg_step` sonluluğu, sayısal alanların bool/metin reddi ve taşma
+    kapısı da var (`InvalidInputError`). AYRI ve AÇIK (taşma kapısı YAKALAMAZ,
+    ölçüldü 11.10.2026, L = 8, T = 2, 64 ölçüm): enerji serisi SABİT iken ısı
+    sığasının <E²> − <E>² farkı iptal hatası verir — `field` = 1e10'da
+    C = 262144, 1e100'de C = −2.7e185 (fizik: 0); kusur `heat_capacity`dedir.
     """
     unknown = set(raw) - _SPIN_TOP_LEVEL
     if unknown:
@@ -613,33 +753,23 @@ def _load_spin_scenario(raw: dict, file_path: Path) -> SpinScenario:
             f"Geçerli algoritmalar: {list(SPIN_ALGORITHM_KINDS)}"
         )
 
-    try:
-        lattice_size = int(raw["lattice_size"])
-        n_sweep = int(raw["n_sweep"])
-        n_burn = int(raw["n_burn"])
-        seed = int(raw["seed"])
-    except (TypeError, ValueError) as exc:
-        raise ScenarioError(
-            f"'lattice_size'/'n_sweep'/'n_burn'/'seed' tam sayı olmalı: {exc}"
-        ) from exc
+    lattice_size = _yaml_tam_sayisi("lattice_size", raw["lattice_size"])
+    n_sweep = _yaml_tam_sayisi("n_sweep", raw["n_sweep"])
+    n_burn = _yaml_tam_sayisi("n_burn", raw["n_burn"])
+    seed = _yaml_tam_sayisi("seed", raw["seed"])
 
-    try:
-        temperatures = tuple(float(x) for x in raw["temperatures"])
-    except TypeError as exc:
-        raise ScenarioError(f"'temperatures' bir sayı listesi olmalı: {exc}") from exc
-    except ValueError as exc:
+    sicakliklar = raw["temperatures"]
+    if not isinstance(sicakliklar, (list, tuple)):
         raise ScenarioError(
-            f"'temperatures' listesindeki bir eleman sayıya dönüştürülemedi: {exc}"
-        ) from exc
+            f"'temperatures' bir sayı listesi olmalı, verilen: {sicakliklar!r}"
+        )
+    temperatures = tuple(
+        _yaml_sayisi(f"temperatures[{i}]", x) for i, x in enumerate(sicakliklar)
+    )
 
-    try:
-        coupling = float(raw.get("coupling", 1.0))
-        field = float(raw.get("field", 0.0))
-        heisenberg_step = float(raw.get("heisenberg_step", 0.6))
-    except (TypeError, ValueError) as exc:
-        raise ScenarioError(
-            f"'coupling'/'field'/'heisenberg_step' sayı olmalı: {exc}"
-        ) from exc
+    coupling = _yaml_sayisi("coupling", raw.get("coupling", 1.0))
+    field = _yaml_sayisi("field", raw.get("field", 0.0))
+    heisenberg_step = _yaml_sayisi("heisenberg_step", raw.get("heisenberg_step", 0.6))
     if not (math.isfinite(field) and math.isfinite(heisenberg_step)):
         raise ScenarioError(
             f"'field' ve 'heisenberg_step' sonlu olmalı, verilen: field = {field}, "
@@ -676,6 +806,56 @@ def _load_spin_scenario(raw: dict, file_path: Path) -> SpinScenario:
             "dört çıpası da ferromanyetiktir ve J <= 0 için hiçbir doğrulama "
             "taşımaz; Wolff'ta ayrıca p = 1 - exp(-2J/T) negatife düşer ve "
             "algoritma sessizce sonsuz sıcaklığı örnekler."
+        )
+    # TAŞMA KAPISI (11.10.2026): sonlu ama TAŞAN coupling/field. Metropolis'in
+    # enerji serisi panelde ısı sığasının KARE ortalamasına girer, yani
+    # n_sweep · E_max² sonlu kalmalıdır; E_max = L²(2J + |h|) bir konfigürasyonun
+    # alabileceği en büyük |E|'dir (2L² bağ, L² site, birim spin) ve adımın
+    # |ΔE| <= 8J + 2|h| sınırını da kapsar. ÖLÇÜLDÜ (kapı yokken, kamu yolu,
+    # L = 8, 64 ölçüm, T = 2J): J = 1e100 / 1e150'de <|m|>, U, C, tau J = 1 ile
+    # aynı; 1e152'de C = inf, 1e153 ... 1e300'de C = nan (rc = 0, uyarısız);
+    # 1e307'de "enerji serisi sonlu olmali" (adsız, sweep'lerden SONRA). `field`
+    # (T = 2) 1e152 / 1e153 / 1e307'de aynı üç biçimde düşüyordu. Bu E_max
+    # kapısı yalnız Metropolis'tedir (Wolff enerji serisi kaydetmez); Wolff'un
+    # kendi taşması aşağıdaki 2J kapısındadır. Tam sayı alanları float'a
+    # çevrilirken taşarsa (`n_sweep` > ~1.8e308, `lattice_size` > ~1.3e154)
+    # ham `OverflowError` yerine alanın adı söylenir.
+    if algorithm == "metropolis":
+        try:
+            tavan = math.sqrt(sys.float_info.max / n_sweep)
+        except OverflowError as exc:
+            raise ScenarioError(
+                f"'n_sweep' float aralığını aşıyor (~2^{n_sweep.bit_length()}); "
+                "taşma kapısı ölçüm sayısını float olarak kullanır."
+            ) from exc
+        try:
+            e_max = lattice_size * lattice_size * (2.0 * coupling + abs(field))
+        except OverflowError as exc:
+            raise ScenarioError(
+                f"'lattice_size' çok büyük: L² float aralığını aşıyor "
+                f"(L ~2^{lattice_size.bit_length()})."
+            ) from exc
+        if not e_max <= tavan:
+            raise ScenarioError(
+                f"'coupling'/'field' çok büyük, enerji ölçeği taşıyor: E_max = L²(2J + |h|) = "
+                f"{e_max!r} (L = {lattice_size}, coupling = {coupling!r}, field = "
+                f"{field!r}); ısı sığası {n_sweep} ölçümde E²'yi toplar ve E_max en "
+                f"çok {tavan:.6g} olabilir. Taşan bir koşum C'yi sessizce inf/nan "
+                "basar ya da sweep'lerden SONRA adsız bir hatayla düşer."
+            )
+    # 2J KAPISI (HER algoritma, 11.10.2026): Wolff'un bağ olasılığı
+    # p = 1 - exp(-2J/T) 2J'yi hesaplar. ÖLÇÜLDÜ (doğrulayıcı, kamu yolu, kapı
+    # yokken, kT/J = 1.7): coupling >= 9e307'de 2J = inf, p = 1 ve koşum rc = 0
+    # ile <|m|> = 1.000000, tau = inf basıyordu; 8e307'de sonuç J = 1 ile aynı
+    # (0.964844). 2J/T'nin taşması (çok küçük T) ise p = 1'i verir ki o doğru
+    # limittir; kapı yalnız 2J'yi ister. Metropolis'te yukarıdaki E_max kapısı
+    # bunu zaten kapsar.
+    if not math.isfinite(2.0 * coupling):
+        raise ScenarioError(
+            f"'coupling' çok büyük: 2J = {2.0 * coupling} taşıyor (coupling = "
+            f"{coupling!r}, en çok {sys.float_info.max / 2.0!r}). Wolff'un bağ "
+            "olasılığı p = 1 - exp(-2J/T) o zaman sessizce 1 olur: her adımda "
+            "bütün küme döner, <|m|> = 1 ve tau = inf basılır."
         )
     if "heisenberg_step" in raw and model != "heisenberg":
         raise ScenarioError(
