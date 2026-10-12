@@ -2321,36 +2321,279 @@ def test_serbest_atom_onbellegi_element_VE_BAZ_ile_anahtarlaniyor():
 
     Önbelleğin GERÇEKTEN önbellek olduğu da yapısal olarak sınanır: hiç
     önbelleğe bakmayan bir uygulamada anahtar sorusunun bir anlamı kalmazdı.
+    Önbellek artık pencereye aittir ve fonksiyona açıkça verilir (bkz.
+    `test_serbest_atom_onbellegi_PENCEREYE_ait_pencereler_arasi_sizmiyor`);
+    burada çıplak bir sözlük yeterli, global bir şey temizlenmez.
     """
-    from qlab.app.orbital_window import (
-        _SERBEST_ATOM_ONBELLEGI,
-        _serbest_atom_referansi,
+    from qlab.app.orbital_window import _serbest_atom_referansi
+
+    onbellek: dict = {}
+    olculen = {
+        (sembol, baz): _serbest_atom_referansi(sembol, baz, onbellek)
+        for sembol in ("H", "O")
+        for baz in ("sto-3g", "6-31g")
+    }
+    assert olculen[("H", "sto-3g")][0] == 1
+    assert olculen[("H", "6-31g")][0] == 2
+    assert olculen[("O", "sto-3g")][0] == 5
+    assert olculen[("O", "6-31g")][0] == 9
+    for anahtar, (_n, iz) in olculen.items():
+        beklenen = 1.0 if anahtar[0] == "H" else 8.0
+        assert iz == pytest.approx(beklenen, abs=1e-9), anahtar
+
+    assert set(onbellek) == set(olculen), (
+        "önbellek element+baz çiftiyle anahtarlanmıyor"
     )
 
-    _SERBEST_ATOM_ONBELLEGI.clear()
+    # YAPISAL SONDA: önbelleğe yabancı bir değer konur. Fonksiyon
+    # önbelleği OKUYORSA onu döndürür.
+    onbellek[("O", "sto-3g")] = (999, -1.0)
+    assert _serbest_atom_referansi("O", "sto-3g", onbellek) == (999, -1.0), (
+        "sonuç önbelleğe alınmıyor; aynı element iki kez çözülüyor"
+    )
+
+
+# ---------------------------------------------------------------------------
+# B2 küçük açıkları (grup 7): kurucu sırası, alan önbelleği (3), serbest atom
+# önbelleği (6), alan seçicisi (7)
+
+
+_H2 = "H 0 0 0; H 0 0 0.74"
+
+
+@requires_offscreen
+@pytest.mark.parametrize(
+    ("yuk", "argumanlar", "gerekce"),
+    [
+        pytest.param(0, {"points_per_axis": 1}, "points_per_axis", id="nokta-1"),
+        pytest.param(0, {"padding": 0.0}, "padding", id="padding-0"),
+        pytest.param(0, {"padding": -100.0}, "padding", id="padding-negatif"),
+        # Sıfır elektron: HOMO indeksi -1, orbital alanı üretilemez.
+        pytest.param(2, {}, "orbital indeksi", id="H2++-orbital"),
+        pytest.param(0, {"level": 0.0}, "izoyüzey seviyesi", id="seviye-0"),
+        pytest.param(0, {"field": "rho"}, "alan türü", id="alan-rho"),
+    ],
+)
+def test_kurucu_reddettigi_girdide_YARIM_PENCERE_birakmiyor(yuk, argumanlar, gerekce):
+    """Reddedilen HER girdi `super().__init__`'ten ÖNCE reddedilmeli.
+
+    ÖLÇÜLDÜ (HEAD e262cab, kamu kurucusu, `parent` verilerek): seviye ve alan
+    türü super()'den önce doğrulanıyordu (ebeveynde 0 QMainWindow kalıyor),
+    ama `points_per_axis=1`, `padding=0.0`, `padding=-100` ve sıfır elektronlu
+    H2++'nın orbital alanı super()'den SONRA reddediliyordu: dördünde de
+    istisna fırlıyor AMA ebeveynin altında yarım kurulmuş 1 QMainWindow
+    kalıyordu. Kurucunun kendi yorumu ("yarım kurulmuş bir QMainWindow
+    ortada bırakılmaz") altı yolun yalnız ikisinde doğruydu.
+    """
+    sonuc = solve(Molecule.from_string(_H2, charge=yuk), "sto-3g")
+    ebeveyn = QtWidgets.QWidget()
     try:
-        olculen = {
-            (sembol, baz): _serbest_atom_referansi(sembol, baz)
-            for sembol in ("H", "O")
-            for baz in ("sto-3g", "6-31g")
-        }
-        assert olculen[("H", "sto-3g")][0] == 1
-        assert olculen[("H", "6-31g")][0] == 2
-        assert olculen[("O", "sto-3g")][0] == 5
-        assert olculen[("O", "6-31g")][0] == 9
-        for anahtar, (_n, iz) in olculen.items():
-            beklenen = 1.0 if anahtar[0] == "H" else 8.0
-            assert iz == pytest.approx(beklenen, abs=1e-9), anahtar
-
-        assert set(_SERBEST_ATOM_ONBELLEGI) == set(olculen), (
-            "önbellek element+baz çiftiyle anahtarlanmıyor"
-        )
-
-        # YAPISAL SONDA: önbelleğe yabancı bir değer konur. Fonksiyon
-        # önbelleği OKUYORSA onu döndürür.
-        _SERBEST_ATOM_ONBELLEGI[("O", "sto-3g")] = (999, -1.0)
-        assert _serbest_atom_referansi("O", "sto-3g") == (999, -1.0), (
-            "sonuç önbelleğe alınmıyor; aynı element iki kez çözülüyor"
-        )
+        with pytest.raises(InvalidInputError, match=gerekce):
+            OrbitalWindow(sonuc, parent=ebeveyn, **argumanlar)
+        kalan = ebeveyn.findChildren(QtWidgets.QMainWindow)
+        assert kalan == [], f"reddedilen kurucu yarım pencere bıraktı: {kalan}"
     finally:
-        _SERBEST_ATOM_ONBELLEGI.clear()
+        ebeveyn.deleteLater()
+
+
+@requires_offscreen
+def test_alan_onbellegi_DURUMDAN_turuyor_ucuncu_bir_yol_bayatlatamiyor(su_sonucu):
+    """(3) `_alan` önbelleği elle yazılmış iki geçersizleştirmeye bağlıydı.
+
+    `set_field_kind` ve `set_orbital_index` alanı AÇIKÇA tazeliyordu; durumu
+    değiştiren üçüncü bir yol bunu unutsa `_yenile` bayat alanı çizerdi.
+    ÖLÇÜLDÜ (HEAD e262cab): `_orbital_index` 4'ten 0'a çekilip `_yenile`
+    çağrılınca ağlar HOMO'nun ağları kalıyor, panel ise "orbital_index 0"
+    basıyordu. Önbellek artık (alan türü, orbital indeksi) anahtarından
+    türüyor: anahtar değişince alan yeniden üretilir, kimse hatırlamasa da.
+    """
+    from qlab.app.orbital_window import ALAN_YOGUNLUK, _YOGUNLUK
+
+    pencere = OrbitalWindow(su_sonucu)
+    referans = OrbitalWindow(su_sonucu)
+    try:
+        homo_sayilari = pencere.mesh_vertex_counts()
+        referans.set_orbital_index(0)
+        assert referans.mesh_vertex_counts() != homo_sayilari  # öncül
+
+        pencere._orbital_index = 0  # açık tazeleme YOK
+        pencere._yenile()
+        assert pencere.mesh_vertex_counts() == referans.mesh_vertex_counts()
+
+        referans.set_field_kind(ALAN_YOGUNLUK)
+        referans.set_isosurface_level(0.05)
+        pencere._alan_turu = _YOGUNLUK  # açık tazeleme YOK
+        # Beyan da alanı okuyan bir yol: `_yenile`'den ÖNCE de güncel olmalı.
+        assert pencere._provenance() == referans._provenance()
+        pencere._yenile()
+        assert pencere.mesh_vertex_counts() == referans.mesh_vertex_counts()
+        assert len(pencere.mesh_vertex_counts()) == 1
+    finally:
+        pencere.close()
+        referans.close()
+
+
+@requires_offscreen
+def test_yogunluk_alaninda_orbital_degisimi_alani_YENIDEN_URETMIYOR(su_sonucu):
+    """Yoğunluk ve fark alanı orbital indeksine BAĞLI DEĞİLDİR.
+
+    ÖLÇÜLDÜ (HEAD e262cab): fark alanında `set_orbital_index(3)` alanı
+    yeniden üretiyordu (176.5 ms, yeni `ScalarField` nesnesi) ve çizilen
+    yüzey bit birebir aynı kalıyordu -- boşa harcanan hesap.
+    """
+    from qlab.app.orbital_window import ALAN_FARK, ALAN_YOGUNLUK
+
+    for ad in (ALAN_YOGUNLUK, ALAN_FARK):
+        pencere = OrbitalWindow(su_sonucu, field=ad)
+        try:
+            alan = pencere._alan
+            pencere.set_orbital_index(3)
+            assert pencere.orbital_index == 3
+            assert pencere._alan is alan, f"{ad!r}: alan boşuna yeniden üretildi"
+        finally:
+            pencere.close()
+
+
+@requires_offscreen
+def test_yogunluk_alaninda_da_gecersiz_orbital_indeksi_reddediliyor(su_sonucu):
+    """Sözleşme ALANDAN BAĞIMSIZ: geçersiz indeks reddedilir, durum korunur.
+
+    ÖLÇÜLDÜ (HEAD e262cab): yoğunluk alanında `set_orbital_index(99)`
+    KABUL EDİLİYORDU (orbital_index 99). Ardından `set_field_kind("orbital")`
+    `InvalidInputError` fırlatıyor ama fırlatmadan önce pencerenin YARISINI
+    değiştirmiş oluyordu: field_kind "orbital", seviye 0.05, kaydırıcı 1..900,
+    seçici etkin -- ağlar ve alan ise hâlâ yoğunluğun (2196,), alan seçici
+    hâlâ "elektron yoğunluğu".
+    """
+    from qlab.app.orbital_window import ALAN_ORBITAL, ALAN_YOGUNLUK
+
+    pencere = OrbitalWindow(su_sonucu, field=ALAN_YOGUNLUK)
+    try:
+        once = _pencere_durumu(pencere)
+        with pytest.raises(InvalidInputError, match="orbital indeksi"):
+            pencere.set_orbital_index(99)
+        assert pencere.orbital_index == 4
+        assert _pencere_durumu(pencere) == once
+        # SINIR (dogrulayici VB1, 12.10.2026): yalniz 99 sinaniyordu; `<=` mutanti
+        # geciyordu. Aralik [0, n_orbital): n_orbital ve -1 red, n_orbital - 1 kabul.
+        n_orbital = len(su_sonucu.orbital_energies)
+        for gecersiz in (n_orbital, -1):
+            with pytest.raises(InvalidInputError, match="orbital indeksi"):
+                pencere.set_orbital_index(gecersiz)
+            assert _pencere_durumu(pencere) == once
+        pencere.set_orbital_index(n_orbital - 1)
+        assert pencere.orbital_index == n_orbital - 1
+        pencere.set_orbital_index(4)
+        pencere.set_field_kind(ALAN_ORBITAL)
+        assert pencere.mesh_vertex_counts() == (1764, 1764)
+    finally:
+        pencere.close()
+
+
+@requires_offscreen
+def test_alan_degisimi_URETILEMEYEN_alanda_pencereyi_YARIM_birakmiyor():
+    """Sıfır elektronlu sistem orbital alanına GEÇEMEZ -- ve yarım da geçmez.
+
+    ÖLÇÜLDÜ (HEAD e262cab, kamu kurucusu): H2++ yoğunluk alanında açılıyor
+    (HOMO indeksi -1). `set_field_kind("orbital")` `InvalidInputError`
+    fırlatıyordu ama önce `_alan_turu`, seviye, kaydırıcı aralığı ve seçicinin
+    etkinliği değişmiş oluyordu. Yeni alan artık durum DEĞİŞMEDEN üretilir.
+    Kullanıcı yolu da (alan seçici) sınanır: Qt istisnayı sinyal işleyicisinde
+    yutar, seçici "orbital" gösterip pencere yoğunlukta kalırsa bu sessiz bir
+    desenkrondur; seçici pencerenin gerçek alanına geri döner.
+    """
+    from qlab.app.orbital_window import ALAN_ORBITAL, ALAN_YOGUNLUK
+
+    sonuc = solve(Molecule.from_string(_H2, charge=2), "sto-3g")
+    pencere = OrbitalWindow(sonuc, field=ALAN_YOGUNLUK)
+    try:
+        def durum():
+            return (
+                *_pencere_durumu(pencere),
+                pencere.field_kind,
+                pencere._kaydirici.minimum(),
+                pencere._kaydirici.maximum(),
+                pencere._secici.isEnabled(),
+                pencere._alan_secici.currentText(),
+            )
+
+        once = durum()
+        with pytest.raises(InvalidInputError, match="orbital indeksi"):
+            pencere.set_field_kind(ALAN_ORBITAL)
+        assert durum() == once
+
+        secici = pencere._alan_secici
+        secici.setCurrentIndex(secici.findText(ALAN_ORBITAL))
+        assert durum() == once, "alan seçici pencerenin gerçek alanına dönmedi"
+    finally:
+        pencere.close()
+
+
+@requires_offscreen
+def test_alan_secici_SIRADAN_degil_OGENIN_KENDI_VERISINDEN_okuyor(su_sonucu):
+    """(7) Seçici satırı -> alan türü eşlemesi satırın KONUMUNA bağlıydı.
+
+    `list(_ALAN_TURLERI)[index]` seçicideki sıra ile sözlük sırasının aynı
+    olmasına dayanıyordu. ÖLÇÜLDÜ (HEAD e262cab): seçicinin modeli
+    sıralandığında (Qt'nin kendi API'si) "orbital" yazan satır seçilince
+    pencere "elektron yoğunluğu" gösteriyor, "elektron yoğunluğu" yazan satır
+    seçilince "orbital". Her satır artık kendi alan türünü veri olarak taşır.
+    """
+    from qlab.app.orbital_window import ALAN_FARK, ALAN_ORBITAL, ALAN_YOGUNLUK
+
+    pencere = OrbitalWindow(su_sonucu)
+    try:
+        secici = pencere._alan_secici
+        for i in range(secici.count()):
+            assert secici.itemData(i) == secici.itemText(i)
+
+        model = secici.model()
+        secici.blockSignals(True)
+        satir = model.takeRow(0)  # "orbital"
+        model.insertRow(model.rowCount(), satir)  # ... sona
+        secici.setCurrentIndex(secici.findText(ALAN_ORBITAL))
+        secici.blockSignals(False)
+        etiketler = [secici.itemText(i) for i in range(secici.count())]
+        assert etiketler == [ALAN_YOGUNLUK, ALAN_FARK, ALAN_ORBITAL]  # öncül
+
+        for ad in (ALAN_FARK, ALAN_ORBITAL, ALAN_YOGUNLUK):
+            secici.setCurrentIndex(secici.findText(ad))
+            assert pencere.field_kind == ad, f"{ad!r} satırı başka bir alan açtı"
+        for ad in (ALAN_ORBITAL, ALAN_FARK):
+            pencere.set_field_kind(ad)
+            assert secici.currentText() == ad, "seçici pencereyle senkron değil"
+    finally:
+        pencere.close()
+
+
+@requires_offscreen
+def test_serbest_atom_onbellegi_PENCEREYE_ait_pencereler_arasi_sizmiyor(su_sonucu):
+    """(6) Önbellek modül düzeyinde globaldi; artık her pencerenin kendisinin.
+
+    ÖLÇÜLDÜ (HEAD e262cab): pencere kapandıktan sonra global önbellekte 2
+    girdi kalıyor ve sonraki her pencere onları okuyordu; bozuk bir girdi
+    (test sondası `(999, -1.0)`) bütün sonraki pencerelerin fark beyanına
+    sızardı. Kaybedilen tek şey pencere başına bir kez ödenen hesap (O/STO-3G
+    19.6 ms, H 0.4 ms) -- fark alanının kendi 170 ms'sinin yanında küçük.
+    """
+    from qlab.app import orbital_window
+    from qlab.app.orbital_window import ALAN_FARK
+
+    assert not hasattr(orbital_window, "_SERBEST_ATOM_ONBELLEGI")
+    a = OrbitalWindow(su_sonucu, field=ALAN_FARK)
+    b = OrbitalWindow(su_sonucu, field=ALAN_FARK)
+    try:
+        assert a._serbest_atom_onbellegi is not b._serbest_atom_onbellegi
+        assert set(a._serbest_atom_onbellegi) == {("O", "sto-3g"), ("H", "sto-3g")}
+
+        a._serbest_atom_onbellegi[("O", "sto-3g")] = (999, -1.0)
+        a.set_isosurface_level(0.02)
+        b.set_isosurface_level(0.02)
+        assert "O 999 baz fonksiyonu" in a.transparency_text(), (
+            "pencere kendi önbelleğini okumuyor"
+        )
+        assert "O 5 baz fonksiyonu, Tr(PS)=8.000000" in b.transparency_text()
+        assert "O 999 baz fonksiyonu" not in b.transparency_text()
+    finally:
+        a.close()
+        b.close()

@@ -150,7 +150,7 @@ _NVT = {"kind": "langevin", "params": {"temperature": 300.0, "gamma": 1e-3}}
 
 @pytest.mark.parametrize(
     ("tohum", "dt", "se", "drift", "salinim"),
-    [(4, 40.0, 2, "1.401e-03", "2.310e-01"), (2, 35.0, 1, "7.806e-04", "1.767e-01")],
+    [(4, 40.0, 2, "8.788e-03", "2.310e-01"), (2, 35.0, 1, "7.806e-04", "1.767e-01")],
     ids=["T1-D2-hucresi-se2", "T1b-K1-se1"],
 )
 def test_T1_IRI_dt_SURUKLENME_GECIRIYORDU_SALINIM_YAKALIYOR(tohum, dt, se, drift, salinim, tmp_path, capsys):
@@ -161,7 +161,9 @@ def test_T1_IRI_dt_SURUKLENME_GECIRIYORDU_SALINIM_YAKALIYOR(tohum, dt, se, drift
     üretildi): T1 (tohum 4, dt 40) save_every 1'de sürüklenme 8.788e-03,
     save_every 2'de 1.401e-03, S her ikisinde 2.3100e-01; T1b (tohum 2, dt
     35, save_every 1) sürüklenme 7.806e-04, S 1.7673e-01. D2 öncesi panel
-    hepsinde ✓ basıyordu (sürüklenme eşiği 1e-02).
+    hepsinde ✓ basıyordu (sürüklenme eşiği 1e-02). D2-iii (12.10.2026):
+    sürüklenme de her adımdan -- T1 save_every 2'de artık 8.788e-03
+    (save_every 1'inkiyle aynı; eşiğin yine altında).
 
     T1 BİLEREK save_every 2: S'yi kayıtlı karelerden okuyan bir `run.py`
     (yerleşik min/max ya da `dataclasses.replace` ile, AST kilidini atlatan

@@ -378,35 +378,46 @@ def _gosterim_yaklasimlari(level: float, tur: _AlanTuru) -> tuple[str, ...]:
 # sayıyla söylemeyi mümkün kılıyor. Tr(PS) o referansın taşıdığı elektron
 # sayısıdır ve okuyan biri onu atom numarasıyla karşılaştırabilir.
 
-#: (element, baz seti) -> (baz fonksiyonu sayısı, Tr(PS)).
+#: Önbellek: (element, baz seti) -> (baz fonksiyonu sayısı, Tr(PS)).
 #:
 #: ANAHTAR İKİLİDİR ve tek başına element YETMEZ: aynı elementin referansı
 #: baz setine göre farklı bir MATRİSTİR -- ölçüldü, H sto-3g'de 1x1, 6-31G'de
 #: 2x2; O sto-3g'de 5x5, 6-31G'de 9x9. Tr(PS) bu kusuru görmez (iki bazda da
 #: H 1.0000000000, O 8.0000000000, çünkü nötr atomun elektron sayısı baza
 #: bağlı değildir), o yüzden beyan edilen sayı boyutu da taşır.
-_SERBEST_ATOM_ONBELLEGI: dict[tuple[str, str], tuple[int, float]] = {}
+#:
+#: Önbellek PENCEREYE AİTTİR (`OrbitalWindow._serbest_atom_onbellegi`), modül
+#: düzeyinde değil. Bir süre global bir sözlüktü: ölçüldü, pencere kapandıktan
+#: sonra 2 girdi kalıyor ve sonraki her pencere onları okuyordu -- bozuk bir
+#: girdi bütün sonraki pencerelerin fark beyanına sızardı. Bedeli pencere
+#: başına bir kez ödenen hesap (aşağıdaki ölçümler), fark alanının kendi
+#: 170 ms'sinin yanında küçük.
+_SerbestAtomOnbellegi = dict[tuple[str, str], tuple[int, float]]
 
 
-def _serbest_atom_referansi(symbol: str, basis_name: str) -> tuple[int, float]:
+def _serbest_atom_referansi(
+    symbol: str, basis_name: str, onbellek: _SerbestAtomOnbellegi
+) -> tuple[int, float]:
     """Serbest atom referansının (baz fonksiyonu sayısı, Tr(PS)) çifti.
 
     Ölçülen maliyet ihmal edilebilir ama sıfır değil: H 0.5 ms, O 19.3 ms
     (STO-3G); 6-31G'de O 139.2 ms. Aynı element bir molekülde birden çok kez
     geçtiği ve pencere alan değiştikçe beyanı yeniden kurduğu için sonuç
-    önbelleğe alınır.
+    çağıranın verdiği `onbellek`e alınır.
     """
     anahtar = (symbol, basis_name)
-    kayit = _SERBEST_ATOM_ONBELLEGI.get(anahtar)
+    kayit = onbellek.get(anahtar)
     if kayit is None:
         yogunluk = free_atom_density_matrix(symbol, basis_name)
         baz = build_basis(Molecule((Atom(symbol, np.zeros(3)),)), basis_name)
         kayit = (len(baz), float(np.trace(yogunluk @ overlap_matrix(baz))))
-        _SERBEST_ATOM_ONBELLEGI[anahtar] = kayit
+        onbellek[anahtar] = kayit
     return kayit
 
 
-def _promolekul_referans_beyani(molecule: Molecule, basis_name: str) -> str:
+def _promolekul_referans_beyani(
+    molecule: Molecule, basis_name: str, onbellek: _SerbestAtomOnbellegi
+) -> str:
     """Moleküldeki her AYRIK element için serbest atom referansını beyan eder.
 
     Ölçüldü (su/STO-3G): O 5 baz fonksiyonu, Tr(PS)=8.000000 (Z=8);
@@ -419,7 +430,7 @@ def _promolekul_referans_beyani(molecule: Molecule, basis_name: str) -> str:
         gorulen.setdefault(atom.symbol, atom.atomic_number)
     parcalar = []
     for sembol, atom_numarasi in gorulen.items():
-        n_baz, iz = _serbest_atom_referansi(sembol, basis_name)
+        n_baz, iz = _serbest_atom_referansi(sembol, basis_name, onbellek)
         parcalar.append(
             f"{sembol} {n_baz} baz fonksiyonu, Tr(PS)={iz:.6f} (Z={atom_numarasi})"
         )
@@ -444,7 +455,7 @@ class OrbitalWindow(QtWidgets.QMainWindow):
     """Tek bir molekülün orbitallerini gösteren döndürülebilir 3B pencere.
 
     Açılışta HOMO gösterilir. `set_orbital_index` geçersiz bir indeks için
-    `InvalidInputError` fırlatır -- hata `evaluate_orbital`'dan gelir ve
+    `InvalidInputError` fırlatır -- alan türünden bağımsız olarak -- ve
     pencere onu YUTMAZ; yutulsaydı kullanıcı yanlış orbitale baktığını
     bilmezdi. Reddedilen bir seçim pencerenin durumunu da değiştirmez.
 
@@ -472,8 +483,13 @@ class OrbitalWindow(QtWidgets.QMainWindow):
         field: str = ALAN_ORBITAL,
         parent: QtWidgets.QWidget | None = None,
     ) -> None:
-        # Doğrulama super().__init__'ten önce: reddedilen bir seviye ya da alan
-        # türü için yarım kurulmuş bir QMainWindow ortada bırakılmaz.
+        # REDDEDEBİLEN HER ŞEY super().__init__'ten önce: reddedilen bir girdi
+        # için yarım kurulmuş bir QMainWindow ortada bırakılmaz. Bir süre
+        # yalnız seviye ve alan türü buradaydı; ölçüldü, `points_per_axis=1`,
+        # `padding=0.0`/`-100` ve sıfır elektronlu bir sistemin orbital alanı
+        # super()'den SONRA reddediliyor ve verilen `parent`ın altında yarım
+        # kurulmuş 1 QMainWindow kalıyordu. Izgara (`VolumeGrid.around`),
+        # `analyse()` ve ilk alan Qt'ye dokunmaz; üçü de buraya taşındı.
         self._alan_turu = _dogrula_alan_turu(field)
         # `level=None`, "bu alanın kendi varsayılanı" demektir. Sabit bir 0.05
         # üçünün ikisinde yanlış olurdu: yoğunlukta 0.05 tepenin 1000'de biri,
@@ -482,7 +498,6 @@ class OrbitalWindow(QtWidgets.QMainWindow):
             self._alan_turu.varsayilan_seviye if level is None else level,
             self._alan_turu,
         )
-        super().__init__(parent)
         self._result = result
         molecule: Molecule = result.molecule
         self._molecule = molecule
@@ -492,6 +507,7 @@ class OrbitalWindow(QtWidgets.QMainWindow):
         self._orbital_index = molecule.n_electrons // 2 - 1
         self._meshes: tuple[Mesh, ...] | None = None
         self._mesh_items: list[gl.GLMeshItem] = []
+        self._serbest_atom_onbellegi: _SerbestAtomOnbellegi = {}
 
         # `analyse()` BİR KEZ koşar: raporu ne seviye ne alan türü değiştirir,
         # ikisi de gösterim seçimidir. `UnsupportedSystemError` fırlatamaz --
@@ -504,8 +520,14 @@ class OrbitalWindow(QtWidgets.QMainWindow):
         # bir dal taşımak gerekmez. Ulaşılamaz bir dalın yedek değeri, bu
         # depoda ölçülmüş bir kusur ailesidir: `mesh_vertex_counts` yedek
         # olarak (0, 0) döndürürken o değer GEÇERLİ bir çıktıdan ayırt
-        # edilemiyordu.
-        self._alan: ScalarField = self._alani_uret()
+        # edilemiyordu. `_alan_anahtari` önbelleğin hangi durum için
+        # üretildiğini taşır (bkz. `_guncel_alan`).
+        self._alan_anahtari: tuple[str, int | None] | None = None
+        self._alan: ScalarField
+        self._alan_anahtari, self._alan = self._alan_getir(
+            self._alan_turu, self._orbital_index
+        )
+        super().__init__(parent)
 
         self.setWindowTitle(f"qlab — orbital görüntüleyici ({result.provenance.method})")
         self._kur_arayuz()
@@ -541,18 +563,26 @@ class OrbitalWindow(QtWidgets.QMainWindow):
         Geçersiz ad `InvalidInputError` ile reddedilir ve pencerenin HİÇBİR
         alanına dokunulmaz -- doğrulama her şeyden önce yapıldığı için geri
         alınacak bir şey yok (kardeş `set_isosurface_level` ile aynı desen).
+
+        Yeni ALAN da durum değişmeden ÖNCE üretilir, çünkü üretim de
+        reddedebilir: sıfır elektronlu bir sistemin HOMO indeksi -1'dir ve
+        orbital alanı üretilemez. Ölçüldü (bu sıra yokken, H2++ yoğunluk
+        alanında): `set_field_kind("orbital")` `InvalidInputError` fırlatıyor
+        ama önce alan türü, seviye, kaydırıcı aralığı ve seçicinin etkinliği
+        değişmiş oluyordu -- ağlar ve alan seçici ise hâlâ yoğunluğundu.
         """
         tur = _dogrula_alan_turu(kind)
         if tur is self._alan_turu:
             return
+        anahtar, alan = self._alan_getir(tur, self._orbital_index)
         self._alan_turu = tur
+        self._alan_anahtari, self._alan = anahtar, alan
         self._level = tur.varsayilan_seviye
         # "Hangi orbital" sorusunun yoğunluk ve fark alanında karşılığı yok;
         # etkin ama etkisiz bir denetim yalan söylerdi (aynı karar
         # `TDSEWindow`'da bariyeri olmayan senaryolar için de verilmiş).
         self._secici.setEnabled(tur is _ORBITAL)
         self._kaydirici_araligini_kur()
-        self._alani_tazele()
         self._yenile()
         self._alan_secici_senkronla()
 
@@ -560,26 +590,39 @@ class OrbitalWindow(QtWidgets.QMainWindow):
         """Gösterilen orbitali değiştirir ve ağları yeniden çıkarır.
 
         Geçersiz indeks `InvalidInputError` ile reddedilir ve pencere eski
-        orbitalinde kalır: hata YUTULMAZ ama durum da BOZULMAZ.
+        orbitalinde kalır: hata YUTULMAZ ama durum da BOZULMAZ. Doğrulama ve
+        yeni alanın üretimi durum değişmeden ÖNCE yapılır, yani geri alınacak
+        bir şey yoktur (kardeş `set_isosurface_level` ile aynı desen).
+
+        Sözleşme ALAN TÜRÜNDEN BAĞIMSIZDIR. Yoğunluk ve fark alanı orbital
+        indeksine bağlı olmadığı için orada `evaluate_orbital` koşmaz ve onun
+        aralık kontrolü de koşmazdı; ölçüldü, yoğunluk alanında
+        `set_orbital_index(99)` KABUL EDİLİYORDU ve sonraki
+        `set_field_kind("orbital")` pencereyi yarım bırakıyordu. Aralık
+        seçicinin satırlarıdır (`result.orbital_energies`): seçicinin
+        gösteremeyeceği bir orbital pencerenin durumu olamaz. Aynı sebeple o iki
+        alanda indeks değişimi alanı YENİDEN ÜRETMEZ (ölçüldü, fark alanında
+        176.5 ms boşa gidiyordu; bkz. `_alan_getir`).
         """
-        eski_indeks = self._orbital_index
-        eski_alan = self._alan
-        self._orbital_index = int(index)
-        try:
-            self._alani_tazele()
-            self._yenile()
-        except InvalidInputError:
-            self._orbital_index = eski_indeks
-            self._alan = eski_alan
-            raise
+        indeks = int(index)
+        n_orbital = len(self._result.orbital_energies)
+        if not 0 <= indeks < n_orbital:
+            raise InvalidInputError(
+                f"orbital indeksi [0, {n_orbital}) aralığında olmalı "
+                f"(seçicinin satırları), verilen: {indeks}"
+            )
+        anahtar, alan = self._alan_getir(self._alan_turu, indeks)
+        self._orbital_index = indeks
+        self._alan_anahtari, self._alan = anahtar, alan
+        self._yenile()
         self._secici_senkronla()
 
     def set_isosurface_level(self, level: float) -> None:
         """İzoyüzey seviyesini değiştirir ve ağları yeniden çıkarır.
 
         Geçersiz seviye (`_dogrula_seviye`) pencerenin HİÇBİR alanına
-        dokunmadan reddedilir. Kardeşi `set_orbital_index` bunu geri alarak
-        sağlıyor; burada geri alınacak bir şey yok çünkü doğrulama
+        dokunmadan reddedilir. Kardeşi `set_orbital_index` ile aynı desen:
+        geri alınacak bir şey yok çünkü doğrulama
         `_yenile`'den ÖNCE. Fark önemliydi: eski kodda `set_isosurface_level(
         nan)` `ValueError` fırlatıyordu ama fırlatmadan önce `_yenile` tamamen
         koşuyordu -- `_level=nan` kalıyor, ağlar (1764, 1764)'ten (0, 0)'a
@@ -654,10 +697,12 @@ class OrbitalWindow(QtWidgets.QMainWindow):
         self._view = gl.GLViewWidget()
         self._view.setCameraPosition(distance=float(np.max(self._grid.spacing)) * 60.0)
 
+        # Her satır kendi alan türünün adını VERİ olarak taşır (bkz.
+        # `_alan_secici_degisti`); satırın KONUMU hiçbir yerde okunmaz.
         self._alan_secici = QtWidgets.QComboBox()
         for ad in _ALAN_TURLERI:
-            self._alan_secici.addItem(ad)
-        self._alan_secici.setCurrentIndex(list(_ALAN_TURLERI).index(self._alan_turu.ad))
+            self._alan_secici.addItem(ad, ad)
+        self._alan_secici.setCurrentIndex(self._alan_secici.findData(self._alan_turu.ad))
         self._alan_secici.currentIndexChanged.connect(self._alan_secici_degisti)
 
         self._secici = QtWidgets.QComboBox()
@@ -735,7 +780,23 @@ class OrbitalWindow(QtWidgets.QMainWindow):
             self.set_orbital_index(index)
 
     def _alan_secici_degisti(self, index: int) -> None:
-        self.set_field_kind(list(_ALAN_TURLERI)[index])
+        """Seçilen satırın alan türü satırın VERİSİNDEN okunur, konumundan değil.
+
+        Eskiden `list(_ALAN_TURLERI)[index]` idi, yani seçicideki sıra ile
+        sözlük sırasının aynı kalmasına dayanıyordu. Ölçüldü: seçicinin modeli
+        sıralandığında (Qt'nin kendi API'si) "orbital" yazan satır yoğunluğu,
+        "elektron yoğunluğu" yazan satır orbitali açıyordu.
+
+        Pencere geçişi REDDEDERSE (sıfır elektronlu sistemde orbital alanı)
+        seçici pencerenin gerçek alanına geri döner ve istisna yükselir. Qt
+        istisnayı sinyal işleyicisinde yutar; seçici geri dönmeseydi "orbital"
+        gösterirken pencere yoğunlukta kalırdı -- sessiz desenkron.
+        """
+        try:
+            self.set_field_kind(self._alan_secici.itemData(index))
+        except InvalidInputError:
+            self._alan_secici_senkronla()
+            raise
 
     def _kaydirici_degisti(self, value: int) -> None:
         self.set_isosurface_level(value / self._alan_turu.kaydirici_olcek)
@@ -747,7 +808,7 @@ class OrbitalWindow(QtWidgets.QMainWindow):
             self._secici.blockSignals(False)
 
     def _alan_secici_senkronla(self) -> None:
-        hedef = list(_ALAN_TURLERI).index(self._alan_turu.ad)
+        hedef = self._alan_secici.findData(self._alan_turu.ad)
         if self._alan_secici.currentIndex() != hedef:
             self._alan_secici.blockSignals(True)
             self._alan_secici.setCurrentIndex(hedef)
@@ -807,8 +868,8 @@ class OrbitalWindow(QtWidgets.QMainWindow):
             )
         )
 
-    def _alani_uret(self) -> ScalarField:
-        """Aktif alan türünün ÜRETİCİSİNİ çağırır.
+    def _alani_uret(self, tur: _AlanTuru, orbital_index: int) -> ScalarField:
+        """Verilen alan türünün ÜRETİCİSİNİ çağırır; pencerenin durumuna dokunmaz.
 
         Üç dalın üçü de `observable/hf_obs.py`'nin ayrı bir public
         fonksiyonudur ve hiçbiri ötekinden türetilemez: orbital TEK bir MO'dur
@@ -818,27 +879,59 @@ class OrbitalWindow(QtWidgets.QMainWindow):
         kendi `Provenance`'larını zaten taşır ve o beyan panele AYNEN gider
         (bkz. `_provenance`).
         """
-        if self._alan_turu is _ORBITAL:
-            degerler = evaluate_orbital(self._result, self._orbital_index, self._grid)
+        if tur is _ORBITAL:
+            degerler = evaluate_orbital(self._result, orbital_index, self._grid)
             return ScalarField(
                 values=degerler, grid=self._grid, provenance=self._result.provenance
             )
-        if self._alan_turu is _YOGUNLUK:
+        if tur is _YOGUNLUK:
             return electron_density(self._result, self._grid)
         return density_difference(self._result, self._grid)
 
-    def _alani_tazele(self) -> None:
-        """Alanı yeniden üretir. Seviye değişiminde ÇAĞRILMAZ -- ölçüldü,
-        `density_difference` bu ızgarada 0.170 s sürüyor ve kaydırıcı
-        sürüklenirken her ara değer için yeniden hesaplamak arayüzü kilitlerdi
-        (aynı gerekçe `TDSEWindow`'un 250 ms geciktirmesinin de sebebi).
-        Alan yalnızca alan TÜRÜ ya da orbital İNDEKSİ değişince bayatlar.
+    def _alan_getir(
+        self, tur: _AlanTuru, orbital_index: int
+    ) -> tuple[tuple[str, int | None], ScalarField]:
+        """(anahtar, alan): önbellek anahtarı tutuyorsa önbellekteki, yoksa YENİ.
+
+        Alanı belirleyen durum ANAHTARDIR: alan türü ve -- yalnızca orbital
+        alanında -- orbital indeksi. Yoğunluk ve fark alanı tek bir orbitale
+        bağlı değildir; indeksleri anahtara girseydi o iki alanda her orbital
+        değişimi alanı boşuna yeniden üretirdi (ölçüldü, fark alanında
+        176.5 ms). Seviye anahtarda YOKTUR: seviye değişiminde alan yeniden
+        üretilmez -- ölçüldü, `density_difference` bu ızgarada 0.170 s sürüyor
+        ve kaydırıcı sürüklenirken her ara değer için yeniden hesaplamak
+        arayüzü kilitlerdi (aynı gerekçe `TDSEWindow`'un 250 ms
+        geciktirmesinin de sebebi).
+
+        Pencerenin durumunu DEĞİŞTİRMEZ: üretim reddederse (geçersiz orbital
+        indeksi) çağıranın hiçbir alanı değişmemiş olur. Sonucu önbelleğe
+        yazanlar kurucu, `_guncel_alan` ve iki kamu ayarlayıcısıdır.
         """
-        self._alan = self._alani_uret()
+        anahtar = (tur.ad, orbital_index if tur is _ORBITAL else None)
+        if anahtar == self._alan_anahtari:
+            return anahtar, self._alan
+        return anahtar, self._alani_uret(tur, orbital_index)
+
+    def _guncel_alan(self) -> ScalarField:
+        """ŞU ANKİ (alan türü, orbital indeksi) durumunun alanı.
+
+        `_alan` bir ÖNBELLEKTİR ve eskiden elle yazılmış iki geçersizleştirmeye
+        (`set_field_kind`, `set_orbital_index`) bağlıydı; durumu değiştiren
+        üçüncü bir yol onu sessizce bayatlatabilirdi. Ölçüldü: `_orbital_index`
+        4'ten 0'a çekilip `_yenile` çağrılınca ağlar HOMO'nun (1764, 1764)
+        ağları kalıyor (O 1s'inki (0, 412)), panel ise "orbital_index=0"
+        basıyordu. Alanı OKUYAN iki yer (`_yenile`,
+        `_provenance`) artık buradan okur ve önbellek anahtarı tutmuyorsa alan
+        yeniden üretilir -- geçersizleştirmeyi kimsenin hatırlaması gerekmez.
+        """
+        self._alan_anahtari, self._alan = self._alan_getir(
+            self._alan_turu, self._orbital_index
+        )
+        return self._alan
 
     def _yenile(self) -> None:
         """Ağları yeniden çıkarır, çizer ve beyanı tazeler."""
-        yeni = self._aglari_cikar(self._alan)
+        yeni = self._aglari_cikar(self._guncel_alan())
         self._meshes = yeni
         self._ag_itemlerini_ciz(yeni)
         self._panel.set_provenance(self._provenance())
@@ -1021,7 +1114,7 @@ class OrbitalWindow(QtWidgets.QMainWindow):
         alan değişince hiç basmazdı -- okuyucu bunu "sorun yok" diye okurdu
         (aynı gerekçe `Provenance.stability` alanının dokstring'inde yazılı).
         """
-        temel = self._alan.provenance
+        temel = self._guncel_alan().provenance
         analiz = self._analiz.provenance
         tanilar = dict(temel.diagnostics)
         tanilar["field_kind"] = self._alan_turu.ad
@@ -1046,7 +1139,9 @@ class OrbitalWindow(QtWidgets.QMainWindow):
         referans: tuple[str, ...] = ()
         if self._alan_turu is _FARK:
             referans = (
-                _promolekul_referans_beyani(self._molecule, self._result.basis_name),
+                _promolekul_referans_beyani(
+                    self._molecule, self._result.basis_name, self._serbest_atom_onbellegi
+                ),
             )
             # Ölçülen referansın taşıdığı TOPLAM elektron, ızgara üzerinden
             # integre edilen promolekül elektronunun (aynı diagnostics'te,
@@ -1055,7 +1150,9 @@ class OrbitalWindow(QtWidgets.QMainWindow):
             # hatasının büyüklüğünü doğrudan gösterir.
             tanilar["promolecule_reference_electrons"] = float(
                 sum(
-                    _serbest_atom_referansi(atom.symbol, self._result.basis_name)[1]
+                    _serbest_atom_referansi(
+                        atom.symbol, self._result.basis_name, self._serbest_atom_onbellegi
+                    )[1]
                     for atom in self._molecule.atoms
                 )
             )

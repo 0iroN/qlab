@@ -298,13 +298,14 @@ def test_SEVK_h2_aimd_CLI_DORT_TANI_DE_GECER_ve_PAYLAR(tmp_path, capsys):
     """`scenarios/h2_aimd.yaml` (200 adım) kamu yolundan: ✓; S 4.113e-03 (eşiğin
     20.7 katı altında), kare-0 0.116, yol karesi 0.1356 (adım 25, bağ 1.298 bohr;
     eşiğin 4.9 katı altında); B10 sayacı 201 = n + 1. Beklenen hata satırı HF'nin
-    kendi metni (ortak metnin "bir hata değildir" cümlesi yok).
+    kendi metni (ortak metnin "bir hata değildir" cümlesi yok). D2-iii (12.10.2026):
+    sürüklenme her adımdan, 7.511e-05 (save_every 2'nin karelerinden 1.465e-04'tü).
     """
     sevk = Path(qlab.__file__).resolve().parents[2] / "scenarios" / "h2_aimd.yaml"
     satir = _panel(sevk, tmp_path, capsys)
     yakinsama = satir["Yakınsama"]
     assert "✓" in yakinsama, yakinsama
-    for parca in ("energy_drift=1.465e-04,", "energy_oscillation=4.113e-03,", "omega_dt_frame0=1.160e-01,",
+    for parca in ("energy_drift=7.511e-05,", "energy_oscillation=4.113e-03,", "omega_dt_frame0=1.160e-01,",
                   "omega_dt_path_frames=1.356e-01,", "closest_pair_step=25,", "kararlilik_merkez_scf=201,"):
         assert parca in yakinsama, parca
     assert "bir hata değildir" not in satir["Beklenen hata"] and "KE + E" in satir["Beklenen hata"]

@@ -415,6 +415,13 @@ projedeki her GUI testi `QT_QPA_PLATFORM=offscreen` ile ekransız çalışır
 durumu programatik olarak okunur, çizimin kendisi doğrulanmaz. TDSE penceresi
 hâlâ hiçbir gerçek ekranda görülmedi.
 
+Ekransız kipin ölçülmüş bir kör noktası daha var (12.10.2026): offscreen yazı
+tipi motoru tam sayı satır aralığı verir (Consolas 14.0000), Windows motoru
+kesirli (14.0312) ve %150 ölçekte satırı 15 px'e oturtur. Şeffaflık panelinin
+kırpılmayan beyanda bir satırı kaydırmada bırakması (`scrollBar().maximum()==1`)
+bu yüzden ekransız kipte 0/18, gerçek platformda (`WA_DontShowOnScreen`) 45/45
+durumda görülüyor; düzeltme `transparency.py`'de, açık.
+
 ## Kurulum
 
 ```bash
@@ -473,7 +480,8 @@ Sıkı-bağ MD (md ↔ tb ss-σ kenarı, 24.09.2026) — 16 atomlu yarı dolu bi
 zincirde (kütle ¹H; atomlar bir element DEĞİL, yasası seçilmiş bir modelin
 siteleridir) kısa NVE; kuvvet, tek orbitalli ss-σ modelinin Mermin serbest
 enerjisinin gradyanıdır (ölçüldü, 24.09.2026, bu makine: CLI 0.72 s,
-`energy_drift` 4.513e-04, eşik 1e-02; salınım S 1.005e-02, eşik 5e-02 —
+`energy_drift` 4.525e-04 — D2-iii, 12.10.2026'dan beri her adımdan; kayıtlı
+karelerden 4.513e-04'tü —, eşik 1e-02; salınım S 1.005e-02, eşik 5e-02 —
 D2, 09.10.2026; kare-0 ω0·dt 0.2555 ve yol kareleri 0.3174, eşik 0.67 — D2-i ve
 D2-vi, 10.10.2026; pencere
 senaryonun kendisi — a = 2
@@ -673,6 +681,26 @@ yoldan doğrulandı ve kayıplı sınırda — PML, LossyLayer — da kesin). Ay
 atfı artık bugünün satırına kilitli (`tests/test_satir_atiflari.py`, `f1cf900`,
 2240 → 2242 test — 49 atfın 6'sı hedef dosyaya satır eklendikçe sessizce
 kaymıştı). Ölçümler ilgili docstringlerde.
+
+12.10.2026 (G13): kapıların ölçülen atlama yolları kapandı. `Medium` dizileri
+kopyalanır ve salt okunurdur (sonradan yazılan çift-negatif eps/mu alanı
+2.46e+49'a çıkarıyordu; `inf` artık red); salt okunurluk `setflags(write=True)`
+ile de geri açılamaz, dizi `bytes` tabanlıdır (yalnız `setflags(write=False)`
+varken aynı hücre alanı 4.2e+40'a çıkarıyordu). `ObliqueCoefficients` kapıyı
+tipin kendisinde koşar (`replace(co, ky=1.2)` 45. adımda 1.1e+12 kat
+büyüyordu): adımlanan dizilerden geri okunan kayıpsız operatörün özdeğer eşiği
+ve sönüm yuvaları `ca`/`da`/`aux_a` için her yerde |a| ≤ 1 (kazanç kapısı;
+`ca`×1.02 ve `da`×1.02 800 adımda 4.1e+03 kat, `aux_a`×1.05 1e12 üstü
+büyüyordu ve özdeğer okuması bunları geçiriyordu). Bu eşik tekdüze kayıpta
+kayıplı şemanın eşiğidir (ölçüldü: 0.99 söner, 1.01 büyür; ky = 0 ve 0.8, s ve
+p); PML gibi tekdüze olmayan kayıpta ispatı yazılmadı, orada kayıpsız
+operatörün eşiği uygulanır. `PML`/`LossyLayer` kalınlığı tamsayı, `m`/`sigma_max`
+sonlu; `CircularPEC(radius=inf)` red; 1B/2B katsayıları sonlu olmalı (alt-normal
+eps × dev mu) ve 1B/2B sönüm yuvaları |a| ≤ 1 (negatif sigma döndüren özel
+sınır 1B'de kaydı 6.05e+21'e çıkarıyordu). `em_tarama` bit bit aynı. Açık
+(beyanlı): `copy.deepcopy(medium)` `__post_init__`i koşmaz ve yazılabilir dizi
+verir; `YeeCoefficients`in tip düzeyinde kapısı yok (yalnız özel `_adim`
+üzerinden adımlanır).
 
 MAKİNE GÜRÜLTÜSÜ: **aynı** süit aynı gün 727.75 s ve 770.02 s (`tests/em`:
 191.01 s ve 197.39 s), `cda2871` ise 939.68 s ve 738.92 s koştu. Yani
@@ -1370,7 +1398,7 @@ yasalar seçildi, yasadan geri okunan bağ, genlik ve eşik fizik iddiası deği
 | HF'e dokunmuyor | alt süreçte yalnız `import qlab.engine.md.tb_kuvvet`; fabrikadan kurulan TB alanında 20 adım NVE | yüklenen hf modülü **0**; `hf.scf.solve` çağrısı **0** (pozitif kontrol: aynı sayaçla HF alanında 1 adım **14**) |
 | Sürüklenme hükmü enerjinin sıfırından bağımsız | zincir(16, 2, 0.05, 3), 631.6 K, L = 32, dt = 15, 267 adım; Ω + c (D2'den önce dt = 20, 200 adım: orada S 4.138e-02, eşiğin yalnız 1.2 katı altı) | eski ölçüt (\|blok[0]\|'a bölen) c = 0'da **1.09e-05** ✓, c = −Ω₀'da **5.35e-02** ✗ (dt = 20'de 3.26e-05 / 9.13e-02); TB ölçütü (max KE'ye bölen) c boyunca bağıl **≤ 5.1e-11**, S **≤ 2.9e-13** aynı; S **2.297e-02** ✓ |
 | Eşik TB'ye özgü sürüklenmeyi yakalıyor | aynı zincir, n_e = 15, v₀ = 0, dt = 10, 400 adım | T_e = 3.16 K'de **5.48e-02** ✗ (Fermi seviyesindeki geçiş adımda çözülmüyor), 631.6 K'de **5.97e-04** ✓; eşik **1e-02**. D2'den beri 3.16 K'de S de ✗ (7.30e-02); test sürüklenme hükmünü S'den ayrı okur |
-| Salınım hükmü iri dt'yi yakalıyor (D2) | zincir(16, 2, 0.05, 4), n_e = 16, 631.6 K, v₀ = 0, dt = 40, 100 adım (kamu yolu) | save_every 1'de sürüklenme **8.788e-03**, 2'de 1.401e-03 (ikisi de eşik altı; D2 öncesi panel ✓ basıyordu), S = tepe-tepe(KE + Ω)/max(KE) **2.310e-01** ✗; save_every 1/2/5/20'de S bit bit aynı (karelerden okunan S 2.310e-01 → 2.081e-01 kayıyor); sevk edilen senaryoda S **1.0054e-02** ✓; eşik **5e-02** |
+| Salınım hükmü iri dt'yi yakalıyor (D2) | zincir(16, 2, 0.05, 4), n_e = 16, 631.6 K, v₀ = 0, dt = 40, 100 adım (kamu yolu) | sürüklenme **8.788e-03** (D2-iii'ten beri her adımdan, save_every'den bağımsız; önce kayıtlı karelerden save_every 2'de 1.401e-03; ikisi de eşik altı, D2 öncesi panel ✓ basıyordu), S = tepe-tepe(KE + Ω)/max(KE) **2.310e-01** ✗; save_every 1/2/5/20'de S bit bit aynı (karelerden okunan S 2.310e-01 → 2.081e-01 kayıyor); sevk edilen senaryoda S **1.0054e-02** ✓; eşik **5e-02** |
 | Seyrelmeyi a priori tanı yakalıyor (D2-i) | kütle safsızlığı (15 × 12 amu zincirde tek H, Peierls minimumu + 300 K, dt = 52.35, 57 adım) ve ayrışan iki zincir (T1 zinciri iki kopya, ±v_y, dt = 40, 100 adım); kamu yolu | S **3.629e-02** / **2.100e-02** (eşiğin altında: titreşime katılmayan KE seyreltiyor; D2 paneli ✓ basıyordu) ama kare-0 ω0·dt **0.927** / **0.945** > 0.67 → ✗ (yol kareleri 1.001 / 1.241); aynı pencereler küçük dt'de ✓ (ω0·dt 0.463 / 0.473; yol kareleri 0.500 / 0.628); eşik **0.67** |
 | Yol körlüğünü yol kareleri yakalıyor (D2-vi) | Peierls minimumu + 6000 K ısıl hız (dt = 23.02, 130 adım) ve kare 0'da 10 bohr ayrı iki 8'li zincir ±0.004 ile çarpışıyor (L = 64, dt = 21.61, 139 adım); kamu yolu | kare-0 ω0·dt **0.533** / **0.437**, S **4.511e-02** / **3.961e-02**, sürüklenme eşiğin altında (D2-i paneli ✓ basıyordu); izleyicinin seçtiği karelerde ω·dt **0.943** / **0.955** > 0.67 → ✗; dt yarıda ✓ (yol kareleri 0.469 / 0.469); save_every 5'te seçilen adımlar ve ω aynı |
 
@@ -1462,8 +1490,8 @@ değildir.
 | **ω — YOL B (dinamik)** | MD periyodu, ikinci türev ALINMAZ | **5481.22946 cm⁻¹** |
 | **İki yolun uyuşması** | \|ω_B/ω_A − 1\| < 1e-4 | **−4.36e-06** — milyonda 4.4; marj 23× |
 | Geometri kapısı | R > 21.1 bohr'da hata fırlatır | E(21.10) = −0.5695574096 → E(21.20) = −0.2057275665, **ΔE = +0.36383 hartree** |
-| MD senaryosu CLI'dan uçtan uca | `python -m qlab.run scenarios/h2_aimd.yaml -o h2aimd.npz` | çıkış 0, `energy_drift=1.465e-04` (03.10.2026'dan beri payda max(KE); eskiden \|blok[0]\| ile 8.78e-08), panelde `gradient_step_bohr=1e-05`, `energy_drift_scale=max_kinetic`; D2-ii'den beri `energy_oscillation=4.113e-03`, `omega_dt_frame0=1.160e-01`, `omega_dt_path_frames=1.356e-01` → ✓ (CLI 2.19 → 2.39 s) |
-| dt doğruluk hükmü (D2-ii) | iri dt'de sürüklenme eşiğin altında kalan dört pencere; kamu yolu | sevk geometrisi ω·dt 1.0: S **0.281**, kare-0 **0.856**, yol karesi **1.000** → ✗; dönen H2 (v 0.002): S **6.0e-03** (seyrelmiş) ama kare-0 **0.842**, yol karesi **0.925** → ✗; gerilmiş +0.30 + dönme: S **0.054**, kare-0 **0.466**, yalnız yol karesi **0.926** → ✗; dengede hareketsiz H2: S **4.4e+07** → ✗ (dördünde de D2-ii öncesi panel ✓); aynı pencereler dt yarıda ✓; sıcak F–H + dönen H2 (eleştirmen, CLI 2.6 dk): genel en kısa çift karesi 0.640 ama F–H türünün karesi **0.955** → ✗ |
+| MD senaryosu CLI'dan uçtan uca | `python -m qlab.run scenarios/h2_aimd.yaml -o h2aimd.npz` | çıkış 0, `energy_drift=7.511e-05` (D2-iii, 12.10.2026'dan beri her adımdan; save_every 2'nin karelerinden 1.465e-04'tü; 03.10.2026'dan beri payda max(KE), eskiden \|blok[0]\| ile 8.78e-08), panelde `gradient_step_bohr=1e-05`, `energy_drift_scale=max_kinetic`; D2-ii'den beri `energy_oscillation=4.113e-03`, `omega_dt_frame0=1.160e-01`, `omega_dt_path_frames=1.356e-01` → ✓ (CLI 2.19 → 2.39 s) |
+| dt doğruluk hükmü (D2-ii) | iri dt'de sürüklenme eşiğin altında kalan dört pencere; kamu yolu | sevk geometrisi ω·dt 1.0: S **0.281**, kare-0 **0.856**, yol karesi **1.000** → ✗; dönen H2 (v 0.002): S **6.0e-03** (seyrelmiş) ama kare-0 **0.842**, yol karesi **0.925** → ✗; gerilmiş +0.30 + dönme: S **0.054**, kare-0 **0.466**, yalnız yol karesi **0.926** → ✗; dengede hareketsiz H2: S **4.4e+07** → ✗ (dördünde de D2-ii öncesi panel ✓; D2-v'den beri bu hücrede S `nan`, yuvarlama tabanı → YARGILANAMAZ); aynı pencereler dt yarıda ✓; sıcak F–H + dönen H2 (eleştirmen, CLI 2.6 dk): genel en kısa çift karesi 0.640 ama F–H türünün karesi **0.955** → ✗ |
 
 **İki yolun bağımsızlığı iddia değil, ölçüm.** Kuvvetleri ×1.001 ile bozan
 bir mutant çalıştırıldı:
@@ -1534,11 +1562,51 @@ Hessian ikinci kez alınmaz. **Beyanlı sınırlar:** ω·dt ekseni yolun en ser
 anını okur — iri genlikli anharmonik titreşimde ✗ temkinlidir (gerçek frekans
 hatasının harmonik eşdeğeri 0.68–0.93 kat küçük, genlik Rc'yi aşınca 0.38–0.43
 kata kadar); gri bölge aileye ve genliğe
-bağlı; sürüklenmenin kısa koşu sınırı değişmedi (2 periyotluk koşuda küçük
-dt'de de ✗, save_every'ye bağlı); en hızlı mod seçilen karelerin hiçbirinde
+bağlı; sürüklenmenin kısa koşu sınırı ✓'ye çevrilemez (2 periyotluk koşuda küçük
+dt'de de ✗; D2-ii-c'den beri tanı bunu "AYRILAMIYOR" diye ayırır, aşağıda); en hızlı mod seçilen karelerin hiçbirinde
 değilse ve S seyreltilmişse ✓ dt'yi kanıtlamaz; bedel kısa çok-atomlu koşuda
 koşunun katları olabilir (Hessian ≈ 6N kuvvet çağrısı; ölçüldü: H₂O 4 adım 4.2
 → 38.6 s, LiH 10 adım ×3.6).
+
+**Sürüklenme ve yuvarlama tabanı (D2-iii, D2-ii-c, D2-v; 12.10.2026; TB ve HF NVE,
+sürüklenmenin her adım serisi bütün NVE dallarında).** `energy_drift` kayıtlı
+karelerden bloklanıyordu ve save_every hükmü çeviriyordu: kamu yolunda h2_morse
+dt 20 × 400 save_every 1 / 4 / 37 / 100 → **6.147e-04** ✓ / 2.641e-03 ✓ /
+**3.249e-02** ✗ / 1.884e-02 ✗ (aynı yörünge); tb_zincir_md 1 / 2 / 20 → 4.525e-04 /
+4.513e-04 / 1.484e-03. Artık integratör her adımın KE + potansiyelini biriktirir
+(`Trajectory.total_all_steps`) ve sürüklenme ondan bloklanır (TB/HF paydası her
+adımın max KE'si): save_every 1 panelleri bit bit aynı, öteki save_every'ler
+save_every 1'inkine eşit. Sevk edilen panellerde değişen tek sayı sürüklenme:
+h2_morse 2.010e-06 → 2.032e-06, h2_aimd 1.465e-04 → 7.511e-05, tb_zincir_md
+4.513e-04 → 4.525e-04 (hükümler aynı; argon_nvt'nin 3.460e-02'si termostat
+döngüsünün karelerinden, tanı değeri, değişmedi). **Kısa koşu:** blok ölçütü
+birkaç periyotluk koşuda Verlet salınımını sürüklenme sanar (h2_aimd geometrisi
+dt 12.014 × 42 adım: sürüklenme **1.278e-02** ✗, S ve ω·dt geçer). Bu ✗ ✓'ye
+çevrilemez — her adım serisinde blok farkı ≤ tepe-tepe olduğundan eşiği aşan bir
+fark salınım payıyla birlikte de eşiği aşar; ✓ ancak salınımı ortalayan ayrı ve
+ayrıca ölçülmüş bir ölçütle verilebilirdi (ölçülen adaylar: doğrusal eğim
+ω·dt 0.45 × 1–2 periyotta yine ✗, T1 hücresinin sürüklenme hükmünü çeviriyor;
+tamsayı periyot ortalaması 47 hücrenin 15'inde tanımsız). Tanı artık salınımın uç
+bloklara bırakabileceği payı (S × min(1, 1/(ω·dt × L)), L blok adımı, ω yol
+karelerinin) farkla karşılaştırır: farkı açıklıyorsa "sürüklenme eşiğin üstünde
+ama … salınımdan **AYRILAMIYOR (YARGILANAMAZ)** — koşuyu uzatın" basar (ölçülen
+bütün sahte ✗ kısa HF koşuları: ω·dt 0.2–0.5, 1–3 periyot, 8/8), açıklamıyorsa
+eski metni (TB Fermi penceresinin gerçek sürüklenmesi 5.480e-02, pay 6.3e-03;
+HF gradyan adımı 1e-13'ün gürültüsü 50–200 adımda). Hüküm iki durumda da ✗.
+Pay en hızlı modla kestirilir, yavaş bileşenleri küçük gösterir: "eşiğin
+üstünde" sürüklenmeyi kanıtlamaz (yol ω'sı 0 çıkan gürültülü Hessian'da kaba
+sınır S kullanılır ve gerçek bir sürüklenme de AYRILAMIYOR diye basılır).
+Klasik dallarda (Morse, LJ, harmonik) tanı satırı yoktur; kısa koşu sınırı
+orada beyanlıdır. **Yuvarlama tabanı:** max KE yuvarlama düzeyindeyken S
+gürültüdür — ölçülen gürültü tepe-tepesi ε·\|E\|'nin en çok 9.8 (H₂), 14.7
+(LiH), 3.1 (TB dimeri), 12.1 (TB 16'lı Peierls minimumu) katı. max KE ≤ 3000 ×
+ε × max\|KE + potansiyel\| ise S `nan` ve "salınım YARGILANAMAZ (… yuvarlama
+tabanında …)", ✗ (3000 = 15 / (0.1 × 0.05): tabanın üstünde ölçülen gürültü
+S'yi en çok 0.005 kaydırır). Kamu yolu örneği: TB dimeri dengede + 1e-7 bohr,
+ω0·dt 0.2 — önce ✓ basıyordu (S 4.859e-02, gerçeği 1.010e-02; sürüklenme tam 0),
+şimdi YARGILANAMAZ ✗; H₂ r_e + 1e-7'de S 7.841e-01 ("salınım eşiğin üstünde")
+de artık YARGILANAMAZ. Sınır: \|E\| gürültünün ölçeğidir; enerjinin iç terimleri
+birbirini büyük ölçüde götürüp \|E\| küçük kalırsa taban az kestirilir.
 
 **Dürüst olumsuzlar (ölçüldü, gizlenmiyor):**
 
@@ -2051,10 +2119,12 @@ Ayrıca (24.09.2026, bulgu düzeltme turu):
   `tb_obs` üzerinden bir mercek koşusu bu kovayı değiştiremez. Kenarın kendi
   TABANI (ör. dimer optik modunun iki bağımsız yoldan frekansı) ayrı bir
   sorudur ve `KOVA_TABLOSU` gerekçesinde "kenar tabani OLCULMEDI" diye beyanlıdır.
-- kT > 0'da raporlanan μ kayan-nokta platosunun ortasıdır: kuyruklar yuvarlamanın
-  altındayken (boşluk/kT ≳ 70) fiziksel kanonik kökten kT'nin bir kesri kadar
-  sapar (ölçüldü: en çok 0.394 kT; Ω, F ve n etkilenmez). Log uzayında kök adımı
-  yazılmadı.
+- kT > 0'da raporlanan μ kanonik köktür (D15, 12.10.2026): plato bulunduktan
+  sonra log uzayında Newton kök adımı atılır. Eskiden platonun ortasıydı ve
+  kökten en çok 0.394 kT (1-3 katlılıkla 1.040 kT) sapıyordu; şimdi ≤ 1.5e-11 kT
+  (Decimal çapraz kontrolü, `tests/tb/test_d15_kanonik_mu.py`). Taban: kT
+  ulp(μ)'ya yaklaşınca sapma ~ulp(μ) kalır. `tb_zincir_md` paneli aynı; npz
+  yuvarlama düzeyinde oynadı (konum ≤ 2.3e-13 bohr).
 - `mermin_dolum` çok büyük kT'de (μ parantezi taşınca) artık `InvalidInputError` verir (D16, 11.10.2026); eskiden kT = 1e308'de sessizce nan dönüyordu. 6.5e307 hâlâ sonlu ve doğru (f = 1/2, S = 8 ln 2).
 - Girdi kapıları (NP-BOOL, 11.10.2026): `np.True_`/`np.array(True)`, numpy karmaşık sayı, float'a sığmayan tamsayı ve düzensiz iç içe liste `tek_orbital_mermin`, `SsSigmaTBKuvveti` ve `UsselRadyalYasa`'da artık `InvalidInputError` (eskiden 1.0 / gerçel kısım / ham hata; yasa Python `True`'yu da 1.0 okuyordu). MD `initial` içindeki `true`/`yes` ve float'a sığmayan öğe (konum, kütle, hız; eskiden 1.0 ya da ham `OverflowError`), fcc `n_particles: 108.5` (eskiden sessizce 108) ve `density_reduced: true` artık `ScenarioError`. Aynı turda (ölçüldü HEAD a9ec48a, `python -m qlab.run`): kuvvet alanı ve termostat parametresindeki `true`/`yes` (Morse `d_e`/`a`/`r_e`, LJ `epsilon`/`cutoff`, harmonik `k`/`center`, Langevin `friction`/`seed`; eskiden 1.0 / 1 okunup koşu rc = 0 bitiyor ve .npz yazıyordu) anahtarını adıyla söyleyen `ScenarioError` verir (tipi `bool` olan `stability` muaf); fcc `n_particles` / `density_reduced` / `sigma`nın float'a sığmayan, sıfır, negatif ya da sonlu olmayan değeri de `ScenarioError` (eskiden bunların çoğu ham `OverflowError` / `ZeroDivisionError` / `TypeError` ya da yanlış nedenli hata veriyordu). Açık kalan (beyanlı): 0 boyutlu nesne dizisi `np.array(True, dtype=object)` skaler kapılardan (`_skaler` / `_sayi` / `_sonlu_skaler`, MD Kelvin denetimi ve spin'in `_skaler`i) 1.0 diye geçer — YAML bunu üretmez, `initial` ve parametre kapısı (`_bool_iceriyor`) onu yakalar; kuvvet sınıfları (`Morse(d_e=True, …)`) doğrudan kurulunca bool'u hâlâ kabul eder, kapı fabrikadadır.
 

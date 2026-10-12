@@ -239,6 +239,16 @@ class ObliqueCoefficients:
     testi dusmedi. Yani `sign` bir GAUGE'dir: yardimci alanin isaret secimi.
     Yazili olmasinin sebebi fizik degil OKUNABILIRLIK -- iki kutuplanmanin
     curl'lerini ayni satirda tutmak.
+
+    KAPI TIPIN KENDISINDEDIR (G13, 12.10.2026): `__post_init__` her kurulusta
+    `_katsayi_kapisi`ni kosar, yani `dataclasses.replace` ve dogrudan kurulus
+    da kapidan gecer. ESKIDEN kapilar yalniz `oblique_coefficients`teydi;
+    OLCULDU (HEAD e262cab): vakum L = 201, PEC, S = 0.9, ky = 0'in katsayilari
+    `replace(co, ky=1.2)` ile kapisiz kuruluyor ve `oblique_step` tohumlu
+    baslangici 45. adimda 1.1e+12 katina cikariyordu (ayni S ve ky dogrudan
+    istenince REDDEDILIYOR). Kapi ortami gormez; sinadigi sey ADIMLANAN
+    DIZILERDIR. Kapiyi atlamak zorunda olan esik olcumu
+    (`tests/em/test_arayuz.py`) tipi `object.__new__` ile kurar -- acik ve yerel.
     """
 
     main: YeeCoefficients
@@ -247,6 +257,121 @@ class ObliqueCoefficients:
     sign: float
     polarization: str
     ky: float
+
+    def __post_init__(self) -> None:
+        _katsayi_kapisi(self)
+
+
+#: `_katsayi_kapisi`nin kayan nokta payi: S^2 lambda_max <= 4 (1 + pay). Fabrikanin
+#: en buyuk kabul ettigi S'de kurdugu katsayilarda olculen S^2 lambda_max / 4 - 1 en
+#: cok 4.4e-16 idi (asagidaki olcum); pay bundan ~2e4 kat buyuk, S'de 5e-12.
+_KATSAYI_KAPISI_PAYI = 1e-11
+
+
+def _katsayi_kapisi(co: ObliqueCoefficients) -> None:
+    """ADIMLANAN DIZILERIN kararlilik kapisi -- `ObliqueCoefficients`in kendi kapisi.
+
+    `oblique_step` iki ikinci-mertebe fark verir: e^{n+1} - 2 e^n + e^{n-1} =
+    -M e^n, M = diag(cb) [D^T diag(db) D + ky^2 diag(aux_b)] (ic dugumler; PEC
+    duvar uclari sabitler). Kayipli yuvalarda kayipsiz katsayi `2 c / (1 + a)`
+    ile geri okunur (c = cb, db, aux_b; a = ca, da, aux_a): yari-adim ustel
+    formunda tam olarak S/eps'tir. Kararlilik M'nin ozdegerlerinin [0, 4]te
+    olmasidir; cb^{1/2} K cb^{1/2} simetrik uc-kosegen oldugu icin lambda_max
+    `eigvalsh_tridiagonal` ile alinir. Bu `_egik_p_kesin_esik`in operatorunun
+    AYNISIDIR, ama ORTAMDAN degil KATSAYILARDAN kurulur ve sonlu izgara payini
+    tasir (fabrikanin politika kapilarindan GEVSEK, asla siki degil:
+    fabrikanin kabul ettigi her katsayi buradan gecer -- s'de Titu siniri, p'de
+    ayni operator). Ayrica: kutuplanma, sonlu ky, sign = +-1, sekiller ve
+    `main.courant <= oblique_courant_limit(ky)` (fabrikanin egik politika
+    kapisi; `replace(ky=...)` ayni hukmu alir).
+
+    SONUM YUVALARI -- KAZANC KAPISI (G13 duzeltmesi, 12.10.2026): `ca`, `da`,
+    `aux_a` her yerde |a| <= 1 olmali. Geri okuma ANCAK o zaman bir kayipli
+    ortamdir: a, (-1, 1]'de her (a, b) cifti negatif olmayan bir kayip d = (1 -
+    a)/(1 + a) ve c = 2 b/(1 + a) tasir; a > 1 NEGATIF kayiptir (kazanc) ve
+    ozdeger okumasi onu goremez (2 c/(1 + a) yalniz kuculur). Fabrika (1 - d)/
+    (1 + d), d >= 0 ile |a| <= 1'i TAM kurar (|1 - d| <= 1 + d, yuvarlama
+    monoton): sahte ret yok. OLCULDU (kapiyi `object.__new__` ile atlayan
+    `oblique_step`, 800 adim, tohumlu baslangic): vakum L = 201, PEC, S = 0.9,
+    s, ky = 0'da `ca` x 1.02 -> 4.1e+03 kat, `da` x 1.02 -> 4.1e+03 kat; p, ky =
+    0.8, PML 15'te `aux_a` x 1.05 -> 1e12 ustu; `ca` = -3 ile `cb` = 0.45 (1 +
+    ca) (geri okunan 2 cb/(1 + ca) = 0.9 > 0) -> 1e12 ustu. Kazanc kapisindan
+    ONCE dordu de bu kapidan geciyordu.
+
+    ESIGIN NE KADAR KESIN OLDUGU: tekdize kayipta (L = 41, d = 0.3 / 1 / 3; ky =
+    0'da s, ky = 0.8'de s ve p) bu kapinin esiginin 0.99'u soner, 1.01'i buyur -- yani
+    orada kayipli semanin esigidir. ky = 0.8 hucresi aux yuvasinin geri
+    okumasini da sinar: ham `aux_b` okunsaydi esik 1.036 kat gevserdi ve 1.01
+    gecerdi. Tekdize OLMAYAN kayip (PML) icin bir ispat yazilmadi: orada kapi
+    geri okunan kayipsiz operatorun esigini uygular.
+
+    OLCULDU (12.10.2026): fabrikanin p kapisinin TAM ESIKTE kurdugu katsayilarda
+    (`test_EGIK_P_KESIN_KAPI_...` ortamlari, dort kural x ky = 0 / 0.8 + ikinci
+    capa) S^2 lambda_max / 4 - 1 <= 2.2e-16; 3000 rastgele ortamda (L 8-80,
+    eps ve yarisinda mu 10^U(-1, 1.3), dort kural, ky 0-2, s/p, PEC/PML)
+    fabrikanin kabul ettigi EN BUYUK S'de 0 ret (kazanc kapisi eklenince yeniden
+    kosuldu: yine 0), en cok 4.4e-16. Maliyet:
+    N = 3600, PML 60 kurulusu 1.76 ms, bunun 0.91 ms'i bu kapi. Kayipli esigin
+    kayipsizina esit oldugu `_egik_p_kesin_esik` dokstringinde olculmustur.
+    """
+    if co.polarization not in POLARIZATIONS:
+        raise InvalidInputError(
+            f"polarization {POLARIZATIONS} icinden olmali, verilen: {co.polarization!r}"
+        )
+    if not np.isfinite(co.ky):
+        raise InvalidInputError(f"ky sonlu olmali, verilen: {co.ky}")
+    if co.sign not in (-1.0, 1.0):
+        raise InvalidInputError(f"sign +1 ya da -1 olmali, verilen: {co.sign!r}")
+    ana = co.main
+    n = int(np.shape(ana.ca)[0]) if np.ndim(ana.ca) == 1 else -1
+    sekiller = (np.shape(ana.ca), np.shape(ana.cb), np.shape(co.aux_a), np.shape(co.aux_b),
+                np.shape(ana.da), np.shape(ana.db))
+    if ana.dim != 1 or n < 3 or sekiller != ((n,),) * 4 + ((n - 1,),) * 2:
+        raise InvalidInputError(
+            f"egik katsayi sekilleri tutarsiz (ca, cb, aux_a, aux_b, da, db): {sekiller}, "
+            f"dim = {ana.dim}"
+        )
+    limit = oblique_courant_limit(co.ky)
+    if not ana.courant <= limit:
+        raise InvalidInputError(
+            f"S = {ana.courant!r} EGIK indirgemenin kararlilik sinirini asiyor: ky = "
+            f"{co.ky} icin S_max = {limit} (katsayi kapisi; bkz. oblique_coefficients)."
+        )
+    for ad, sonum in (("ca", ana.ca), ("da", ana.da), ("aux_a", co.aux_a)):
+        with np.errstate(invalid="ignore"):
+            buyuk = float(np.max(np.abs(np.asarray(sonum))))
+        if not buyuk <= 1.0:
+            raise InvalidInputError(
+                f"egik katsayi `{ad}` KAZANC veriyor: her yerde |{ad}| <= 1 olmali, en buyugu "
+                f"{buyuk!r} (fabrika (1 - d)/(1 + d), d >= 0 ile tam olarak <= 1 kurar; > 1 "
+                "negatif kayiptir) -- kapi kapali yonde reddeder."
+            )
+    with np.errstate(all="ignore"):
+        e0 = 2.0 * np.asarray(ana.cb) / (1.0 + np.asarray(ana.ca))
+        h0 = 2.0 * np.asarray(ana.db) / (1.0 + np.asarray(ana.da))
+        y0 = 2.0 * np.asarray(co.aux_b) / (1.0 + np.asarray(co.aux_a))
+        ky2 = float(co.ky) * float(co.ky)
+        d = e0[1:-1] * (h0[:-1] + h0[1:] + ky2 * y0[1:-1])
+        kok = np.sqrt(e0[1:-1])
+        e = -kok[:-1] * kok[1:] * h0[1:-1]
+    gecerli = all(np.all(np.isfinite(x)) and np.all(np.real(x) > 0.0) for x in (e0, h0, y0))
+    lam = float("nan")
+    if gecerli and np.isrealobj(d):
+        try:
+            lam = float(eigvalsh_tridiagonal(d, e, select="i", select_range=(d.size - 1, d.size - 1))[0])
+        except (ValueError, np.linalg.LinAlgError):
+            pass
+    if not np.isfinite(lam):
+        raise InvalidInputError(
+            "egik katsayilar sonlu ve pozitif bir kayipsiz operator vermiyor (cb, db, aux_b "
+            "ve 1 + ca, 1 + da, 1 + aux_a > 0 olmali) -- kapi kapali yonde reddeder."
+        )
+    if lam > 4.0 * (1.0 + _KATSAYI_KAPISI_PAYI):
+        raise InvalidInputError(
+            f"egik katsayilar KARARSIZ: S^2 lambda_max = {lam!r} > 4 (adimlanan dizilerden "
+            f"geri okunan operator; etkin S/S_krit = {float(np.sqrt(lam / 4.0))!r}). Kapi tipin "
+            "kendisindedir: `dataclasses.replace` ya da dogrudan kurulus da buradan gecer."
+        )
 
 
 def _egik_p_kesin_esik(medium: Medium, ky: float) -> float:

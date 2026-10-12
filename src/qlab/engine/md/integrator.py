@@ -30,6 +30,15 @@ class Trajectory:
     0.278 -- S'nin kendi eşiğinde sahte ✓). Varsayılan
     `nan`: uçları biriktirmeyen bir kurucu (ör. `run.py`nin termostat
     döngüsü) "ölçülmedi" der, sıfır değil.
+
+    `total_all_steps` (D2-iii, 12.10.2026): KE + potansiyel HER ADIMDA (adım
+    0 dahil, n_steps + 1 değer), kayıt seyreltmesinden bağımsız. Sürüklenme
+    (`factory.energy_drift`) bundan bloklanır: kayıtlı karelerden bloklanan
+    sürüklenme save_every'ye göre kayıyordu ve hüküm çevriliyordu (ÖLÇÜLDÜ,
+    kamu yolu: h2_morse dt 20 x 400 save_every 1 / 4 / 37 / 100 -> 6.147e-04
+    ✓ / 2.641e-03 ✓ / 3.249e-02 ✗ / 1.884e-02 ✗). Varsayılan `None`:
+    biriktirmeyen kurucu (termostat döngüsü) -- sürüklenme orada karelerden
+    okunur ve NVT'de bir tanıdır, hüküm değil.
     """
 
     times: np.ndarray
@@ -40,6 +49,7 @@ class Trajectory:
     total_min: float = float("nan")
     total_max: float = float("nan")
     kinetic_max: float = float("nan")
+    total_all_steps: np.ndarray | None = None
 
 
 def velocity_verlet_step(
@@ -86,6 +96,7 @@ def run(
     # `<` karşılaştırması nan'ı sırayla sessizce düşürürdü).
     t_min = t_max = ke + enerji
     k_max = ke
+    toplamlar = [ke + enerji]  # D2-iii: sürüklenmenin her adım serisi
 
     for adim in range(1, n_steps + 1):
         state, enerji, kuvvetler = velocity_verlet_step(
@@ -95,6 +106,7 @@ def run(
         t_min = np.minimum(t_min, ke + enerji)
         t_max = np.maximum(t_max, ke + enerji)
         k_max = np.maximum(k_max, ke)
+        toplamlar.append(ke + enerji)
         if adim % save_every == 0:
             zamanlar.append(adim * dt)
             konumlar.append(state.positions)
@@ -111,4 +123,5 @@ def run(
         total_min=float(t_min),
         total_max=float(t_max),
         kinetic_max=float(k_max),
+        total_all_steps=np.array(toplamlar, dtype=float),
     )

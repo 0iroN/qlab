@@ -1154,7 +1154,10 @@ def test_MU_platonun_ORTASI_bosluk_merkezinde():
     """Bosluklu sistemde kucuk kT'de mu bosluk merkezinden < 2 kT (fermi D2).
 
     Pencere: 3B kume N8 (M1'inki), n_e = 8, kutusuz, bosluk 1.7532e-02.
-    Olculen (mu - orta)/kT = +0.1438 (kT 1e-6, 1e-5, 1e-4) = ln(4/3)/2.
+    D15'TEN (12.10.2026) BERI mu log uzayinda kanonik koktur ve olculen
+    (mu - orta)/kT <= 6.9e-13'tur; bu test o kilidi TASIMAZ (kilit
+    `test_d15_kanonik_mu.py`). Asagisi D15 ONCESININ olcumudur:
+    olculen (mu - orta)/kT = +0.1438 (kT 1e-6, 1e-5, 1e-4) = ln(4/3)/2.
     Bu bir KAYAN NOKTA ARTEFAKTIDIR, fiziksel bir O(kT) duzeltme DEGIL
     (olculdu, 24.09.2026, sk/duz/b2_mu_plato.log): sum f == n olan platonun
     iki ucu HOMO'nun 35.638 kT ustunde ve LUMO'nun 35.351 kT altinda --
@@ -1167,8 +1170,8 @@ def test_MU_platonun_ORTASI_bosluk_merkezinde():
     (kT/2) ln(g_H/g_L). kT = 1e-3'te kuyruklar temsil edilebilir ve kayma
     0. Platonun ALT UCU (prototip) mu'yu HOMO'nun ~36 kT ustune koyar.
     Tolerans 2 kT artefakti AYIRT ETMEZ; isi prototipin hatasini yakalamak.
-    Artefaktin penceresi (400 rastgele spektrumda en cok 0.394 kT) ve
-    Omega/F'nin ondan etkilenmedigi `mermin.py` dokstringinde.
+    Artefaktin penceresi (D15 oncesi 400 rastgele spektrumda en cok 0.394
+    kT) ve kapanisinin olcumleri `mermin.py` dokstringinde.
     KIRMA (olculdu): platonun ALT UCU (prototip) kT = 1e-6'da
     (mu - orta)/kT = -8730.6.
     """
@@ -1220,8 +1223,11 @@ def test_OMEGA_mu_ya_gore_DURAGAN_buyuk_kanonik_KIMLIK(ne, kT, genlik):
     olmasa sizinti mu dn = 2.0e-11. Olculen fark <= 2.2e-16; tolerans
     1e-14. (2) DURAGANLIK mu'nun DOGRU olmasini ister: N(mu) = g_s sum
     expit((mu - eps)/kT) icin N(mu^-) <= n <= N(mu^+) (mu^-+ bitisik kayan
-    noktalar) -- TOLERANSSIZ plato kosulu, modulun mu tanimiyla ayni (plato
-    yoksa mu bitisik iki kayan noktadan biridir).
+    noktalar) -- TOLERANSSIZ plato kosulu. D15'e (12.10.2026) kadar modulun
+    mu TANIMIYDI; artik mu log uzayinda kanonik koktur ve bu dort hucrede
+    kosul yine tutuyor (olculdu), ama genel bir garanti DEGIL: kok float
+    platosunun disina dusebilir (rastgele kesirli dolumlarda 152/200,
+    |n_hesap - n| <= 1.8e-12; `mermin.py` dokstringi).
     KIRMA (olculdu): duzeltme kaldirilinca (1) fark -1.96e-11 (kT 1e-7) ve
     -1.96e-12 (kT 1e-6); entropi isareti / spin / yarim entropi mutantlari
     dort hucrede de (1)'i kiriyor. mu'yu +1e-6 kT / +0.3 kT / 4 ulp

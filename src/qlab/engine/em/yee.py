@@ -87,6 +87,45 @@ def _etkin_courant_kapisi(medium: Medium, courant: float, limit: float, yol: str
         )
 
 
+#: `_sonlu_katsayi_kapisi`nin |a| <= 1 sinadigi sonum yuvalari (1B ve 2B adlari).
+_SONUM_YUVALARI = ("ca", "da", "dax", "day")
+
+
+def _sonlu_katsayi_kapisi(yol: str, **diziler: np.ndarray) -> None:
+    """Katsayilar SONLU, sonum yuvalari |a| <= 1 -- 1B ve 2B yolun ortak son kapisi (G13).
+
+    Etkin Courant kapisi hucre CARPIMINI okur; carpim sonlu ve >= S^2 iken
+    tek basina bolum tasabilir. OLCULDU (HEAD e262cab, kamu yolu `run_1d`,
+    N = 200, PML 15, S = 0.5, 600 adim): bir hucrede eps_r = 2e-309 (alt-normal),
+    mu_r = 1.5e308 -> carpim 0.3 >= 0.25, kapi geciyor, cb = S/eps = inf ve
+    kaydin 1108 ornegi sessizce nan. Sinirin sigma dizisi sonlu degilse de
+    (ozel bir sinir nesnesi) ayni kapi keser.
+
+    SONUM YUVALARI (`ca`, `da`; 2B'de `dax`, `day`) her yerde |a| <= 1 olmali
+    (G13 duzeltmesi, 12.10.2026): a = (1 - d)/(1 + d), d = sigma S/(2 eps).
+    Kapili sinirlar sigma >= 0 verir ve d >= 0'da |a| <= 1 TAM tutar (|1 - d|
+    <= 1 + d, yuvarlama monoton) -- sahte ret yok. Negatif sigma donduren
+    ozel bir sinir nesnesi (sinir kapisi yalniz `PML`/`LossyLayer`da kosar)
+    KAZANC kurar; OLCULDU (kamu yolu, bu kazanc kapisi yokken): `run_1d`, vakum
+    N = 200, PEC, S = 0.5, 600 adim, 95-105. hucrelerde sigma = -0.5 (ca =
+    1.286) -> kayit 6.05e+21 (referans 0.509); `run_2d`, 41 x 41, S = 0.5,
+    300 adim, tek hucrede ayni sigma -> 841 (referans 0.0723).
+    """
+    for ad, dizi in diziler.items():
+        if not np.all(np.isfinite(dizi)):
+            raise InvalidInputError(
+                f"{yol} guncelleme katsayisi `{ad}` sonlu degil: ortam olcegi (or. alt-normal "
+                "eps_r x dev mu_r) ya da sinirin sigma dizisi tasiyor -- kapi kapali yonde reddeder."
+            )
+    for ad in _SONUM_YUVALARI:
+        if ad in diziler and not np.all(np.abs(diziler[ad]) <= 1.0):
+            raise InvalidInputError(
+                f"{yol} guncelleme katsayisi `{ad}` KAZANC veriyor: her yerde |{ad}| <= 1 olmali, "
+                f"en buyugu {float(np.max(np.abs(diziler[ad])))!r} -- sinirin sigma dizisi negatif "
+                "(ozel sinir nesnesi); kapi kapali yonde reddeder."
+            )
+
+
 def yee_coefficients(
     medium: Medium, *, courant: float, boundary
 ) -> YeeCoefficients:
@@ -125,6 +164,7 @@ def yee_coefficients(
     d_h = 0.5 * (d_e[:-1] + d_e[1:])
     da = (1.0 - d_h) / (1.0 + d_h)
     db = (courant / mu_h) / (1.0 + d_h)
+    _sonlu_katsayi_kapisi("1B", ca=ca, cb=cb, da=da, db=db)
     return YeeCoefficients(ca=ca, cb=cb, da=da, db=db, dim=1, courant=courant)
 
 
@@ -401,17 +441,16 @@ def yee_coefficients_2d(medium: Medium, *, courant: float, boundary) -> YeeCoeff
 
     d_hx = 0.5 * (d_e[:, :-1] + d_e[:, 1:])
     d_hy = 0.5 * (d_e[:-1, :] + d_e[1:, :])
-    return YeeCoefficients2D(
+    katsayi = dict(
         ca=ca,
         cb=cb,
         dax=(1.0 - d_hx) / (1.0 + d_hx),
         dbx=(courant / mu_x) / (1.0 + d_hx),
         day=(1.0 - d_hy) / (1.0 + d_hy),
         dby=(courant / mu_y) / (1.0 + d_hy),
-        pec_mask=mask,
-        dim=2,
-        courant=courant,
     )
+    _sonlu_katsayi_kapisi("2B", **katsayi)
+    return YeeCoefficients2D(**katsayi, pec_mask=mask, dim=2, courant=courant)
 
 
 def _adim_2d(state: FieldState2D, co: YeeCoefficients2D) -> FieldState2D:

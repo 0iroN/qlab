@@ -156,7 +156,8 @@ _TB_BEKLENEN = (
     "omega_dt_path_frames = yolun her adımda izlenen iki karesinin (en kısa "
     "çift mesafesi, kütle ağırlıklı sertlik tepesi; koşudan SONRA) en hızlı "
     "kütle ağırlıklı modu x dt, ikisinin eşiği omega_dt_tolerance. Yakınsama "
-    "dördünün VE'sidir. Hareketsiz koşu (max KE = 0) YARGILANAMAZ ve ✗ basılır."
+    "dördünün VE'sidir. Hareketsiz koşu (max KE = 0) ve yuvarlama tabanındaki "
+    "koşu (S orada gürültü) YARGILANAMAZ ve ✗ basılır."
 )
 
 
@@ -630,7 +631,9 @@ _TB_SALINIM_BEYANI = (
     "(tek harmonik modda S = x^2/(4 - x^2), eşik x = 0.436'da). BÜYÜME "
     "EVRESİ: kararsızlığın pencere içinde büyüdüğü koşuda ✗ 'korunum "
     "doğrulanamadı' diye okunur, 'dt iri' diye değil. YUVARLAMA TABANI: max KE "
-    "yuvarlama düzeyindeyse S gürültüdür ve dt'yi küçültmek çare değildir. KÖR "
+    "yuvarlama düzeyindeyse S gürültüdür ve dt'yi küçültmek çare değildir; "
+    "tabanın altında salınım YARGILANAMAZ basılır (ölçülen gürültü tepe-tepesi "
+    "eps x |KE + Omega|'nın 12 katına kadar). KÖR "
     "AİLELER: payda TÜM kinetik enerjidir; titreşime katılmayan ya da az "
     "katılan her KE S'yi seyreltir -- ayrışan parçaların ötelemesi, kütle "
     "safsızlığı, yalnız düşük modun uyarıldığı koşu, yüksek T_ion (ön ölçümde "
@@ -642,7 +645,11 @@ _TB_SALINIM_BEYANI = (
     "yolun en çok üç karesine bakar -- en hızlı mod bu karelerde değilse "
     "(sertliği çift mesafesinden ya da köşegenden okunmayan, ör. elektronik ya "
     "da toplu bir mod başka bir anda tepe yaparsa) VE S seyreltilmişse ✓ "
-    "dt'nin yeterince küçük olduğunu kanıtlamaz. Güvence koşunun kendi yoluna "
+    "dt'nin yeterince küçük olduğunu kanıtlamaz. SÜRÜKLENME: blok ölçütü kısa "
+    "koşuda salınımı sürüklenmeden ayıramaz; ✗'yi en hızlı modun salınımı "
+    "açıklayabiliyorsa tanı 'AYRILAMIYOR' der, ama o pay en hızlı modla "
+    "kestirilir ve yavaş bileşenleri küçük gösterir -- 'eşiğin üstünde' "
+    "sürüklenmeyi kanıtlamaz. Güvence koşunun kendi yoluna "
     "göredir. Liste kapsayıcı değildir."
 )
 
@@ -655,12 +662,14 @@ def _tb_yakinsama_tanisi(
     kare0_sonlu: bool,
     yol_gecti: bool,
     yol_sonlu: bool,
+    ayrilamaz_ayrinti: str | None = None,
 ) -> str:
     """TB NVE "Yakınsama tanısı": dört ölçütün AYRI hükmü + sabit beyan.
 
     Hükümler `provenance_for`da BİR KEZ hesaplanır ve buraya geçer -- eşik
     karşılaştırması iki yerde yazılsaydı biri kayınca panel hükmüyle
-    açıklaması ayrışırdı.
+    açıklaması ayrışırdı. `ayrilamaz_ayrinti` (D2-ii-c): sürüklenme ✗'i
+    salınımla açıklanabiliyorsa sayılarıyla ayrıntı, yoksa None.
     """
     if suruklenme_gecti and salinim_gecti and kare0_gecti and yol_gecti:
         canli = (
@@ -674,15 +683,15 @@ def _tb_yakinsama_tanisi(
         parcalar = []
         if not salinim_sonlu:
             parcalar.append(
-                "salınım YARGILANAMAZ (S sonlu değil: max KE = 0, uçlar "
-                "biriktirilmedi ya da enerji sonlu değil)"
+                "salınım YARGILANAMAZ (S sonlu değil: max KE = 0 ya da yuvarlama "
+                f"tabanında -- max KE <= {_OSCILLATION_ROUNDING_FLOOR:g} x eps x "
+                "max|KE + Omega| --, uçlar biriktirilmedi ya da enerji sonlu değil)"
             )
         elif not salinim_gecti:
             parcalar.append(
-                "salınım eşiğin üstünde: dt bu hareket için iri olabilir, "
-                "yörünge bir büyüme evresinde olabilir ya da max KE yuvarlama "
-                "düzeyindedir -- dt'yi küçültüp yeniden koşun; S dt^2 ile "
-                "küçülmüyorsa sebep dt değildir"
+                "salınım eşiğin üstünde: dt bu hareket için iri olabilir ya da "
+                "yörünge bir büyüme evresinde olabilir -- dt'yi küçültüp yeniden "
+                "koşun; S dt^2 ile küçülmüyorsa sebep dt değildir"
             )
         if not kare0_sonlu:
             parcalar.append(
@@ -706,7 +715,14 @@ def _tb_yakinsama_tanisi(
                 "(kare 0 onu görmez: sonradan çarpışan parçalar, ısıl keşif) "
                 "-- S eşiğin altında olsa bile dt'yi küçültün"
             )
-        if not suruklenme_gecti:
+        if not suruklenme_gecti and ayrilamaz_ayrinti is not None:
+            parcalar.append(
+                "sürüklenme eşiğin üstünde ama bu koşuda Verlet salınımından "
+                f"AYRILAMIYOR (YARGILANAMAZ: {ayrilamaz_ayrinti}) -- uzun koşuda "
+                "salınımın payı blok uzunluğuyla küçülür; koşuyu uzatın "
+                "(energy_drift, SINIR)"
+            )
+        elif not suruklenme_gecti:
             parcalar.append(
                 "sürüklenme eşiğin üstünde ya da yargılanamaz: koşuyu uzatın "
                 "ya da dt'yi küçültün (energy_drift, SINIR)"
@@ -819,8 +835,8 @@ _HF_BEKLENEN = (
     "omega_dt_path_frames = yolun her adımda izlenen en kısa çift mesafesi "
     "karesinin ve element çifti türü başına en kısa anlarının (koşudan SONRA) "
     "en hızlı kütle ağırlıklı modu x dt, ikisinin eşiği omega_dt_tolerance. "
-    "Yakınsama dördünün VE'sidir. Hareketsiz koşu (max KE = 0) YARGILANAMAZ ve "
-    "✗ basılır."
+    "Yakınsama dördünün VE'sidir. Hareketsiz koşu (max KE = 0) ve yuvarlama "
+    "tabanındaki koşu (S orada gürültü) YARGILANAMAZ ve ✗ basılır."
 )
 
 #: HF NVE "Yakınsama tanısı" satırının SABİT yarısı (D2-ii); TB'nin
@@ -837,7 +853,9 @@ _HF_SALINIM_BEYANI = (
     "fiziksel olarak küçük bir frekans hatasına karşılık gelebilir. YUVARLAMA "
     "TABANI: max KE yuvarlama düzeyindeyse (ör. dengede hareketsiz molekül; "
     "ölçülen x 0.3'te genlik ~3e-7 bohr ve altı; 1e-6 civarında S şişer) S "
-    "gürültüdür ve ✗ basar; dt'yi küçültmek çare değildir. KÖR AİLELER: payda TÜM kinetik enerjidir; dönme ve "
+    "gürültüdür; dt'yi küçültmek çare değildir. Tabanın altında salınım "
+    "YARGILANAMAZ basılır (ölçülen gürültü tepe-tepesi eps x |KE + E|'nin 15 "
+    "katına kadar). KÖR AİLELER: payda TÜM kinetik enerjidir; dönme ve "
     "parçaların ötelemesi S'yi seyreltir (ölçülen dönen H2'de bin kata kadar). "
     "OMEGA*DT TANISI onları yakalar: kare 0'ın ve yolun her adımda izlenen en "
     "kısa çift mesafesi karesinin -- element çifti türü başına da: farklı bağ "
@@ -852,7 +870,11 @@ _HF_SALINIM_BEYANI = (
     "yeterince küçük olduğunu kanıtlamaz; TB'nin kütle ağırlıklı sertlik "
     "vekili HF'de kurulamaz (yasa yok). SÜRÜKLENME: kısa koşuda blok ölçütü salınımı "
     "sürüklenme sanar (ölçüldü: 2 periyotluk koşuda küçük dt'de de ✗; 5 adım "
-    "ve altında sürüklenme S'ye eşit) ve save_every'ye bağlıdır. Güvence "
+    "ve altında sürüklenme S'ye eşit); ✗'yi en hızlı modun salınımı "
+    "açıklayabiliyorsa tanı 'AYRILAMIYOR' der, ama o pay en hızlı modla "
+    "kestirilir ve yavaş bileşenleri küçük gösterir -- 'eşiğin üstünde' "
+    "sürüklenmeyi kanıtlamaz. Seri D2-iii'ten beri her adımdandır, "
+    "save_every'ye bağlı değildir. Güvence "
     "koşunun kendi yoluna göredir. Liste kapsayıcı değildir."
 )
 
@@ -865,11 +887,13 @@ def _hf_yakinsama_tanisi(
     kare0_sonlu: bool,
     yol_gecti: bool,
     yol_sonlu: bool,
+    ayrilamaz_ayrinti: str | None = None,
 ) -> str:
     """HF NVE "Yakınsama tanısı": dört ölçütün AYRI hükmü + sabit beyan
     (D2-ii). `_tb_yakinsama_tanisi` ile aynı yapı, HF'nin metni: korunan
     büyüklük KE + E, yol karesi yalnız en kısa çift mesafesi; Fermi ve
-    sertlik vekili yok. Hükümler `provenance_for`da bir kez hesaplanır."""
+    sertlik vekili yok. Hükümler `provenance_for`da bir kez hesaplanır;
+    `ayrilamaz_ayrinti` TB'dekiyle aynı (D2-ii-c)."""
     if suruklenme_gecti and salinim_gecti and kare0_gecti and yol_gecti:
         canli = (
             "sürüklenme, salınım, kare-0 omega0*dt ve yol karesinin "
@@ -882,14 +906,15 @@ def _hf_yakinsama_tanisi(
         parcalar = []
         if not salinim_sonlu:
             parcalar.append(
-                "salınım YARGILANAMAZ (S sonlu değil: max KE = 0, uçlar "
-                "biriktirilmedi ya da enerji sonlu değil)"
+                "salınım YARGILANAMAZ (S sonlu değil: max KE = 0 ya da yuvarlama "
+                f"tabanında -- max KE <= {_OSCILLATION_ROUNDING_FLOOR:g} x eps x "
+                "max|KE + E| --, uçlar biriktirilmedi ya da enerji sonlu değil)"
             )
         elif not salinim_gecti:
             parcalar.append(
-                "salınım eşiğin üstünde: dt bu titreşim için iri olabilir ya "
-                "da max KE yuvarlama düzeyindedir -- dt'yi küçültüp yeniden "
-                "koşun; S dt^2 ile küçülmüyorsa sebep dt değildir"
+                "salınım eşiğin üstünde: dt bu titreşim için iri olabilir -- "
+                "dt'yi küçültüp yeniden koşun; S dt^2 ile küçülmüyorsa sebep "
+                "dt değildir"
             )
         if not kare0_sonlu:
             parcalar.append(
@@ -916,22 +941,46 @@ def _hf_yakinsama_tanisi(
                 "başlangıç, sonradan çarpışan parçalar) -- S eşiğin altında "
                 "olsa bile dt'yi küçültün"
             )
-        if not suruklenme_gecti:
+        if not suruklenme_gecti and ayrilamaz_ayrinti is not None:
             parcalar.append(
-                "sürüklenme eşiğin üstünde ya da yargılanamaz: koşuyu uzatın, "
-                "save_every'yi ya da dt'yi değiştirip yeniden bakın "
+                "sürüklenme eşiğin üstünde ama bu koşuda Verlet salınımından "
+                f"AYRILAMIYOR (YARGILANAMAZ: {ayrilamaz_ayrinti}) -- uzun koşuda "
+                "salınımın payı blok uzunluğuyla küçülür; koşuyu uzatın "
                 "(energy_drift, SINIR)"
+            )
+        elif not suruklenme_gecti:
+            parcalar.append(
+                "sürüklenme eşiğin üstünde ya da yargılanamaz: koşuyu uzatın "
+                "ya da dt'yi değiştirip yeniden bakın (energy_drift, SINIR)"
             )
         canli = "korunum DOĞRULANAMADI -- " + "; ".join(parcalar) + "."
     return canli + " " + _HF_SALINIM_BEYANI
 
 
 def energy_drift(
-    scenario: MDScenario, kinetic: np.ndarray, potential: np.ndarray
+    scenario: MDScenario,
+    kinetic: np.ndarray | Trajectory,
+    potential: np.ndarray | None = None,
 ) -> float:
     """NVE enerji sürüklenmesi: blok ortalamalarının baş-son farkı / ölçek.
 
-    PAY -- bütün türlerde AYNI: toplam = KE + potansiyel, kayıtlar
+    İKİ ÇAĞRI BİÇİMİ (D2-iii, 12.10.2026): `energy_drift(scenario, yorunge)`
+    -- kamu yolu; seri integratörün HER ADIMIDIR (`Trajectory.total_all_steps`,
+    adım 0..n_steps) ve TB/HF paydası her adımın max KE'si
+    (`Trajectory.kinetic_max`, S'ninkiyle aynı) -- ya da `energy_drift(
+    scenario, kinetic, potential)`: verilen seri (kayıtlı kareler; birim API ve
+    uçları biriktirmeyen termostat döngüsü). NEDEN: karelerden bloklanan
+    sürüklenme save_every'ye bağlıydı ve hüküm çevriliyordu (ÖLÇÜLDÜ, kamu yolu,
+    12.10.2026: tb_zincir_md save_every 1 / 2 / 5 / 10 / 20 -> 4.525e-04 /
+    4.513e-04 / 3.926e-04 / 4.072e-04 / 1.484e-03; h2_morse dt 20 x 400,
+    save_every 1 / 2 / 4 / 10 / 37 / 100 -> 6.147e-04 / 6.786e-04 /
+    2.641e-03 / 4.155e-03 (✓) / 3.249e-02 / 1.884e-02 (✗); h2_aimd 1 / 2 /
+    10 -> 7.511e-05 / 1.465e-04 / 7.966e-04). Her adım serisi save_every 1'in
+    karelerinin KENDİSİDİR: save_every 1'de değer bit bit eskisiyle aynı,
+    save_every > 1'de save_every 1'inkine eşit. Kayıt kapısı (en az 2 kare)
+    iki biçimde de KARELERE uygulanır: tek kare kaydeden koşu yine reddedilir.
+
+    PAY -- bütün türlerde AYNI: toplam = KE + potansiyel, seri
     min(10, M) bloğa bölünür, pay = |blok[-1] - blok[0]|. SÜRÜKLENME,
     salınım DEĞİL. BLOK SAYISI VERİYE GÖRE: ÖLÇÜLDÜ -- 10 sabit blokla
     M < 10 kayıtta `reshape` boş dilim üretiyor, sürüklenme `nan` çıkıyor ve
@@ -961,8 +1010,15 @@ def energy_drift(
     geometrisi omega*dt = 0.25, n = 20: ✗ 1.488e-02 ~ (omega*dt)^2/4, n >= 30
     ✓; omega*dt = 1.4037: n = 100/400/1600 ✗, 3200 ✓ (tepe-tepe sabit). Morse
     aynı hücrelerde ✗ verir. Bu yüzden ✗ "korunum DOĞRULANAMADI" demektir,
-    "sürüklenme kanıtlandı" değil: koşuyu uzatın ya da save_every/dt'yi
-    değiştirip yeniden bakın. ✓ payın eşiğin altında kaldığını söyler.
+    "sürüklenme kanıtlandı" değil: koşuyu uzatın ya da dt'yi değiştirip
+    yeniden bakın (D2-iii'ten beri save_every değeri değiştirmez). ✓ payın
+    eşiğin altında kaldığını söyler. D2-ii-c (12.10.2026, TB ve HF NVE):
+    `provenance_for` sürüklenme ✗'inin Verlet salınımıyla AÇIKLANABİLDİĞİ
+    koşuyu ayırır ve "salınımdan AYRILAMIYOR (YARGILANAMAZ)" der (hüküm yine
+    ✗; ölçüm ve sınırı `_suruklenme_salinim_payi`nda). Kısa koşu ✓'ye
+    çevrilemez: her adım serisinde pay <= tepe-tepe olduğundan eşiği aşan bir
+    pay salınım payıyla birlikte de eşiği aşar; ✓ ancak salınımı ortalayan
+    ayrı (ve ayrı ölçülmüş) bir ölçütle verilebilirdi.
     * `tb_ss_sigma`: kaydedilen EN BÜYÜK kinetik enerji, max(KE).
       |blok[0]| TB'de KEYFİ BİR SIFIRA bölmektir (spec B8, eleştirmen
       P0-2): tekbiçim bir onsite c Omega'yı n_e*c kaydırır, kuvveti ve
@@ -1016,8 +1072,23 @@ def energy_drift(
     Katmai çekirdeklerinde ve zincir 0.37 bohr ötelenince sürüklenme kendisi
     ✗ veriyor (doğrulama, aynı gün). TB NVE'de o koşuyu her durumda bir
     ölçüt yakalar: burada salınım hükmü (yuvarlama düzeyindeki max KE'ye
-    bölünen tepe-tepe farkı, ✗).
+    bölünen tepe-tepe farkı, ✗). D2-v'den (12.10.2026) beri o salınım hükmü
+    yuvarlama tabanında `nan`dır (YARGILANAMAZ, `_OSCILLATION_ROUNDING_FLOOR`).
     """
+    her_adim = None
+    if isinstance(kinetic, Trajectory):
+        if potential is not None:
+            raise InvalidInputError(
+                "energy_drift(scenario, yorunge) biçiminde potential verilmez"
+            )
+        yorunge = kinetic
+        kinetic, potential = yorunge.kinetic, yorunge.potential
+        her_adim = yorunge.total_all_steps
+    elif potential is None:
+        raise InvalidInputError(
+            "energy_drift(scenario, kinetic, potential): seriyle çağrıda "
+            "potential zorunludur (ya da Trajectory verin)"
+        )
     kinetic = np.asarray(kinetic, dtype=float)
     potential = np.asarray(potential, dtype=float)
     if kinetic.ndim != 1 or kinetic.shape != potential.shape:
@@ -1031,16 +1102,82 @@ def energy_drift(
             f"sürüklenme ölçmek için en az 2 kayıt gerekir, {len(toplam)} var; "
             "n_steps/save_every oranını büyütün"
         )
+    olcek = float(np.max(kinetic))
+    if her_adim is not None:
+        # D2-iii: seri ve TB/HF paydası her adımdan (kayıt seyreltmesinden bağımsız).
+        toplam = np.asarray(her_adim, dtype=float)
+        if toplam.ndim != 1 or len(toplam) < 2:
+            raise InvalidInputError(
+                f"total_all_steps en az 2 değerli tek boyutlu dizi olmalı: {toplam.shape}"
+            )
+        olcek = float(yorunge.kinetic_max)
     n_blok = min(10, len(toplam))
     blok = toplam[: (len(toplam) // n_blok) * n_blok].reshape(n_blok, -1).mean(axis=1)
     pay = float(abs(blok[-1] - blok[0]))
     tur = scenario.force_field["kind"]
     if tur == "tb_ss_sigma" or tur == "hartree_fock":
-        olcek = float(np.max(kinetic))
         return pay / olcek if olcek > 0.0 else float("nan")
     # numpy bölmesi BİLEREK (G5 öncesi `run.py` ile bit bit aynı): blok[0] = 0
     # ise inf + RuntimeWarning, Python float'ının ZeroDivisionError'ı değil.
     return float(pay / abs(blok[0]))
+
+
+#: S'nin YUVARLAMA TABANI (D2-v, 12.10.2026): max KE <= c * eps *
+#: max|KE + potansiyel| (uçlar her adımdan) ise `energy_oscillation` `nan`
+#: döner -- salınım YARGILANAMAZ, panel ✗ (hareketsiz koşuyla aynı kural).
+#: NEDEN: enerjinin kendi yuvarlama gürültüsü (tepe-tepe ~ m * eps * |E|)
+#: max KE'ye bölününce S'ye m * eps * |E| / max KE kadar eklenir; taban
+#: yokken bu gürültü salınım hükmü gibi basılıyordu. ÖLÇÜLDÜ (kamu yükleyicisi
+#: + `build` + integratör, bu makine; dengede iki/çok atom + bağ boyunca delta
+#: 1e-4 ... 3e-9 bohr, v0 = 0, omega0*dt 0.1-0.3, 3 periyot; m = |S - S(1e-4)|
+#: * max KE / (eps * |E|)): HF H2/STO-3G m <= 9.8 (30 hücre), HF LiH <= 14.7,
+#: TB dimer <= 3.1, TB 16'lı Peierls minimumu <= 12.1. c = 15 / (0.1 * 0.05):
+#: tabanın üstünde ölçülen gürültü S'yi en çok 0.005 kaydırır (TB eşiğinin
+#: %10'u, HF'ninkinin %6'sı). KAMU YOLU ÖRNEĞİ: H2 r_e + 1e-7 bohr, omega0*dt
+#: 0.2 (dt 8.008, 94 adım): S 7.841e-01 ✗ "salınım eşiğin üstünde", gerçeği
+#: (r_e + 1e-4) 1.010e-02; r_e + 3e-7'de 6.963e-02 (7 kat). SINIR: |E| (KE +
+#: potansiyelin her adımdaki en büyük mutlak değeri) gürültünün ölçeğidir;
+#: enerjinin iç terimleri (bant, itme, elektronik / çekirdek) birbirini
+#: büyük ölçüde götürür ve |E| onlardan çok küçük kalırsa taban az kestirilir.
+_OSCILLATION_ROUNDING_FLOOR: float = 3.0e03
+
+
+def _suruklenme_salinim_payi(
+    scenario: MDScenario, energy_oscillation: float, omega_dt: float
+) -> tuple[float, float]:
+    """D2-ii-c (12.10.2026): Verlet salınımının sürüklenme payına (iki uç
+    bloğun ortalama farkı / max KE) bırakabileceği en büyük katkı, S cinsinden.
+
+    Salınım tepe-tepe S * max KE'dir; L adımlık bir bloğun ortalaması açısal
+    frekansı Omega olan bir salınımı A * 2 / (Omega * L * dt) altına indirir.
+    Verlet'in enerji hatası titreşimin iki katı frekansta salınır (Omega =
+    2 omega), yani iki uç bloğun farkına katkı <= S * min(1, 1 / (omega*dt *
+    L)), L = (n_steps + 1) // min(10, n_steps + 1) (`energy_drift`in her adım
+    blokları). omega*dt yol karelerininkidir (en hızlı mod): EN KÜÇÜK payı
+    verir -- yavaş bileşenler (vuru, anharmonik alt frekanslar) bloklarda daha
+    büyük iz bırakır. Bu yüzden "AYRILAMIYOR" güvenlidir (en hızlı salınım bile
+    farkı açıklıyor), "eşiğin üstünde" ise sürüklenmeyi KANITLAMAZ. omega*dt
+    sonlu değilse (sonda hatası) ya da omega*dt * L <= 1 ise (omega 0 dahil:
+    gürültülü kuvvetin Hessian'ı) kaba sınır S (her adım serisinde pay <=
+    tepe-tepe). S sonlu değilse pay `nan` (bilinmez). Döner: (pay, kat).
+
+    ÖLÇÜLDÜ (kamu yolu, her adım serisi, 12.10.2026): h2_aimd geometrisinde
+    sahte ✗ veren kısa koşuların HEPSİ "AYRILAMIYOR" -- yol omega*dt 0.2 x 1
+    periyot (sürüklenme 5.475e-03, pay 9.005e-03), 0.3 x 1 / 2 periyot
+    (1.334e-02 / 1.025e-02; dt 12.014 x 42 adımda pay 1.834e-02), 0.45 x 1 / 2
+    / 3 periyot (1.653e-02 / 3.767e-02 / 8.125e-03), D2-ii K1 kontrolü
+    (omega*dt 0.5, 50-57 adım, 9.714e-03, pay 2.361e-02); aynı ailelerin 3-5
+    periyot ve üstü koşuları zaten ✓. GERÇEK sürüklenme "eşiğin üstünde"
+    kalır: TB Fermi penceresi (3.16 K, n_e 15, dt 10 x 400) 5.480e-02, pay
+    6.3e-03; HF gradyan adımı 1e-13 (sonlu fark gürültüsü) 50 / 100 / 200
+    adımda 0.32 / 0.29 / 0.28. AYRILAMIYOR denen gerçek sürüklenmeler: aynı
+    gürültü 20 adımda (tek titreşim periyodundan kısa) ve 400 adımda (yol
+    omega'sı 0: gürültülü Hessian -> kaba sınır).
+    """
+    n_deger = scenario.n_steps + 1
+    blok_adimi = n_deger // min(10, n_deger)
+    kat = 1.0 / (omega_dt * blok_adimi) if omega_dt * blok_adimi > 1.0 else 1.0
+    return float(energy_oscillation * kat), float(kat)
 
 
 def energy_oscillation(scenario: MDScenario, trajectory: Trajectory) -> float | None:
@@ -1075,7 +1212,9 @@ def energy_oscillation(scenario: MDScenario, trajectory: Trajectory) -> float | 
     `_TB_OMEGA_DT_TOLERANCE`ta.
 
     Hareketsiz koşu (max KE = 0) ve uçları biriktirmeyen bir kurucu (`nan`,
-    ör. `run.py`nin termostat döngüsü) `nan` döner, panel ✗ basar.
+    ör. `run.py`nin termostat döngüsü) `nan` döner, panel ✗ basar. D2-v
+    (12.10.2026): max KE yuvarlama tabanındaysa da (`_OSCILLATION_ROUNDING_FLOOR`
+    x eps x max|KE + potansiyel| ve altı) `nan` -- S orada gürültüdür.
 
     YALNIZ `tb_ss_sigma` ve `hartree_fock` NVE: NVT'de toplam enerji tanım
     gereği korunmaz. HF dalı D2-ii'de (10.10.2026) girdi -- formül AYNI
@@ -1086,7 +1225,11 @@ def energy_oscillation(scenario: MDScenario, trajectory: Trajectory) -> float | 
     tur = scenario.force_field["kind"]
     if (tur == "tb_ss_sigma" or tur == "hartree_fock") and scenario.thermostat is None:
         olcek = trajectory.kinetic_max
-        if not olcek > 0.0:  # 0 ve nan (karşılaştırma nan'da False)
+        # D2-v: yuvarlama tabanı; np.maximum nan'ı YAYAR (yerleşik max sıraya bağlı düşürürdü).
+        taban = _OSCILLATION_ROUNDING_FLOOR * np.finfo(float).eps * float(
+            np.maximum(abs(trajectory.total_min), abs(trajectory.total_max))
+        )
+        if not olcek > taban:  # 0, taban ve nan (karşılaştırma nan'da False)
             return float("nan")
         return float((trajectory.total_max - trajectory.total_min) / olcek)
     return None
@@ -1578,9 +1721,22 @@ def provenance_for(
             kare0_gecti = kare0_sonlu and omega_dt <= omega_esigi
             yol_sonlu = bool(np.isfinite(omega_dt_yol))
             yol_gecti = yol_sonlu and omega_dt_yol <= omega_esigi
+            # D2-ii-c: sonlu bir sürüklenme ✗'ini Verlet salınımının uç
+            # bloklara bırakabileceği pay açıklıyorsa (pay `nan` ise de) tanı
+            # "AYRILAMIYOR" der; hüküm yine ✗ (✓'ye çevrilemez: `energy_drift`).
+            ayrinti = None
+            if not yakinsadi and np.isfinite(energy_drift):
+                payi, kat = _suruklenme_salinim_payi(scenario, energy_oscillation, omega_dt_yol)
+                if not energy_drift - payi > esik:
+                    ayrinti = (
+                        f"salınımın uç bloklara bırakabileceği pay {payi:.3e} (S x "
+                        f"{kat:.3g}), eşiği aşan kısım {energy_drift - esik:.3e}"
+                        if np.isfinite(payi) else "S sonlu değil, salınımın payı bilinmiyor"
+                    )
             yakinsama_tanisi = tani(
                 yakinsadi, salinim_gecti, salinim_sonlu,
                 kare0_gecti, kare0_sonlu, yol_gecti, yol_sonlu,
+                ayrilamaz_ayrinti=ayrinti,
             )
             yakinsadi = yakinsadi and salinim_gecti and kare0_gecti and yol_gecti
     else:

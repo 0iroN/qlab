@@ -76,30 +76,39 @@ ayirt edilemez -- yalniz bandi `eigh`in kendi cozunurlugune indirir; band
 |H| ile buyur (tekbicim onsite 1e4 ile 3.4e-05 bohr). Katsayinin olcumu
 katsayinin yaninda yazili.
 
-kT > 0 DOLUMU. mu, kayan noktada sum f = n'yi saglayan PLATONUN ORTASIDIR
-(iki biseksiyon, erken durma: orta nokta bir uca esitlenince durur). Platonun
+kT > 0 DOLUMU. Once kayan noktada sum f = n'yi saglayan PLATO bulunur (iki
+biseksiyon, erken durma: orta nokta bir uca esitlenince durur), sonra
+platonun ortasindan LOG UZAYINDA kanonik koke inilir (`_log_kok`, D15). Platonun
 alt ucu (onceki prototip) bosluklu sistemde kucuk kT'de mu'yu bosluk
 merkezinden -340 kT kaydiriyordu. Entropi kararli bicimde yazilir:
 s(x) = ln(1 + e^-|x|) + |x| expit(-|x|), x = (eps - mu)/kT. Omega'ya
-+ mu (n - n_hesap) eklenir: biseksiyon artigi dn'nin Omega'ya birinci
++ mu (n - n_hesap) eklenir: dolum artigi dn'nin Omega'ya birinci
 mertebeden sizmasini keser (Omega mu'ya gore duragan olur).
 
-RAPORLANAN mu FIZIKSEL KANONIK KOKTEN kT'NIN BIR KESRI KADAR SAPABILIR.
-mu platonun ortasidir; kuyruklar kayan nokta cozunurlugunun altina dusunce
-(bosluk/kT >~ 70) platonun iki ucu yuvarlama esiklerince belirlenir ve
-simetrik degildir. Dejenere olmayan HOMO/LUMO'da kesin kanonik mu bosluk
-ortasidir (ustel kucuk duzeltmeyle); O(kT) bir terim yalniz esit olmayan
-katliliklarda dogar ((kT/2) ln(g_H/g_L)). OLCULDU (24.09.2026, log uzayinda
-kesin kok + 120 haneli Decimal capraz kontrolu): M1'in 3B kumesinde (n_e =
-8) kT = 1e-6..1e-4'te mu - orta = +0.1438 kT = ln(4/3)/2 (plato HOMO +
-35.638 kT'den LUMO - 35.351 kT'ye), kT = 1e-3'te 0 (kuyruklar temsil
-edilebilir); 4 seviyeli oyuncakta ln2/2 = 0.3466 kT; 400 rastgele spektrumda
-(4-32 seviye, bosluk/kT 80-2000) en cok 0.394 kT, bosluk/kT 1-30'da
-<= 3.4e-10 kT. Omega, kuvvet ve n_hesap bundan kayan nokta duzeyinde
-ETKILENMEZ: platoda butun f'ler birebir aynidir ve duzeltme terimi 0'dir.
-Fiziksel kok gerekirse plato bulunduktan sonra log uzayinda bir kok adimi
-eklenebilir (logsumexp(-logaddexp(0, (mu - eps_dolu)/kT)) =
-logsumexp(-logaddexp(0, (eps_bos - mu)/kT))); YAPILMADI, acik kalan.
+RAPORLANAN mu KANONIK KOKTUR (D15, 12.10.2026). Kimlik sum_B f - sum_A h =
+n/g_s - |A| (A: platonun ortasinin altindaki seviyeler, h = 1 - f) log
+uzayinda yazilir: bosluktaki tamsayi dolumda logsumexp(log f_B) =
+logsumexp(log h_A), kuyruklar e^-1000 olsa bile. ESKIDEN mu platonun
+ortasiydi ve kuyruklar kayan nokta cozunurlugunun altina dusunce (bosluk/kT
+>~ 70) platonun iki ucu yuvarlama esiklerince belirlendigi icin kokten
+kT'nin bir kesri kadar sapiyordu -- O(kT) terimi (kT/2) ln(g_H/g_L) esit
+olmayan katliliklarda dogar ve plato onu goremez. OLCULDU (kamu yolu,
+Decimal 60 hane dogrusal-uzay Newton capraz kontrolu; once -> sonra):
+M1'in 3B kumesinde (n_e = 8) kT = 1e-6..1e-4'te mu - orta +0.1438 kT
+(= ln(4/3)/2 plato asimetrisi; HOMO/LUMO dejenere degil, kok ortadadir) ->
+<= 6.9e-13 kT; 400 rastgele spektrumda (4-32 seviye, bosluk/kT 80-2000)
+katliliksiz en cok 0.3942 kT -> 4.2e-13 kT (24.09'un 0.394'u yeniden
+uretildi), seviye basina 1-3 katlilikla 1.040 -> 1.5e-11 kT; bosluk/kT
+1-30'da 6.6e-10 -> 3.5e-13 kT; kesirli dolumda 5.9e-12 -> 4.2e-12 kT.
+TABAN: mu bir double'dir, kT ulp(mu)'ya yaklasinca sapma ~ulp(mu) kalir ve
+kT biriminde buyur; kayan noktanin dibinde (kT ~ 5e-324, x tasar) log adim
+sonlu degildir ve platonun ortasi aynen doner. Kilit:
+`tests/tb/test_d15_kanonik_mu.py`.
+Kok kayan nokta platosunun DISINA dusebilir (olculdu: derin havuzda 0/400,
+orta 43/200, kesirli 152/200 spektrumda n_hesap != n; |dn| <= 4.3e-14 /
+1.8e-12); o zaman yukaridaki duzeltme terimi isler. Sevk edilen MD yolunun
+(tb_zincir_md) 11 karesinde kayma en cok 1.06e-6 kT; Omega <= 4.4e-16
+hartree, kuvvet <= 4.2e-17 hartree/bohr oynadi.
 
 PERIYODIK KUTU (spec B5). Yalniz x ekseni periyodik, en-yakin-goruntu
 (vektorize); y ve z ACIK. max(r_cut) < L/2 KESIN kosuldur (aksi halde birden
@@ -125,7 +134,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from scipy.special import expit
+from scipy.special import expit, softmax
 
 from qlab.engine.tb.radyal import UsselRadyalYasa
 from qlab.errors import InvalidInputError
@@ -154,6 +163,11 @@ _BISEKSIYON_TAVANI = 400
 
 #: mu parantezini genisleten katlama tavani (5e-324'ten 1.8e308'e ~2100).
 _PARANTEZ_TAVANI = 2200
+
+#: Log uzayi kok adiminin (D15) Newton adim tavani. Normal cikis 1-3 g
+#: degerlendirmesidir (olculdu, 800 rastgele spektrum: adim kT * 1e-13'un
+#: altina iner ya da yarilanmayi birakir); tavan yalniz bir emniyettir.
+_KOK_TAVANI = 100
 
 #: Cakisik atom esigi (MUTLAK, bohr): en-yakin-goruntu sonrasi d <= esik olan
 #: cift `InvalidInputError`. Kafes yolunun (`tb/lattice.py`) esiginin BILINCLI
@@ -210,10 +224,8 @@ class MerminDolum:
     `mu` HARTREE. kT = 0'da `entropi = 0.0`; `kesirli` yalniz kT = 0'da True
     olabilir (Fermi kumesi kismen dolu). Uc doluluklarda (n = 0 ya da
     n = g_s * seviye sayisi) kanonik mu sonsuza gider: -inf / +inf doner.
-    kT > 0'da `mu` kayan-nokta platosunun ORTASIDIR: kuyruklar kayan nokta
-    cozunurlugunun altina dusunce (bosluk/kT >~ 70) fiziksel kanonik kokten
-    kT'nin bir kesri kadar sapabilir (olculdu en cok 0.394 kT; modul
-    dokstringi). Omega, kuvvet ve `n_hesap` bundan etkilenmez.
+    kT > 0'da `mu` log uzayinda bulunan KANONIK KOKTUR (D15; eskiden platonun
+    ortasiydi ve 1 kT'ye kadar sapiyordu; olcumler modul dokstringinde).
     """
 
     f: np.ndarray
@@ -255,12 +267,83 @@ def _aufbau(eps: np.ndarray, n_elektron: float) -> MerminDolum:
     )
 
 
-def _fermi(eps: np.ndarray, n_elektron: float, kT: float) -> MerminDolum:
-    """kT > 0: kanonik Fermi-Dirac, mu kayan-nokta platosunun ortasi.
+def _log_kok(
+    eps: np.ndarray, n_elektron: float, kT: float, mu0: float, lo: float, hi: float
+) -> float:
+    """Kanonik kok g_s sum f(mu) = n, LOG UZAYINDA (D15). `mu0` platonun ortasi.
 
-    Platonun ortasi fiziksel kanonik kok DEGILDIR: kuyruklar yuvarlamanin
-    altindayken ondan kT'nin bir kesri kadar (olculdu en cok 0.394 kT)
-    sapabilir; Omega, F ve n_hesap platoda degismez (modul dokstringi).
+    Seviyeler `mu0`a gore iki kumeye ayrilir: A (eps < mu0) ve B. Her bolme
+    icin kimlik kesindir (f = 1 - h): sum_B f - sum_A h = m, m = n/g_s - |A|.
+    Iki taraf log uzayinda yazilir (log f = -logaddexp(0, (eps - mu)/kT),
+    log h = -logaddexp(0, (mu - eps)/kT)) ve m = 0'da
+
+        g(mu) = logsumexp(log f_B) - logsumexp(log h_A),
+
+    m != 0'da |m| kendi tarafina logaddexp ile eklenir. g mu'da artandir;
+    kuyruklar e^-1000 olsa da sayilar log uzayinda -1000 mertebesindedir ve
+    taban yuvarlamasi kaybolmaz. Kok `[lo, hi]` parantezi icinde korumali
+    Newton ile bulunur (adim parantez disina cikarsa ikiye bolme; turev
+    softmax agirliklariyla ANALITIK). Kayan noktanin dibinde (g ya da turevi
+    sonlu degil: kT ~ 5e-324'te x tasar) `mu0` aynen doner.
+    """
+    nu = n_elektron / G_S
+    alt_mi = eps < mu0
+    e_a, e_b = eps[alt_mi], eps[~alt_mi]
+    m = nu - float(np.count_nonzero(alt_mi))
+    log_m = float(np.log(abs(m))) if m != 0.0 else -np.inf
+
+    def g_ve_turev(mu: float) -> tuple[float, float]:
+        x_a = (mu - e_a) / kT
+        x_b = (e_b - mu) / kT
+        log_h = -np.logaddexp(0.0, x_a)
+        log_f = -np.logaddexp(0.0, x_b)
+        L_h = float(np.logaddexp.reduce(log_h)) if e_a.size else -np.inf
+        L_f = float(np.logaddexp.reduce(log_f)) if e_b.size else -np.inf
+        # d log h_i / dmu = -(1 - h_i)/kT, d log f_j / dmu = (1 - f_j)/kT
+        d_h = -float(np.sum(softmax(log_h) * expit(x_a))) / kT if e_a.size else 0.0
+        d_f = float(np.sum(softmax(log_f) * expit(x_b))) / kT if e_b.size else 0.0
+        if m > 0.0:
+            sag = float(np.logaddexp(log_m, L_h))
+            return L_f - sag, d_f - float(expit(L_h - log_m)) * d_h
+        if m < 0.0:
+            sol = float(np.logaddexp(log_m, L_f))
+            return sol - L_h, float(expit(L_f - log_m)) * d_f - d_h
+        return L_f - L_h, d_f - d_h
+
+    mu, onceki = mu0, np.inf
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+        for _ in range(_KOK_TAVANI):
+            g, dg = g_ve_turev(mu)
+            if not (np.isfinite(g) and np.isfinite(dg) and dg > 0.0):
+                return mu0
+            if g == 0.0:
+                return mu
+            if g < 0.0:
+                lo = mu
+            else:
+                hi = mu
+            yeni = mu - g / dg
+            adim = abs(yeni - mu)
+            # Durma: adim kT * 1e-13'un altinda, ya da 1e-11 kT altinda ve artik
+            # yarilanmiyor (g'nin yuvarlama tabani: |x| ~ 1e3'te ~1e-13).
+            if adim <= 1e-13 * kT or (adim <= 1e-11 * kT and adim >= 0.5 * onceki):
+                return yeni
+            if not lo < yeni < hi:
+                yeni = 0.5 * (lo + hi)
+                if yeni <= lo or yeni >= hi:
+                    return mu
+                adim = np.inf
+            mu, onceki = yeni, adim
+    return mu
+
+
+def _fermi(eps: np.ndarray, n_elektron: float, kT: float) -> MerminDolum:
+    """kT > 0: kanonik Fermi-Dirac; mu log uzayinda kanonik kok (D15).
+
+    Once kayan-nokta platosu bulunur (sum f == n), sonra platonun ortasindan
+    `_log_kok` kanonik koke iner. Platonun ortasi kok DEGILDI: kuyruklar
+    yuvarlamanin altindayken ondan kT'nin bir kesri kadar sapiyordu (modul
+    dokstringi, OLCULDU).
     """
     tam = G_S * eps.size
     if n_elektron == 0.0 or n_elektron == tam:
@@ -331,7 +414,7 @@ def _fermi(eps: np.ndarray, n_elektron: float, kT: float) -> MerminDolum:
         mu_ust = lo_a  # plato yok: n iki bitisik kayan noktanin arasinda
     else:
         mu_ust, _ = ikiye_bol(lambda m: say(m) <= n_elektron, mu_alt, ust)
-    mu = 0.5 * (mu_alt + mu_ust)
+    mu = _log_kok(eps, n_elektron, kT, 0.5 * (mu_alt + mu_ust), alt, ust)
 
     x = (eps - mu) / kT
     f = expit(-x)

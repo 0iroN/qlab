@@ -34,6 +34,29 @@ def _sekil(shape) -> tuple[int, int]:
     return s
 
 
+def _katman_kapisi(sinif: str, thickness: object, m: object) -> None:
+    """PML ve LossyLayer'in ORTAK parametre kapisi (G13, 12.10.2026).
+
+    OLCULDU (HEAD e262cab, kamu yolu `run_1d`, vakum N = 200, S = 0.5, 600
+    adim): `LossyLayer(sigma_max = nan / inf)`, `LossyLayer(m = nan)`,
+    `PML(m = nan / inf)` KABUL ediliyor ve kayit sessizce nan donuyordu;
+    `LossyLayer(m = -1)` (profil ic yuzde en buyuk, son alan 0.59 -- referans
+    8.3e-04) ve `m = 0` kabul ediliyordu (PML'de m > 0 kapisi vardi, burada
+    yoktu); `thickness = 15.5` 16 hucrelik profil kurup pencereye `npml = 15`
+    yaziyordu, `thickness = True` 1 hucre sayiliyordu, `thickness = nan` ham
+    `ValueError` veriyordu. Kalinlik bir HUCRE SAYISIDIR: tamsayi (bool degil)
+    ve >= 0; profil derecesi sonlu ve > 0.
+    """
+    if isinstance(thickness, (bool, np.bool_)) or not isinstance(thickness, (int, np.integer)):
+        raise InvalidInputError(
+            f"{sinif} kalinligi bir hucre sayisidir, tamsayi olmali (bool degil): {thickness!r}"
+        )
+    if thickness < 0:
+        raise InvalidInputError(f"{sinif} kalinligi negatif olamaz, verilen: {thickness}")
+    if not (np.isfinite(m) and m > 0.0):
+        raise InvalidInputError(f"profil derecesi m > 0 ve sonlu olmali, verilen: {m}")
+
+
 def _yerlestir(cells: int, profil: np.ndarray, yuzler: str) -> np.ndarray:
     """Katman profilini istenen yuz(ler)e koy.
 
@@ -188,15 +211,15 @@ class PML:
             raise InvalidInputError(
                 f"yuzler {YUZLER} icinden olmali, verilen: {self.yuzler!r}"
             )
-        if self.thickness < 0:
-            raise InvalidInputError(
-                f"PML kalinligi negatif olamaz, verilen: {self.thickness}"
-            )
-        if self.m <= 0.0:
-            raise InvalidInputError(f"profil derecesi m > 0 olmali, verilen: {self.m}")
+        _katman_kapisi("PML", self.thickness, self.m)
         if not 0.0 < self.r0 < 1.0:
             raise InvalidInputError(
                 f"hedef yansima r0 (0, 1) araliginda olmali, verilen: {self.r0}"
+            )
+        if not np.isfinite(self.sigma_max):  # sonlu m'de de tasabilir (m ~ 1e308)
+            raise InvalidInputError(
+                f"turetilen sigma_max sonlu degil: {self.sigma_max} (m = {self.m}, "
+                f"r0 = {self.r0}, kalinlik {self.thickness})"
             )
 
     @property
@@ -300,9 +323,11 @@ class CircularPEC:
     radius: float
 
     def __post_init__(self) -> None:
-        if not self.radius > 0.0:
+        # Sonluluk (G13, 12.10.2026): HEAD e262cab'de radius = inf kabul ediliyordu ve
+        # maske HIC iletken dugum vermiyordu (21x21'de 0) -- daire sessizce kare kutu olurdu.
+        if not (self.radius > 0.0 and np.isfinite(self.radius)):
             raise InvalidInputError(
-                f"yaricap pozitif olmali, verilen: {self.radius}"
+                f"yaricap pozitif ve sonlu olmali, verilen: {self.radius}"
             )
 
     @property
@@ -349,13 +374,10 @@ class LossyLayer:
             raise InvalidInputError(
                 f"yuzler {YUZLER} icinden olmali, verilen: {self.yuzler!r}"
             )
-        if self.thickness < 0:
+        _katman_kapisi("LossyLayer", self.thickness, self.m)
+        if not (np.isfinite(self.sigma_max) and self.sigma_max >= 0.0):
             raise InvalidInputError(
-                f"kalinlik negatif olamaz, verilen: {self.thickness}"
-            )
-        if self.sigma_max < 0.0:
-            raise InvalidInputError(
-                f"sigma_max negatif olamaz, verilen: {self.sigma_max}"
+                f"sigma_max sonlu ve >= 0 olmali (negatif olamaz), verilen: {self.sigma_max}"
             )
 
     def profile(self) -> np.ndarray:

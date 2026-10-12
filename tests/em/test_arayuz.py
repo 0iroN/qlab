@@ -852,15 +852,20 @@ def _vakum_egik_katsayilari(L: int, S: float, ky: float, pol: str):
     `mu_r = 1` ve `eps_yarı = 1` olduğu için yardımcı slot da (1, S). İki
     kutuplanmada SAYILAR AYNI, yalnız `sign` farklı — ve bu, `sign`in bir
     GAUGE olduğu iddiasının bu testteki ölçülen karşılığıdır.
+
+    G13'ten (12.10.2026) beri kapı TİPİN KENDİSİNDEDİR (`__post_init__`); atlama
+    bu yüzden `object.__new__` ile, açık ve yerel yapılır.
     """
     base = YeeCoefficients(
         ca=np.ones(L), cb=np.full(L, S),
         da=np.ones(L - 1), db=np.full(L - 1, S), dim=1, courant=S,
     )
-    return ObliqueCoefficients(
-        main=base, aux_a=np.ones(L), aux_b=np.full(L, S),
-        sign=(-1.0 if pol == "s" else +1.0), polarization=pol, ky=float(ky),
-    )
+    co = object.__new__(ObliqueCoefficients)
+    for ad, deger in (("main", base), ("aux_a", np.ones(L)), ("aux_b", np.full(L, S)),
+                      ("sign", -1.0 if pol == "s" else +1.0), ("polarization", pol),
+                      ("ky", float(ky))):
+        object.__setattr__(co, ad, deger)
+    return co
 
 
 def _egik_kararli_mi(S: float, ky: float, L: int, adim: int, tohum: int,
@@ -943,6 +948,9 @@ def test_EGIK_P_KESIN_KAPI_ESLESMEYI_KESER_ve_TAM_ESIGE_OTURUR(monkeypatch):
     kur = lambda S: oblique_coefficients(med, courant=S, boundary=PEC(), polarization="p", ky=0.0)
     assert not _egik_patlar_mi(kur(0.999 * esik), L)
     monkeypatch.setattr("qlab.engine.em.oblique._egik_p_kesin_esik", lambda *a: np.inf)
+    with pytest.raises(InvalidInputError, match="KARARSIZ"):  # G13: tipin kendi kapisi da keser
+        kur(1.001 * esik)
+    monkeypatch.setattr("qlab.engine.em.oblique._katsayi_kapisi", lambda *a: None)
     assert _egik_patlar_mi(kur(1.001 * esik), L)
     monkeypatch.undo()
     # İKİNCİ ÇAPA: eps·mu != 1, konuma bağlı mu, ky != 0 (aux yolu canlı).
@@ -953,6 +961,7 @@ def test_EGIK_P_KESIN_KAPI_ESLESMEYI_KESER_ve_TAM_ESIGE_OTURUR(monkeypatch):
     kur2 = lambda S: oblique_coefficients(med2, courant=S, boundary=PEC(), polarization="p", ky=ky2)
     assert not _egik_patlar_mi(kur2(0.999 * esik2), L2)
     monkeypatch.setattr("qlab.engine.em.oblique._egik_p_kesin_esik", lambda *a: np.inf)
+    monkeypatch.setattr("qlab.engine.em.oblique._katsayi_kapisi", lambda *a: None)
     assert _egik_patlar_mi(kur2(1.001 * esik2), L2)
     monkeypatch.undo()
     # Sayısal aralık dışı ölçek: kapalı yönde ve DOĞRU istisna türüyle.

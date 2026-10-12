@@ -66,6 +66,28 @@ class Medium:
     tasisaydi, manyetik ortam eklemek cekirdegi degistirmeyi gerektirirdi.
     Motor yolu mu_r != 1'i KABUL EDER ve kararlilik kapilari onu okur
     (`yee._etkin_courant_kapisi`, `oblique._egik_p_kesin_esik`).
+
+    DIZILER KOPYALANIR VE SALT OKUNURDUR (G13, 12.10.2026). Kapi (pozitif ve
+    sonlu) yalniz kurulusta kosar; ESKIDEN `np.asarray` cagiranin dizisini
+    paylasiyordu ve dizi yazilabilirdi. OLCULDU (HEAD e262cab, kamu yolu
+    `run_1d`, vakum N = 200, PML 15, S = 0.5, 600 adim): kurulumdan sonra
+    `eps_r[100] = mu_r[100] = -4` (cift negatif: hucre carpimi +16, etkin
+    Courant kapisi gecer) sessizce KABUL ediliyor ve son alan 2.46e+49'a
+    cikiyordu (referans 8.3e-04); cagiranin `eps` dizisine sonradan yazilan
+    -4 `m.eps_r`de gorunuyordu; `eps_r = inf` kurulusta geciyordu. Simdi
+    yazma `ValueError` (numpy'nin salt-okunur hatasi), takma ad kopuk, inf
+    `InvalidInputError`.
+
+    SALT OKUNURLUK GERI ACILAMAZ: dizi bir `bytes` nesnesinin uzerine kurulur
+    (`np.frombuffer`), yani zincirin dibinde yazilabilir bir ndarray yoktur.
+    `setflags(write=False)` YETMIYORDU: `m.eps_r.setflags(write=True)` diziyi
+    yeniden yazilabilir yapiyor ve ayni cift negatif hucre (PML 15, S = 0.5,
+    600 adim) son 50 kaydi 4.2e+40'a cikariyordu (referans 3.7e-04). Salt
+    okunur bir tabanin salt okunur GORUNUMU de yetmez: `.base.setflags(write=
+    True)` once tabani, sonra gorunumu acar (numpy 2.5.1, olculdu). `bytes`
+    tabaninda ikisi de `ValueError`. Degerler ve sekil kopyanin aynisidir.
+    SINIR: `copy.deepcopy(m)` `__post_init__`i kosmaz ve yazilabilir dizi
+    verir (numpy'nin kopyasi) -- bu yol kapali degildir.
     """
 
     eps_r: np.ndarray
@@ -73,8 +95,11 @@ class Medium:
     ey_kural: str = "aritmetik"
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "eps_r", np.asarray(self.eps_r, dtype=float))
-        object.__setattr__(self, "mu_r", np.asarray(self.mu_r, dtype=float))
+        for ad in ("eps_r", "mu_r"):
+            kopya = np.array(getattr(self, ad), dtype=float)  # KOPYA: takma ad kopar
+            # `bytes` tabani: salt okunurluk `setflags(write=True)` ile de geri acilamaz.
+            dizi = np.frombuffer(kopya.tobytes(), dtype=float).reshape(kopya.shape)
+            object.__setattr__(self, ad, dizi)
         if self.eps_r.shape != self.mu_r.shape:
             raise InvalidInputError(
                 f"eps_r ve mu_r ayni sekilde olmali, verilen: "
@@ -94,6 +119,10 @@ class Medium:
                 raise InvalidInputError(
                     f"{ad} her yerde pozitif olmali, en kucuk deger: "
                     f"{float(np.min(dizi)):.6g}"
+                )
+            if not np.all(np.isfinite(dizi)):
+                raise InvalidInputError(
+                    f"{ad} her yerde sonlu olmali (inf geldi; G13)"
                 )
 
     @property

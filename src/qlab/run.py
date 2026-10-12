@@ -771,7 +771,7 @@ def _run_md(scenario: MDScenario, output: str | None) -> int:
     # (blok sayısı, "en az 2 kayıt" kapısı, TÜRE BAĞLI payda) G5'ten beri
     # `md/factory.py::energy_drift`te: TB'de enerjinin sıfırı keyfidir ve
     # |blok[0]|'a bölmek hükmü o sıfıra bağlıyordu (spec B8; ölçüm orada).
-    suruklenme = energy_drift(scenario, yorunge.kinetic, yorunge.potential)
+    suruklenme = energy_drift(scenario, yorunge)
     # SALINIM (D2, 09.10.2026): TB ve (D2-ii) HF NVE'de iri dt'yi yargılar,
     # öteki koşularda None. Uçlar integratörün HER adımından gelir (`Trajectory.total_min` ...);
     # buradaki termostat döngüsü onları biriktirmez ve NVT'de S hesaplanmaz.
