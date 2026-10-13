@@ -311,10 +311,10 @@ def test_nose_hoover_termostat_kutlesi_belgelenmis_formulu_izliyor():
 
     k_B = 3.166811563455608e-6 Ha/K, T = 300 K, tau = 1/OMEGA
     = 49.86688461471631 a.u.  ->  Q = 2.3624789668407673.
-    Bu bir formül kontrolüdür, fizik ölçümü değildir; ama `q = 2 k_B T tau^2`
-    mutantını KIRAN TEK iddiadır (ölçüldü: o mutant fiziksel gözlemlerin
-    hiçbirinde eşik dışına çıkmıyor -- düz <x^2> -4.6432 % ile -4 % eşiğini
-    geçemiyor, oran 1.1539 < 1.35, <v^2> -0.1520 %).
+    Bu bir formül kontrolüdür, fizik ölçümü değildir. `q = 2 k_B T tau^2`
+    mutantını artık hızlı şeritte iki FİZİK çıpası da kırar (13.10.2026, mut.py):
+    md G7 dosyasının serbest-parçacık periyodu ve bu dosyanın sonundaki NHC-ODE
+    çıpası. Ergodiklik testleri onu hâlâ görmez (düz <x^2> -4.6432 %, oran 1.1539).
     """
     termostat = NoseHoover(
         target_temperature_kelvin=HEDEF_K, relaxation_time=TAU_ERGODIK
@@ -440,13 +440,13 @@ def test_nose_hoover_ergodiklik_kusuru_TEK_osilatorde_olculuyor(tek_dof_olcum):
       hedef ndof*kT yerine ndof*kT/2       : <v^2> -50.0231 %, zin -35.3340 % RED
       q = k_B T tau (kare unutulmuş)       : zin +67225.89 %, zin <v^2> +66909.48 % RED
 
-    YAKALAMADIĞI (dürüst olumsuz, ölçülmüş):
-      q = 2 k_B T tau^2 : düz -4.6432 % -> -4 % eşiğini GEÇEMİYOR, geçer.
-        Bunu yalnızca `thermostat_mass` literal testi kırar.
-      zincir döngüsünün YÖNÜ : zincir=1'de ölü kod (bire bir aynı yörünge);
-        zincir=3'te düz +0.1828 % vs doğru -0.0729 %, 20 tohumda fark
-        -0.3014 +- 1.1234 puan, tohum gürültüsü 0.8617 puan -> ayırt EDİLEMİYOR.
-        Bu iddia bu test paketiyle savunulmuyor.
+    YAKALAMADIĞI (dürüst olumsuz, ölçülmüş; 13.10.2026'da güncellendi):
+      q = 2 k_B T tau^2 : düz -4.6432 % -> -4 % eşiğini GEÇEMİYOR, geçer. Bu test
+        görmez; hızlı şeritte literal test, G7 periyodu ve NHC-ODE çıpası kırar.
+      zincir döngüsünün YÖNÜ (iki yarımda tutarlı): zincir=1'de ölü kod;
+        zincir=3'te 20 tohumda fark -0.3014 +- 1.1234 puan, tohum gürültüsü
+        0.8617 puan -> ayırt EDİLEMİYOR. KUSUR DA DEĞİL: eşdeğer ikinci mertebe
+        ayrıştırma (ölçüm: dosyanın sonundaki NHC-ODE çıpasının dokstringi).
     """
     duz, zincirli = tek_dof_olcum["duz"], tek_dof_olcum["zincirli"]
     assert duz["x2_sapma"] < -0.04, (
@@ -517,3 +517,114 @@ def test_nose_hoover_gecersiz_parametreleri_reddediyor():
         NoseHoover(target_temperature_kelvin=300.0, relaxation_time=0.0)
     with pytest.raises(InvalidInputError, match="sıcaklık"):
         NoseHoover(target_temperature_kelvin=0.0, relaxation_time=1.0)
+
+
+def test_nose_hoover_ZINCIRI_BAGIMSIZ_ODE_cozumune_IKINCI_MERTEBEDEN_yakinsiyor():
+    """C4 (13.10.2026): NH ZİNCİRİNİN dinamiği, bağımsız ODE çözümüne karşı.
+
+    SINIF: ÇIPA (bağımsız yöntem), regresyon kilidi DEĞİL. Referans ders
+    kitabı NHC denklemleridir (Martyna-Klein-Tuckerman 1992); testin İÇİNDE
+    yazılır ve scipy DOP853 ile çözülür. `NoseHoover`a da `thermostat_mass`a
+    da bakmaz; Q_j = k_B T tau^2 belgelenmiş formülden gelir:
+        dx/dt = v                        dv/dt = -k x/m - z0 v
+        dz0/dt = (m v^2 - n k_B T)/Q - z0 z1
+        dz1/dt = (Q z0^2 - k_B T)/Q - z1 z2      dz2/dt = (Q z1^2 - k_B T)/Q
+    PENCERE: tek 1-dof osilatör (y, z tam sıfır, n_dof = 1), zincir = 3,
+    tau = 1/omega, x0 = 1.3 sigma_x, v0 = -0.7 sigma_v, zeta0 = (0.4, -0.3,
+    0.2)/tau (sıfırdan farklı başlangıç, zinciri ilk adımdan bağlar), 2
+    periyot, dt = P/100 ve P/200. Hata = adım sonlarında en büyük
+    |x - x_ref|/sigma_x ve en büyük |zeta - zeta_ref|*tau.
+
+    NEDEN VAR: zincir terimlerini (z1, z2 denklemleri) sınayan tek test
+    yavaş şeridin ergodiklik testiydi. ÖLÇÜLDÜ (13.10.2026, mut.py, bu test
+    yokken): aşağıdaki ilk iki mutant md hızlı şeridinin 349 testini de
+    GEÇİYORDU; onları yalnız yavaş şeridin ergodiklik testleri kırıyordu
+    (-x ile ilk düşen `..._TEK_osilatorde_olculuyor`, fixture ~30 s).
+
+    ÖLÇÜLDÜ (bu pencere)           P/100        P/200       oran
+      x hatası                   1.945e-02    4.904e-03    3.965
+      zeta hatası                1.004e-01    2.555e-02    3.931
+    Oran dt küçüldükçe 4'e gider (x: P/50 -> P/400 arası 3.86 / 3.97 / 3.99),
+    yani İKİNCİ MERTEBE. Referansın kendi hatası (rtol 1e-12 ile 1e-13
+    çözümlerinin farkı) x'te 2.2e-11, zeta'da 1.5e-10; ölçülenin 1e7 altı.
+    EŞİKLER: P/200 hatası x < 0.05, zeta < 0.25 (ölçülenin ~10 katı: meşru
+    bir yeniden ayrıştırmaya pay) VE iki oran da 3.0 .. 5.0 arası (tutarlı
+    ikinci mertebe). Sayılar kesme hatasıdır, son ulp'e bağlı değildir.
+
+    KIRDIĞI MUTANTLAR (P/200 hatası; oran ~1.00, yani hata dt ile KÜÇÜLMÜYOR,
+    kod başka bir ODE çözüyor):
+      zincir kuvvetinde -k_B T yok (iki yarımda)     x 2.505   zeta 3.263
+      zincir bağlaşımı exp(-h/2 ...) (iki yarımda)   x 1.624   zeta 3.579
+      yarım adımlarda q = 2 k_B T tau^2              x 2.289   zeta 3.395
+    İlk ikisi "denge doğru, dinamik yanlış" ailesindendir; üçüncüyü hızlı
+    şeritte G7 serbest-parçacık periyodu da kırıyor.
+
+    KIRMADIĞI (dürüst olumsuz; KUSUR DEĞİL): zincir döngüsünün YÖNÜ iki
+    yarımda TUTARLI ters çevrilirse (ileri yarımda i = M-1 .. 1, geri yarımda
+    1 .. M-1) adım yine aynı alt-akışların simetrik bir Trotter bileşimidir:
+    zaman-tersinir kalır ve AYNI ODE'ye ikinci mertebeden yakınsar (x
+    2.654e-02 -> 6.719e-03, oran 3.951; zeta 1.662e-01 -> 4.237e-02, oran
+    3.923). Doğru koddan farkı yalnız kesme sabitidir (x 1.37, zeta 1.66
+    kat). Onu öldürmenin tek yolu bugünkü alt-adım SIRASINI dondurmaktır
+    (regresyon kilidi); bu, MTK sırası gibi meşru bir değişikliği de
+    kırmızıya çevireceği için EKLENMEDİ. Bu mutant md hızlı şeridini (349)
+    ve iki yavaş termostat testini de geçer (ölçüldü, mut.py).
+    """
+    # Yerel import BİLİNÇLİ: dosyanın başına eklenen bir satır, bu dosyanın
+    # depoda satır numarasıyla atıf yapılan dokstring bloklarını kaydırırdı.
+    from scipy.integrate import solve_ivp
+
+    kt = KB_HARTREE_PER_KELVIN * HEDEF_K
+    tau = TAU_ERGODIK
+    q = kt * tau**2
+    sigma_x, sigma_v = float(np.sqrt(X2_KANONIK)), float(np.sqrt(V2_KANONIK))
+    x0, v0 = 1.3 * sigma_x, -0.7 * sigma_v
+    zeta0 = np.array([0.4, -0.3, 0.2]) / tau
+
+    def nhc(_t, y):
+        x, v, z0, z1, z2 = y
+        return [
+            v,
+            -K * x / M - z0 * v,
+            (M * v * v - kt) / q - z0 * z1,
+            (q * z0 * z0 - kt) / q - z1 * z2,
+            (q * z1 * z1 - kt) / q,
+        ]
+
+    olcek = np.array([sigma_x, sigma_v, 1.0 / tau, 1.0 / tau, 1.0 / tau])
+    referans = solve_ivp(
+        nhc, (0.0, 2.0 * PERIYOT), [x0, v0, *zeta0],
+        method="DOP853", rtol=1e-12, atol=1e-12 * olcek, dense_output=True,
+    )
+    assert referans.success, referans.message
+
+    alan = Harmonic(k=K, center=np.zeros((1, 3)))
+    hatalar = {}
+    for bolme in (100, 200):
+        dt = PERIYOT / bolme
+        durum = _tek_dof_durum(x0, v0)
+        termostat = NoseHoover(
+            target_temperature_kelvin=HEDEF_K,
+            relaxation_time=tau,
+            chain_length=3,
+            n_dof=1,
+        )
+        termostat.zeta = zeta0.copy()
+        _, kuvvetler = alan(durum.positions)
+        n_adim = 2 * bolme
+        x, zeta = np.empty(n_adim), np.empty((n_adim, 3))
+        for n in range(n_adim):
+            durum, _, kuvvetler = termostat.step(durum, kuvvetler, alan, dt)
+            x[n], zeta[n] = durum.positions[0, 0], termostat.zeta
+        ref = referans.sol(dt * np.arange(1, n_adim + 1))
+        hatalar[bolme] = (
+            float(np.abs(x - ref[0]).max()) / sigma_x,
+            float(np.abs(zeta - ref[2:].T).max()) * tau,
+        )
+
+    (x_kaba, z_kaba), (x_ince, z_ince) = hatalar[100], hatalar[200]
+    assert x_ince < 0.05 and z_ince < 0.25, (
+        f"NHC yörüngesi bağımsız ODE'den uzak (P/200): x {x_ince:.3e}, zeta {z_ince:.3e}"
+    )
+    assert 3.0 < x_kaba / x_ince < 5.0, f"x yakınsama oranı {x_kaba / x_ince:.3f} (beklenen 4)"
+    assert 3.0 < z_kaba / z_ince < 5.0, f"zeta yakınsama oranı {z_kaba / z_ince:.3f} (beklenen 4)"

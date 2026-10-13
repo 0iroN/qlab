@@ -58,7 +58,9 @@ BEŞ TEST (T0y 11.10.2026'da, G1p-b):
   `K = 2 sin(ky/2)` hâlidir — G1-s T1'in p eşi, aynı düzenek.
 * T2p (hızlı) sevk edilen alet iki açıda da ayrık r_p'ye oturur; bedelin
   İŞARETİ Brewster altında NEGATİFTİR (s'de hep pozitif).
-* T3p (yavaş) DOĞRUDAN 2B TİY δ_ps (eğik çözücü YOK) sürekliye O(Δx²).
+* T3p (yavaş) DOĞRUDAN 2B TİY δ_ps (eğik çözücü YOK) sürekliye O(Δx²);
+  13.10.2026'dan (G1p-a) beri üç basamaklı merdivenle (L 6/8/12) sürekliye
+  MUTLAK kapı, ±3e-3°.
 
 SINIF (Modül 5 sözlüğü, `test_arayuz.py` başlığı; G7 sözlüğü ayrı,
 `test_g7_hizli_cipa.py` başlığı): T0p TRANSKRİPSİYON DENETİMİ / ŞEMA ÇIPASI
@@ -564,16 +566,37 @@ def test_DOGRUDAN_2B_TIY_FAZ_FARKI_SUREKLIYE_O_dx2_YAKINSAR():
     1'de aynı k1 ile yayıldığı için prob↔arayüz gidiş-dönüş fazı farkta
     sadeleşir (`tir_phase_difference` gerekçesi). Burada iki ayrı 2B koşumdan
     (TE_z dual, TM_z) okunur; eğik çözücü YOK. 4 -> 1, θ = 45° (θ_c 30°),
-    L = 6 ve 12 (λ = 2 n1 sin θ L = 16.97 / 33.94). Sürekli δ_ps testte elle,
-    boru uzlaşımında: 2 atan(ε1 κ/(ε2 kx1)) − 2 atan(κ/kx1) = +70.528779°.
+    L = 6, 8 ve 12 (λ = 2 n1 sin θ L = 16.97 / 22.63 / 33.94). Sürekli δ_ps
+    testte elle, boru uzlaşımında: 2 atan(ε1 κ/(ε2 kx1)) − 2 atan(κ/kx1) =
+    +70.528779°.
 
-    ÖLÇÜLDÜ (`p5_sure.log`; eleştirmen `e5_dogrudan_2b.log` kendi PML
-    profiliyle 5.5e-5 / 2.6e-4°, üs 1.883):
+    ÖLÇÜLDÜ (`p5_sure.log`, doğrulayıcı `v5`; eleştirmen `e5_dogrudan_2b.log`
+    kendi PML profiliyle 5.5e-5 / 2.6e-4°, üs 1.883; L8 ve merdiven G1p-a,
+    13.10.2026, `.superpowers/sdd/dusuk-ayiklama/grup8-C/g1p_2b_merdiven.log`
+    -- değerler v5 ile altı hanede aynı; Prescott çekirdeğinde de aynı):
 
-        ||r_p| - 1|, ||r_s| - 1|        <= 1.45e-05 (L12, s) kapı <= 1e-4
-        |δ_2B - δ_ayrık(K)|  L6 / L12   6.5e-05 / 2.8e-04°  kapı <= 1e-3°
-        δ_2B - δ_sürekli     L6 / L12   +1.34479 / +0.36460°   kapı > 0
-        üs log2(L6/L12)                 1.883               kapı [1.5, 2.5]
+        ||r_p| - 1|, ||r_s| - 1|   <= 1.45e-05 (L12, s)            kapı <= 1e-4
+        |δ_2B - δ_ayrık(K)|        L6 / L8 / L12  6.5e-05 / 7.1e-05 / 2.8e-04°
+                                                                kapı <= 1e-3°
+        δ_2B - δ_sürekli           L6 / L8 / L12  +1.34479 / +0.79389 / +0.36460°
+                                                                kapı > 0
+        üs log2(L6/L12)            1.883                      kapı [1.5, 2.5]
+        MERDİVEN δ_∞ - δ_sürekli   -3.09e-04°                  kapı |.| <= 3e-3°
+
+    MERDİVEN (G1p-a, MUTLAK FİZİK KAPISI). δ(L) = δ_∞ + a/L² + b/L⁴ üç
+    basamaktan (L 6/8/12) çözülür ve δ_∞ sürekliye MUTLAK bağlanır. Açılım
+    çift kuvvetlerdedir (ayrık dağınım a_j² ∝ 1/L²); kapalı formun kendisi
+    sürekliye C/L² ile gider, C → 53.7589 (L 1e3 / 1e4'te 53.7587 /
+    53.7589). Hata bütçesi: (i) kesme artığı -- aynı merdiven KAPALI FORMA
+    uygulanınca -8.79e-04° (1/L⁶ ve üstü); (ii) 2B'nin kapalı formdan sapması
+    ağırlıklarla büyür, ağırlıklar (3/7, -64/35, 12/5), |w|_1 = 4.657; ölçülen
+    sapmalarla en kötü toplam 8.3e-04°, (i) ile birlikte 1.7e-03°. Kapı 3e-3°:
+    ölçülenin 9.7 katı, ölçülen sapmalardan kurulan en kötü bütçenin 1.8 katı.
+    ÇÖZÜNÜRLÜK: eski fizik kolları (sapma > 0, üs [1.5, 2.5]) sürekli limitte
+    sabit bir D ∈ [−0.1541, +0.1714]° hatasını geçiriyordu (doğrulayıcı `v5`,
+    yeniden üretildi); merdiven D'yi birebir taşır (ağırlık toplamı 1), yani
+    artık D ∈ [−0.0027, +0.0033]° -- 50 kat dar. L 24 (nx 3600, 114 s) bu
+    yüzden gerekmedi.
 
     `δ_ayrık(K)` kapalı formu (`_r_ayrik`) — eğik çözücünün değil 2B'nin
     ayrık cevabı; L12'de pay 3.6 kat (pencere protokolü sınırlıyor; bu bir
@@ -585,20 +608,32 @@ def test_DOGRUDAN_2B_TIY_FAZ_FARKI_SUREKLIYE_O_dx2_YAKINSAR():
     mutantından yalnız `mu_yari_2d` harmonik: 12.8°; uygulamanın 14'ünden
     M2, M8, M12 — üçünü de T0p/T1p öldürür; doğrulayıcının 12 ek mutantından
     0); ortak-kip hatalara kör — 2B kayıt hizası, kaynak zamanı yarım adım ve
-    kaynak genliği ×2 ölçüldü ve geçti. FİZİK ISIRIĞI: fizik kolları
-    (sapma > 0, üs [1.5, 2.5]) sürekli limitte −0.154 … +0.172°'lik bir
-    hatayı geçirir (doğrulayıcı `v5`); 1e-3°'lik kapı ayrık kapalı forma
-    bakan ŞEMA kapısıdır. Olumlu: dual `_XSig` ölçeği unutulunca bu test de
-    düşer (L12'de 3.0e-3°). MALİYET: pytest çağrısı 4.1 s, betik 4.2 s
-    (ölçüldü) -> `slow`.
+    kaynak genliği ×2 ölçüldü ve geçti. SABİT ya da 1/L² ile ölçeklenen bir
+    kaynak hatasında MERDİVEN YENİ MUTANT ÖLDÜRMEZ ve bu yapısaldır (G1p-a,
+    ölçülen sayılarla): δ_2B'ye her basamakta aynı c kayması ekleyen bir hata
+    ŞEMA kapısında c >= 7.2e-4°'de (L12: 2.8e-4 + c), merdivende ancak
+    c >= 3.3e-3°'de düşer; 1/L² ile ölçeklenen bir hata merdivende a'ya
+    EMİLİR (görünmez), şema kapısında görünür. AMA L'ye DÜZENSİZ bağlı bir
+    hata merdivenin ağırlıklarıyla |w|_1 = 4.66 kata kadar BÜYÜR ve şema
+    kapısından sızanı merdiven yakalar (doğrulayıcı, 13.10.2026; aritmetik
+    örnek, gerçekçi bir kaynak mutantı bulunmadı): L 6/8/12'de −1e-3 / +9e-4
+    / −1.2e-3° kayma şema kapısını geçer (ölçülen farklarla −9.3e-4 /
+    +9.7e-4 / −9.2e-4°) ama D'yi −4.95e-3° kaydırır, |D| = 5.3e-3° > 3e-3° ve
+    merdiven düşer. Kapalı form testte elle yazılı, kaynaktan gelmez.
+    Merdivenin asıl işi SINIFTIR: şema kapısının referansı (`_r_ayrik`) bir
+    gün motora "uydurulursa" sürekliye bağlı tek kol o kalır, ve artık
+    −0.15…+0.17° değil ±3e-3° çözer. Olumlu: dual `_XSig` ölçeği unutulunca
+    bu test de düşer (L12'de 3.0e-3°). MALİYET: pytest çağrısı 5.2-7.1 s, yüke bağlı (L 6/8/12, 13.10.2026,
+    `--durations=0`; L 6/12 ile 4.1 s idi, `p5_sure.log`) -> `slow`.
     """
     e1, e2, th = 4.0, 1.0, 45.0
     S = 0.4
     kx1 = math.sqrt(e1) * math.cos(math.radians(th))
     kappa = math.sqrt(e1 * math.sin(math.radians(th)) ** 2 - e2)
     d_surekli = math.degrees(2 * math.atan(e1 * kappa / (e2 * kx1)) - 2 * math.atan(kappa / kx1))
+    basamak = (6, 8, 12)
     sapma = []
-    for L in (6, 12):
+    for L in basamak:
         lam = 2.0 * math.sqrt(e1) * math.sin(math.radians(th)) * L
         K = 2.0 * math.sin(math.pi / L / 2.0)
         rp = _r_2b_dogrudan("p", e1, e2, L, lam, th)
@@ -609,5 +644,12 @@ def test_DOGRUDAN_2B_TIY_FAZ_FARKI_SUREKLIYE_O_dx2_YAKINSAR():
         assert abs(d_2b - d_ayrik) <= 1e-3, (L, d_2b, d_ayrik)
         sapma.append(d_2b - d_surekli)
     assert all(x > 0 for x in sapma), sapma
-    us = math.log2(sapma[0] / sapma[1])
+    us = math.log2(sapma[0] / sapma[-1])
     assert 1.5 <= us <= 2.5, (sapma, us)
+    # MERDİVEN: δ(L) − δ_sürekli = D + a/L² + b/L⁴, üç basamaktan D (dokstring).
+    tasarim = np.array([[1.0, L**-2.0, L**-4.0] for L in basamak])
+    D = float(np.linalg.solve(tasarim, np.asarray(sapma))[0])
+    assert abs(D) <= 3e-3, (
+        f"üç basamaklı merdiven sürekliye oturmuyor: δ_∞ − δ_sürekli = {D:+.3e}° "
+        f"(sapmalar {sapma}; ölçülen -3.09e-04°)"
+    )

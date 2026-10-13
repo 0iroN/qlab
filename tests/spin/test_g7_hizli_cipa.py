@@ -187,6 +187,30 @@ yakalayacak sıkılık saniye altında mümkün değil: n_sweep = 900'de ⟨E⟩
 saçılımı ancak 0.046'ya iniyor ve blok 0.48-0.59 s sürüyor (60 blok, yük
 altında, iki ölçüm); step 1.5'e çıkmak saçılımı düşürmüyor (0.044).
 
+DAHA DÜŞÜK VARYANSLI GÖZLENEBİLİR — ÖLÇÜLDÜ, BİLİNÇLİ OLARAK EKLENMEDİ
+(13.10.2026, envanter G7-spinE). Kanonik dağılımın kısmi integrasyon
+özdeşliği (konfigürasyonel sıcaklık; S² üzerinde doğrusal fonksiyonun
+Laplace'ı −2f) her L'de TAMDIR ve L = 2'ye bağlı değildir:
+
+    T = J ⟨Σ_i (|h_i|² − (s_i·h_i)²)⟩ / (2 ⟨Σ_i s_i·h_i⟩),   h_i = komşu toplamı
+
+L = 32, T = 0.7, step 0.6, soğuk başlangıç, 100 + 300 sweep, 0.09-0.10 s:
+doğru kodda T_conf/T − 1 ortalaması −0.00002, std 0.0054 (40 tohum, en
+büyük |d| 0.0118); yani 4.5σ ile sıcaklık ölçeğinde ≈ %2.5 çözünürlük
+(bu çıpanınki ≈ %13). Mutantlarda (10 tohum ortalaması): N1 +0.095,
+N2 +0.092, N5 +0.101, N7 −0.106, N4 +0.179, M_HEIS_ZZ +0.356, N9 −2.00,
+kabulde T × 1.05 +0.051, T × 1.02 +0.021; küp-tekbiçim öneri
+(`uniform(-1, 1)`) +0.004, yani onu GÖRMEZ.
+NEDEN EKLENMEDİ: öldüreceği, bugün SAĞ kalan gerçekçi bir mutant
+bulunamadı. mut.py, `tests/spin -m "not slow"` (237 test): kabulde
+T × 1.03 ve T × 1.05, satır paritesiyle checkerboard (`i % 2`) ve
+küp-tekbiçim öneri dördü de ölüyor; ilk üçünü Ising'in dört haneli
+mıknatıslanma çıpası (kabul kodu ortak), sonuncusunu J = 0 Langevin
+çıpası öldürüyor. Kalan şey bir KAPSAM boşluğu değil, bu Heisenberg
+çıpasının çözünürlüğüdür. Yalnız Heisenberg'e özgü ve sıcaklık
+ölçeğinde %3-13 büyüklükte bir örnekleme hatası ortaya çıkarsa test
+tasarımı yukarıdaki sayılarla hazırdır.
+
 KAPSAM DIŞI: Wolff (M_WOLFF_P) ve binning (M4_BINNING_NAIF) bu dosyaya
 karşı yaşar; ucuz çıpaları başka yerde var (Wolff tam sayımı, AR(1) kapalı
 formu).

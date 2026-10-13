@@ -759,7 +759,7 @@ HF_J_SEEDS1 = (0.12292785673387831, 0.14398775927612392, 0.15520099760670322)
 #: İZLEMELİ (varsayılan) `seeds = 1`in HF_J'den bağıl farkı -- ÖLÇÜLDÜ 09.10.2026
 #: 4.71e-10 / 1.02e-9 / 2.04e-11. J1 izlemenin açı ızgarasına bağlı, `==` YAZILMAZ.
 HF_J1_IZLEMELI_BAGIL = 1e-8
-#: `tdse -> spin` (28.09.2026): TDSE TARAFI BURADA KOSMAZ -- on olcumun LITERAL J'leri (1B
+#: `tdse -> spin` (28.09.2026): TDSE TARAFI hizli seritte KOSMAZ (R = 3: I6 slow testi) -- LITERAL J'ler (1B
 #: soft-Coulomb H2, `Grid2D` sanal zaman, n = 256, L = 40, dt = 0.01, a = b = 1, R = 3/4/5/6).
 TDSE_J = (-0.03679538951052319, -0.010055270069717404, -0.0021743343691629224, -0.00041083190968227434)
 #: "S2_BS > 0" LİTERAL yazılamaz: izlemesiz seeds = 1'in RHF-benzeri çözümü
@@ -853,7 +853,7 @@ def test_HF_SPIN_BUYUKLUK_PROTOKOL_A_BIT_BIT_SADELESIR():
     BİT BİT, E == |J|·E(−1) bit bit, kabul oranı `==`. `buyukluk = 0.0` burada
     canlı ölçümle eşitlenir. R = 6/7'de karar eşiği 1 birim farklı (eleştirmen
     E1c) — eşitlik bir ÖLÇÜM sonucudur. 28.09.2026: dört TDSE J'si (`tdse → spin`)
-    AYNI pencerede LITERAL parametre olarak koşar — TDSE tarafı burada KOŞMAZ."""
+    AYNI pencerede LITERAL parametre olarak koşar — TDSE tarafı bu testte KOŞMAZ."""
     ref = _tam(-1.0, NEEL)
     fark = 0.0
     for J in HF_J + TDSE_J:
@@ -1029,6 +1029,109 @@ def test_TABLODA_IKI_GIRDI_DOLDU_TEK_SATIR_DAMGA_KALKTI_ETIKET_ICERIDE():
     assert "TUR A -- DUZELTILEMEZ (h = 0 motorunda)" in _girdi("tdse", "spin").gerekce
 
 
+@pytest.mark.slow
+def test_TDSE_SPIN_J_R3_GRID2D_SANAL_ZAMANDA_CANLI_URETILIR_ve_EIGSH_ILE_BAGIMSIZ():
+    """I6 (13.10.2026): `tdse → spin`in KAYNAK tarafı artık testte KOŞAR — R = 3.
+
+    `TDSE_J` 28.09'dan beri LİTERALDİ ve onu üreten birleşim (`Grid2D` + sanal
+    zaman `SplitOperatorPropagator`) süitte hiç koşmuyordu. Bu test J(R = 3)'ü
+    o yoldan YENİDEN ÜRETİR. İki karşılaştırma, iki SINIF:
+
+    (a) SANAL ZAMAN ↔ LİTERAL — GERİLEME KİLİDİ (pin), çıpa DEĞİL: literal aynı
+        yöntemle aynı pencerede üretilmişti; bu kıyas literalin bugünkü motordan
+        yeniden üretilebildiğini kilitler. ÖLÇÜLDÜ (13.10.2026, J − literal,
+        adım sayısına göre): 2000 → −2.08e-09, 2250 → −2.92e-10, 2500 →
+        −4.21e-11, 2750 → −6.54e-12, **3000 → −1.18e-12**, 4000 → −7.4e-15
+        (her 250 adımda ~6-7 kat; tekil kip aralığının üstel kuyruğu). 3000
+        adımda pin YAKINSAMIŞ J'yi ölçer: `2.3e-10` tolerans (literalin beyan
+        edilen hassasiyeti, gerekçedeki "bağımsız eigsh ile fark ≤ 2.3e-10")
+        kalan artığın ~190 katı; sınıra ancak ~2270 etkin adımda varılır, yani
+        yakınsamayı ~%24 yavaşlatan bir değişiklik gerekir. (İlk sürüm 2500
+        adımdaydı: pay 5.5 kat, ~%10 yavaşlama testi fiziksiz kırmızıya
+        çeviriyordu — doğrulayıcı, 13.10.2026.)
+    (b) EIGSH ↔ LİTERAL — BAĞIMSIZ YÖNTEM ÇIPASI (aynı ayrık H, Lanczos;
+        propagatör HİÇ kullanılmaz): ölçülen 1.4e-12. FİZİK çıpası DEĞİLDİR —
+        yumuşatma `a = b = 1` bir model seçimidir; çıpa YÖNTEMİ sınar.
+        Sanal zaman ↔ eigsh enerjileri 3000 adımda 4.4e-11 / 5.0e-11 ayrışır
+        (Strang `dt²` sabit noktası; tolerans 1e-9).
+        Sayılar OPENBLAS_CORETYPE=Sandybridge ve NPY_DISABLE_CPU_FEATURES=X86_V3
+        (2500 adım) ve Prescott (3000 adım) altında da aynı (J_sanal bit bit;
+        J_eigsh ≤ 4e-15 oynar).
+
+    SÖZLEŞME: sanal zaman her adımdan sonra 2B hacim öğesiyle (`cell_area`)
+    yeniden normalize eder — ham adımdan sonra `Σ|ψ|²·dA = 1` (yuvarlama).
+
+    KIRMA (mut.py). Bugünkü süitte (tests/tdse + tests/bridge + kök senaryo /
+    gözlenebilir testleri, 384 test) HAYATTA kalan sanal-zaman normu
+    `volume_element` yerine `grid.dx` ile burada norm kapısında düşer — GERÇEK
+    bir 2B kusuru (J'ye kör; yalnız 2B'de görünür). `Grid2D`nin y ekseni yarım
+    hücre kayınca J −6.06e-05 kayar ve burada da düşer, ama o mutantı bugün
+    çift yarığın simetri testi (slow) zaten öldürüyor; iki eksen birlikte
+    kayınca (öteleme, spektral kinetik) mutant EŞDEĞERDİR, hayatta kalır.
+
+    YAKINSAMA BÜTÇESİ ARTEFAKTI — kusur öldürme DEĞİL: sanal zaman adımını
+    yarıya indiren mutant (`-0.5j·dt`) AYNI taban hâline iki kat yavaş
+    yakınsar. ÖLÇÜLDÜ (13.10.2026, J − literal): 3000 adımda −1.06e-07,
+    4500'de −2.84e-10, 4750'de −1.05e-10, 6500'de +1.2e-12 (Strang `dt²`
+    sabit noktası). Burada düşmesi yalnız 3000 adımlık bütçenin ona
+    yetmemesindendir; 4750 adımlık bütçede hayatta kalırdı. Aynası, adım İKİ
+    KATI (`-2j·dt`), ölçüldü: HAYATTA (≤ 2000 adımda yakınsar, sabit nokta
+    −2.13e-11, tolerans içinde). Bu test sanal-zaman adımının ÖLÇEĞİNİ
+    KİLİTLEMEZ (1B sanal zaman testinin abs = 1e-2 toleransı da kilitlemiyor).
+    Süre ~27 s (2 × 3000 adım 256² FFT + 2 eigsh) -> slow.
+    """
+    from scipy.sparse.linalg import LinearOperator, eigsh
+
+    from qlab.engine.tdse.grid import Grid2D
+    from qlab.engine.tdse.propagator import SplitOperatorPropagator
+
+    n, uzunluk, dt, R, adim = 256, 40.0, 0.01, 3.0, 3000
+    grid = Grid2D(nx=n, ny=n, lx=uzunluk, ly=uzunluk)
+    X, Y = grid.X, grid.Y
+    V = 1.0 / np.sqrt((X - Y) ** 2 + 1.0)  # e-e, yumusatma b = 1
+    for XA in (-0.5 * R, 0.5 * R):  # e-cekirdek, yumusatma a = 1
+        V = V - 1.0 / np.sqrt((X - XA) ** 2 + 1.0) - 1.0 / np.sqrt((Y - XA) ** 2 + 1.0)
+
+    def g(u, c):
+        return np.exp(-((u - c) ** 2))
+
+    def baslangic(isaret):
+        return g(X, -R / 2) * g(Y, R / 2) + isaret * g(X, R / 2) * g(Y, -R / 2)
+
+    def enerji(psi):
+        pk = np.abs(np.fft.fft2(psi)) ** 2
+        w = np.abs(psi) ** 2
+        return float(np.sum(pk * grid.k2) / (2.0 * np.sum(pk))) + float(np.sum(w * V) / np.sum(w))
+
+    prop = SplitOperatorPropagator(grid=grid, potential=V, dt=dt, imaginary_time=True)
+    E_sanal = {}
+    for isaret in (1.0, -1.0):  # singlet (simetrik) / triplet (antisimetrik izdusum)
+        psi = baslangic(isaret).astype(complex)
+        for _ in range(adim):
+            psi = prop.step(psi)
+            psi = 0.5 * (psi + isaret * psi.T)
+        ham = prop.step(psi)
+        assert abs(float(np.sum(np.abs(ham) ** 2) * grid.cell_area) - 1.0) < 1e-12
+        E_sanal[isaret] = enerji(psi)
+    J_sanal = 0.5 * (E_sanal[1.0] - E_sanal[-1.0])
+    assert abs(J_sanal - TDSE_J[0]) < 2.3e-10, J_sanal  # (a) PIN
+
+    E_eigsh = {}
+    for isaret in (1.0, -1.0):
+        def mv(x, s=isaret):
+            p = x.reshape(n, n)
+            p = 0.5 * (p + s * p.T)
+            hp = np.fft.ifft2(0.5 * grid.k2 * np.fft.fft2(p)).real + V * p
+            return (0.5 * (hp + s * hp.T)).ravel()
+        op = LinearOperator((n * n, n * n), matvec=mv, dtype=float)
+        E_eigsh[isaret] = float(eigsh(op, k=1, which="SA", v0=baslangic(isaret).ravel(), tol=1e-13)[0][0])
+    J_eigsh = 0.5 * (E_eigsh[1.0] - E_eigsh[-1.0])
+    assert abs(J_eigsh - TDSE_J[0]) < 2.3e-10, J_eigsh  # (b) BAGIMSIZ YONTEM CIPASI
+    for isaret in (1.0, -1.0):  # olculen (3000 adim) 4.4e-11 / 5.0e-11
+        assert abs(E_sanal[isaret] - E_eigsh[isaret]) < 1e-9
+    assert J_sanal < 0.0 and "J = (E_S - E_T)/2" in _girdi("tdse", "spin").gerekce
+
+
 # ---------------------------------------------------------------------------
 # `slow` İŞARETLERİNİN GEREKÇESİ — ÖLÇÜM, KURAL DEVRALMA DEĞİL.
 #
@@ -1045,6 +1148,7 @@ def test_TABLODA_IKI_GIRDI_DOLDU_TEK_SATIR_DAMGA_KALKTI_ETIKET_ICERIDE():
 #               hf-protokol A 0.79, hf-J 0.17 s -> DEĞİL; kalabalık koşuda en ağırı 1.96 s.
 #               Görevin eşiği 3 s, bu dosyanınki 2 s: ikisinin de altında (sınıra YAKIN).
 #     ast/tablo < 0.5 s                                       -> DEĞİL
+#     13.10.2026 I6: tdse-spin J(R = 3) Grid2D sanal zaman (3000 adim) + eigsh ~27 s -> slow
 #
 # Eşik sınırın iki yanında iki komşu var (N8_d2.0 1.49 s, N8_d2.6 2.38 s);
 # ikisi de eşiğin kendi tarafında ve işaret ona göre. Hızlı şeritte kalan

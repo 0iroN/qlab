@@ -839,11 +839,13 @@ yakalamadığı ya da hızlı şeritte yalnız regresyon iğnesiyle (kendi önce
 çıktısına rel 1e-9) ölen mutantlar: tdse 2B dinamik ve m ≠ 1, md Nose-Hoover ve termostat
 tekmelerinde kütle, em 2B kırılma indisi, spin M13, tb UHF spin takası ve
 Δ işareti, grav sekiz BVP, bridge anharmonik A² yolu. Her biri için
-`tests/<modül>/test_g7_hizli_cipa.py` (7 dosya, 18 test, tek başına 1.73 s,
-en yavaşı 0.17 s) kapalı form referanslı ucuz bir ısırık taşır; her dosya bir
-şüpheci denetiminden geçti ve hedef mutantları öldürdüğü ölçüldü. Bu dosyalar
-yavaş şeridin doğa çıpalarının YERİNİ TUTMAZ; hızlı şeridin neyi
-göremeyeceğini daraltır.
+`tests/<modül>/test_g7_hizli_cipa.py` (7 dosya, 19 test, tek başına 2.1 s,
+en yavaşı 0.28 s; 13.10.2026 ölçümü) kapalı form referanslı ucuz bir ısırık
+taşır; her dosya bir şüpheci denetiminden geçti ve hedef mutantları
+öldürdüğü ölçüldü. tb `t_m` okuması 13.10.2026'dan beri ayrıca
+bağımsız-yöntem özdeşliğiyle kilitli (19. test: UHF bandının Fourier
+harmoniği; fizik çıpası değil). Bu dosyalar yavaş şeridin doğa çıpalarının
+YERİNİ TUTMAZ; hızlı şeridin neyi göremeyeceğini daraltır.
 
 ## Doğrulama
 
@@ -1374,8 +1376,14 @@ küçülüyor (ideal √20 = 4.472).
 - Morse'un V(∞) testi `a`yı yalnızca **alttan** sınırlar; büyümesini asla
   yakalamaz (a=2.058 ve a=1e6 için sapma tam 0.0). Üst sınır V″(r_e)
   testinden gelir.
-- Termostat kütlesi Q → 2Q hatası fiziksel gözlemlerin hiçbirinde eşiği
-  aşmıyor; onu yalnızca `thermostat_mass`ın literal testi kırıyor.
+- Termostat kütlesi Q → 2Q hatası ergodiklik gözlemlerinde eşiği aşmıyor
+  (düz ⟨x²⟩ −4.64 %); onu literal testin yanında hızlı şeritte iki fizik
+  çıpası kırar: serbest-parçacık NH periyodu (G7) ve NHC zincirinin bağımsız
+  ODE çözümüne ikinci mertebeden yakınsaması (C4, 13.10.2026; yalnız yavaş
+  ergodiklik testinin gördüğü −k_BT'siz zincir kuvveti ve h/2 bağlaşım
+  mutantlarını da kırar). Zincir döngüsünün yönü kusur değildir: eşdeğer
+  ikinci mertebe ayrıştırma, aynı ODE'ye yakınsar; öldürmek yalnız regresyon
+  kilidiyle olurdu, eklenmedi.
 
 #### Beşinci kuvvet alanı: ss-σ sıkı-bağ (md ↔ tb kenarı, 24.09.2026)
 
@@ -2303,6 +2311,11 @@ altında simetriktir. **Hükmü:** hatayı gerçekten düşürmek için gereken 
 değil, çift menzilde alt-örgüye bağlı **iki ayrı** hoplamadır (t₂^AA, t₂^BB) —
 ve o, dört parametreli modelin **kapsamı dışındadır**.
 
+`t_m` okuması hızlı şeritte bağımsız referansa bağlı (G7-tm, 13.10.2026):
+`t_m = (1/N) Σ_i ε_i ⟨φ_i|R_m|φ_i⟩_S` (N = 4 ve 6; 7 BLAS çekirdeğinde
+≤ 1.4e-8, kapı 1e-6). t₂ için kapalı bir fizik yasası ölçümle bulunamadı
+(N = 4'te işaret d ile döner).
+
 #### Sahte-çıpa sınavı · **SINIF: dairesel değil, ama DAR**
 
 Sınav: fiziği çıkar, **boru hattını yerinde bırak**; sonra aynı yasa uydurma
@@ -2963,13 +2976,43 @@ inceleme sonucudur:** Yee'nin `ω(k)`'sı **ortaya çıkıyor** — `engine/em/`
 ağacının hiçbir yerinde bir dispersiyon bağıntısı yazılı değil, çekirdek yalnız
 curl güncellemesi yapıyor; split-operator'ünki ise `exp(−i k²Δt/2m)` olarak
 **koda yazılıdır**. Yani Schrödinger tarafında `v_g` bir ölçüm değil bir geri
-okumadır; **yalnız `v_p` (tepe izleme) gerçek bir ölçümdür.**
+okumadır; `v_p` tahmincinin gerçek bir ölçümüdür — ama aşağıda ölçüldüğü gibi
+bir AYAR büyüklüğüdür.
 
-**DÜRÜST OLUMSUZ:** bu bağın sayıları Plan J'nin ön ölçümünden gelir ve **bu
-modülde YENİDEN ÖLÇÜLMEDİ**; test olarak da sevk edilmedi (Modül 1'in
-çekirdeğine bağımlılık kurmak katman sözleşmesini zorlar ve kazancı yarım).
-Bu yüzden yukarıda **sayı yazılmadı** — yazılsaydı ölçülmemiş bir sayı
-ölçülmüş gibi görünürdü.
+**YENİDEN ÖLÇÜLDÜ VE KİLİTLENDİ (G6, 13.10.2026)** —
+`tests/bridge/test_g6_vg_vp_bagi.py`, hızlı şerit, üç test ~0.25 s. Katman
+sözleşmesi bozulmadı: iki motoru import eden TEST dosyasıdır, `src/`de
+motorlar arası import yoktur. Tahminci iki motorda birebir aynı fonksiyondur
+(gerçel anlık görüntülerin analitik sinyali; `v_g` ağırlık merkezinin eğimi,
+`v_p = ω̄/k̄` faz türevlerinin `|a|²` ağırlıklı ortalaması) ve hiçbir
+dispersiyon bağıntısı bilmez.
+
+- **Maxwell** (1B Yee, S = 0.5, zarf 60 hücre, yalnız-E başlangıç): `v_g` ve
+  `v_p` Yee'nin kapalı formundan (`sin(ωΔt/2) = S·sin(kΔx/2)`) −6.6e-06 /
+  −6.5e-06 sapar (tahmincinin 1/s² ölçekli ortak yanlılığı; s = 100'de
+  2.35e-06), oranları −5.5e-08 — **ÇIPA, şema sınıfı** (dispersiyon koda
+  yazılı değil). Bağın değeri `1 − v_g/v_p` λ = 40 → 80'de 1.544559e-03 →
+  3.856944e-04, oran **4.004619** (kapalı form 4.004626): kütlesiz
+  `v_g/v_p = 1` limitine **ikinci mertebeden** gidiş.
+- **Schrödinger** (k0 = 2, σ = 10, m = 2, V = 0): `v_g` `k0/m`'yi **3.4e-15**
+  ile geri okur — çeviri denetimi, çıpa değil (sayının kendisi tautolojinin
+  kanıtı). `v_p` kapalı forma `(k0² + 1/(4σ²))/(2m·k0)` göre −3.1e-08; naif
+  `k0/2m` 6.25e-04 yanlıştır (kuantum potansiyeli terimi). Bağ:
+  `v_g/v_p = 1.99875` (σk0 → ∞'da 2).
+- **Ama Schrödinger'in `v_p`si fizik çıpası OLAMAZ — ölçüldü:** sabit bir
+  `V0` `v_p`yi tam `V0/k0` kaydırır, `v_g`yi kaydırmaz (V0 = 0.05'te oran
+  1.99875 → 1.90363). Faz hızı bir ayar büyüklüğüdür; "2" yalnız V = 0
+  ayarında bir cümledir. **Bağın fizik taşıyan yarısı Maxwell'in `v_p`sidir**
+  (E gözlenebilirdir).
+- **Mutant:** yarım-potansiyel fazını `V − min V` ile kuran propagatör
+  (sanal zamanda taşmayı önlemek için yazılabilecek bir "sıfır ayarı")
+  bugünkü `tests/tdse` + `tests/bridge` + kök senaryo/gözlenebilir testlerinde
+  HAYATTA KALIR (|ψ|² ve enerji gözlenebilirleri ayara kördür), bu dosyanın
+  ayar testinde düşer. O mutant tek koşumda **fiziksel olarak eşdeğerdir**
+  (yalnız küresel faz); test bir fizik değil, propagatörün operatör
+  (`e^{−iVdt/2}`) **sözleşme** kilididir. Maxwell yarısı için bugünkü süitin
+  kaçırdığı bir mutant **aranmadı**; bağ testi oraya yeni bir ısırık iddia
+  etmez.
 
 #### Panel ve senaryo
 
@@ -3198,11 +3241,13 @@ edilince sınanabilir hâle gelen iddialardı**:
     - **δ_ps bedeli referans düzleminden bağımsız** (her şemada s ve p aynı
       k1): λ = 20, 4→1, 45°'de δ_ps(eğik) − δ_ps(2B) = −0.390° (boru hattı
       uzlaşımı). Doğrudan 2B'den (eğik çözücü yok) okunan TİY δ_ps sürekliye
-      O(Δx²) yakınsar: 4→1, 45°, L 6/12'de +1.345° / +0.365°, üs 1.88 — 2B
-      TE_z yolunun FİZİK ÇIPASI.
+      O(Δx²) yakınsar: 4→1, 45°, L 6/8/12'de +1.345° / +0.794° / +0.365°, üs
+      1.88; üç basamaklı merdivenle (δ + a/L² + b/L⁴) sürekliye −3.1e-4°
+      (mutlak kapı ±3e-3°; eski fizik kolları −0.15…+0.17°'lik bir hatayı
+      geçiriyordu) — 2B TE_z yolunun FİZİK ÇIPASI.
     - Kilitler `tests/em/test_g1p_egik_2b_te.py`: T0p yerli TE_z (0.02 s), T1p
       kimlik (0.18 s), T2p kapalı form + işaret (0.33 s) hızlı; T3p doğrudan
-      2B δ_ps `slow` (4.1 s). Mutasyon 12/14 (hayatta: işaret gauge'u, eşdeğer;
+      2B δ_ps `slow` (5.2–7.1 s, yüke bağlı). Mutasyon 12/14 (hayatta: işaret gauge'u, eşdeğer;
       `Medium` sınıf varsayılanı `ey_kural`, bu yollara ulaşmaz — hızlı şeritte
       kesin kapı testinde düşer). Yan bulgu:
       `mu_yari_2d`'yi harmonik yapan mutant mevcut hızlı EM şeridinin 246
@@ -3397,11 +3442,30 @@ edilince sınanabilir hâle gelen iddialardı**:
   2.126400 / 2.139935, tam değer **ikisinin arasında**); sevk edilen ölçüm
   ikisinden birini seçiyor.
 - **Beş oranın bantları (1e-4 … 7e-4) birer TOLERANSTIR** (ölçülenin ~2 katı);
-  hüküm onlarda değil merdivendedir.
-- **Eşleme (%2) TEORİYİ KULLANIR.** `mode_spectrum` kökleri görmüyor ama hangi
-  tepenin hangi kip olduğu Bessel köklerine en yakınlıkla seçiliyor. Eşleme
-  penceresi hükmün 200 katı olduğu için değer üretemez — ama bu bir
-  **argümandır**, ölçüm değil.
+  hüküm onlarda değil merdivendedir. **Bandın neyi koruduğu ÖLÇÜLDÜ (G9,
+  13.10.2026; R = 80 kaydı, `mode_spectrum`un kopya mutantları):** ara
+  değerlemenin işareti ters çevrilince `j02` −4.80e-04 ve `j31` −5.92e-04 ile
+  bandından düşer; ara değerleme yarıya indirilince beşi de bantta kalır (en
+  büyük kayma `j02` −1.91e-04 → −2.63e-04); `dt` Courant'sız kurulunca
+  (bütün frekanslar yarıya iner) beş oran **bit bit** aynıdır. Bant bir ORAN
+  bandıdır: ölçek hatasına yapısal olarak kördür.
+- **Eşleme (%2) TEORİYİ KULLANIR — ve "değer üretemez" artık bir ÖLÇÜMDÜR,
+  ama yalnız TEK TEPELİ pencerede.** `mode_spectrum` kökleri görmüyor; hangi
+  tepenin hangi kip olduğu Bessel köklerine en yakınlıkla seçiliyor. R = 80'de
+  (bant hükümlerinin kaydı) beş oranın her birinde pencerede **tek** tepe var
+  (pencere %5'e çıksa da; %10'da 1/2/2/2/3), eşlenen sayı bir `mode_spectrum`
+  tepesidir (bit bit) ve teorinin hedefi kaydırıldığında **değişmez** —
+  ölçülen değişmezlik aralığı her oranda ≈ [−%1.96, +%2.03], yani pencerenin
+  kendisi. **Dürüst olumsuz:** R = 20'de `m = 2` ikilisinin iki üyesi de
+  pencerede (bağıl −4.287e-03 / +2.052e-03) ve eşleme teoriye en yakın olanı
+  SEÇER; hedef −%0.112 kayınca öbür üye okunur. Bugün hiçbir hüküm bunu
+  okumuyor (merdiven yalnız `j11`i, panel R = 80'i okur). Kilit
+  `tests/em/test_bessel.py` (`test_ESLEME_R80_...`, slow, kendi çağrısı
+  0.09 s; slow sayısı 11 → 12). Mutantlar (mut.py): teoriyi sızdıran `_esle`
+  (`0.5·(tepe + hedef)`) ve %10 pencere bugün yalnız yan-lob testinde
+  (`j12` kimlik araması, hann sayımı) TESADÜFEN düşüyordu; "en yakın" yerine
+  "penceredeki ilk tepe"yi seçen `_esle` bugünkü dosyada **hayatta
+  kalıyordu** (41/41 yeşil). Üçü de yeni testte düşer.
 - **`δ_ps`'in ÜÇ KÖRLÜĞÜ ölçüldü ve kilitlendi:** `kaydir` (1.332e-06°),
   `sinir_pec` (λ = 40'ta 0.033σ) ve `kaynak_cift` (birebir no-op, çünkü `ρ` bir
   orandır). Ve "θ ≥ 75°'de R > 1" cümlesi **yeniden üretilemedi**: bozulma θ'da

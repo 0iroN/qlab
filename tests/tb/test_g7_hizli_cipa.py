@@ -26,13 +26,16 @@ tabanindaki bir regresyon pini ile (7.19e-10 -> 6.88e-10, bagil 4.4e-2 >
 1e-3). Yani M5 acigi depo genelinde de gercekti; M6 icin "hizli seritte
 yalniz regresyon" cumlesi yalniz tb icindir.
 
-Iki test de N = 4 hidrojen halkasinda (STO-3G, 4 baz fonksiyonu, d = 2.6
+Ilk iki test N = 4 hidrojen halkasinda (STO-3G, 4 baz fonksiyonu, d = 2.6
 bohr) kosar: bir `search_uhf` (4 tohum) 0.026 s, N = 8 / 12 tohumun
-(0.88 s) ~1/34'u (bu makine, yuk altinda). Ikisi de DAIRESEL DEGILDIR:
+(0.88 s) ~1/34'u (bu makine, yuk altinda); ucuncusu (G7-tm, 13.10.2026)
+N = 4 ve N = 6'da. Ucu de DAIRESEL DEGILDIR:
 referans indirgemenin kendi kod yolundan (Fock'u yeniden kurma + kendi X
 matrisi) gelmez. Ama SINIFLARI FARKLIDIR ve her testte yazilidir: birincisi
 bir FIZIK CIPASI (Hubbard modeli), ikincisi bir CAPRAZ-MODUL OZDESLIGI
-(transkripsiyon sinifi; G7 sayiminda fizik cipasi SAYILMAZ).
+(transkripsiyon sinifi; G7 sayiminda fizik cipasi SAYILMAZ), ucuncusu bir
+BAGIMSIZ-YONTEM OZDESLIGI (t_m = UHF bandinin Fourier harmonigi; o da fizik
+cipasi SAYILMAZ).
 
 Halka yardimcisi KOPYADIR (`downfold.hydrogen_ring` ithal edilmez): paylasilan
 bir yardimciyi bozan mutant iki tarafi da ayni yonde bozar ve test yesil kalir
@@ -212,10 +215,14 @@ def test_G7_HUBBARD_ORTALAMA_ALANI_Delta_eksi_U_m_bolu_iki(monkeypatch):
     cekirdek en kotusu 1.11e-07 (Nehalem). Tolerans 1e-6 (en kotunun ~9
     kati). Oldurdugu: N7 +0.310, M6 +0.148, N3 -0.484, N4 -0.0134.
 
-    KOR NOKTA (durust olumsuz): hoplama okumasi (t_m) bu dosyada CIPALANMADI.
-    Butun t_m'nin isaretini ceviren mutant (N6) bu dosyadan SAG cikar
-    (OLCULDU). t1'in isareti iki alt-orgulu halkada bir ayar secimidir;
-    t2'ninki fizikseldir ama test noktasinda t2 = +0.0037 (t1 = -0.2272).
+    KOR NOKTA (durust olumsuz): hoplama okumasi (t_m) BU TESTTE cipalanmadi.
+    Butun t_m'nin isaretini ceviren mutant (N6) bu testten SAG cikar
+    (OLCULDU). G7-tm (13.10.2026): t_m'yi artik bu dosyanin ucuncu testi
+    (`test_G7_HOPLAMA_t_m_UHF_BANDININ_FOURIER_HARMONIGI`) bagimsiz bir
+    referansa -- UHF bandinin Fourier harmonigine -- bagliyor; N6'yi o
+    olduruyor. Bu testin eski "t2'nin isareti fizikseldir" cumlesi DARALDI:
+    isaret sisteme bagli (N = 4'te d = 2.6 -> +0.0037, d = 3.0 -> -0.0016;
+    olcum ucuncu testin dokstringinde).
     """
     mol = _halka(HALKA, MESAFE_BOHR)
     p = downfold_uhf(mol, BAZ, seeds=TOHUM)
@@ -346,6 +353,110 @@ def test_G7_UHF_ENERJISI_indirgenmis_Fock_matrisleriyle_KESIN_kuruluyor():
     )
 
 
+def _halka_permutasyonu(n: int, m: int) -> np.ndarray:
+    """R_m: site j -> j + m (mod n), `_halka`nin acisal sirasiyla. Yerel yazim:
+    `downfold._ring_distance` ITHAL EDILMEZ (paylasilan yardimci gerekcesi)."""
+    return np.roll(np.eye(n), m, axis=1)
+
+
+def _bant_harmonigi(sonuc, S: np.ndarray, n: int, m: int) -> float:
+    """(1/N) sum_i eps_i <phi_i|R_m|phi_i>_S -- alfa bandinin m. Fourier harmonigi.
+
+    Lowdin'SIZ yazilir: [S, R_m] = 0 iken S^1/2 R_m S^1/2 = S R_m (on kosul
+    testte sinanir), yani ne indirgemenin X'i ne testin karekoku kullanilir.
+    """
+    R = _halka_permutasyonu(n, m)
+    C = sonuc.coefficients_alpha
+    agirlik = np.einsum("ui,uv,vi->i", C, S @ R, C) / np.einsum("ui,uv,vi->i", C, S, C)
+    return float(np.dot(sonuc.orbital_energies_alpha, agirlik)) / n
+
+
+def test_G7_HOPLAMA_t_m_UHF_BANDININ_FOURIER_HARMONIGI():
+    """SINIF: BAGIMSIZ-YONTEM OZDESLIGI (Bloch harmonigi). G7 sozlugunde FIZIK
+    CIPASI SAYILMAZ; regresyon pini de DEGILDIR (bugunun sayisini dondurmaz).
+
+    OZDESLIK (G7-tm, 13.10.2026). Halka permutasyonu R_m (j -> j + m) icin
+        tr(H_L R_m) = sum_j H_L[j, j+m] = N t_m
+    (t_m kabuk ortalamasidir; H_L simetrik oldugu icin her kabuk tek yonde
+    sayilir; antipodal m = N/2'de de N eleman, ayni sonuc), ve H_L'nin
+    ozbazinda
+        tr(H_L R_m) = sum_i eps_i <phi_i|R_m|phi_i>.
+    Yani t_m, UHF alfa orbital enerjilerinin "donme karakteri" agirlikli
+    ortalamasidir -- bandin m. Fourier harmonigi (Bloch: Wannier'ler arasi
+    hoplama, bant enerjisinin Fourier katsayisidir). m = 0 hali ilk testin
+    eps_bar iz ozdesligidir ve sinifi o belirler: AYNI sinif. Referans
+    `solve_uhf`in KENDI orbitalleri ve enerjileri + halkanin geometrik
+    permutasyonudur; H_eff, indirgemenin X'i, `_ring_distance` ve kabuk
+    listesi KULLANILMAZ. Kabuk ortalamasinin KENDISINI sinar: spin-kirik
+    cozumde cift kabuk A-A / B-B'ye yarilir (N = 4, d = 2.6: -0.026472 /
+    +0.033902, ortalama +0.003715 bir sadelesmedir) ve ozdeslik tam o
+    ortalamayi ister.
+
+    NEDEN FIZIK CIPASI DEGIL (olculdu; bu testin butun kayitlari
+    `.superpowers/sdd/dusuk-ayiklama/grup8-C/`, burada `t2_kesif.log`).
+    t2 icin kapali bir fizik yasasi BULUNAMADI: N = 4'te t2 d ile ISARET
+    degistirir (d = 1.8 / 2.2 / 2.6 / 3.0 / 3.6 -> +0.034767 / +0.014757 /
+    +0.003715 / -0.001589 / -0.003484);
+    ortusme kestirimi -s1 t1 (dik-olmayan TB'nin t2'si) olculenden 4-19 kat
+    buyuk (N = 8 d = 2.0: +0.188 / +0.047; N = 6 d = 2.6: +0.078 / +0.014;
+    N = 4 d = 2.6: +0.069 / +0.0037) ve N = 4 d >= 3.0'da isareti YANLIS.
+    Yani t2'nin isareti sisteme baglidir; onu bagimsiz bir referansa baglayan
+    sey bu ozdesliktir, bir yasa degil.
+
+    OLCULDU (`harmonik_*.log`; 13 sistem: N = 4 d = 1.6 ... 4.0, N = 6 d =
+    2.0 / 2.6 / 3.0 -- d = 2.0 spin-kirilmamis --, N = 8 d = 2.0 / 2.6; tam
+    menzil, 39 hoplama; 7 OpenBLAS cekirdegi): en kotu |t_m - harmonik|
+    1.98e-08 (Nehalem); varsayilan / Haswell / SkylakeX / Zen 3.83e-09.
+    Test noktalarinda (N = 4 ve 6, d = 2.6, 4 tohum; `harmonik_hizli_*.log`)
+    7 cekirdekte <= 1.37e-08 ve <S^2> 1.275 / 1.150 hepsinde ayni.
+    Taban SCF'tendir (eps ve C son DIIS'li Fock'tan; eps_bar ozdesligiyle
+    ayni). TOLERANS 1e-6 (en kotunun ~50 kati, ilk testtekiyle ayni).
+    On kosul [S, R_m] = 0: olculen <= 5.6e-16, sinir 1e-12.
+
+    KIRMA (mut.py; `spec_tm_sonra.json`, `mut_tm_sonra_yeni_test.log`,
+    mesajlar `kirma_mesaj.log`; ilk dusen assert N = 4, d = 2.6):
+      N6 butun t_m isareti ters        t1 +0.227161 / beklenen -0.227161
+      A1 antipodal kabuk okumada / 2   t2 +0.001857 / +0.003715
+      A2 yalniz A alt-orgu satirlari   t2 -0.026472 / +0.003715
+      A3 yalniz tek menzil isareti     t1 +0.227161 / -0.227161
+      M6 Lowdin S^-1                   t1 -0.274920 (fark -4.8e-02)
+      N3 degistokus yerine J           t1 -0.151602 (fark +7.6e-02)
+      N4 Lowdin usu -0.45              t1 -0.227250 (fark -8.9e-05, esigin 89 kati)
+    GORUNMEZ (yapisal, tasarim geregi): M5 / N1 / N2. Kabuk ortalamasi bir
+    site otelemesinin eslenigi altinda DEGISMEZ ve AF cozumde P^b = T P^a
+    T^-1; spin takasi (M5) ve Coulomb'un spin yogunlugundan gelen bozulmasi
+    (N1, N2) yalniz A-A / B-B'yi takas eder, ortalamayi korur. Onlari ilk
+    iki test olduruyor. N5 / N7 / N8 t_m'ye dokunmaz (ilk testin isi).
+    ONCE (OLCULDU, `mut_tm_once_genis_hizli.log`, `n6_tb_hizli.log`,
+    `mut_tm_once_cipa_altkumesi.log`): N6, A1, A2, A3 hizli seritte ZATEN
+    olur, ama yalniz bagimsiz referansi OLMAYAN testlerle -- regresyon pini
+    `test_downfold.py::test_MENZIL_2_...` (N6, A2, A3; tb'de ilk dusen),
+    kesme tablosu pinleri (N6; ayni testin "t2 hatayi > 2 kat dusurur"
+    sirasi da N6'da 0.590 / 0.621 verir) ve bridge'in TAUTOLOJI BEYANI
+    `test_HF_TB_t_m_GERI_OKUMASI_...` (tanimi geri okur; A1'i yalniz o
+    goruyor -- tb hizli seridinin 538 testi A1'i GECIRIR). tb hizli cipa alt
+    kumesi (`hizli_cipalar.txt`, 100 test) + bu dosyanin ilk iki testi
+    dordunu de GECIRIR (102 passed).
+
+    `slow` DEGIL: olculen sure dosyanin sonundaki notta.
+    """
+    for n, d, tohum in ((4, MESAFE_BOHR, TOHUM), (6, MESAFE_BOHR, TOHUM)):
+        mol = _halka(n, d)
+        p = downfold_uhf(mol, BAZ, n_neighbour=n // 2, seeds=tohum)
+        sonuc = search_uhf(mol, BAZ, seeds=tohum).result
+        S = overlap_matrix(build_basis(mol, BAZ))
+        assert p.s_squared > 0.5, f"N={n}: cozum spin-kirik degil, <S^2> = {p.s_squared:.4f}"
+        assert len(p.hoppings) == n // 2, p.hoppings
+        for m in range(1, n // 2 + 1):
+            R = _halka_permutasyonu(n, m)
+            assert np.abs(S @ R - R @ S).max() < 1e-12, f"N={n} m={m}: [S, R_m] != 0"
+            beklenen = _bant_harmonigi(sonuc, S, n, m)
+            assert abs(p.hoppings[m - 1] - beklenen) < 1e-6, (
+                f"N={n} d={d} t{m}: indirgenmis {p.hoppings[m - 1]:+.9f}, bandin "
+                f"{m}. harmonigi {beklenen:+.9f} (fark {p.hoppings[m - 1] - beklenen:+.3e})"
+            )
+
+
 # --------------------------------------------------------------------------
 # SURE (OLCULDU, 09.10.2026, `pytest --durations=0`, bu makine, YUK ALTINDA
 # -- ayni anda baska ajanlar test kosuyordu; `.superpowers/sdd/g7-olcum/
@@ -353,4 +464,7 @@ def test_G7_UHF_ENERJISI_indirgenmis_Fock_matrisleriyle_KESIN_kuruluyor():
 # dahil), enerji/duraganlik testi 0.06-0.08 s call; setup/teardown < 0.005 s.
 # Ikisi de G7'nin 0.3 s hedefinin altinda; `slow` isareti YOK. Karsilastirma:
 # slow `test_DELTA_ISARETI_SPIN_POPULASYONUNA_BAGLI` ayni kayitta 3.06 s.
+# G7-tm harmonik testi (13.10.2026, `pytest --durations=0`, yuksuz): 0.27 s
+# call (N = 4 + N = 6, ikisi de 4 tohum; N = 6'nin payi ~0.2 s); dosya tek
+# basina 3 passed in 0.90 s. `slow` isareti YOK (deponun ~2 s esiginin altinda).
 # --------------------------------------------------------------------------

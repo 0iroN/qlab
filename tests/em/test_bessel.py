@@ -1261,10 +1261,86 @@ def test_SLOW_ESIGI_OLCULDU_ve_FIXTURE_MALIYETI_ISARETE_DAHIL():
 
     # İşaretin gerçekten uygulandığının SAYIMI (yorum değil, sayı):
     kaynak = Path(__file__).read_text(encoding="utf-8")
-    assert kaynak.count("@pytest.mark.slow\n") == 11
+    assert kaynak.count("@pytest.mark.slow\n") == 12
     # ve fixture'ı tüketen her test işaretli:
     for parca in kaynak.split("\ndef test_")[1:]:
         ad = parca.split("(")[0]
         imza = parca.split(")")[0]
         if "kayitlar" in imza:
             assert f"@pytest.mark.slow\ndef test_{ad}" in kaynak, ad
+
+
+# ===========================================================================
+# 4. EŞLEME — "DEĞER ÜRETEMEZ" ARTIK BİR ÖLÇÜMDÜR (G9, 13.10.2026)
+# ===========================================================================
+@pytest.mark.slow
+def test_ESLEME_R80_DE_HEDEFE_KOR_ve_DEGER_URETEMEZ_ama_R20_IKILISINDE_SECER(
+    kayitlar, monkeypatch
+):
+    """SINIF: ÇEVİRİ DENETİMİ (eşlemenin kendisi) — çıpa DEĞİL.
+
+    README bu cümleyi "argüman, ölçüm değil" diye yazıyordu: eşleme penceresi
+    (%2) hükmün 200 katı olduğu için eşleme değer üretemez. ÖLÇÜLDÜ, iki yönü:
+
+    (1) R = 80'DE (bant hükümlerinin kaydı) EŞLEME HEDEFE KÖRDÜR. Beş oranın
+        her birinde %2 penceresinde TEK tepe var (pencere %5'e çıksa da tek;
+        %10'da 1/2/2/2/3), eşlenen sayı `mode_spectrum` tepelerinden biridir
+        (bit bit) ve teorinin hedef değeri kaydırıldığında DEĞİŞMEZ —
+        ölçülen değişmezlik aralığı j11 [−1.964 %, +2.038 %], j21 [−1.968,
+        +2.033], j02 [−1.969, +2.032], j31 [−1.972, +2.029], j12 [−1.975,
+        +2.026], yani pencerenin kendisi. Teori yalnız HANGİ tepenin
+        okunacağını adlandırır; okunan sayıya türevi SIFIRDIR. Hedef pencerenin
+        DIŞINA (±%2.1) kayınca `_esle` `None` döner — eşleme değer UYDURMAZ.
+    (2) R = 20'DE EŞLEME SEÇER — dürüst olumsuz. `m = 2` ikilisinin iki üyesi
+        de %2 penceresinde (bağıl −4.287e-03 ve +2.052e-03); eşlenen sayı
+        teoriye EN YAKIN olandır ve hedef yalnız −%0.112 kayınca ÖBÜR üye
+        okunur. Bugün hiçbir hüküm bunu okumuyor (merdiven yalnız `j11`i,
+        panel R = 80'i okur) — ama "eşleme değer üretemez" cümlesi YALNIZ
+        tek tepeli pencerede doğrudur.
+
+    BANT NEYİ KORUR (ölçüldü, R = 80, `mode_spectrum`un kopya mutantları): ara
+    değerlemenin işareti ters çevrilince `j02` −4.80e-04 ve `j31` −5.92e-04
+    ile bantlarından düşer; ara değerleme yarıya indirilince (en büyük kayma
+    `j02` −1.91e-04 → −2.63e-04) beşi de bantta KALIR; `dt` Courant'sız
+    kurulunca (bütün frekanslar yarıya iner) beş oran BİT BİT aynıdır — bant bir ORAN
+    bandıdır, ölçek hatasına yapısal olarak kördür.
+
+    KIRMA (mut.py): `_esle` teoriyi sızdırırsa (`0.5·(tepe + hedef)`) (1)
+    düşer; eşleme "en yakın" yerine "penceredeki ilk tepe" olursa R = 80'de
+    eşdeğerdir ama (2) düşer; pencere sınaması kaldırılırsa (her hedefe en
+    yakın tepe döner) ±%2.1'lik `None` kilidi düşer (doğrulayıcı, 13.10.2026: o
+    mutantı dosyada yalnız yan-lob testi öldürüyordu, bu test değil).
+
+    ISIRIĞIN HEDEFİ: `_esle` bu test dosyasının YARDIMCISIDIR, `src`te değil —
+    G9 mutantlarının hepsi `_esle`de yaşar; yani bu test kaynak kodunu değil,
+    dosyanın testlerinin paylaştığı EŞLEME PROTOKOLÜNÜ kilitler. Hedef kayması
+    `_esle`nin `KOK`u ÇAĞRI ANINDA okumasına dayanır (monkeypatch); hedefleri
+    önbelleğe alan zararsız bir yeniden düzenleme bu testi kırmızıya çevirir
+    (o zaman kayma yeni yere taşınır, test silinmez).
+    """
+    ms80 = mode_spectrum(kayitlar[80.0], **SEVK)
+    tepeler80 = ms80.ratios()
+    for ad, mn, _bant in ORANLAR:
+        tam = KOK[mn] / J01
+        olculen = _esle(ms80, ad)
+        assert olculen in tepeler80, ad  # eşlenen = bir tepe, bit bit
+        assert sum(abs(r - tam) <= ESLEME * tam for r in tepeler80) == 1, ad
+        for kay in (-0.019, -0.01, 0.01, 0.019):
+            with monkeypatch.context() as m:
+                m.setitem(KOK, mn, KOK[mn] * (1.0 + kay))
+                assert _esle(ms80, ad) == olculen, (ad, kay)
+        for kay in (-0.021, 0.021):  # pencere DIŞINA kayan hedef: değer uydurulmaz
+            with monkeypatch.context() as m:
+                m.setitem(KOK, mn, KOK[mn] * (1.0 + kay))
+                assert _esle(ms80, ad) is None, (ad, kay)
+
+    ms20 = mode_spectrum(kayitlar[20.0], **SEVK)
+    tam = KOK[(2, 1)] / J01
+    pencerede = [r for r in ms20.ratios() if abs(r - tam) <= ESLEME * tam]
+    assert len(pencerede) == 2
+    secilen = _esle(ms20, "j21/j01")
+    assert secilen == min(pencerede, key=lambda r: abs(r - tam))
+    with monkeypatch.context() as m:
+        m.setitem(KOK, (2, 1), KOK[(2, 1)] * (1.0 - 0.002))
+        diger = _esle(ms20, "j21/j01")
+    assert diger in pencerede and diger != secilen
