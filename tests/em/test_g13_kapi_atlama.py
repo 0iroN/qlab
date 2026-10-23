@@ -52,6 +52,16 @@ def _kapisiz(co: ObliqueCoefficients, **degisen) -> ObliqueCoefficients:
     return yeni
 
 
+def _yee_kapisiz(m: yee.YeeCoefficients, **degisen) -> yee.YeeCoefficients:
+    """`YeeCoefficients` icin `_kapisiz`in esi. C2'den (grup 9) beri `YeeCoefficients`in de
+    tur kapisi var (|ca|, |da| <= 1 dahil); egik kapinin KENDI kazanc denetimini sinamak icin
+    kazancli `main` kapisiz kurulur -- acik ve yerel."""
+    yeni = object.__new__(yee.YeeCoefficients)
+    for alan in dataclasses.fields(yee.YeeCoefficients):
+        object.__setattr__(yeni, alan.name, degisen.get(alan.name, getattr(m, alan.name)))
+    return yeni
+
+
 def _buyume(co: ObliqueCoefficients, adim: int = 800) -> float:
     L = co.aux_a.size
     rng = np.random.default_rng(3)
@@ -203,17 +213,21 @@ def test_G13_KAZANC_YUVALARI_ca_da_aux_a_REDDEDILIYOR_ve_GERCEKTEN_PATLIYOR():
     co8 = oblique_coefficients(vak, courant=0.5, boundary=PML(thickness=15), polarization="p", ky=0.8)
     assert np.max(co8.aux_a) == 1.0 and np.min(co8.aux_a) < 1.0  # PML: kayipli aux yuvasi
     m = co.main
+    yee_degisen = ({"ca": m.ca * 1.02}, {"da": m.da * 1.02},
+                   {"ca": np.full(201, -3.0), "cb": np.full(201, 0.45 * (1.0 - 3.0))})
     vakalar = (
-        ("ca", co, {"main": dataclasses.replace(m, ca=m.ca * 1.02)}),
-        ("da", co, {"main": dataclasses.replace(m, da=m.da * 1.02)}),
+        ("ca", co, {"main": _yee_kapisiz(m, **yee_degisen[0])}),
+        ("da", co, {"main": _yee_kapisiz(m, **yee_degisen[1])}),
         ("aux_a", co8, {"aux_a": co8.aux_a * 1.05}),
         # geri okunan 2 cb / (1 + ca) = 0.9 > 0: ozdeger kapisi gecerdi
-        ("ca", co, {"main": dataclasses.replace(m, ca=np.full(201, -3.0), cb=np.full(201, 0.45 * (1.0 - 3.0)))}),
+        ("ca", co, {"main": _yee_kapisiz(m, **yee_degisen[2])}),
     )
     for ad, taban, degisen in vakalar:
         with pytest.raises(InvalidInputError, match=f"`{ad}` KAZANC"):
             dataclasses.replace(taban, **degisen)
         assert _buyume(_kapisiz(taban, **degisen)) > 1e3, ad  # olculdu: 4.1e3 / 4.1e3 / inf / inf
+    # C2 (grup 9): ayni kazancli `main` artik `YeeCoefficients`in KENDI tur kapisinda da
+    # duser; o kilit `test_g9_kopya_ve_tur_kapisi.py`dedir (burada yalniz kapisiz kurulur).
     # Fabrika ciktisi gecer: tam olarak |a| <= 1 (PML'li p dahil).
     for c in (co, co8):
         assert dataclasses.replace(c).ky == c.ky

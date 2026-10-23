@@ -192,10 +192,10 @@ def test_unmasked_convergence_shows_norm_deviation():
 
 
 def test_masked_convergence_shows_observed_norm_drop():
-    """Maskeli (üniterlik kontrolü yapılmayan) koşular observed_norm_drop
-    etiketi göstermelidir, bu bilgilendirici ölçüdür ve kontrol kanıtı
-    değildir. Ölçülmemiş hüküm ✗ ile basılır ve gerekçesi Yakınsama'nın
-    HEMEN ARDINDAKİ "Yakınsama tanısı" satırındadır (B5, 11.10.2026)."""
+    """Maskeli koşular observed_norm_drop etiketi göstermelidir: bu bilgilendirici
+    ölçüdür, üniterlik kanıtı değildir. `provenance_for`'a üniterlik ölçümü
+    verilmezse hüküm ✗ ile basılır ve gerekçesi Yakınsama'nın HEMEN ARDINDAKİ
+    "Yakınsama tanısı" satırındadır (B5, 11.10.2026; ölçümlü yol B5-U)."""
     prov = make_provenance(
         converged=False,
         diagnostics={"observed_norm_drop": 7.0e-2, "steps": 100},
@@ -211,14 +211,14 @@ def test_masked_convergence_shows_observed_norm_drop():
 
 
 def test_masked_case_cannot_be_misread_as_convergence_evidence(tmp_path):
-    """Maskeli koşuda üniterlik kontrolü yapılmadığı için panel ✓ BASAMAZ.
+    """Maskeli koşuda üniterlik ölçümü `provenance_for`'a VERİLMEZSE panel ✓ BASAMAZ.
 
     Eskiden burada `converged=True` elle verilip ✓ kilitleniyordu ve panel
     %99.99 norm kaybının yanına ✓ basıyordu (B5, 11.10.2026). Artık hüküm
     GERÇEK fabrikadan (`tdse.factory.provenance_for`) alınır: ✗, norm
     sapması `observed_norm_drop` (bilgilendirici) anahtarında, ve gerekçe
     "Yakınsama tanısı" satırında YARGILANMADI (= denenmedi) ile başlar —
-    YARGILANAMAZ (= denendi, sonuçsuz) DEĞİL."""
+    YARGILANAMAZ (= denendi, sonuçsuz) DEĞİL. Ölçümlü yol (B5-U): tests/tdse/test_b5u_maskeli_hukum.py."""
     from qlab.engine.tdse import factory
     from qlab.scenario.loader import load_scenario
 
@@ -239,3 +239,21 @@ def test_masked_case_cannot_be_misread_as_convergence_evidence(tmp_path):
     assert "norm_deviation" not in satirlar["Yakınsama"]
     assert satirlar["Yakınsama tanısı"].startswith("YARGILANMADI:")
     assert "YARGILANAMAZ" not in satirlar["Yakınsama tanısı"]
+
+
+def test_C5_etiket_genisligi_as_lines_SOZ_DAGARCIGININ_EN_UZUN_ETIKETI():
+    """C5 (grup 9): CLI ve GUI'nin etiket sutunu TEK yardimcidan, `as_lines()`in
+    basabilecegi en uzun etiketten turer. Burada butun istege bagli alanlar ELLE
+    doldurulur (yardimci kendi ornegini `dataclasses.fields`ten kurar): yeni ve daha
+    uzun bir etiket eklenip bu liste guncellenmezse sayilar ayrisir ve test duser.
+    ESKIDEN sabit 14'tu ve 16 karakterlik "Yakinsama tanisi" sutunu tasiriyordu."""
+    from qlab.provenance import etiket_genisligi
+
+    sv = StabilityVerdict(stable=True, lowest_eigenvalue=None, n_rotations=0)
+    tam = make_provenance(
+        circularity="c", anchor_class="a", theory_selector="t", window="w",
+        convergence_diagnosis="d", sampling="s", stability=sv, external_stability=sv,
+    )
+    etiketler = [etiket for etiket, _ in tam.as_lines()]
+    assert len(etiketler) == 13
+    assert etiket_genisligi() == max(map(len, etiketler)) == len("Yakınsama tanısı") == 16

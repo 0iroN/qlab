@@ -74,6 +74,8 @@ _MD_TOP_LEVEL = {
     "dt", "n_steps", "save_every",
 }
 _MD_REQUIRED = {"name", "force_field", "initial", "dt", "n_steps"}
+#: `initial` bloğunun GERÇEL sayı taşıyan anahtarları (B1): tırnaklı metin reddedilir.
+_MD_INITIAL_SAYILARI = ("positions_bohr", "masses_amu", "velocities", "density_reduced")
 
 _TB_TOP_LEVEL = {
     "kind", "name", "lattice_vectors_bohr", "basis_bohr", "onsite_ev",
@@ -491,10 +493,23 @@ def _load_md_scenario(raw: dict, file_path: Path) -> MDScenario:
             raise ScenarioError(
                 f"'{ad}' bir sözlük olmalı, verilen: {type(blok).__name__}"
             )
+    # B1 (grup 9, 14.10.2026; ölçüldü HEAD 448f808, `python -m qlab.run`): `initial`
+    # altındaki TIRNAKLI sayılar -- `positions_bohr`da `'1.701118538'`, `masses_amu:
+    # '1.00782503207'`, `velocities`te `'0'`, fcc `density_reduced: '0.8442'` --
+    # fabrikanın `np.asarray(..., dtype=float)`ünde SESSİZCE sayı oluyordu: 8 hücrenin
+    # 8'i rc = 0 ve sayılar tırnaksızla bit bit aynı. Kural `_yaml_sayisi`nınkidir, öğe
+    # öğe (`_yaml_sayi_agaci`): tırnaklı metin reddedilir, PyYAML'ın tırnaksız da dize
+    # döndürdüğü üstel yazım (`1.701118538e0`) sayıya çevrilir -- fabrika artık dizeyi
+    # hiç kabul etmez (`md/factory._senaryo_dizisi`). `n_particles` burada değil:
+    # tam sayı kapısı (`_fcc_tam_sayisi`) dizenin hepsini zaten reddediyor.
+    initial = dict(raw["initial"])
+    for anahtar in _MD_INITIAL_SAYILARI:
+        if anahtar in initial:
+            initial[anahtar] = _yaml_sayi_agaci(f"initial.{anahtar}", initial[anahtar])
     return MDScenario(
         name=str(raw["name"]),
         force_field=dict(force_field),
-        initial=dict(raw["initial"]),
+        initial=initial,
         thermostat=dict(thermostat) if thermostat else None,
         dt=_yaml_sayisi("dt", raw["dt"]),
         n_steps=_yaml_tam_sayisi("n_steps", raw["n_steps"]),
@@ -706,6 +721,21 @@ def _yaml_sayisi(ad: str, deger: object) -> float:
         raise ScenarioError(f"'{ad}' float aralığını aşıyor: {deger!r}") from exc
 
 
+def _yaml_sayi_agaci(ad: str, deger: object) -> object:
+    """İç içe listenin her DİZE yaprağı `_yaml_sayisi`ndan geçer (B1, MD `initial`).
+
+    Tırnaklı metin `ScenarioError` (anahtarı adıyla), üstel yazım istisnası sayı olur.
+    Dize OLMAYAN yapraklar AYNEN döner: bool, karmaşık, taşan sayı ve yapı (düzensiz
+    liste, sözlük) fabrikada `initial.<anahtar>` adıyla reddedilir (C6, NP-BOOL) --
+    iki katman aynı yaprağı iki kez denetlemesin diye.
+    """
+    if isinstance(deger, list):
+        return [_yaml_sayi_agaci(ad, oge) for oge in deger]
+    if isinstance(deger, str):
+        return _yaml_sayisi(ad, deger)
+    return deger
+
+
 def _yaml_tam_sayisi(ad: str, deger: object) -> int:
     """YAML'dan gelen bir TAM SAYI — bool, metin ve kesirli sayı REDDEDİLİR.
 
@@ -764,10 +794,10 @@ def _load_spin_scenario(raw: dict, file_path: Path) -> SpinScenario:
     Wolff'u "enerji ölçmez" diye dışarıda bırakmıştı ve coupling >= 9e307
     orada <|m|> = 1, tau = inf basıyordu); (3) Python yolunda (`build_spin`, `provenance_for`) `field` ve
     `heisenberg_step` sonluluğu, sayısal alanların bool/metin reddi ve taşma
-    kapısı da var (`InvalidInputError`). AYRI ve AÇIK (taşma kapısı YAKALAMAZ,
-    ölçüldü 11.10.2026, L = 8, T = 2, 64 ölçüm): enerji serisi SABİT iken ısı
-    sığasının <E²> − <E>² farkı iptal hatası verir — `field` = 1e10'da
-    C = 262144, 1e100'de C = −2.7e185 (fizik: 0); kusur `heat_capacity`dedir.
+    kapısı da var (`InvalidInputError`). AYRI (taşma kapısı YAKALAMAZ, ölçüldü
+    11.10.2026, L = 8, T = 2, 64 ölçüm), 14.10.2026'da KAPANDI (HC-SABIT): SABİT
+    enerji serisinde <E²> − <E>² iptal hatası `field` = 1e10'da C = 262144,
+    1e100'de C = −2.7e185 veriyordu (fizik: 0); artık `_merkezli_varyans`.
     """
     unknown = set(raw) - _SPIN_TOP_LEVEL
     if unknown:

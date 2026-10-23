@@ -373,13 +373,13 @@ def test_nose_hoover_adimi_zaman_tersinir():
         assert hata < 1e-9, f"zincir={zincir}: dönüş hatası {hata:.3e}"
 
 
+@pytest.mark.slow
 def test_nose_hoover_kinetik_sicakligi_tutturuyor():
-    """400 osilatör, zincirli NH, dt = PERIYOT/400.
-
-    dt seçimi ÖLÇÜMDEN: bu kurulumda (tau=PERIYOT) sapma dt ile
-    -3.730 % (P/50), -1.684 % (P/100), -0.315 % (P/200), +0.012 % (P/400)
-    şeklinde gidiyor; rel=0.005 eşiği ancak P/400'de anlamlı.
-    Planın dt = PERIYOT/50 seçimi bu testte 7 kat marjla çökerdi.
+    """400 osilatör, zincirli NH, dt = PERIYOT/400. dt seçimi ÖLÇÜMDEN (tau=PERIYOT): sapma dt ile
+    -3.730 % (P/50), -1.684 % (P/100), -0.315 % (P/200), +0.012 % (P/400); rel=0.005 eşiği ancak
+    P/400'de anlamlı (planın P/50'si 7 kat marjla çökerdi). YAVAŞ ŞERİT (B7, grup 9): yüksüz 2.63 s.
+    Hızlı şeritte YALNIZ bu testin öldürdüğü mutant (varsayılan n_dof = len(v)) artık dosya sonundaki
+    `..._VARSAYILAN_SERBESTLIK_SABIT_NOKTA`da; öteki dördünü G7 serbest parçacık ve C4 NHC çıpası öldürür.
     """
     hedef, n = 300.0, 400
     uretici = np.random.default_rng(11)
@@ -628,3 +628,43 @@ def test_nose_hoover_ZINCIRI_BAGIMSIZ_ODE_cozumune_IKINCI_MERTEBEDEN_yakinsiyor(
     )
     assert 3.0 < x_kaba / x_ince < 5.0, f"x yakınsama oranı {x_kaba / x_ince:.3f} (beklenen 4)"
     assert 3.0 < z_kaba / z_ince < 5.0, f"zeta yakınsama oranı {z_kaba / z_ince:.3f} (beklenen 4)"
+
+
+@pytest.mark.parametrize("zincir", [1, 3])
+def test_nose_hoover_VARSAYILAN_SERBESTLIK_SABIT_NOKTA(zincir):
+    """B7 (grup 9, 14.10.2026): `n_dof=None` -> N_f = v.size; 2K = N_f k_B T NH'nin SABİT NOKTASIDIR.
+
+    SINIF: kapalı form özdeşlik (NH denklemleri) + VARSAYILAN SÖZLEŞME kilidi. Kuvvetsiz
+    parçacıklarda dzeta0/dt = (2K - N_f k_B T)/Q; 2K = N_f k_B T ve zeta = 0'dan başlayan
+    yörüngede zeta0 sıfır kalır, hız değişmez (zincirin üst halkaları zeta0'ı yalnız ÇARPAR).
+    N_f'nin v.size olması sınıfın belgelenmiş varsayılanıdır ("kısıtsız sistem"); o yarı
+    sözleşmedir, fizik değil.
+    NEDEN VAR: `test_nose_hoover_kinetik_sicakligi_tutturuyor` (2.63 s) yavaş şeride taşındı ve
+    hızlı şeritte varsayılan n_dof'u sınayan TEK testti (ölçüldü, mut.py: `_serbestlik` varsayılanı
+    `len(v)` -> md hızlı şeridinin geri kalan 349 testi GEÇİYORDU; G7 ve C4 çıpaları n_dof'u açıkça
+    verir). 8 parçacık, tau = 1/omega, dt = tau/20, 80 adım; 0.02 s.
+    ÖLÇÜLDÜ (doğru kod, 8 tohum): max|2K/2K0 - 1| <= 6.1e-15 (çoğu tam 0; yuvarlama). EŞİK 1e-9
+    (ölçülenin 1.6e5 katı; son ulp'e bağlı değil). KIRDIĞI (mut.py): varsayılan len(v) 0.893,
+    v.size - 3 0.542 (zincir 1'de 0.239), v.size + 1 0.367 -> hepsi eşiğin 2e8 katı üstünde.
+    """
+    sicaklik, n = 300.0, 8
+    kt = KB_HARTREE_PER_KELVIN * sicaklik
+    kutle = np.full(n, M)
+    hiz = np.random.default_rng(7).normal(size=(n, 3))
+    hiz *= np.sqrt(hiz.size * kt / float((kutle[:, None] * hiz**2).sum()))
+    durum = MDState(positions=np.zeros((n, 3)), velocities=hiz, masses=kutle)
+    termostat = NoseHoover(
+        target_temperature_kelvin=sicaklik, relaxation_time=TAU_ERGODIK, chain_length=zincir
+    )
+    assert termostat.n_dof is None
+
+    def kuvvetsiz(konum):
+        return 0.0, np.zeros_like(konum)
+
+    iki_k0 = float((kutle[:, None] * durum.velocities**2).sum())
+    _, kuvvetler = kuvvetsiz(durum.positions)
+    sapma = 0.0
+    for _ in range(80):
+        durum, _, kuvvetler = termostat.step(durum, kuvvetler, kuvvetsiz, TAU_ERGODIK / 20)
+        sapma = max(sapma, abs(float((kutle[:, None] * durum.velocities**2).sum()) / iki_k0 - 1.0))
+    assert sapma < 1e-9, f"2K = v.size k_B T sabit noktasından sapma {sapma:.3e} (zincir {zincir})"

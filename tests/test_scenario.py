@@ -203,10 +203,10 @@ def test_provenance_declares_periodic_boundary(tmp_path):
 @pytest.mark.parametrize("dusus", [0.2, 2.069e-11])
 def test_provenance_masked_run_is_YARGILANMADI_not_converged(tmp_path, dusus):
     """Soğurucu maskeli bir senaryoda norm bilinçli olarak azalır ve evolve()
-    maske varken norm kontrolünü atlar (`evolve` içindeki `check_norm`) —
-    yani maskeli koşuda üniterlik HİÇ ÖLÇÜLMEZ. Ölçülmemiş bir hükmün yanına
-    ✓ basılamaz (B5, 11.10.2026): eskiden bu test converged=True'yu
-    kilitliyordu ve panel %99.99 norm kaybının yanına ✓ basıyordu.
+    maske varken norm kontrolünü atlar (`evolve` içindeki `check_norm`) — yani
+    `provenance_for`'a üniterlik ölçümü VERİLMEZSE (bu test vermez; ölçümlü yol
+    B5-U, `tests/tdse/test_b5u_maskeli_hukum.py`) hüküm ölçülmemiştir ve yanına
+    ✓ basılamaz (B5, 11.10.2026): eskiden converged=True kilitliydi, panel %99.99 kayba ✓ basıyordu.
 
     Hüküm düşüşün BÜYÜKLÜĞÜNDEN bağımsızdır: 0.2'lik düşüş de 2.069e-11'lik
     (32000 adımlık maskeli tünelleme koşusunda ölçülen; maske bölgesinin
@@ -227,7 +227,7 @@ def test_provenance_unmasked_run_with_large_norm_deviation_reports_unconverged(t
     """Maskesiz bir koşuda norm sapması hâlâ tek üniterlik kanıtıdır; eşiği
     (1e-8) aşan büyük bir sapma converged=False raporlamalı. Maskesiz koşuda
     üniterlik ÖLÇÜLDÜĞÜ için YARGILANMADI tanısı da YOKTUR: ✗ burada
-    ölçülmüş bir ihlaldir, maskeli koşunun ✗'i ise ölçülmemiş bir hüküm."""
+    ölçülmüş bir ihlaldir, ölçümsüz maskeli koşunun ✗'i ise ölçülmemiş bir hüküm."""
     scenario = load_scenario(write(tmp_path, VALID_YAML))
     prov = factory.provenance_for(scenario, norm_deviation=0.2)
     assert prov.converged is False

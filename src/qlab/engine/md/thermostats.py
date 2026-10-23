@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from qlab.engine.md.state import ForceField, MDState
+from qlab.engine.md.state import ForceField, MDState, _bool_kapisi
 from qlab.errors import InvalidInputError
 from qlab.units import KB_HARTREE_PER_KELVIN
 
@@ -37,6 +37,10 @@ class Langevin:
     _rng: np.random.Generator = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
+        _bool_kapisi(  # B3 (grup 9; ölçüm `state._bool_kapisi`nda)
+            "Langevin", target_temperature_kelvin=self.target_temperature_kelvin,
+            friction=self.friction, seed=self.seed,
+        )
         if (
             not np.isfinite(self.target_temperature_kelvin)
             or self.target_temperature_kelvin <= 0.0
@@ -81,6 +85,10 @@ class NoseHoover:
     zeta: np.ndarray = field(init=False, repr=False)   # ARTIK PUBLIC (dinamik durum)
 
     def __post_init__(self) -> None:
+        _bool_kapisi(  # B3 (grup 9)
+            "NoseHoover", target_temperature_kelvin=self.target_temperature_kelvin,
+            relaxation_time=self.relaxation_time, chain_length=self.chain_length, n_dof=self.n_dof,
+        )
         if (not np.isfinite(self.target_temperature_kelvin)
                 or self.target_temperature_kelvin <= 0.0):
             raise InvalidInputError(

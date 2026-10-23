@@ -123,8 +123,20 @@ def magnetisation(state: SpinState) -> np.ndarray:
     Toplam degil ortalama: boyutsuz ve L'den bagimsiz olmasi, Mermin-Wagner
     cipasinin `d ln m / d ln L` egimini anlamli kilar.
 
-    Isaretler korunur (mutlak deger ALINMAZ). `⟨|m|⟩` sonlu kafeste ayri bir
-    gozlemlenebilirdir ve `observable/` tarafinda hesaplanir; burada karistir-
-    mak, simetri kirilmasini olcmeyi imkansiz kilardi.
+    Isaretler korunur (mutlak deger ALINMAZ). Isaretsiz `|m|` bu islevde
+    DEGIL, ORNEKLEYICILERDE alinir: `run_metropolis` olcum basina
+    `np.linalg.norm(magnetisation(state))`, `run_wolff` `abs(spins.mean())`
+    kaydeder; panelin `<|m|>`i `viz/spin_frames.py`de o serinin ortalamasidir.
+    (Bu satirlar 14.10.2026'ya kadar "`observable/` tarafinda hesaplanir"
+    diyordu -- yanlisti, `observable/` yalniz seriyi okur.) Burada isareti
+    karistirmak, simetri kirilmasini ve alanin isaretini okunamaz kilardi.
+
+    BK-20-m CAPRAZ NOTU -- isaretsiz seri BILINCLI SECIMDIR (Osman karari
+    11.10.2026): sonlu kafeste kendiliginden simetri kirilmasi YOKTUR, h = 0'da
+    isaretli m dengede ~0'a ortalanir (zincirin isaretli ortalamasi +m <-> -m
+    tunelleme sikligini olcerdi) ve sonlu-boyut analizinin standart duzen
+    parametresi `<|m|>`dir. Beyanin tam metni ve deterministik kilidi
+    `run_metropolis` dokstringinde (`engine/spin/metropolis.py`) ve README'nin
+    spin bolumunde (BK-20-m).
     """
     return state.spins.reshape(-1, state.n_component).mean(axis=0)

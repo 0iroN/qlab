@@ -7,17 +7,23 @@ tahmini değil.
 
 from __future__ import annotations
 
+import math
+
 from PySide6 import QtCore, QtWidgets
 
-from qlab.provenance import Provenance
-
-_LABEL_WIDTH = 14
+from qlab.provenance import Provenance, etiket_genisligi
 
 
 def format_panel(provenance: Provenance) -> str:
-    """Panelin metin gösterimi. Saf fonksiyon — GUI olmadan test edilir."""
+    """Panelin metin gösterimi. Saf fonksiyon — GUI olmadan test edilir.
+
+    Etiket sütunu `provenance.etiket_genisligi()`dir -- CLI ile AYNI kaynak (C5).
+    Eskiden burada sabit `_LABEL_WIDTH = 14` vardı ve 16 karakterlik "Yakınsama
+    tanısı" satırının ':'si sütundan 2 karakter kayıyordu.
+    """
+    genislik = etiket_genisligi()
     return "\n".join(
-        f"{label:<{_LABEL_WIDTH}}: {value}" for label, value in provenance.as_lines()
+        f"{label:<{genislik}}: {value}" for label, value in provenance.as_lines()
     )
 
 
@@ -119,18 +125,49 @@ class TransparencyPanel(QtWidgets.QGroupBox):
     def _gereken_yukseklik(self) -> int:
         """Metnin tamamının KAYDIRMASIZ sığacağı yükseklik (piksel).
 
-        Formül ikili aramaya karşı doğrulandı (orbital penceresinin beyanı,
-        altı ayrı genişlikte): sapma -1..+8 px. Sondaki bir satırlık pay o
-        sapmayı kapatır, yoksa -1 px'lik durumlarda tek satır gizli kalırdı.
+        Yükseklik YERLEŞİMİN KENDİSİNDEN okunur: blokların
+        `documentLayout().blockBoundingRect()` yüksekliklerinin toplamı + iki
+        çerçeve + iki belge kenar payı + 1 px (Qt kaydırma çubuğunu
+        `viewport - kenar payı - 1` görünür alanla hesaplar). Tavan alınır.
+
+        ESKİDEN satır sayısı × `fontMetrics().lineSpacing()` + bir satırlık
+        paydı ve gerçek Windows platformunda TUTMUYORDU (C4, grup 9). Ölçüldü
+        (12.10.2026, `QT_QPA_PLATFORM=windows` + `WA_DontShowOnScreen`, ekranda
+        hiçbir şey görünmez; birincil ekran %150): yazı tipi motoru Consolas
+        9 pt için kesirli satır aralığı veriyor (`QFontMetricsF` 14.0312,
+        tamsayı `lineSpacing` 14) ama satırları ~15.2 px aralıkla diziyor (su
+        beyanında 17 satır = 259 px; formül 17 × 14 + kenarlar + 14 = 264 px,
+        görünür alan 260 − 4 − 1 = 255 px) -- kırpılmayan beyanda bir satır
+        kaydırmada kalıyordu: orbital penceresinde 45/45 durumda
+        `scrollBar().maximum() == 1`. Ekransız platform tamsayı ölçü verdiği
+        için orada 0/18 (görünmüyordu). Blok toplamıyla 0/45 ve 0/19. (Bu 12.10 /
+        14.10 sayılarının sondaları KAYIP, yeniden üretilemez -- V11, 23.10.2026.
+        Bugün üretilebilen, gerçek platform testinin kendi düzeneğinde: eski formül
+        kırpılmayan 9 durumun 9'unda bir satır gizli, bu formül 0/9; satır adımı
+        DPR 1.5 + QT_FONT_DPI 96'da 15.8 px/satır, `lineSpacing` 14.)
+        PAY BİLİNÇLİ: Qt'ye tek kenar payı + 1 yeter; iki kenar payı + 1 ondan
+        4 px cömert. Ölçüldü (mutasyon, gerçek platform testi): kenar payını
+        teke indirmek ya da +1'i düşürmek TEK BAŞINA bir şey gizlemiyor
+        (eşdeğer), ikisi birlikte bir satır gizliyor. Doğrudan ölçüm (23.10.2026,
+        ikili aramayla en küçük kaydırmasız metin yüksekliği H*; %150 / %125 /
+        %100 sabit ölçek, yerli %150 ve ekransız, ortam başına 36 durum): H* =
+        blok toplamı + 2 çerçeve + 1 kenar payı + 1, 180/180; bu formül H* + 4.
+        Ölçüm ve kilit: `tests/test_transparency.py`
+        (`test_C4_GERCEK_WINDOWS_PLATFORMUNDA_...`, yalnız Windows, `slow`).
         """
         belge = self._text.document()
         belge.setTextWidth(self._text.viewport().width())
-        satir = self._text.fontMetrics().lineSpacing()
-        return int(
-            belge.size().height() * satir
+        duzen = belge.documentLayout()
+        toplam = 0.0
+        blok = belge.firstBlock()
+        while blok.isValid():
+            toplam += duzen.blockBoundingRect(blok).height()
+            blok = blok.next()
+        return math.ceil(
+            toplam
             + 2 * self._text.frameWidth()
             + 2 * belge.documentMargin()
-            + satir
+            + 1
         )
 
     def _yuksekligi_icerige_uydur(self) -> None:

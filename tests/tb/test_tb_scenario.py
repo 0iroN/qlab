@@ -210,7 +210,9 @@ def _panel(tmp_path, capsys, metin):
     assert run_modulu.main([str(_yaz(tmp_path, metin)), "-o", str(cikti)]) == 0
     satirlar = capsys.readouterr().out.splitlines()
     hukum = next(s for s in satirlar if "İletkenlik" in s).split(":", 1)[1].strip()
-    yakinsama = next(s for s in satirlar if s.startswith("Yakınsama"))[16:]
+    # V12 (grup 9 duzeltici): sabit [16:] sutunu yerine ilk ": " -- panelin etiket sutunu
+    # `provenance.etiket_genisligi()`den gelir (C5), sabit sayiya baglanmaz.
+    yakinsama = next(s for s in satirlar if s.startswith("Yakınsama")).split(": ", 1)[1]
     with np.load(cikti) as veri:
         npz = (str(veri["iletkenlik"]), bool(veri["is_metal"]))
     return hukum, yakinsama, npz

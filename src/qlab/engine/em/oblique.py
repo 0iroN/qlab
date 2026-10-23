@@ -111,7 +111,7 @@ import numpy as np
 from scipy.linalg import eigvalsh_tridiagonal
 
 from qlab.engine.em.grid import FieldRecord, FieldState, Window, dx_kapisi
-from qlab.engine.em.medium import Medium
+from qlab.engine.em.medium import Medium, _kurucudan_indirgeme, _salt_okunur_kopya
 from qlab.engine.em.yee import YeeCoefficients, _adim, _etkin_courant_kapisi, yee_coefficients
 from qlab.errors import InvalidInputError
 
@@ -259,7 +259,21 @@ class ObliqueCoefficients:
     ky: float
 
     def __post_init__(self) -> None:
+        # Kapi kurulusta kosar; sonradan YERINDE yazma onu atliyordu (C2, grup 9; olcum
+        # `yee.YeeCoefficients` dokstringinde: `co.main.cb[:] *= 1.5` 33. adimda 1e12,
+        # `co.aux_b[:] *= -1` p, ky = 0.8, PML 15'te 76. adimda 1e12). `main` kendi
+        # `__post_init__`iyle salt okunurdur; yardimci yuvalar burada kopyalanir.
+        if not isinstance(self.main, YeeCoefficients):
+            raise InvalidInputError(
+                f"`main` bir YeeCoefficients olmali (tur kapisi ve salt okunur diziler), "
+                f"verilen: {type(self.main).__name__}"
+            )
+        for ad in ("aux_a", "aux_b"):
+            object.__setattr__(self, ad, _salt_okunur_kopya(getattr(self, ad), ad))
         _katsayi_kapisi(self)
+
+    def __reduce__(self):
+        return _kurucudan_indirgeme(self)
 
 
 #: `_katsayi_kapisi`nin kayan nokta payi: S^2 lambda_max <= 4 (1 + pay). Fabrikanin
@@ -302,8 +316,23 @@ def _katsayi_kapisi(co: ObliqueCoefficients) -> None:
     0'da s, ky = 0.8'de s ve p) bu kapinin esiginin 0.99'u soner, 1.01'i buyur -- yani
     orada kayipli semanin esigidir. ky = 0.8 hucresi aux yuvasinin geri
     okumasini da sinar: ham `aux_b` okunsaydi esik 1.036 kat gevserdi ve 1.01
-    gecerdi. Tekdize OLMAYAN kayip (PML) icin bir ispat yazilmadi: orada kapi
-    geri okunan kayipsiz operatorun esigini uygular.
+    gecerdi. Tekdize OLMAYAN kayip (PML) icin ISPAT yazilmadi ama OLCULDU (C3,
+    grup 9, 14.10.2026; bagimsiz yontem: sevk edilen `oblique_step`in tek adim
+    buyutme matrisinin spektral yaricapi, politika kapilari kapali): PML 15 /
+    28 / 40 ve LossyLayer 15, L = 61 / 121, s ve p, ky 0 - 0.8, vakum, eps 1|4
+    ve eps 4|0.25 x mu 0.25|4 (harmonik / sag) -- kayipli semanin GERCEK esigi
+    bu kapinin esiginin en cok 1 + 1.3e-10 kati (ikiye bolme cozunurlugunde
+    esit); 0.99 / 0.999 katinda rho - 1 <= 2e-14 ve 20000 adim sinirli, 1.001
+    katinda rho - 1 = 0.067 - 0.094 ve patliyor (V10, 23.10.2026, olcut yazili: L 61,
+    tohum 3'lu rasgele baslangic, |E| maksimumu 1e12 katini 297 - 419., kayan nokta
+    tasmasini 7904 - 10973. adimda asar; 14.10'un "5100 - 7100. adim" sayisinin olcutu
+    yazilmamisti ve yeniden uretilemedi). Yani PML'de
+    de kapi tam esiktir: ne gevsek ne asiri temkinli. KAYAN NOKTA PAYININ
+    BEDELI (ayni olcum): kapinin KABUL SINIRINDA (S^2 lambda = 4 (1 + 1e-11))
+    rho - 1 en cok 6.3e-6 (tepe kipi kayipsiz bolgedeyse; PML'de sondugunde
+    1e-9 - 1e-10) -- payin karekoku mertebesi; fabrika ciktisi bu sinira
+    yaklasmaz (asagidaki 4.4e-16). Kilit: `tests/em/test_g9_kopya_ve_tur_kapisi.py`
+    (`test_C3_...`; pay 1e-9 ve 1e-6 mutantlarini oldurur).
 
     OLCULDU (12.10.2026): fabrikanin p kapisinin TAM ESIKTE kurdugu katsayilarda
     (`test_EGIK_P_KESIN_KAPI_...` ortamlari, dort kural x ky = 0 / 0.8 + ikinci

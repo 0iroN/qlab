@@ -70,6 +70,8 @@ from qlab.scenario.loader import load_scenario
 from qlab.scenario.schema import MDScenario
 from qlab.units import KB_HARTREE_PER_KELVIN, amu_to_electron_mass
 
+from .h2_morse_sabitleri import H2_A, H2_DE, H2_RE
+
 _M_H = 1.00782503207
 
 
@@ -263,7 +265,7 @@ def test_T5_SALINIM_ESIGI_PANELDE_ve_HUKUMDE_AYNI_SAYI():
     # Eşiğin KENDİSİ ✓ ('<='; sürüklenme dalıyla aynı anlam -- doğrulama N03).
     assert provenance_for(tb, energy_oscillation=esik, **w).converged
     morse = dataclasses.replace(tb, force_field={"kind": "morse", "params": {
-        "d_e": 0.174434333, "r_e": 1.401118538, "a": 1.028997701}})
+        "d_e": H2_DE, "r_e": H2_RE, "a": H2_A}})
     assert not any(k.startswith("energy_oscillation") for k in provenance_for(
         morse, energy_drift=1e-9).diagnostics)
 

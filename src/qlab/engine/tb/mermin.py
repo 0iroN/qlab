@@ -198,12 +198,34 @@ def _skaler(ad: str, deger: object) -> float:
     `spin/factory.py::_skaler`in (grup 2) aynisi. Ayni govde
     `md/tb_kuvvet.py::_sayi` ve `tb/radyal.py::_sonlu_skaler`de (ast ikizlik
     kilidi `tests/tb/test_cakisma_ve_bool_kapilari.py`).
+
+    B4 (grup 9, 14.10.2026; olculdu HEAD 448f808, uc ikizde ve kamu yollarinda --
+    `SsSigmaTBKuvveti(n_elektron=...)`, `UsselRadyalYasa(genlik)`, `tek_orbital_mermin(kT)`):
+    0 boyutlu NESNE dizisi (`np.array(True, dtype=object)`, `np.array('2.5', dtype=object)`)
+    dtype turu 'O' oldugu icin kapilardan geciyor ve `float()` ogesini 1.0 / 2.5 yapiyordu.
+    YAML bunu uretmez (yalniz dogrudan API). Artik ogesi acilip AYNI kapilardan gecer;
+    ic ice sarili nesne dizisi reddedilir. 10**400 gibi buyuk tamsayi da 'O'dur ve
+    acilmaz: "sayiya cevrilemiyor" mesaji degismedi.
+
+    V6 (grup 9 duzeltici, 23.10.2026; olculdu, HEAD 448f808'de de ayni): 0 boyutlu
+    DIZE dizisi (`np.array('2.5')` tur 'U', `np.array(b'2.5')` tur 'S') ne `str`
+    ne `bytes`tir ve uc ikizin ucunden de 2.5 diye geciyordu (mesaj "dizge DEGIL"
+    dedigi halde); `UsselRadyalYasa(genlik_hartree=np.array('2.5'))` yasayi 2.5
+    hartree ile kuruyordu. Tur 'S' / 'U' de reddedilir. YAML bunu uretmez.
     """
     try:
         dizi = np.asarray(deger)
+        if dizi.ndim == 0 and dizi.dtype.kind == "O" and isinstance(deger, np.ndarray):
+            deger = deger.item()  # B4: 0 boyutlu nesne dizisinin OGESI denetlenir
+            dizi = np.asarray(deger)
     except (TypeError, ValueError, OverflowError) as hata:  # duzensiz ic ice liste
         raise InvalidInputError(f"{ad} tek bir sayi olmali: {deger!r}") from hata
-    if isinstance(deger, (str, bytes, bool)) or dizi.ndim != 0 or dizi.dtype.kind == "b":
+    if (
+        isinstance(deger, (str, bytes, bool))
+        or dizi.ndim != 0
+        or dizi.dtype.kind in "bSU"  # V6: 0 boyutlu dize dizisi de (np.array('2.5'))
+        or (isinstance(deger, np.ndarray) and dizi.dtype.kind == "O")
+    ):
         raise InvalidInputError(f"{ad} tek bir sayi olmali (bool ve dizge DEGIL): {deger!r}")
     if dizi.dtype.kind == "c":
         raise InvalidInputError(f"{ad} sayiya cevrilemiyor (karmasik): {deger!r}")

@@ -2530,6 +2530,47 @@ def test_alan_degisimi_URETILEMEYEN_alanda_pencereyi_YARIM_birakmiyor():
 
 
 @requires_offscreen
+def test_C7_SIFIR_ELEKTRON_HOMO_YOK_PENCERENIN_KENDI_KAPISINDA_motora_yaslanmadan(monkeypatch):
+    """C7 (grup 9): sıfır elektronda açılış indeksi n_electrons // 2 - 1 = -1'dir.
+
+    ÖLÇÜLDÜ (HEAD 448f808, kamu kurucusu, H2++/STO-3G): orbital alanı yalnız MOTORUN
+    (`evaluate_orbital`) aralık denetimiyle düşüyordu -- mesaj "verilen: -1" diyor,
+    kullanıcı -1 vermemişti ve HOMO'nun yokluğundan söz etmiyordu. Motorun denetimi
+    Python'un negatif indeks sarmasına gevşetilince (aşağıda) HEAD penceresi H2++'yı
+    orbital alanında AÇIYOR, son orbitali (indeks 1, "boş") çiziyor (ağlar 2808, 2808)
+    ve `orbital_index` -1 kalıyordu.
+    Kapı artık pencerenin kendisinde (`_orbital_indeksi_kapisi`, B2 emsali).
+    Yoğunluk alanında -1 "HOMO yok" olarak beyanlı kalır.
+    """
+    from qlab.app import orbital_window as ow
+    from qlab.app.orbital_window import ALAN_ORBITAL, ALAN_YOGUNLUK
+
+    sonuc = solve(Molecule.from_string(_H2, charge=2), "sto-3g")
+    assert sonuc.molecule.n_electrons == 0
+    with pytest.raises(InvalidInputError, match="HOMO'su yok"):
+        OrbitalWindow(sonuc)
+
+    gercek = ow.evaluate_orbital
+    n_orbital = len(sonuc.orbital_energies)
+    monkeypatch.setattr(ow, "evaluate_orbital", lambda r, i, g: gercek(r, i % n_orbital, g))
+    with pytest.raises(InvalidInputError, match="orbital indeksi"):
+        OrbitalWindow(sonuc)
+    pencere = OrbitalWindow(sonuc, field=ALAN_YOGUNLUK)
+    try:
+        assert pencere.orbital_index == -1  # beyan: HOMO yok, seçici boş ve devre dışı
+        assert pencere._secici.currentIndex() == -1 and not pencere._secici.isEnabled()
+        with pytest.raises(InvalidInputError, match="HOMO'su yok"):
+            pencere.set_field_kind(ALAN_ORBITAL)
+        assert pencere.field_kind == ALAN_YOGUNLUK
+        # Bir orbital seçildikten sonra orbital alanına geçilir (mesajın söylediği yol).
+        pencere.set_orbital_index(0)
+        pencere.set_field_kind(ALAN_ORBITAL)
+        assert pencere.orbital_index == 0 and pencere.field_kind == ALAN_ORBITAL
+    finally:
+        pencere.close()
+
+
+@requires_offscreen
 def test_alan_secici_SIRADAN_degil_OGENIN_KENDI_VERISINDEN_okuyor(su_sonucu):
     """(7) Seçici satırı -> alan türü eşlemesi satırın KONUMUNA bağlıydı.
 

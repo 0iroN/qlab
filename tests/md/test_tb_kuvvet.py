@@ -769,15 +769,16 @@ def _izlenen_kosu(senaryo: MDScenario, durum, alan, dt: float, n: int):
 
 
 def _suruklenme_hukmu(senaryo: MDScenario, oran: float) -> bool:
-    """YALNIZ sürüklenme hükmü: S ve omega0 eşiğin altında (0.0) sabitlenir.
+    """YALNIZ sürüklenme hükmü: S (0.0) ve omega'lar (1e-9) eşiğin altında sabitlenir.
 
     D2'den beri birleşik hüküm ölçütlerin VE'sidir; bir pencerede ikisi de
     ✗ derse birleşik hükme bakan test sürüklenme eşiğinin mutantına kör
-    kalır (Fermi penceresinde 3.16 K: sürüklenme 5.48e-02, S 7.30e-02).
+    kalır (Fermi penceresinde 3.16 K: sürüklenme 5.48e-02, S 7.30e-02). B8
+    (grup 9): omega 0.0 artık ÖLÇÜLEMEDİ sayılır (YARGILANAMAZ), sabit 1e-9.
     """
     return provenance_for(
-        senaryo, energy_drift=oran, energy_oscillation=0.0, omega_max_frame0=0.0,
-        omega_max_path_frames=0.0,
+        senaryo, energy_drift=oran, energy_oscillation=0.0, omega_max_frame0=1e-9,
+        omega_max_path_frames=1e-9,
     ).converged
 
 
@@ -900,8 +901,8 @@ def test_G5_DURAGAN_OLMAYAN_KOSU_max_KE_ORTALAMA_KE_DEGIL():
     assert yorunge.kinetic[0] == 0.0 and yorunge.kinetic.max() > 1e-2
     ortalama_ile = oran * float(yorunge.kinetic.max()) / float(yorunge.kinetic.mean())
     tolerans = provenance_for(
-        senaryo, energy_drift=oran, energy_oscillation=0.0, omega_max_frame0=0.0,
-        omega_max_path_frames=0.0,
+        senaryo, energy_drift=oran, energy_oscillation=0.0, omega_max_frame0=1e-9,
+        omega_max_path_frames=1e-9,
     ).diagnostics["energy_drift_tolerance"]
     assert ortalama_ile > tolerans, ortalama_ile
     # D2: birlesik hukum de GECER (S 1.3672e-02, buyume evresine ragmen).

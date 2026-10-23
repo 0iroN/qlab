@@ -18,7 +18,7 @@ from PySide6 import QtCore, QtWidgets
 
 from qlab.app.transparency import TransparencyPanel
 from qlab.engine.tdse import factory
-from qlab.engine.tdse.propagator import evolve
+from qlab.engine.tdse.propagator import evolve_olcumlu
 from qlab.errors import QLabError, ScenarioError
 from qlab.run import reconfigure_stdio_utf8
 from qlab.scenario.loader import load_scenario
@@ -105,7 +105,7 @@ class TDSEWindow(QtWidgets.QMainWindow):
         )
 
         grid, potential, psi0, propagator = factory.build(scenario)
-        frames, _ = evolve(
+        frames, _, uniterlik = evolve_olcumlu(
             propagator, psi0, n_steps=scenario.n_steps, save_every=scenario.n_steps
         )
 
@@ -120,7 +120,7 @@ class TDSEWindow(QtWidgets.QMainWindow):
             f"   ·   norm = {payload.norm:.10f}"
         )
         self._panel.set_provenance(
-            factory.provenance_for(scenario, norm_deviation=abs(payload.norm - 1.0))
+            factory.provenance_for(scenario, abs(payload.norm - 1.0), uniterlik)
         )
 
 

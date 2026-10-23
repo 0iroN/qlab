@@ -167,14 +167,42 @@ def _skaler(ad: str, deger: object) -> float:
     uyariyla gercel kismina iniyordu. Ikisi dtype turunden ('b', 'c')
     reddedilir. Ayni delik `tb/mermin.py::_skaler`, `md/tb_kuvvet.py::_sayi`,
     `tb/radyal.py::_sonlu_skaler` ve `md/factory.py`deki Kelvin denetiminde
-    de vardi; grup 6'da (11.10.2026) ayni desenle kapandi. Dordunde de ve
-    burada ACIK kalan: 0 boyutlu nesne dizisi (`np.array(True, dtype=object)`,
-    dtype turu 'O') 1.0 diye gecer (olculdu 11.10.2026; YAML bunu uretmez).
+    de vardi; grup 6'da (11.10.2026) ayni desenle kapandi.
+
+    0 BOYUTLU NESNE ve DIZE DIZISI (V6 + V7, grup 9 duzeltici, 23.10.2026): 0
+    boyutlu nesne dizisini (`np.array(True, dtype=object)`, tur 'O') B4 (grup 9,
+    14.10.2026) oteki dordunde kapatmisti (ogesi acilip ayni kapilardan gecer);
+    burada ACIK kalmisti -- spin o seridin dosyasi degildi. 0 boyutlu dize dizisi
+    (`np.array('2.5')` tur 'U', `np.array(b'2.5')` tur 'S') ise besinden de
+    geciyordu (HEAD 448f808'de de). Olculdu (duzeltmeden once, Python yolu):
+    `_skaler` nesne-True'yu 1.0, nesne-'2.5'i ve 'U'/'S' '2.5'i 2.5 okuyordu;
+    `build_spin` `coupling=np.array(True, dtype=object)` ile KOSUYOR, 'U'/'S'
+    dizide ham `UFuncTypeError`, `provenance_for` ham `ValueError` veriyordu.
+    Artik nesne dizisinin ogesi acilir; tur 'S'/'U' ve ic ice nesne dizisi
+    reddedilir (`mermin._skaler` ile ayni kural). YAML bunlari uretmez.
+
+    DUZENSIZ (ragged) LISTE (grup 6 dogani, 14.10.2026'da kapandi): `np.ndim`
+    `[1, [2, 3]]` gibi bir girdiden dizi KURAMAZ ve ham `ValueError`
+    ("inhomogeneous shape") firlatiyordu -- olculdu HEAD 448f808, Python
+    yolu: `coupling`, `field`, `heisenberg_step` ve `temperatures` ogesi,
+    `build_spin` ve `provenance_for` girislerinde 8/8 ham `ValueError`,
+    `QLabError` DEGIL. YAML yolu zaten `ScenarioError` veriyordu
+    (`_yaml_sayisi`); bu yolun dili `InvalidInputError`dir ve alani adlandirir.
     """
+    if isinstance(deger, np.ndarray) and deger.ndim == 0 and deger.dtype.kind == "O":
+        deger = deger.item()  # V7 (B4 esi): 0 boyutlu nesne dizisinin OGESI denetlenir
+    try:
+        boyut = np.ndim(deger)
+    except (TypeError, ValueError) as hata:
+        raise InvalidInputError(
+            f"spin senaryosu: {ad} tek bir gercel sayi olmali, verilen duzensiz "
+            f"(ic ice, boylari tutmayan) bir dizi: {deger!r}"
+        ) from hata
     if (
         isinstance(deger, (str, bytes, bool))
-        or np.ndim(deger) != 0
-        or np.asarray(deger).dtype.kind in "bc"
+        or boyut != 0
+        or np.asarray(deger).dtype.kind in "bcSU"  # V6: 0 boyutlu dize dizisi
+        or (isinstance(deger, np.ndarray) and deger.dtype.kind == "O")  # ic ice sarili
     ):
         raise InvalidInputError(
             f"spin senaryosu: {ad} tek bir gercel sayi olmali (bool, dizge ve "

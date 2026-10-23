@@ -25,11 +25,13 @@ from qlab.scenario.schema import (
     MDScenario,
 )
 
+from .h2_morse_sabitleri import H2_A, H2_DE, H2_RE
+
 
 def _morse_senaryo(dt: float = 0.78) -> MDScenario:
     return MDScenario(
         name="t",
-        force_field={"kind": "morse", "params": {"d_e": 0.174434333, "r_e": 1.401118538, "a": 1.028997701}},
+        force_field={"kind": "morse", "params": {"d_e": H2_DE, "r_e": H2_RE, "a": H2_A}},
         initial={
             "positions_bohr": [[0.0, 0.0, 0.0], [0.0, 0.0, 1.5]],
             "masses_amu": [1.00782503207, 1.00782503207],
@@ -47,7 +49,7 @@ def test_md_senaryosu_yamldan_yukleniyor(tmp_path):
         "name: H2 Morse testi\n"
         "force_field:\n"
         "  kind: morse\n"
-        "  params: {d_e: 0.174434333, r_e: 1.401118538, a: 1.028997701}\n"
+        f"  params: {{d_e: {H2_DE!r}, r_e: {H2_RE!r}, a: {H2_A!r}}}\n"
         "initial:\n"
         "  positions_bohr: [[0.0, 0.0, 0.0], [0.0, 0.0, 1.5]]\n"
         "  masses_amu: [1.00782503207, 1.00782503207]\n"
@@ -493,7 +495,7 @@ def _senaryo(tur: str, params: dict | None = None) -> MDScenario:
     iki_atom = [[0.0, 0.0, 0.0], [0.0, 0.0, 1.3959193602]]
     tablo = {
         "harmonic": ({"k": 0.1}, iki_atom),
-        "morse": ({"d_e": 0.174434333, "r_e": 1.401118538, "a": 1.028997701}, iki_atom),
+        "morse": ({"d_e": H2_DE, "r_e": H2_RE, "a": H2_A}, iki_atom),
         "lennard_jones": (
             {"epsilon": 3.79e-04, "sigma": 6.43, "box_length": 40.0, "cutoff": 16.0},
             [[0.0, 0.0, 0.0], [7.0, 0.0, 0.0]],
@@ -868,8 +870,9 @@ def test_G5_TERMOSTATLI_TB_de_SURUKLENME_ESIGI_YOK():
 def _md_paneli(out: str) -> dict[str, str]:
     """MD CLI panelinin etiket -> değer sözlüğü.
 
-    Satır biçimi "{etiket:<14}: {deger}"; "Yakınsama tanısı" 16 karakterdir
-    ve hizayı taşar, bu yüzden sabit sütun değil ilk ": " ile bölünür.
+    Satır biçimi "{etiket:<genişlik}: {deger}"; genişlik `provenance.etiket_genisligi()`
+    (bugün 16; V12, grup 9 düzeltici -- eskiden 14'tü ve "Yakınsama tanısı" hizayı
+    taşıyordu), bu yüzden sabit sütun değil ilk ": " ile bölünür.
     """
     panel = {}
     for satir in out.splitlines():
@@ -1092,7 +1095,7 @@ def test_B10_RC_USTU_KISA_KOSU_run_YOLUNDAN_PANELE(tmp_path, capsys):
     yol = tmp_path / "rc_ustu_kisa.yaml"
     yol.write_text(_RC_USTU_YAML.replace("n_steps: 20", "n_steps: 2"), encoding="utf-8")
     assert run_modulu.main([str(yol), "-o", str(tmp_path / "kisa.npz")]) == 0
-    panel = {s[:14].strip(): s[16:] for s in capsys.readouterr().out.splitlines() if len(s) > 16}
+    panel = _md_paneli(capsys.readouterr().out)  # V12: sabit s[:14]/s[16:] yerine ilk ": "
     assert panel["Dış kararlılık"].startswith("✗ SPİN EYERİ") and panel["Kararlılık"].startswith("✓")
     k, n = map(int, panel["Yakınsama"].split("dis_kararsiz=")[1].split(",")[0].split("/"))
     assert 0 < k == n
@@ -1115,7 +1118,7 @@ def test_B10_RC_USTU_YORUNGE_PANELDE_SPIN_EYERI_SEVK_EDILEN_TEMIZ(tmp_path, caps
     paneller = {}
     for ad, senaryo in (("rc_ustu", yol), ("sevk", sevk)):
         assert run_modulu.main([str(senaryo), "-o", str(tmp_path / f"{ad}.npz")]) == 0
-        paneller[ad] = {s[:14].strip(): s[16:] for s in capsys.readouterr().out.splitlines() if len(s) > 16}
+        paneller[ad] = _md_paneli(capsys.readouterr().out)  # V12
     rc = paneller["rc_ustu"]
     assert rc["Dış kararlılık"].startswith("✗ SPİN EYERİ") and "-4.501e-01" in rc["Dış kararlılık"]
     assert rc["Kararlılık"].startswith("✓")

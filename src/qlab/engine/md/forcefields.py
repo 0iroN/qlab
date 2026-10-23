@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from qlab.engine.hf.scf import solve
+from qlab.engine.md.state import _bool_kapisi
 from qlab.errors import InvalidInputError
 from qlab.provenance import StabilityVerdict
 from qlab.types import Molecule
@@ -34,6 +35,8 @@ class Harmonic:
     center: np.ndarray
 
     def __post_init__(self) -> None:
+        # B3 (grup 9): sınıf düzeyinde bool kapısı (ölçüm `state._bool_kapisi`nda).
+        _bool_kapisi("Harmonic", k=self.k, center=self.center)
         if not np.isfinite(self.k) or self.k <= 0.0:
             raise InvalidInputError(f"yay sabiti pozitif ve sonlu olmalı: {self.k}")
         merkez = np.asarray(self.center, dtype=float)
@@ -78,6 +81,7 @@ class Morse:
     a: float
 
     def __post_init__(self) -> None:
+        _bool_kapisi("Morse", d_e=self.d_e, r_e=self.r_e, a=self.a)  # B3 (grup 9)
         for ad, deger in (("D_e", self.d_e), ("r_e", self.r_e), ("a", self.a)):
             if not np.isfinite(deger) or deger <= 0.0:
                 raise InvalidInputError(f"{ad} pozitif ve sonlu olmalı: {deger}")
@@ -120,6 +124,10 @@ class LennardJones:
     cutoff: float
 
     def __post_init__(self) -> None:
+        _bool_kapisi(  # B3 (grup 9)
+            "LennardJones", epsilon=self.epsilon, sigma=self.sigma,
+            box_length=self.box_length, cutoff=self.cutoff,
+        )
         for ad, deger in (
             ("epsilon", self.epsilon),
             ("sigma", self.sigma),
@@ -233,6 +241,7 @@ class HartreeFockGradient:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "symbols", tuple(self.symbols))
+        _bool_kapisi("HartreeFockGradient", step=self.step, max_bond_bohr=self.max_bond_bohr)  # B3
         if len(self.symbols) < 2:
             raise InvalidInputError(
                 f"en az iki sembol gerekir, verilen: {self.symbols}"

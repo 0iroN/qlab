@@ -6,13 +6,45 @@ Bu dosya GEOMETRI BILIR (nerede ne var), `yee.py` bilmez. Ayrim bilincli:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 
 import numpy as np
 
 from qlab.errors import InvalidInputError
 
 EY_KURALLARI = ("aritmetik", "harmonik", "sol", "sag")
+
+
+def _kurucudan_indirgeme(nesne) -> tuple:
+    """`__reduce__` govdesi: nesneyi KURUCUSUNDAN yeniden kurar (C1, grup 9).
+
+    `copy.copy`, `copy.deepcopy` ve `pickle` `__reduce_ex__` uzerinden buna
+    gelir; donen (tur, alanlar) cifti `tur(*alanlar)` ile kurulur, yani
+    `__post_init__` (kapi ve salt okunur kopya) HER kopyada yeniden kosar.
+    Dataclass'in varsayilan indirgemesi durumu kurucusuz geri yaziyordu.
+    Alanlar `dataclasses.fields` sirasindadir (kurucunun konumsal sirasi).
+    `Medium`, `yee.YeeCoefficients`, `yee.YeeCoefficients2D` ve
+    `oblique.ObliqueCoefficients` ortak kullanir.
+    """
+    return type(nesne), tuple(getattr(nesne, f.name) for f in fields(nesne))
+
+
+def _salt_okunur_kopya(deger, ad: str) -> np.ndarray:
+    """GERCEL `float` kopya, `bytes` tabanli: salt okunurlugu geri ACILAMAZ.
+
+    `Medium.__post_init__`in desenidir (gerekce ve olcum orada); katsayi
+    tipleri (`yee.YeeCoefficients`, `oblique.ObliqueCoefficients`) de bunu
+    kullanir. Karmasik, bool ya da nesne dizisi KAPALI yonde reddedilir:
+    `np.array(..., dtype=float)` sanal kismi uyariyla atar, bool'u 1.0 yapardi
+    (deponun NP-BOOL ailesi).
+    """
+    dizi = np.asarray(deger)
+    if dizi.dtype.kind not in "iuf":
+        raise InvalidInputError(
+            f"`{ad}` gercel sayi dizisi olmali, verilen dtype: {dizi.dtype}"
+        )
+    kopya = np.array(dizi, dtype=float)
+    return np.frombuffer(kopya.tobytes(), dtype=float).reshape(kopya.shape)
 
 
 def _yari_hucre(dizi: np.ndarray, kural: str) -> np.ndarray:
@@ -86,8 +118,19 @@ class Medium:
     okunur bir tabanin salt okunur GORUNUMU de yetmez: `.base.setflags(write=
     True)` once tabani, sonra gorunumu acar (numpy 2.5.1, olculdu). `bytes`
     tabaninda ikisi de `ValueError`. Degerler ve sekil kopyanin aynisidir.
-    SINIR: `copy.deepcopy(m)` `__post_init__`i kosmaz ve yazilabilir dizi
-    verir (numpy'nin kopyasi) -- bu yol kapali degildir.
+
+    KOPYALAR DA KURUCUDAN GECER (C1, grup 9, 14.10.2026): `__reduce__`
+    `copy.copy`, `copy.deepcopy` ve `pickle`i kurucuya yonlendirir, yani
+    kopya `__post_init__`i (kapi + `bytes` tabanli salt okunur dizi) yeniden
+    kosar. ESKIDEN dataclass'in varsayilan indirgemesi durum sozlugunu
+    kurucusuz geri yaziyordu. OLCULDU (HEAD 448f808, kamu yolu): `copy.
+    deepcopy(Medium.vacuum(200))`in iki dizisi de yazilabilirdi; kopyaya
+    yazilan `eps_r[100] = mu_r[100] = -4` `run_1d`den (PML 15, S = 0.5, 600
+    adim) gecip son 50 kaydi 4.2e+40'a cikariyordu (referans 3.7e-04) ve
+    kopyaya yazilan `inf` kabul ediliyordu. `pickle` protokol 0-4 de yazilabilir
+    dizi veriyordu (5 salt okunur); `copy.copy` ayni salt okunur dizileri
+    paylasiyordu. Kurucuyu atlayan bir durumla kurulmus nesne (`object.
+    __setattr__`) artik kopyalanirken REDDEDILIR.
     """
 
     eps_r: np.ndarray
@@ -124,6 +167,10 @@ class Medium:
                 raise InvalidInputError(
                     f"{ad} her yerde sonlu olmali (inf geldi; G13)"
                 )
+
+    def __reduce__(self):
+        """Kopyalar ve `pickle` KURUCUDAN gecer (C1; gerekce sinif dokstringinde)."""
+        return _kurucudan_indirgeme(self)
 
     @property
     def cells(self) -> int:

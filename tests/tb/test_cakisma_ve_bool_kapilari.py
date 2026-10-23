@@ -127,6 +127,15 @@ def _kuvvet_kur(**degis):
     pytest.param(lambda g: np.complex128(g), r"sayiya cevrilemiyor \(karmasik\)", id="np.complex128"),
     pytest.param(lambda g: 10**400, "sayiya cevrilemiyor", id="10**400"),
     pytest.param(lambda g: [[g], [g, g]], "tek bir sayi olmali", id="duzensiz-liste"),
+    # B4 (grup 9): 0 boyutlu NESNE dizisi -- HEAD 448f808'de 1.0 / dizenin sayisi diye geciyordu.
+    pytest.param(lambda g: np.array(True, dtype=object), "tek bir sayi olmali", id="0d-nesne-bool"),
+    pytest.param(lambda g: np.array(np.True_, dtype=object), "tek bir sayi olmali", id="0d-nesne-np.True_"),
+    pytest.param(lambda g: np.array(str(g), dtype=object), "tek bir sayi olmali", id="0d-nesne-dize"),
+    pytest.param(lambda g: np.array(complex(g), dtype=object), r"sayiya cevrilemiyor \(karmasik\)",
+                 id="0d-nesne-karmasik"),
+    # V6 (grup 9 duzeltici): 0 boyutlu DIZE dizisi -- HEAD 448f808'de ve duzeltmeden once dizenin sayisi.
+    pytest.param(lambda g: np.array(str(g)), "tek bir sayi olmali", id="0d-U-dizi"),
+    pytest.param(lambda g: np.array(str(g).encode()), "tek bir sayi olmali", id="0d-S-dizi"),
 ])
 def test_NP_BOOL_mermin_ve_tb_kuvvet_REDDEDER(kur, alan, deger_fn, parca):
     """`_skaler` / `_sayi`: numpy bool, karmasik, tasan tamsayi, duzensiz liste -> tipli hata.
@@ -150,6 +159,10 @@ _YASA_GECERLI = {"genlik_hartree": -0.1, "d0_bohr": 2.0, "us": 2.0, "r_on_bohr":
     pytest.param(lambda g: np.complex128(g), r"sayiya cevrilemiyor \(karmasik\)", id="np.complex128"),
     pytest.param(lambda g: 10**400, "sayiya cevrilemiyor", id="10**400"),
     pytest.param(lambda g: [[g], [g, g]], "tek bir sayi olmali", id="duzensiz-liste"),
+    pytest.param(lambda g: np.array(True, dtype=object), "tek bir sayi olmali", id="0d-nesne-bool"),  # B4
+    pytest.param(lambda g: np.array(str(g), dtype=object), "tek bir sayi olmali", id="0d-nesne-dize"),  # B4
+    pytest.param(lambda g: np.array(str(g)), "tek bir sayi olmali", id="0d-U-dizi"),  # V6
+    pytest.param(lambda g: np.array(str(g).encode()), "tek bir sayi olmali", id="0d-S-dizi"),  # V6
 ])
 def test_NP_BOOL_radyal_yasa_BES_alanda_REDDEDER(alan, deger_fn, parca):
     """`UsselRadyalYasa`: Python bool da (HEAD'de HIC reddedilmiyordu) -> tipli hata."""
@@ -170,9 +183,12 @@ def test_NP_BOOL_kosinus_kuyrugu_sinirlari_REDDEDER(konum, ad, deger_fn):
 
 def test_NP_BOOL_GECERLI_numpy_sayilari_KABUL():
     """Asiri reddetmeye karsi: numpy tam/gercel skalerleri ve 0 boyutlu gercel dizi gecer, deger aynen."""
-    for n in (np.float64(8.0), np.int64(8), np.float32(8.0), np.array(8.0), 8):
+    # B4 (grup 9): 0 boyutlu GERCEL nesne dizisi ve float'a sigan buyuk tamsayi (dtype 'O')
+    # GECER -- nesne dtype'ini toptan reddeden kapi bunlari da reddederdi.
+    for n in (np.float64(8.0), np.int64(8), np.float32(8.0), np.array(8.0), 8, np.array(8.0, dtype=object)):
         assert _kuvvet_kur(n_elektron=n).n_elektron == 8.0
         assert np.isfinite(_mermin_cagir(n_elektron=n).omega)
+    assert radyal._sonlu_skaler("x", 2**70) == float(2**70) and np.asarray(2**70).dtype.kind == "O"
     yasa = UsselRadyalYasa(np.float64(-0.1), np.int64(2), np.array(2.0), np.float32(3.0), 3.8)
     assert (yasa.genlik_hartree, yasa.d0_bohr, yasa.us, yasa.r_on_bohr) == (-0.1, 2.0, 2.0, 3.0)
 

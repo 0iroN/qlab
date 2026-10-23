@@ -13,7 +13,7 @@ from qlab.engine.md.forcefields import (
     Morse,
 )
 from qlab.engine.md.integrator import Trajectory
-from qlab.engine.md.state import MDState
+from qlab.engine.md.state import MDState, _bool_iceriyor, _dize_iceriyor
 from qlab.engine.md.tb_kuvvet import SsSigmaTBKuvveti
 from qlab.engine.md.thermostats import Langevin, NoseHoover
 from qlab.engine.tb.radyal import UsselRadyalYasa
@@ -189,12 +189,15 @@ def _tb_ss_sigma_alani(p: dict) -> SsSigmaTBKuvveti:
     # NP-BOOL (11.10.2026, grup 6; ölçüldü HEAD a9ec48a, `MDScenario(...)`
     # doğrudan): `np.True_` ve `np.array(True)` 1 K diye geçiyordu,
     # `np.complex128` uyarıyla gerçel kısmına iniyordu, `10**400` (YAML'da
-    # 401 haneli tamsayı da) ham `OverflowError` veriyordu.
+    # 401 haneli tamsayı da) ham `OverflowError` veriyordu. B4 (grup 9): 0 boyutlu
+    # NESNE dizisi (`np.array(True, dtype=object)` 1 K, `np.array('631.6', dtype=object)`)
+    # dtype turu 'O' olduğu için geçiyordu; `_bool_iceriyor` / `_dize_iceriyor` öğeye bakar.
     try:
         if (
             isinstance(kelvin, (bool, str, bytes))
             or np.ndim(kelvin) != 0
-            or np.asarray(kelvin).dtype.kind in "bc"
+            or _bool_iceriyor(kelvin)
+            or _dize_iceriyor(kelvin)
         ):
             raise TypeError
         kelvin = float(kelvin)
@@ -240,19 +243,6 @@ def _fcc_kafes(n_particles: int, density_reduced: float, sigma: float):
     return konumlar, float(kenar)
 
 
-def _bool_iceriyor(deger: object) -> bool:
-    """İç içe liste/demet/dizide bool ya da karmaşık öğe (Python ya da numpy) var mı."""
-    if isinstance(deger, (bool, np.bool_, complex, np.complexfloating)):
-        return True
-    if isinstance(deger, np.ndarray):
-        if deger.dtype.kind == "O":
-            return any(_bool_iceriyor(x) for x in deger.ravel())
-        return deger.dtype.kind in "bc"
-    if isinstance(deger, (list, tuple)):
-        return any(_bool_iceriyor(x) for x in deger)
-    return False
-
-
 def _fcc_tam_sayisi(deger: object) -> int:
     """fcc `n_particles`: tam sayı ya da tam değerli float; bool, dize, kesir REDDEDİLİR.
 
@@ -280,13 +270,40 @@ def _fcc_tam_sayisi(deger: object) -> int:
         raise ValueError(
             f"n_particles float'a sığmıyor ({len(str(int(deger)))} hane)"
         ) from hata
+    if deger > _FCC_N_TAVANI:
+        raise ValueError(
+            f"n_particles = {int(deger)} fcc boyut tavanını ({_FCC_N_TAVANI} = 4 x 8^3) "
+            f"aşıyor: LJ kuvveti yoğun N x N dizilerle hesaplanır (komşu listesi yok), "
+            f"bellek ~ 73 bayt x N^2 -- bu N'de ~{73e-9 * float(deger) ** 2:.3g} GB"
+        )
     return int(deger)
 
 
+#: fcc `n_particles`ın BOYUT TAVANI (B2, grup 9, 14.10.2026). ÖLÇÜLDÜ (bu makine, HEAD
+#: 448f808, kamu yükleyicisi + `build` + tek kuvvet çağrısı, `argon_nvt.yaml`ın
+#: n_particles'ı değiştirilerek; bellek tracemalloc tepesi): `build` ucuz ve O(N)
+#: (2048'de 4 ms; 4e6'da 1.9 s), ama LennardJones çağrısı N x N x 3 dizi kurar --
+#: N = 108 / 256 / 500 / 864 / 1372 / 2048 -> 0.9 / 4.9 / 18 / 55 / 138 / 306 MB ve
+#: 0.8 ms / 4.4 / 18 / 59 / 167 / 370 ms (ikisi de ~N^2: 73 bayt x N^2, 8.8e-8 s x N^2).
+#: Tavansız kamu yolunda N = 4 x 60^3 = 864000 ham `_ArrayMemoryError` ("16.3 TiB")
+#: traceback'i veriyordu (0.9 s); N = 4 x 20^3 = 32000 ~75 GB isterdi (bu makinede 33 GB
+#: RAM; KOŞULMADI); 4 x (10^6)^3 gibi yazım hatası kafes döngüsünde 10^18 kez döner
+#: (1e6 hücre 1.9 s ölçüldü -> ~6e4 yıl). TAVAN ÖLÇÜLEN EN BÜYÜK NOKTADIR (2048: tek
+#: çağrı 306 MB, 0.37 s; sevk edilen `argon_nvt` 108). Daha büyüğü komşu listesi ister --
+#: bu depoda yok, beyan. Harmonik + fcc O(N)'dir ama aynı kapıdan geçer (tek tavan).
+_FCC_N_TAVANI: int = 2048
+
+
 def _bool_degil(ad: str, deger: object) -> float:
-    """`float(deger)`; bool (Python ya da numpy) `TypeError` -- `true` 1.0 okunmaz."""
+    """`float(deger)`; bool (Python ya da numpy) `TypeError` -- `true` 1.0 okunmaz.
+
+    B1 (grup 9): dize de `TypeError` -- `float('0.8442')` tırnaklı yoğunluğu SESSİZCE
+    sayı yapıyordu (YAML'ın üstel yazım istisnasını yükleyici zaten sayıya çevirir).
+    """
     if isinstance(deger, (bool, np.bool_)):
         raise TypeError(f"{ad} sayı olmalı, bool verildi: {deger!r}")
+    if _dize_iceriyor(deger):
+        raise TypeError(f"{ad} sayı olmalı, dize (tırnaklı metin) verildi: {deger!r}")
     return float(deger)
 
 
@@ -322,11 +339,21 @@ def _senaryo_dizisi(ad: str, deger: object) -> np.ndarray:
     bool ve karmaşık öğe (Python ya da numpy) artık `ScenarioError`.
     Float'a sığmayan öğe (401 haneli konum / kütle / hız) ham `OverflowError`
     veriyordu (ölçüldü HEAD a9ec48a, `tb_zincir_md.yaml`); o da artık burada.
+
+    B1 (grup 9, 14.10.2026; ölçüldü HEAD 448f808): DİZE öğe (`'1.701118538'`) de
+    `dtype=float`ta SESSİZCE sayı oluyordu. YAML yolunda yükleyici tırnaklıyı
+    reddeder ve üstel yazım istisnasını sayıya çevirir (`loader._yaml_sayi_agaci`);
+    buraya ulaşan her dize `MDScenario(...)`nun doğrudan kurulmasındandır.
     """
     if _bool_iceriyor(deger):
         raise ScenarioError(
             f"initial.{ad} sayısal bir dizi olmalı; bool ve karmaşık öğe sayıya "
             f"çevrilmez (true → 1.0), verilen: {deger!r}"
+        )
+    if _dize_iceriyor(deger):
+        raise ScenarioError(
+            f"initial.{ad} sayısal bir dizi olmalı; dize (tırnaklı metin) sayıya "
+            f"çevrilmez ('1.0' → 1.0), verilen: {deger!r}"
         )
     try:
         return np.asarray(deger, dtype=float)
@@ -356,6 +383,12 @@ def _senaryo_nesnesi(sinif, ad: str, params: dict, yaml_params: dict | None = No
     (`HartreeFockGradient.stability`) muaf: `false` geçerli bir değerdir.
     Sınıfta olmayan anahtar burada denetlenmez, sınıfın kendi `TypeError`ı
     ("unexpected keyword argument") ona düşer.
+
+    DİZE (V13, grup 9 düzeltici, 23.10.2026): sınıf kapısı (`state._bool_kapisi`)
+    artık dizeyi de `InvalidInputError` ile reddettiği için `d_e: abc` eskiden olduğu
+    gibi ham `TypeError`dan ("morse parametreleri geçersiz: ufunc 'isfinite' ...")
+    değil, bool'unki gibi BURADA anahtarın adıyla `ScenarioError` olur. Tipi `bool`
+    ya da dize (`str`, `tuple[str, ...]`: HF `basis` / `symbols`) olan alan muaftır.
     """
     verilen = params if yaml_params is None else yaml_params
     alan_tipleri = {f.name: f.type for f in dataclasses.fields(sinif)}
@@ -365,6 +398,16 @@ def _senaryo_nesnesi(sinif, ad: str, params: dict, yaml_params: dict | None = No
             raise ScenarioError(
                 f"{ad} parametresi `{anahtar}`: bool (true/yes) ve karmaşık değer "
                 f"sayıya çevrilmez (true → 1.0). Verilen: {verilen!r}"
+            )
+        if (
+            tip is not None
+            and tip not in (bool, "bool")
+            and "str" not in str(tip)
+            and _dize_iceriyor(deger)
+        ):
+            raise ScenarioError(
+                f"{ad} parametresi `{anahtar}`: dize (tırnaklı metin) sayıya "
+                f"çevrilmez ('1.0' → 1.0). Verilen: {verilen!r}"
             )
     try:
         return sinif(**params)
@@ -653,6 +696,17 @@ _TB_SALINIM_BEYANI = (
     "göredir. Liste kapsayıcı değildir."
 )
 
+#: Sürüklenme ✗ VE yol karelerinin omega'sı ÖLÇÜLEMEDİ (B8, grup 9): "AYRILAMIYOR"
+#: tanısı salınımın payını yolun omega*dt'sinden kestirir; omega ölçülemeyince o pay
+#: kestirilemez. HEAD'de (1fa9079 -- 448f808) bu durumda kaba sınır (S x 1) devreye
+#: giriyordu ve her adım serisinde pay <= tepe-tepe olduğundan AYRILAMIYOR KOŞULSUZ
+#: basılıyordu -- ölçülemeyen omega'ya dayanan bir tanı (ölçüm `_suruklenme_salinim_payi`).
+_SURUKLENME_AYRIMI_YARGILANAMAZ = (
+    "sürüklenme eşiğin üstünde ya da yargılanamaz; Verlet salınımından ayrılıp "
+    "ayrılamadığı da YARGILANAMAZ: yol karelerinin omega'sı ölçülemedi, salınımın uç "
+    "bloklara payı kestirilemez (energy_drift, SINIR)"
+)
+
 
 def _tb_yakinsama_tanisi(
     suruklenme_gecti: bool,
@@ -695,7 +749,8 @@ def _tb_yakinsama_tanisi(
             )
         if not kare0_sonlu:
             parcalar.append(
-                "a priori tanı YARGILANAMAZ (kare-0 Hessian'ı sonlu değil)"
+                "a priori tanı YARGILANAMAZ (kare-0'ın en hızlı modu ölçülemedi: Hessian "
+                "sonlu değil ya da pozitif özdeğeri yok)"
             )
         elif not kare0_gecti:
             parcalar.append(
@@ -706,7 +761,7 @@ def _tb_yakinsama_tanisi(
         if not yol_sonlu:
             parcalar.append(
                 "yol karelerinin tanısı YARGILANAMAZ (konum ya da Hessian "
-                "sonlu değil)"
+                "sonlu değil ya da Hessian'ın pozitif özdeğeri yok)"
             )
         elif not yol_gecti:
             parcalar.append(
@@ -722,6 +777,8 @@ def _tb_yakinsama_tanisi(
                 "salınımın payı blok uzunluğuyla küçülür; koşuyu uzatın "
                 "(energy_drift, SINIR)"
             )
+        elif not suruklenme_gecti and not yol_sonlu:
+            parcalar.append(_SURUKLENME_AYRIMI_YARGILANAMAZ)
         elif not suruklenme_gecti:
             parcalar.append(
                 "sürüklenme eşiğin üstünde ya da yargılanamaz: koşuyu uzatın "
@@ -816,6 +873,29 @@ _HF_OSCILLATION_TOLERANCE: float = 8.5e-02
 #: TB'nin kütle ağırlıklı sertlik vekili HF'de kurulamaz (yasa yok); kalan
 #: körlük `_HF_SALINIM_BEYANI`nda.
 _HF_OMEGA_DT_TOLERANCE: float = 0.67
+
+#: HF Hessian'ının GÜRÜLTÜ TABANI katı (B8, grup 9, 14.10.2026). `_omega_max`
+#: HF alanında en büyük kütle ağırlıklı özdeğer lambda_max <= c x u ise omega'yı
+#: ÖLÇÜLEMEDİ (`nan`) sayar; u = eps x max|E| / (h x s x m_min): h sayısal gradyanın
+#: adımı (`HartreeFockGradient.step`), s Hessian'ın adımı, |E| sondaların enerjisi --
+#: HF kuvvetinin yuvarlama tabanı eps*|E|/h'dir (`forcefields.HartreeFockGradient`
+#: dokstringi, ölçülmüş), Hessian'ınki onun 1/s'si. NEDEN: gürültülü kuvvette (h 1e-13)
+#: Hessian gürültüdür -- kamu yolunda h2_aimd geometrisi, 400 adım: kare-0 ve yol
+#: karesinin lambda_max'ı <= 0, panel omega_max = 0.000e+00 / -0.000e+00 basıyor,
+#: omega*dt ✓ geçiyordu ve sürüklenme ✗'ine "AYRILAMIYOR" deniyordu (HEAD 448f808).
+#: ÖLÇÜLDÜ (bu makine; H2 r 1.20-1.80 bohr, LiH 2.6-3.2 bohr, STO-3G, h 1e-7 ... 1e-13,
+#: 48 hücre; referans aynı geometride h 1e-5): |lambda_max - lambda_ref| / u en çok 5.8
+#: (çoğu 0-3), yani gürültü u'nun birkaç katıdır. c = 60: lambda_max > 60 u iken bağıl
+#: hata <= 5.8 / 60 ~ %10 (omega'da ~%5; omega*dt eşiğinin bandı 1.37-1.44 kat pay
+#: taşır). Ölçülende 60 u'nun üstündeki 14 hücrenin en büyük hatası %3.1; altındaki 34
+#: hücreninki %0.3 ile %93900 arası -- tabanda hata ÖNGÖRÜLEMEZ (h 1e-10 ve altı; LiH'de
+#: 1e-9). Sevk edilen `h2_aimd` (h 1e-5): lambda / u ~ 3.9e6 (kare 0) -- payı 6.6e4 kat.
+#: TB ve klasik alanlarda kuvvet analitik: taban 0, kural yalnız lambda_max <= 0 (pozitif
+#: mod yok -- ör. etkileşimsiz başlangıç -- ÖLÇÜLEMEDİ). m_min (en HAFİF atom: kütle
+#: ağırlıklı gürültü onun bloğunda en büyük) EŞİT OLMAYAN kütleli bir hücreyle kilitli
+#: (V9, grup 9 düzeltici, 23.10.2026: HT, r 1.8, h 5e-10 -> lambda/u_min 38 nan; m_max
+#: okuyan taban 114 ile SAYI derdi); eskiden testler yalnız eşit kütleli H2'ydi.
+_HF_HESSIAN_GURULTU_KATI: float = 60.0
 
 #: HF dalının NVE `expected_error`ı (D2-ii). Ortak metnin "salınım bir hata
 #: değildir" cümlesi HF'de artık yanlış: iri dt'nin salınımını S ve omega*dt
@@ -918,9 +998,12 @@ def _hf_yakinsama_tanisi(
             )
         if not kare0_sonlu:
             parcalar.append(
-                "a priori tanı YARGILANAMAZ (kare-0 Hessian'ı sonlu değil; "
-                "sondası geometri kapısına ya da SCF yakınsamamasına "
-                "takıldıysa da -- koşu yine yapıldı)"
+                "a priori tanı YARGILANAMAZ (kare-0'ın en hızlı modu ölçülemedi: "
+                "Hessian sonlu değil -- sondası geometri kapısına ya da SCF "
+                "yakınsamamasına takıldıysa da, koşu yine yapıldı -- ya da en büyük "
+                "özdeğeri <= 0 ya da sayısal gradyanın gürültü tabanında: "
+                f"{_HF_HESSIAN_GURULTU_KATI:g} x eps x |E| / (gradyan adımı x Hessian "
+                "adımı x en küçük kütle))"
             )
         elif not kare0_gecti:
             parcalar.append(
@@ -931,7 +1014,8 @@ def _hf_yakinsama_tanisi(
         if not yol_sonlu:
             parcalar.append(
                 "yol karesinin tanısı YARGILANAMAZ (konum ya da Hessian "
-                "sonlu değil; sonda kapıya ya da SCF'e takıldıysa da)"
+                "sonlu değil -- sonda kapıya ya da SCF'e takıldıysa da -- ya da "
+                "en büyük özdeğeri <= 0 ya da gürültü tabanında)"
             )
         elif not yol_gecti:
             parcalar.append(
@@ -948,6 +1032,8 @@ def _hf_yakinsama_tanisi(
                 "salınımın payı blok uzunluğuyla küçülür; koşuyu uzatın "
                 "(energy_drift, SINIR)"
             )
+        elif not suruklenme_gecti and not yol_sonlu:
+            parcalar.append(_SURUKLENME_AYRIMI_YARGILANAMAZ)
         elif not suruklenme_gecti:
             parcalar.append(
                 "sürüklenme eşiğin üstünde ya da yargılanamaz: koşuyu uzatın "
@@ -1156,10 +1242,12 @@ def _suruklenme_salinim_payi(
     blokları). omega*dt yol karelerininkidir (en hızlı mod): EN KÜÇÜK payı
     verir -- yavaş bileşenler (vuru, anharmonik alt frekanslar) bloklarda daha
     büyük iz bırakır. Bu yüzden "AYRILAMIYOR" güvenlidir (en hızlı salınım bile
-    farkı açıklıyor), "eşiğin üstünde" ise sürüklenmeyi KANITLAMAZ. omega*dt
-    sonlu değilse (sonda hatası) ya da omega*dt * L <= 1 ise (omega 0 dahil:
-    gürültülü kuvvetin Hessian'ı) kaba sınır S (her adım serisinde pay <=
-    tepe-tepe). S sonlu değilse pay `nan` (bilinmez). Döner: (pay, kat).
+    farkı açıklıyor), "eşiğin üstünde" ise sürüklenmeyi KANITLAMAZ. omega*dt * L
+    <= 1 ise kaba sınır S (her adım serisinde pay <= tepe-tepe). S sonlu değilse
+    pay `nan` (bilinmez). Döner: (pay, kat). B8 (grup 9): YALNIZ ÖLÇÜLMÜŞ omega ile
+    çağrılır (sonlu ve > 0) -- kaba sınır her adım serisinde pay <= tepe-tepe olduğu
+    için KOŞULSUZ "AYRILAMIYOR" verir; omega sonlu değilken ya da 0 iken (gürültülü
+    kuvvetin Hessian'ı) ona düşmek, ölçülemeyen omega'ya dayanan bir tanıydı.
 
     ÖLÇÜLDÜ (kamu yolu, her adım serisi, 12.10.2026): h2_aimd geometrisinde
     sahte ✗ veren kısa koşuların HEPSİ "AYRILAMIYOR" -- yol omega*dt 0.2 x 1
@@ -1170,9 +1258,11 @@ def _suruklenme_salinim_payi(
     periyot ve üstü koşuları zaten ✓. GERÇEK sürüklenme "eşiğin üstünde"
     kalır: TB Fermi penceresi (3.16 K, n_e 15, dt 10 x 400) 5.480e-02, pay
     6.3e-03; HF gradyan adımı 1e-13 (sonlu fark gürültüsü) 50 / 100 / 200
-    adımda 0.32 / 0.29 / 0.28. AYRILAMIYOR denen gerçek sürüklenmeler: aynı
-    gürültü 20 adımda (tek titreşim periyodundan kısa) ve 400 adımda (yol
-    omega'sı 0: gürültülü Hessian -> kaba sınır).
+    adımda 0.32 / 0.29 / 0.28. AYRILAMIYOR denen gerçek sürüklenmeler (HEAD 448f808):
+    aynı gürültü 20 adımda ve 400 adımda (kare-0 ve yol omega'sı 0.000e+00 /
+    -0.000e+00: gürültülü Hessian -> kaba sınır). B8'den (grup 9) beri o koşularda
+    omega ÖLÇÜLEMEDİ (`nan`, `_HF_HESSIAN_GURULTU_KATI`) ve tanı "ayrılıp ayrılamadığı
+    da YARGILANAMAZ" der (20 / 50 / 100 / 200 / 400 adımın hepsi, kamu yolu).
     """
     n_deger = scenario.n_steps + 1
     blok_adimi = n_deger // min(10, n_deger)
@@ -1241,7 +1331,7 @@ def omega_max_frame0(
     """TB ve HF NVE'de kare-0 geometrisinin en hızlı kütle ağırlıklı modu omega0;
     öteki koşularda `None` (hesaplanmaz).
 
-    omega0 = sqrt(max(lambda_max, 0)), lambda_max = M^-1/2 H M^-1/2'nin en
+    omega0 = sqrt(lambda_max) (ölçülemezse `nan`, aşağıda), lambda_max = M^-1/2 H M^-1/2'nin en
     büyük özdeğeri; H TAM 3N Hessian, kuvvetin merkezi farkından (6N kuvvet
     çağrısı, adım `step` bohr) ve simetrikleştirilmiş. Panelin tanısı
     omega0*dt; eşik ve ölçüm `_TB_OMEGA_DT_TOLERANCE`ta.
@@ -1260,10 +1350,12 @@ def omega_max_frame0(
 
     KÖR: yol boyu omega'yı görmez -- kare 0 yolun en hızlı modunu temsil
     etmiyorsa (sonradan çarpışan parçalar, yüksek T_ion); yalnız serbest
-    atomlardan oluşan bir başlangıç omega0 = 0 verir. O yarıyı D2-vi'den beri
+    atomlardan oluşan bir başlangıçta pozitif mod yoktur. O yarıyı D2-vi'den beri
     `omega_max_path_frames` (yolun izlenen iki karesi) yargılar; panel ikisini
-    AYNI eşikle okur. Hessian sonlu değilse `nan` döner, panel ✗ basar
-    (YARGILANAMAZ).
+    AYNI eşikle okur. Hessian sonlu değilse ya da omega ÖLÇÜLEMEDİYSE (B8, grup 9:
+    lambda_max <= 0 ya da HF'de sayısal gradyanın gürültü tabanında, `_omega_max`)
+    `nan` döner, panel ✗ basar (YARGILANAMAZ) -- eskiden 0 dönüyordu ve omega*dt
+    ölçütü onunla ✓ geçiyordu.
 
     HF NVE (D2-ii, 10.10.2026): aynı tarif, eşik `_HF_OMEGA_DT_TOLERANCE`.
     Hessian'ın 6N kuvvet çağrısı `_HFHessianSondasi` ile yapılır: alanın TAZE
@@ -1314,29 +1406,55 @@ def _hessian_alani(force_field):
     return force_field
 
 
+def _hf_gradyan_adimi(force_field) -> float | None:
+    """HF alanının (ya da sondasının) sayısal gradyan adımı h; öteki alanlarda None (B8)."""
+    if isinstance(force_field, _HFHessianSondasi):
+        force_field = force_field.alan
+    if isinstance(force_field, HartreeFockGradient):
+        return float(force_field.step)
+    return None
+
+
 def _omega_max(positions, masses, force_field, step: float) -> float:
-    """Bir geometrinin en hızlı kütle ağırlıklı modu: sqrt(max(lambda_max, 0)),
+    """Bir geometrinin en hızlı kütle ağırlıklı modu: sqrt(lambda_max),
     lambda_max = M^-1/2 H M^-1/2'nin en büyük özdeğeri; H TAM 3N Hessian,
     kuvvetin merkezi farkından (6N kuvvet çağrısı) ve simetrikleştirilmiş.
     Sonlu değilse `nan`. `omega_max_frame0` ve `omega_max_path_frames`
-    AYNI tarifi kullanır -- iki kare aynı ölçütle karşılaştırılır."""
+    AYNI tarifi kullanır -- iki kare aynı ölçütle karşılaştırılır.
+
+    ÖLÇÜLEMEDİ -> `nan` (B8, grup 9, 14.10.2026): lambda_max <= taban ise omega
+    ölçülmüş sayılmaz. Taban HF alanında sayısal gradyanın gürültüsüdür
+    (`_HF_HESSIAN_GURULTU_KATI`), öteki alanlarda 0 (lambda_max <= 0: pozitif mod yok).
+    Eskiden `sqrt(max(lambda, 0))` idi: gürültülü HF'de 0.000e+00 ve -- max(-0.0, 0.0)
+    -0.0 döndürdüğü için -- -0.000e+00 basılıyor, omega*dt ölçütü bu sıfırla ✓ geçiyordu.
+    """
     konum = np.asarray(positions, dtype=float)
     n3 = konum.size
     hessian = np.empty((n3, n3))
+    enerji_max = 0.0
     for k in range(n3):
         arti = konum.copy().ravel()
         arti[k] += step
         eksi = konum.copy().ravel()
         eksi[k] -= step
-        kuvvet_arti = force_field(arti.reshape(konum.shape))[1].ravel()
-        kuvvet_eksi = force_field(eksi.reshape(konum.shape))[1].ravel()
-        hessian[:, k] = -(kuvvet_arti - kuvvet_eksi) / (2.0 * step)
+        enerji_arti, kuvvet_arti = force_field(arti.reshape(konum.shape))
+        enerji_eksi, kuvvet_eksi = force_field(eksi.reshape(konum.shape))
+        enerji_max = max(enerji_max, abs(float(enerji_arti)), abs(float(enerji_eksi)))
+        hessian[:, k] = -(np.ravel(kuvvet_arti) - np.ravel(kuvvet_eksi)) / (2.0 * step)
     hessian = 0.5 * (hessian + hessian.T)
-    olcek = 1.0 / np.sqrt(np.repeat(np.asarray(masses, dtype=float), 3))
+    kutle = np.asarray(masses, dtype=float)
+    olcek = 1.0 / np.sqrt(np.repeat(kutle, 3))
     agirlikli = hessian * olcek[:, None] * olcek[None, :]
     if not np.all(np.isfinite(agirlikli)):
         return float("nan")
-    return float(np.sqrt(max(float(np.linalg.eigvalsh(agirlikli)[-1]), 0.0)))
+    lam = float(np.linalg.eigvalsh(agirlikli)[-1])
+    taban = 0.0
+    h = _hf_gradyan_adimi(force_field)
+    if h is not None:
+        taban = _HF_HESSIAN_GURULTU_KATI * np.finfo(float).eps * enerji_max / (h * step * float(kutle.min()))
+    if not lam > taban:  # <= 0 ya da gürültü tabanında: ÖLÇÜLEMEDİ
+        return float("nan")
+    return float(np.sqrt(lam))
 
 
 #: `YolKaresiIzleyici.tanilar`ın ve panelin yol karesi anahtarları (sıra panel sırasıdır).
@@ -1654,7 +1772,7 @@ def provenance_for(
             f"({tur}, termostat {termostat['kind'] if termostat else None}) için None verin"
         )
     if omega_max_frame0 is not None and omega_max_frame0 < 0.0:
-        # sqrt(max(lambda, 0)) negatif olamaz; `omega_max_frame0()` bunu üretmez.
+        # `_omega_max` sqrt(lambda) (lambda > taban >= 0) ya da `nan` döner: negatif üretmez.
         raise InvalidInputError(f"omega_max_frame0 negatif olamaz: {omega_max_frame0}")
     # D2-vi: yol karelerinin omega'sı kare 0'ınkiyle AYNI kapıdan geçer --
     # verilmezse kare 0'ın görmediği yol (çarpışma, ısıl keşif) yine ✓ alırdı.
@@ -1717,15 +1835,20 @@ def provenance_for(
             # sertlik tepesi). `nan` (Hessian sonlu değil) -> ✗, YARGILANAMAZ.
             omega_dt = float(omega_max_frame0 * scenario.dt)
             omega_dt_yol = float(omega_max_path_frames * scenario.dt)
-            kare0_sonlu = bool(np.isfinite(omega_dt))
+            # B8 (grup 9): ÖLÇÜLEMEYEN omega (sonlu değil ya da <= 0; `_omega_max` gürültü
+            # tabanında `nan` döner) omega*dt ölçütünü ✓ geçemez -- YARGILANAMAZ. HEAD'de 0
+            # (ve -0.0) eşiğin altında sayılıyordu: gürültülü HF'de ölçüt ✓ geçiyordu.
+            kare0_sonlu = bool(np.isfinite(omega_dt)) and omega_max_frame0 > 0.0
             kare0_gecti = kare0_sonlu and omega_dt <= omega_esigi
-            yol_sonlu = bool(np.isfinite(omega_dt_yol))
+            yol_sonlu = bool(np.isfinite(omega_dt_yol)) and omega_max_path_frames > 0.0
             yol_gecti = yol_sonlu and omega_dt_yol <= omega_esigi
             # D2-ii-c: sonlu bir sürüklenme ✗'ini Verlet salınımının uç
             # bloklara bırakabileceği pay açıklıyorsa (pay `nan` ise de) tanı
             # "AYRILAMIYOR" der; hüküm yine ✗ (✓'ye çevrilemez: `energy_drift`).
+            # B8: pay yolun omega*dt'sinden kestirilir -- omega ÖLÇÜLEMEDİYSE kestirilmez
+            # ve tanı "ayrılıp ayrılamadığı YARGILANAMAZ" der (`_SURUKLENME_AYRIMI_...`).
             ayrinti = None
-            if not yakinsadi and np.isfinite(energy_drift):
+            if not yakinsadi and np.isfinite(energy_drift) and yol_sonlu:
                 payi, kat = _suruklenme_salinim_payi(scenario, energy_oscillation, omega_dt_yol)
                 if not energy_drift - payi > esik:
                     ayrinti = (

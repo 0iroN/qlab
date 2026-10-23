@@ -415,12 +415,39 @@ projedeki her GUI testi `QT_QPA_PLATFORM=offscreen` ile ekransız çalışır
 durumu programatik olarak okunur, çizimin kendisi doğrulanmaz. TDSE penceresi
 hâlâ hiçbir gerçek ekranda görülmedi.
 
-Ekransız kipin ölçülmüş bir kör noktası daha var (12.10.2026): offscreen yazı
+Ekransız kipin ölçülmüş bir kör noktası daha vardı (12.10.2026): offscreen yazı
 tipi motoru tam sayı satır aralığı verir (Consolas 14.0000), Windows motoru
-kesirli (14.0312) ve %150 ölçekte satırı 15 px'e oturtur. Şeffaflık panelinin
-kırpılmayan beyanda bir satırı kaydırmada bırakması (`scrollBar().maximum()==1`)
-bu yüzden ekransız kipte 0/18, gerçek platformda (`WA_DontShowOnScreen`) 45/45
-durumda görülüyor; düzeltme `transparency.py`'de, açık.
+kesirli (14.0312) ve %150 ölçekte satırları tamsayı `lineSpacing`ten (14) geniş
+dizer (23.10.2026, DPR 1.5 + `QT_FONT_DPI=96`: beş görsel satır 79 px = 15.8
+px/satır). Şeffaflık panelinin kırpılmayan beyanda bir satırı kaydırmada
+bırakması (`scrollBar().maximum()==1`) bu yüzden ekransız kipte görülmüyor,
+gerçek platformda (`WA_DontShowOnScreen`) görülüyordu. Düzeltildi (C4,
+14.10.2026): panel yüksekliği artık yerleşimin kendisinden (blokların
+`blockBoundingRect` toplamı) okunuyor, `lineSpacing`ten değil. Bugün yeniden
+üretilebilen (23.10.2026, gerçek platform testinin kendi düzeneği: 3 beyan × 3
+genişlik, 600 px kutu): eski formülle kırpılmayan 9 durumun 9'unda bir satır
+gizli, düzeltmeyle 0/9. (12.10 / 14.10'un orbital penceresi sayıları — "17 satır
+259 px", ekransız 0/18, gerçek platformda 45/45 → 0/45 — sondaları kayıp; yeniden
+üretilemez, yalnız tarihsel kayıttır.) Kilit iki katlı: ekransız benzetim (belgenin
+satır adımı widget'ın `lineSpacing`'inden büyük; hızlı şerit) ve yalnız
+Windows'ta koşan, ekrana hiçbir şey çizmeyen gerçek platform testi
+(`QT_QPA_PLATFORM=windows`, `WA_DontShowOnScreen`; `slow`). O testin ölçeği üç
+ortam değişkeniyle sabitlenir: `QT_ENABLE_HIGHDPI_SCALING=0`,
+`QT_SCALE_FACTOR=1.5` ve `QT_FONT_DPI=96`. Üçüncüsü olmadan Qt yazı tipini
+birincil ekranın Windows DPI'ıyla büyütür (%150 ekranda 18 px) ve test makineye
+bağımlı kalır (23.10.2026'da bu yüzden düştü).
+
+Şeffaflık bloğunun etiket sütunu GUI'de ve CLI'da tek kaynaktan,
+`provenance.etiket_genisligi()`den gelir (C5, 14.10.2026): `as_lines()`in
+basabileceği en uzun etiket, bugün 16 ("Yakınsama tanısı"). Eskiden sabit
+14'tü ve tanı satırının ':'si iki sütun kayıyordu. C5 bunu GUI'de ve TDSE, spin,
+HF tarama, halka dallarında düzeltti, ama kusurun görüldüğü SEVK panelleri —
+`tb_zincir_md`, `h2_aimd`, `argon_nvt` — `run.py`nin `_run_md` dalındaydı ve o
+(`_run_tb` ile birlikte) sabit 14'te kaldı: 23.10.2026'ya kadar üçünde de ':'
+{14, 16} iki sütundaydı (V12; ölçüldü tam sevk koşusu, HEAD 448f808 ve C5
+sonrası ağaç); `zincir_tb` paneli 14'te, elle hizalı `İletkenlik` başlığı 16'da.
+İki dal da artık `etiket_genisligi()`den okur; dört sevk panelinde ':' tek
+sütunda (16), kilit `tests/test_run.py`.
 
 ## Kurulum
 
@@ -440,6 +467,31 @@ GUI olmadan senaryo koştur:
 ```bash
 python -m qlab.run scenarios/tunneling.yaml -o out.npz
 ```
+
+Soğurucu maskeli bir TDSE koşusunda (`absorbing_width_bohr`; sevk edilen
+senaryolarda yok) maske normu bilerek düşürür, yani `|N − 1|` üniterlik ölçütü
+olamaz. Panelin hükmü (B5-U; motor 14.10.2026, CLI ve GUI kamu yolu 23.10.2026)
+maskeden ÖNCEKİ üniter adımdan gelir: her adımda `‖Uψ‖²/‖ψ‖²` ve norm bütçesi
+`|N + soğurulan − N0|/N0` ölçülür, ikisi de maskesiz yolun 1e-8 eşiğinin
+altındaysa ✓, değilse ✗ basılır — istisna fırlatılmaz, kareler incelenebilir
+kalır (maskesiz koşu ihlalde `UnitarityViolationError` verir). `Yakınsama
+tanısı` satırı neyin yargılandığını söyler; maskenin soğurduğu norm
+(`absorbed_norm`) ayrı raporlanır — sınır koşuludur, fizik değil. Ölçüldü (kamu
+CLI, `tunneling.yaml` + `absorbing_width_bohr: 40`): 64000 adımda (paket %99.99
+soğuruluyor) adım oranı en çok 1.8e-15, bütçe 1.4e-11; 32000 adımda 1.6e-15 /
+8.4e-12. Ek maliyet (4096 nokta × 64000 adım) %5–19, makine gürültüsü içinde
+(14.10 ve 23.10 ölçümleri); kareler `evolve`unkilerle bit bit aynı, maskesiz
+koşunun npz'si değişmedi. Bu bir NORM hükmüdür: üniter kalan bir faz hatasını
+(ölçüldü: ✓ basıyor) ya da dt rezonansının spektral kirlenmesini yakalamaz.
+"Maskesiz yolun eşiği" bütçe için tam anlamıyla doğrudur (maske ≡ 1'de bütçe
+`|N − 1|`'dir); adım oranı onun üstüne bir ADIM BAŞINA göreli ölçüttür ve
+birikimi görmez. Beyanlı kör pencere (ölçüldü 23.10.2026, 256 nokta × 800 adım,
+paket N 1 → 6.9e-5): yalnız soğurmadan sonra (N < 1e-3) etkin, adım başı
+7.6e-9'luk bir kusur ✓ basar (adım 7.6e-9, bütçe 1.9e-10); kalan paketin normu
+GÖRELİ 6.9e-7 kayar ama MUTLAK olasılıkta 4.8e-11 (maskesiz ölçütün ~200 kat
+altı). Eşiklerin ikisi de iki yanından kilitli: bütçe 2.03e-8'de ✗, 5.07e-9'da
+✓; adım 1.5e-8'de ✗, 5e-9'da ✓ (`tests/tdse/test_b5u_maskeli_hukum.py`).
+Ölçüm `provenance_for`a verilmezse (Python yolu) hüküm ✗ YARGILANMADI kalır.
 
 Klasik moleküler dinamik (Modül 2) — H₂'nin Morse potansiyelinde titreşimi
 ve 108 argon atomunun Langevin termostatıyla dengelenmesi:
@@ -531,6 +583,12 @@ python -m qlab.run scenarios/spin_tarama.yaml -o spin.npz
 `plateau_reached`, `tau_int`, `binder`, `susceptibility`, `heat_capacity`,
 `coupling` ve `provenance_json` taşır (`susceptibility` enerji⁻¹ birimindedir:
 coupling'ler arası karşılaştırılacak sayı `coupling · susceptibility`'dir).
+`heat_capacity` ve `susceptibility`nin varyansı **merkezli** hesaplanır
+(14.10.2026, HC-SABIT): eski `⟨E²⟩ − ⟨E⟩²` donmuş, alanla hizalı kafeste (enerji
+serisi sabit, fizik C = 0; L = 8, T = 2, 64 ölçüm) `field` = 1e10'da C = 262144,
+1e100'de C = −2.7e185 basıyordu, şimdi 0. `spin_tarama` panelinin sayıları
+değişmedi; npz'de C ve χ en çok 2.2e-13 / 5.6e-13 bağıl oynadı — tam kesirli
+varyansa göre eski formülün hatası bu kadardı, yenisininki ≤ 2.2e-16.
 `magnetisation` **işaretsiz** `⟨|m|⟩`dir (panel de `<|m|>` basar) ve bu
 **bilinçli bir seçimdir** (11.10.2026, BK-20-m): sonlu kafeste kendiliğinden
 simetri kırılması yoktur, `h = 0`'da işaretli `⟨m⟩` dengede tam sıfırdır ve bir
@@ -545,7 +603,9 @@ karşılaştırılacak sayı `kT/J = T/coupling`'dir (`Yöntem` satırı onu bas
 yanlıştı). `coupling` sonlu ve pozitif olmalı (YAML'da da Python yolunda da);
 sayısal alanlar YAML sayısı olmalı — `true`/`yes` ve tırnaklı `'2'` sessizce
 sayıya çevrilmez, reddedilir (11.10.2026; PyYAML'ın tırnaksız da dize okuduğu
-`1e-6` gibi üstel yazım sayı kabul edilir);
+`1e-6` gibi üstel yazım sayı kabul edilir); Python yolunda (`SpinScenario`
+doğrudan) iç içe ya da boyları tutmayan bir liste alanın adıyla
+`InvalidInputError` verir (14.10.2026; önce ham `ValueError`);
 Ising checkerboard Metropolis `T/J → ∞`'da donar (ölçülen pencerelerde
 `T/J ≳ 1e3`) ve panel o zaman ✗ basar.
 Panel iki ek satır basar: `Dairesellik`
@@ -693,14 +753,32 @@ ve sönüm yuvaları `ca`/`da`/`aux_a` için her yerde |a| ≤ 1 (kazanç kapıs
 `ca`×1.02 ve `da`×1.02 800 adımda 4.1e+03 kat, `aux_a`×1.05 1e12 üstü
 büyüyordu ve özdeğer okuması bunları geçiriyordu). Bu eşik tekdüze kayıpta
 kayıplı şemanın eşiğidir (ölçüldü: 0.99 söner, 1.01 büyür; ky = 0 ve 0.8, s ve
-p); PML gibi tekdüze olmayan kayıpta ispatı yazılmadı, orada kayıpsız
-operatörün eşiği uygulanır. `PML`/`LossyLayer` kalınlığı tamsayı, `m`/`sigma_max`
+p); PML gibi tekdüze olmayan kayıpta ispatı yazılmadı ama ölçüldü (C3,
+14.10.2026; sevk edilen `oblique_step`in tek adım büyütme matrisinin spektral
+yarıçapı): kayıplı şemanın gerçek eşiği kapınınkinin en çok 1 + 1.3e-10 katı
+(PML 10–40, LossyLayer 15, L 41–121, s ve p, ky 0–0.8, heterojen eps/mu);
+0.999 katında ρ − 1 ≤ 2e-14, 1.001 katında 0.067–0.094 (ölçüt: L 61, tohum 3'lü
+rasgele başlangıç, genlik maksimumu; 1e12 katını 297–419., kayan nokta taşmasını
+7904–10973. adımda aşar — 23.10.2026; 14.10'un "5100–7100" sayısının ölçütü
+yazılmamıştı ve yeniden üretilemedi). Kapının kabul sınırında kayan nokta payının (1e-11) bedeli ρ − 1 ≤
+6.3e-6; pay 1e-9'a ya da 1e-3'e gevşetilince hızlı ve yavaş EM süiti bunu
+görmüyordu, kilit `tests/em/test_g9_kopya_ve_tur_kapisi.py`.
+`PML`/`LossyLayer` kalınlığı tamsayı, `m`/`sigma_max`
 sonlu; `CircularPEC(radius=inf)` red; 1B/2B katsayıları sonlu olmalı (alt-normal
 eps × dev mu) ve 1B/2B sönüm yuvaları |a| ≤ 1 (negatif sigma döndüren özel
-sınır 1B'de kaydı 6.05e+21'e çıkarıyordu). `em_tarama` bit bit aynı. Açık
-(beyanlı): `copy.deepcopy(medium)` `__post_init__`i koşmaz ve yazılabilir dizi
-verir; `YeeCoefficients`in tip düzeyinde kapısı yok (yalnız özel `_adim`
-üzerinden adımlanır).
+sınır 1B'de kaydı 6.05e+21'e çıkarıyordu). `em_tarama` bit bit aynı.
+14.10.2026 (C1, C2): kopyalar da kurucudan geçer — `Medium`,
+`YeeCoefficients`, `YeeCoefficients2D` ve `ObliqueCoefficients` için
+`copy`/`deepcopy`/`pickle` `__post_init__`i yeniden koşar (eskiden
+`deepcopy(medium)` ve pickle protokol 0–4 yazılabilir dizi veriyordu; kopyaya
+yazılan çift-negatif hücre son kayıtları 4.2e+40'a çıkarıyordu).
+`YeeCoefficients`in tip düzeyinde kapısı var: şekiller, `dim`/`courant`
+etiketleri, sonluluk, |ca|, |da| ≤ 1, cb, db > 0; diziler `bytes` tabanlı salt
+okunur kopya (eskiden `oblique_coefficients(...).main.cb[:] *= 1.5` kamu
+`oblique_step`ini 33. adımda 1e12 katına çıkarıyordu). Özdeğer kapısı tipte
+YOK (beyanlı): kamu yolunda bir `YeeCoefficients`i adımlayan tek tüketici
+`ObliqueCoefficients`tir ve kendi kesin kapısını koşar. `em_tarama`, dört
+`reflection_coefficient` ve `tir_phase_difference` bit bit aynı.
 
 MAKİNE GÜRÜLTÜSÜ: **aynı** süit aynı gün 727.75 s ve 770.02 s (`tests/em`:
 191.01 s ve 197.39 s), `cda2871` ise 939.68 s ve 738.92 s koştu. Yani
@@ -845,7 +923,12 @@ taşır; her dosya bir şüpheci denetiminden geçti ve hedef mutantları
 öldürdüğü ölçüldü. tb `t_m` okuması 13.10.2026'dan beri ayrıca
 bağımsız-yöntem özdeşliğiyle kilitli (19. test: UHF bandının Fourier
 harmoniği; fizik çıpası değil). Bu dosyalar yavaş şeridin doğa çıpalarının
-YERİNİ TUTMAZ; hızlı şeridin neyi göremeyeceğini daraltır.
+YERİNİ TUTMAZ; hızlı şeridin neyi göremeyeceğini daraltır. Grup 9'da (B7,
+14.10.2026) 80000 adımlık `test_nose_hoover_kinetik_sicakligi_tutturuyor`
+(2.73 s) yavaş şeride taşındı; hızlı şeritteki yerini NH'nin sabit noktası aldı
+(kuvvetsiz parçacıklar, `n_dof` varsayılanı, 2K = v.size·k_BT ve ζ = 0'dan 2K
+değişmez; < 0.005 s) ve md hızlı şeridi dokuz NH mutantının dokuzunu öldürüyor
+(taşımadan önce iki logun birleşiminden 8/9: `n_dof = 3N − 3` mutantı kaçıyordu).
 
 ## Doğrulama
 
@@ -859,6 +942,7 @@ plandaki hedef değerler değil, ölçülen değerlerdir:
 | Test | Referans / tolerans | Ölçülen |
 |---|---|---|
 | Norm korunumu | Üniterlik garantisi, eşik 1e-8 | 8.427e-12 (headless CLI koşusu, `tunneling.yaml`, 32000 adım) |
+| Maskeli koşuda üniter adım (B5-U) | Maske öncesi `‖Uψ‖²/‖ψ‖²` ve norm bütçesi, ikisi de eşik 1e-8 (iki yanından testle kilitli); bütçe maskesiz norm ölçütünün aynısı, adım oranı onun üstüne adım başına göreli ölçüt (birikimi görmez) | adım 1.8e-15, bütçe 1.4e-11 (headless CLI, `tunneling.yaml` + maske 40 bohr, 64000 adım, %99.99 soğurulurken); Parseval çapası (1+ε)²−1, ε = 1e-7: bağıl 3.3e-9 |
 | Kutuda parçacık, taban durum (motor seviyesi) | Sonlu-duvar transandant denklemi, tolerans %0.05 | sapma **%-0.017** (measured=0.17762085, referans=0.17765102) |
 | Harmonik taban durum | E₀ = ω/2, tolerans %0.01 | pratikte tam örtüşme (measured=0.500000000002) |
 | Serbest paket yayılımı | σ₀√(1+(t/2mσ₀²)²), tolerans %1 | pratikte tam örtüşme (measured=7.0710678119, analitik=7.0710678119 — Gauss paketinin yayılımı analitik olarak da tam bu formülü izler) |
@@ -1599,11 +1683,22 @@ bloklara bırakabileceği payı (S × min(1, 1/(ω·dt × L)), L blok adımı, �
 karelerinin) farkla karşılaştırır: farkı açıklıyorsa "sürüklenme eşiğin üstünde
 ama … salınımdan **AYRILAMIYOR (YARGILANAMAZ)** — koşuyu uzatın" basar (ölçülen
 bütün sahte ✗ kısa HF koşuları: ω·dt 0.2–0.5, 1–3 periyot, 8/8), açıklamıyorsa
-eski metni (TB Fermi penceresinin gerçek sürüklenmesi 5.480e-02, pay 6.3e-03;
-HF gradyan adımı 1e-13'ün gürültüsü 50–200 adımda). Hüküm iki durumda da ✗.
-Pay en hızlı modla kestirilir, yavaş bileşenleri küçük gösterir: "eşiğin
-üstünde" sürüklenmeyi kanıtlamaz (yol ω'sı 0 çıkan gürültülü Hessian'da kaba
-sınır S kullanılır ve gerçek bir sürüklenme de AYRILAMIYOR diye basılır).
+eski metni (TB Fermi penceresinin gerçek sürüklenmesi 5.480e-02, pay 6.3e-03).
+Hüküm iki durumda da ✗. Pay en hızlı modla kestirilir, yavaş bileşenleri küçük
+gösterir: "eşiğin üstünde" sürüklenmeyi kanıtlamaz. **Ölçülemeyen ω (B8, grup 9,
+14.10.2026):** kütle ağırlıklı Hessian'ın en büyük özdeğeri ≤ 0 ise (pozitif mod
+yok — ör. kesmenin ötesindeki TB dimeri) ya da HF'de sayısal gradyanın gürültü
+tabanındaysa (≤ 60 × ε·\|E\| / (gradyan adımı × Hessian adımı × en küçük kütle);
+ölçülen gürültü bu birimin en çok 5.8 katı, H₂ ve LiH'de 48 hücre) ω `nan` olur,
+ω·dt ölçütü ✗ (YARGILANAMAZ) basar ve sürüklenme ✗'inde tanı "salınımdan ayrılıp
+ayrılamadığı da YARGILANAMAZ" der — pay ölçülemeyen ω'dan kestirilmez. Eskiden ω
+`sqrt(max(λ, 0))` idi: h2_aimd'de HF gradyan adımı 1e-13'le kare-0 ω·dt 0.000e+00
+✓ geçiyor, 400 adımda yol ω'sı `-0.000e+00` basılıyordu ve kaba sınır S gerçek
+sürüklenmeye (20 / 400 adımda 1.115e-01 / 4.295e-01) "AYRILAMIYOR" diyordu; şimdi
+20 / 50 / 100 / 200 / 400 adımın beşinde iki ω·dt `nan`, hüküm yine ✗. Sevk edilen
+h2_aimd'de (gradyan adımı 1e-5) kare-0 özdeğeri tabanın birimini 3.9e6 kat aşar.
+Bedel: pozitif modu olmayan başlangıç (etkileşimsiz atomlar) artık kare-0
+YARGILANAMAZ ✗ (eskiden ω0 = 0 ile ✓).
 Klasik dallarda (Morse, LJ, harmonik) tanı satırı yoktur; kısa koşu sınırı
 orada beyanlıdır. **Yuvarlama tabanı:** max KE yuvarlama düzeyindeyken S
 gürültüdür — ölçülen gürültü tepe-tepesi ε·\|E\|'nin en çok 9.8 (H₂), 14.7
@@ -2134,7 +2229,7 @@ Ayrıca (24.09.2026, bulgu düzeltme turu):
   ulp(μ)'ya yaklaşınca sapma ~ulp(μ) kalır. `tb_zincir_md` paneli aynı; npz
   yuvarlama düzeyinde oynadı (konum ≤ 2.3e-13 bohr).
 - `mermin_dolum` çok büyük kT'de (μ parantezi taşınca) artık `InvalidInputError` verir (D16, 11.10.2026); eskiden kT = 1e308'de sessizce nan dönüyordu. 6.5e307 hâlâ sonlu ve doğru (f = 1/2, S = 8 ln 2).
-- Girdi kapıları (NP-BOOL, 11.10.2026): `np.True_`/`np.array(True)`, numpy karmaşık sayı, float'a sığmayan tamsayı ve düzensiz iç içe liste `tek_orbital_mermin`, `SsSigmaTBKuvveti` ve `UsselRadyalYasa`'da artık `InvalidInputError` (eskiden 1.0 / gerçel kısım / ham hata; yasa Python `True`'yu da 1.0 okuyordu). MD `initial` içindeki `true`/`yes` ve float'a sığmayan öğe (konum, kütle, hız; eskiden 1.0 ya da ham `OverflowError`), fcc `n_particles: 108.5` (eskiden sessizce 108) ve `density_reduced: true` artık `ScenarioError`. Aynı turda (ölçüldü HEAD a9ec48a, `python -m qlab.run`): kuvvet alanı ve termostat parametresindeki `true`/`yes` (Morse `d_e`/`a`/`r_e`, LJ `epsilon`/`cutoff`, harmonik `k`/`center`, Langevin `friction`/`seed`; eskiden 1.0 / 1 okunup koşu rc = 0 bitiyor ve .npz yazıyordu) anahtarını adıyla söyleyen `ScenarioError` verir (tipi `bool` olan `stability` muaf); fcc `n_particles` / `density_reduced` / `sigma`nın float'a sığmayan, sıfır, negatif ya da sonlu olmayan değeri de `ScenarioError` (eskiden bunların çoğu ham `OverflowError` / `ZeroDivisionError` / `TypeError` ya da yanlış nedenli hata veriyordu). Açık kalan (beyanlı): 0 boyutlu nesne dizisi `np.array(True, dtype=object)` skaler kapılardan (`_skaler` / `_sayi` / `_sonlu_skaler`, MD Kelvin denetimi ve spin'in `_skaler`i) 1.0 diye geçer — YAML bunu üretmez, `initial` ve parametre kapısı (`_bool_iceriyor`) onu yakalar; kuvvet sınıfları (`Morse(d_e=True, …)`) doğrudan kurulunca bool'u hâlâ kabul eder, kapı fabrikadadır.
+- Girdi kapıları (NP-BOOL, 11.10.2026): `np.True_`/`np.array(True)`, numpy karmaşık sayı, float'a sığmayan tamsayı ve düzensiz iç içe liste `tek_orbital_mermin`, `SsSigmaTBKuvveti` ve `UsselRadyalYasa`'da artık `InvalidInputError` (eskiden 1.0 / gerçel kısım / ham hata; yasa Python `True`'yu da 1.0 okuyordu). MD `initial` içindeki `true`/`yes` ve float'a sığmayan öğe (konum, kütle, hız; eskiden 1.0 ya da ham `OverflowError`), fcc `n_particles: 108.5` (eskiden sessizce 108) ve `density_reduced: true` artık `ScenarioError`. Aynı turda (ölçüldü HEAD a9ec48a, `python -m qlab.run`): kuvvet alanı ve termostat parametresindeki `true`/`yes` (Morse `d_e`/`a`/`r_e`, LJ `epsilon`/`cutoff`, harmonik `k`/`center`, Langevin `friction`/`seed`; eskiden 1.0 / 1 okunup koşu rc = 0 bitiyor ve .npz yazıyordu) anahtarını adıyla söyleyen `ScenarioError` verir (tipi `bool` olan `stability` muaf); fcc `n_particles` / `density_reduced` / `sigma`nın float'a sığmayan, sıfır, negatif ya da sonlu olmayan değeri de `ScenarioError` (eskiden bunların çoğu ham `OverflowError` / `ZeroDivisionError` / `TypeError` ya da yanlış nedenli hata veriyordu). Grup 9 (14.10.2026; ölçüldü HEAD 448f808): MD `initial` altındaki tırnaklı sayılar (`positions_bohr`da `'1.701118538'`, `masses_amu: '1.00782503207'`, `velocities`te `'0'`, fcc `density_reduced: '0.8442'`; eskiden sekiz hücrenin sekizi rc = 0 ve sayılar tırnaksızla aynı) anahtarını adıyla söyleyen `ScenarioError` verir — PyYAML'ın tırnaksız da dize okuduğu üstel yazım (`1.701118538e0`, `8442e-4`) sayıdır ve kurulum ondalık yazımla bit bit aynıdır; fcc `n_particles` 2048'i (= 4 × 8³) aşarsa `ScenarioError` (LJ kuvveti yoğun N × N dizilerle hesaplanır, ~73 bayt × N²: 2048'de tek çağrı 306 MB / 0.3–0.4 s; tavansız 864000'de ham `_ArrayMemoryError` "16.3 TiB" traceback'i) — daha büyük fcc kristali komşu listesi ister, bu depoda yok; kuvvet alanı ve termostat sınıfları (`Harmonic`, `Morse`, `LennardJones`, `HartreeFockGradient`, `Langevin`, `NoseHoover`) doğrudan kurulunca da bool ve karmaşık değeri alanını adıyla `InvalidInputError` ile reddeder (eskiden 54 bool hücresinin 43'ü sessizce 1 diye kullanılıyordu; `observable/bridge_obs.py` `Morse`u doğrudan kurar); 0 boyutlu nesne dizisi (`np.array(True, dtype=object)`, `np.array('2.5', dtype=object)`) `_skaler` / `_sayi` / `_sonlu_skaler`de öğesi açılıp aynı kapılardan geçer, MD Kelvin denetimi bool ve dizeyi onun içinde de görür (eskiden 1.0 / 2.5). Grup 9 düzeltici (23.10.2026; ölçüldü, Python yolu): spin'in `_skaler`i de 0 boyutlu nesne dizisinin öğesini açar (eskiden `np.array(True, dtype=object)` → 1.0, `np.array('2.5', dtype=object)` → 2.5 ve `build_spin` onunla koşuyordu); dört skaler kapı (`_skaler` ×2, `_sayi`, `_sonlu_skaler`) 0 boyutlu DİZE dizisini (`np.array('2.5')` tür 'U', `np.array(b'2.5')` tür 'S'; HEAD'de de 2.5 diye geçiyordu, spin'de sonra ham `UFuncTypeError`) reddeder; kuvvet alanı ve termostat sınıfları dize değeri de alanını adıyla reddeder (eskiden ham `TypeError` "ufunc 'isfinite'", `Harmonic(center=[['0', 0, 0]])` sessizce 0.0 bohr) ve YAML'daki `d_e: abc` anahtarını adıyla söyleyen `ScenarioError` verir. Açık kalan (beyanlı): `MDState(...)` doğrudan kurulunca bool kütle sessizce 1.0 olur (`masses=[True, True]`) — YAML bunu üretmez.
 
 ### Modül 3H — UHF indirgemesi / downfolding (Plan H)
 

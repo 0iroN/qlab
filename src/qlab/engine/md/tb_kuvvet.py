@@ -136,13 +136,22 @@ def _sayi(ad: str, deger: object) -> float:
     olculdu: tekillestiren yamada o test kirmizi. Ikizlik
     `tests/tb/test_dusuk_tb_kapilari.py`de `ast` ile kilitli (biri degisip
     oteki degismezse kirmizi). NP-BOOL (grup 6) gerekcesi `_skaler`in
-    dokstringinde.
+    dokstringinde; B4'unki (grup 9, 0 boyutlu nesne dizisi) ve V6'ninki (grup 9
+    duzeltici, 0 boyutlu dize dizisi) de.
     """
     try:
         dizi = np.asarray(deger)
+        if dizi.ndim == 0 and dizi.dtype.kind == "O" and isinstance(deger, np.ndarray):
+            deger = deger.item()  # B4: 0 boyutlu nesne dizisinin OGESI denetlenir
+            dizi = np.asarray(deger)
     except (TypeError, ValueError, OverflowError) as hata:  # duzensiz ic ice liste
         raise InvalidInputError(f"{ad} tek bir sayi olmali: {deger!r}") from hata
-    if isinstance(deger, (str, bytes, bool)) or dizi.ndim != 0 or dizi.dtype.kind == "b":
+    if (
+        isinstance(deger, (str, bytes, bool))
+        or dizi.ndim != 0
+        or dizi.dtype.kind in "bSU"  # V6: 0 boyutlu dize dizisi de (np.array('2.5'))
+        or (isinstance(deger, np.ndarray) and dizi.dtype.kind == "O")
+    ):
         raise InvalidInputError(f"{ad} tek bir sayi olmali (bool ve dizge DEGIL): {deger!r}")
     if dizi.dtype.kind == "c":
         raise InvalidInputError(f"{ad} sayiya cevrilemiyor (karmasik): {deger!r}")

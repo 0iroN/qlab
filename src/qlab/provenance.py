@@ -215,3 +215,31 @@ class Provenance:
     @staticmethod
     def _format(value: object) -> str:
         return f"{value:.3e}" if isinstance(value, float) else str(value)
+
+
+def etiket_genisligi() -> int:
+    """Şeffaflık bloğunun etiket sütunu: `as_lines()`in basabileceği EN UZUN etiket.
+
+    TEK KAYNAK (C5, grup 9, 14.10.2026): GUI (`app/transparency.format_panel`) ve
+    CLI (`run.py`nin dalları) sütunu buradan okur. Genişlik panelin içeriğinden
+    değil `as_lines()`in SÖZ DAĞARCIĞINDAN türer: bütün isteğe bağlı alanları
+    dolu bir örneğin satırları taranır (alanlar `dataclasses.fields`ten, yani
+    yeni bir alan ve daha uzun bir etiket eklenince sütun kendiliğinden
+    genişler). Bir tanı satırının gelip gitmesi bu yüzden hizayı oynatmaz.
+    ESKİDEN sabit 14'tü (GUI `_LABEL_WIDTH`, CLI `<14`; üç dal elle `<16`) ve
+    16 karakterlik "Yakınsama tanısı" sütunu taşırıyordu: o satırın ':'si
+    ötekilerden 2 sütun sağda kalıyordu (ölçüldü, HEAD 448f808: MD/HF NVE
+    paneli, 9 satırın 8'i 14'te, tanı satırı 16'da).
+    """
+    from dataclasses import fields
+
+    ornek = {
+        f.name: StabilityVerdict(stable=True, lowest_eigenvalue=None, n_rotations=0)
+        if "StabilityVerdict" in str(f.type) else ""
+        for f in fields(Provenance)
+        if f.default is None
+    }
+    tam = Provenance(
+        method="", approximations=(), neglected=(), expected_error="", converged=True, **ornek
+    )
+    return max(len(etiket) for etiket, _ in tam.as_lines())

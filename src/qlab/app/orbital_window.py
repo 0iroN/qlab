@@ -77,6 +77,15 @@ import pyqtgraph.opengl as gl
 from PySide6 import QtCore, QtWidgets
 
 from qlab.app.transparency import TransparencyPanel
+
+# ALT ÇİZGİLİ MOTOR SABİTLERİ, BEYANLI (C6, grup 9, 14.10.2026): üç koşullu not
+# metni motorda TEK yerde yaşar ve buraya kopyalanmaz (bkz. `_KOSULLU_ANALIZ_NOTLARI`).
+# ÖLÇÜLDÜ (AST taraması, `src/qlab`): paket sınırını aşan alt çizgili ithal iki
+# tane -- bu (app <- engine.hf.analysis) ve observable.hf_obs <- engine.hf.scf;
+# öteki ikisi paket içi. Genel takma ad (`analysis.py`de örn. `KOSULLU_NOTLAR`)
+# motor dosyasını değiştirmeyi gerektirir ve bu şeridin dosyası değildir; açık
+# soru olarak raporlandı. Import-linter sözleşmeleri (engine -> app yasağı) bu
+# yönü kapsamaz ve geçer; davranış farkı yok, kusur yalnız ad sözleşmesidir.
 from qlab.engine.hf.analysis import (
     _CHARGED_DIPOLE_NOTE,
     _NO_HOMO_NOTE,
@@ -542,6 +551,8 @@ class OrbitalWindow(QtWidgets.QMainWindow):
 
         Yalnızca `field_kind == "orbital"` iken bir karşılığı vardır; öteki iki
         alan yoğunluk MATRİSİNDEN üretilir ve tek bir orbitale bağlı değildir.
+        Sıfır elektronlu bir sistem yoğunluk alanında açılınca -1'dir: "HOMO
+        yok" (bkz. `_orbital_indeksi_kapisi`; orbital alanında asla -1 olmaz).
         """
         return self._orbital_index
 
@@ -604,13 +615,7 @@ class OrbitalWindow(QtWidgets.QMainWindow):
         alanda indeks değişimi alanı YENİDEN ÜRETMEZ (ölçüldü, fark alanında
         176.5 ms boşa gidiyordu; bkz. `_alan_getir`).
         """
-        indeks = int(index)
-        n_orbital = len(self._result.orbital_energies)
-        if not 0 <= indeks < n_orbital:
-            raise InvalidInputError(
-                f"orbital indeksi [0, {n_orbital}) aralığında olmalı "
-                f"(seçicinin satırları), verilen: {indeks}"
-            )
+        indeks = self._orbital_indeksi_kapisi(int(index))
         anahtar, alan = self._alan_getir(self._alan_turu, indeks)
         self._orbital_index = indeks
         self._alan_anahtari, self._alan = anahtar, alan
@@ -868,6 +873,43 @@ class OrbitalWindow(QtWidgets.QMainWindow):
             )
         )
 
+    def _orbital_indeksi_kapisi(self, indeks: int) -> int:
+        """Orbital indeksinin PENCERE düzeyi kapısı: [0, n_orbital), seçicinin satırları.
+
+        TEK KAYNAK: `set_orbital_index` ve orbital alanını üreten `_alani_uret`
+        (kurucu ve `set_field_kind` dahil) buradan geçer. Grup 7 B2'nin
+        emsali: aralık pencerenin sözleşmesidir, motorun (`evaluate_orbital`)
+        denetimine yaslanmaz -- motor negatif indeksi Python sarmasıyla kabul
+        etseydi pencere sessizce SON orbitali çizerdi.
+
+        SIFIR ELEKTRON (C7, grup 9, 14.10.2026): açılış indeksi HOMO'dur,
+        `n_electrons // 2 - 1`; sıfır elektronda bu -1'dir ve HOMO yoktur.
+        ÖLÇÜLDÜ (HEAD 448f808, kamu kurucusu, H2++/STO-3G): orbital alanı
+        motorun "orbital indeksi [0, 2) ..., verilen: -1" mesajıyla düşüyordu --
+        kullanıcı -1 vermemişti ve neden yazmıyordu; yoğunluk alanlarında
+        pencere açılıyor ve `orbital_index` -1 tutuyordu (seçici boş). Şimdi
+        kapı pencerenin kendisidir ve nedeni söyler. Yoğunluk alanlarında -1
+        BİLİNÇLİ olarak kalır: `orbital_index`in "HOMO yok" değeridir, seçici
+        Qt'nin "satır yok" uzlaşımıyla (-1) boş görünür ve devre dışıdır; bu
+        alanlarda indeks hiçbir yere yazılmaz (bkz. `_provenance`). Açılışı 0'a
+        (LUMO) taşımak düşünüldü ve seçilmedi: "açılışta HOMO" sözleşmesini
+        sessizce değiştirirdi. GUI'den ulaşılamaz (`main.py` charge = 0 kurar).
+        """
+        n_orbital = len(self._result.orbital_energies)
+        if not 0 <= indeks < n_orbital:
+            neden = ""
+            if indeks < 0 and self._molecule.n_electrons == 0:
+                neden = (
+                    " -- sıfır elektronlu sistemin HOMO'su yok (açılış indeksi "
+                    "n_electrons // 2 - 1 = -1); orbital alanına önce "
+                    "`set_orbital_index` ile bir orbital seçilerek geçilir"
+                )
+            raise InvalidInputError(
+                f"orbital indeksi [0, {n_orbital}) aralığında olmalı "
+                f"(seçicinin satırları), verilen: {indeks}{neden}"
+            )
+        return indeks
+
     def _alani_uret(self, tur: _AlanTuru, orbital_index: int) -> ScalarField:
         """Verilen alan türünün ÜRETİCİSİNİ çağırır; pencerenin durumuna dokunmaz.
 
@@ -880,6 +922,8 @@ class OrbitalWindow(QtWidgets.QMainWindow):
         (bkz. `_provenance`).
         """
         if tur is _ORBITAL:
+            # Pencerenin KENDİ aralık kapısı (C7): motorun denetimine yaslanılmaz.
+            self._orbital_indeksi_kapisi(orbital_index)
             degerler = evaluate_orbital(self._result, orbital_index, self._grid)
             return ScalarField(
                 values=degerler, grid=self._grid, provenance=self._result.provenance

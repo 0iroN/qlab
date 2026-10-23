@@ -16,6 +16,8 @@ from qlab.errors import InvalidInputError
 from qlab.units import amu_to_electron_mass
 from qlab.viz.density_frames import build_density_film
 
+from .h2_morse_sabitleri import H2_A, H2_DE
+
 M_H = amu_to_electron_mass(1.00782503207)
 H2_RE_BOHR = 1.3459193602
 
@@ -39,7 +41,8 @@ def _gerilme_yorungesi(n_kare: int = 6, v_com: float = 0.0):
         ),
         masses=np.full(2, M_H),
     )
-    alan = Morse(d_e=0.174434333, r_e=H2_RE_BOHR, a=1.028997701)
+    # r_e BILEREK H2_RE (Morse/deney) DEGIL: yorunge HF/STO-3G dengesinden acilir.
+    alan = Morse(d_e=H2_DE, r_e=H2_RE_BOHR, a=H2_A)
     return run(durum, alan, dt=40.0, n_steps=(n_kare - 1) * 4, save_every=4)
 
 

@@ -206,13 +206,36 @@ def susceptibility(m, L: int, T: float) -> float:
     `L^2` KATSAYISI kafes basina site sayisidir (kare kafes). Mutlak deger
     tam sayimla kilitlidir; `L` yazilsa sonuc L = 4'te tam 4 kat saparadi.
 
-    Varyans POPULASYON varyansidir (ddof = 0): bunlar bir dagilimin
-    momentleridir, bir orneklem varyansi tahmini degil.
+    Varyans POPULASYON varyansidir (ddof = 0) ve MERKEZLI hesaplanir
+    (`_merkezli_varyans`, HC-SABIT): bir dagilimin momentleri, orneklem degil.
     """
     a = _seri(m, "miknatislanma serisi")
     _kafes_ve_sicaklik(L, T)
-    varyans = float(np.mean(a**2) - np.mean(a) ** 2)
+    varyans = _merkezli_varyans(a)
     return L * L * varyans / T
+
+
+def _merkezli_varyans(a: np.ndarray) -> float:
+    """Populasyon varyansi (ddof = 0), ILK ORNEGE KAYDIRILMIS iki gecisle.
+
+    HC-SABIT (14.10.2026): `<x^2> - <x>^2` iki BUYUK ve neredeyse esit sayinin
+    farkidir ve iptal hatasi tasir. KAMU YOLUNDAN OLCULDU (HEAD 448f808,
+    `qlab.run`, Ising L = 8, T = 2, 64 olcum, enerji serisi tumuyle sabit,
+    fizik C = 0): `field` = 1e10 -> C = 262144, 1e100 -> C = -2.7e185
+    (negatif isi sigasi imkansiz). Ayni kusur `|m|` serisinde kucuk olcekte
+    vardi: sabit 0.7 serisi (n = 64) varyans -2.2e-16, yani NEGATIF chi.
+
+    Duz iki gecis (ortalamayi cikar, karelerin ortalamasi) YETMEZ: ortalamanin
+    kendi yuvarlamasi kalir -- olculdu, sabit -6.4e101 serisinde n = 1000'de
+    1.5e172. Ilk ornege kaydirmak sabit seride farki TAM sifir yapar
+    (x - x = 0), dalgalanan seride merkezli iki gecisin dogrulugunu korur
+    (ofset 1e10 + birim varyansli gurultu: eski formul 0.0, bu 1.000000;
+    `np.var` ile ayni). Ikinin kuvvetiyle olcekleme ve ayni seri BIT BIT
+    ayni sonucu verir (coupling olcek kilidi, F7 ayna kilidi korunur).
+    """
+    d = a - a[0]
+    d = d - d.mean()
+    return float(np.mean(d**2))
 
 
 def heat_capacity(e, L: int, T: float) -> float:
@@ -227,10 +250,14 @@ def heat_capacity(e, L: int, T: float) -> float:
     MUTLAK DEGER TAM SAYIMLA KILITLI (L = 4, 2^16 durum, bagimsiz yazilmis
     enerji): T = 2.0 -> tam 0.605532657, T_c -> 0.783266826,
     T = 3.5 -> 0.375755537.
+
+    Varyans MERKEZLI hesaplanir (`_merkezli_varyans`, HC-SABIT 14.10.2026):
+    enerjinin sifiri keyfidir, C ona ofset eklenince degismemelidir. Eski
+    `<E^2> - <E>^2` sabit seride `field` = 1e100'de C = -2.7e185 veriyordu.
     """
     a = _seri(e, "enerji serisi")
     _kafes_ve_sicaklik(L, T)
-    varyans = float(np.mean(a**2) - np.mean(a) ** 2)
+    varyans = _merkezli_varyans(a)
     return varyans / (L * L * T * T)
 
 

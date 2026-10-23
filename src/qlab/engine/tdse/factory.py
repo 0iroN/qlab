@@ -11,24 +11,53 @@ import numpy as np
 from qlab.engine.tdse import potentials
 from qlab.engine.tdse.grid import Grid1D
 from qlab.engine.tdse.initial import gaussian_packet
-from qlab.engine.tdse.propagator import SplitOperatorPropagator
-from qlab.errors import ScenarioError
+from qlab.engine.tdse.propagator import SplitOperatorPropagator, UniterlikOlcumu
+from qlab.errors import InvalidInputError, ScenarioError
 from qlab.provenance import Provenance
 from qlab.scenario.schema import TDSEScenario
 
+#: Maskesiz koşunun norm ölçütü |N - 1| ve maskeli koşunun maske öncesi
+#: ölçütleri (B5-U) AYNI eşiği okur: maske ≡ 1'de bütçe sapması tam olarak
+#: |N - 1|'dir. Ölçüldü (14.10.2026, maskeli 64000 adımlık tünelleme, paket
+#: %99.99 soğuruluyor): adım oranı en çok 1.8e-15, bütçe 1.4e-11 — eşiğe
+#: ~5e6 ve ~730 kat pay; maskesiz `tunneling.yaml` 8.4e-12.
 _NORM_TOLERANCE = 1e-8
 
-# Maskeli koşunun yakınsama tanısı (B5). Maske normu kasten düşürür ve
-# evolve() o koşuda norm kontrolünü atlar; yani üniterlik ÖLÇÜLMEDİ ve
-# panel ✓ basamaz. Gerçek bir hüküm adayı var ama koşulmuyor: maskeden
-# ÖNCEKİ üniter adımın normu (ölçüldü: paket maskeye varmadan |N-1| <=
-# 7.9e-12).
+# Maskeli koşunun yakınsama tanısı, ÖLÇÜM VERİLMEDİYSE (B5). Maske normu
+# kasten düşürür; |N - 1| üniterlik ölçütü olamaz. Ölçüm `evolve_olcumlu`dadır
+# (maske öncesi üniter adım normu); `provenance_for`a verilmediyse panel ✓
+# basamaz.
 _MASKELI_YARGILANMADI = (
-    "YARGILANMADI: soğurucu maske normu bilinçli olarak düşürür ve evolve() "
-    "maskeli koşuda norm kontrolünü atlar — üniterlik bu koşuda ÖLÇÜLMEDİ; "
-    "observed_norm_drop bilgilendiricidir, hüküm değildir (gerçek bir hüküm "
-    "adayı maskeden önceki üniter adımın normudur; bu koşu onu ölçmez)"
+    "YARGILANMADI: soğurucu maske normu bilinçli olarak düşürür, |N - 1| "
+    "üniterlik ölçütü olamaz — ve bu çağrıya maske öncesi üniter adım normu "
+    "ölçümü (evolve_olcumlu) VERİLMEDİ; observed_norm_drop bilgilendiricidir, "
+    "hüküm değildir"
 )
+
+
+def _maskeli_tani(olcum: UniterlikOlcumu, gecti: bool) -> str:
+    """B5-U: maskeli koşunun tanı satırı — NEYİN yargılandığını adıyla söyler."""
+    olculen = (
+        f"{olcum.adim_sayisi} adımın her birinde soğurucu maskeden ÖNCE "
+        f"‖Uψ‖²/‖ψ‖² ölçüldü: en büyük |oran − 1| = "
+        f"{olcum.en_buyuk_adim_sapmasi:.1e}, norm bütçesi |N + soğurulan − N0|/N0 "
+        f"en çok {olcum.en_buyuk_butce_sapmasi:.1e} (eşik {_NORM_TOLERANCE:.0e}, "
+        f"maskesiz koşunun norm ölçütü)"
+    )
+    sogurma = (
+        f"Maskenin soğurduğu norm ({olcum.sogurulan_norm:.3e}) AYRIDIR: sınır "
+        f"koşuludur, fizik değil, ve bu hükme girmez"
+    )
+    if gecti:
+        return (
+            f"maske öncesi üniter adım normu yargılandı — {olculen}; ikisi de "
+            f"eşiğin altında: üniter adım normu koruyor. {sogurma}"
+        )
+    return (
+        f"maske öncesi üniter adım normu yargılandı ve EŞİĞİ AŞTI — {olculen}: "
+        f"üniter adım normu KORUMUYOR (dt çok büyük ya da kod hatası; maskesiz "
+        f"koşuda evolve() bu sapmada UnitarityViolationError fırlatırdı). {sogurma}"
+    )
 
 
 def _build_potential(scenario: TDSEScenario, grid: Grid1D) -> np.ndarray:
@@ -81,7 +110,22 @@ def build(
     return grid, potential, psi0, propagator
 
 
-def provenance_for(scenario: TDSEScenario, norm_deviation: float) -> Provenance:
+def provenance_for(
+    scenario: TDSEScenario,
+    norm_deviation: float,
+    uniterlik: UniterlikOlcumu | None = None,
+) -> Provenance:
+    """Panel beyanı. `uniterlik` maskeli koşunun `evolve_olcumlu` ölçümüdür.
+
+    Maskesiz koşuda verilmez (verilirse `InvalidInputError`; orada ölçüt
+    `norm_deviation`dır). Maskeli koşuda verilmezse hüküm ✗ YARGILANMADI'dır.
+
+    KARAR (grup 9, B5-U): maskeli koşuda eşiği aşan maske öncesi ölçüm İSTİSNA
+    FIRLATMAZ, kareler incelenebilir kalır ve panel ✗ ile neyin aştığını
+    söyleyen tanı satırı basar — halka indirgemesinin Δ ≈ 0 kapısı emsali
+    (`tb/factory.py`, B7dog-2: parametreler değişmez, hüküm ✗ + tanı); maskesiz
+    koşu ihlali `evolve`de `UnitarityViolationError` ile bildirir.
+    """
     approximations = [
         "tek parçacık",
         "sabit dış potansiyel",
@@ -91,28 +135,50 @@ def provenance_for(scenario: TDSEScenario, norm_deviation: float) -> Provenance:
     masked = scenario.absorbing_width_bohr is not None
     if masked:
         approximations.append("kenarlarda soğurucu maske — norm bilinçli olarak azalır")
+    elif uniterlik is not None:
+        raise InvalidInputError(
+            "maskesiz TDSE koşusuna maske öncesi üniterlik ölçümü verilmez: "
+            "orada ölçüt |N - 1|'dir (norm_deviation) ve evolve_olcumlu None döndürür"
+        )
+    if uniterlik is not None and uniterlik.adim_sayisi != scenario.n_steps:
+        raise InvalidInputError(
+            f"üniterlik ölçümü {uniterlik.adim_sayisi} adımı kapsıyor, senaryo "
+            f"{scenario.n_steps} adım; ölçüm bu koşuya ait değil"
+        )
 
-    # evolve() norm kontrolünü yalnızca maske yokken yapar (`evolve` içindeki
-    # `check_norm`) — soğurucu maske normu bilinçli olarak azaltır, bu yüzden
-    # maskeli koşuda üniterlik HİÇ ÖLÇÜLMEZ. Norm düşüşü ne "yakınsamadı"
-    # kanıtıdır (düşmesi bekleniyor) ne de "yakınsadı" kanıtıdır (kontrol
-    # edilmedi). Eskiden burada converged=True vardı ve "hiçbir ihlal tespit
-    # edilmedi" diye savunuluyordu; ama hiç bakılmamış bir şeyde ihlal
-    # tespit edilemez — panel %99.99 norm kaybının yanına ✓ basıyordu
-    # (B5, 11.10.2026). Artık maskeli koşu ✗ + "YARGILANMADI" tanısıdır
-    # (EM emsali: converged False + convergence_diagnosis). YARGILANMADI
-    # (= denenmedi) bilerek YARGILANAMAZ'dan (= denendi, sonuçsuz) ayrı bir
-    # kelimedir. Maskesiz koşuda eşik tam olarak uygulanır.
-    converged = False if masked else norm_deviation <= _NORM_TOLERANCE
-    convergence_diagnosis = _MASKELI_YARGILANMADI if masked else None
-
-    # Diagnostics anahtarını maskelenmiş duruma göre ayarla: üniterlik kontrolü
-    # yapıldıysa "norm_deviation" (yakınsama kanıtı), yapılmadıysa
-    # "observed_norm_drop" (bilgilendirici, kasten düşüş).
-    if masked:
+    # Soğurucu maske normu bilinçli olarak azaltır; |N - 1| maskeli koşuda
+    # üniterlik hakkında hiçbir şey söylemez (ne "yakınsamadı" kanıtıdır ne
+    # "yakınsadı"). Eskiden burada converged=True vardı ve panel %99.99 norm
+    # kaybının yanına ✓ basıyordu (B5, 11.10.2026); sonra ölçülmeyen hüküm
+    # ✗ + YARGILANMADI oldu (EM emsali). B5-U (14.10.2026): ölçülebilen şey
+    # maskeden ÖNCEKİ üniter adımdır — `evolve_olcumlu` her adımda ‖Uψ‖²/‖ψ‖²
+    # ve norm bütçesini (N + soğurulan) ölçer; ikisi de maskesiz yolun eşiğinin
+    # altındaysa ✓, değilse ✗, ve tanı satırı neyin yargılandığını söyler.
+    # Ölçüm verilmediyse (`uniterlik` None) hüküm hâlâ ✗ YARGILANMADI'dır
+    # (= denenmedi; YARGILANAMAZ'dan bilerek ayrı kelime). Maskesiz koşu
+    # değişmedi: eşik `norm_deviation`a tam olarak uygulanır.
+    if not masked:
+        converged = norm_deviation <= _NORM_TOLERANCE
+        convergence_diagnosis = None
+        diagnostics = {"norm_deviation": norm_deviation, "steps": scenario.n_steps}
+    elif uniterlik is None:
+        converged = False
+        convergence_diagnosis = _MASKELI_YARGILANMADI
         diagnostics = {"observed_norm_drop": norm_deviation, "steps": scenario.n_steps}
     else:
-        diagnostics = {"norm_deviation": norm_deviation, "steps": scenario.n_steps}
+        # NaN iki karşılaştırmayı da False yapar -> ✗ (bilerek `not >` değil).
+        converged = bool(
+            uniterlik.en_buyuk_adim_sapmasi <= _NORM_TOLERANCE
+            and uniterlik.en_buyuk_butce_sapmasi <= _NORM_TOLERANCE
+        )
+        convergence_diagnosis = _maskeli_tani(uniterlik, converged)
+        diagnostics = {
+            "observed_norm_drop": norm_deviation,
+            "premask_step_deviation": uniterlik.en_buyuk_adim_sapmasi,
+            "premask_budget_deviation": uniterlik.en_buyuk_butce_sapmasi,
+            "absorbed_norm": uniterlik.sogurulan_norm,
+            "steps": scenario.n_steps,
+        }
 
     return Provenance(
         method=f"TDSE split-operator (Strang), 1B, dt={scenario.dt}",

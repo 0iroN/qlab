@@ -27,7 +27,7 @@ from qlab.engine.em.grid import (
     courant_limit,
     dx_kapisi,
 )
-from qlab.engine.em.medium import Medium
+from qlab.engine.em.medium import Medium, _kurucudan_indirgeme, _salt_okunur_kopya
 from qlab.errors import InvalidInputError
 
 
@@ -45,6 +45,30 @@ class YeeCoefficients:
     Eslesme kuralinda aritmetik kullanilmasi `medium.ey_kural`dan BAGIMSIZDIR
     ve oyle olmalidir: `ey_kural` teget E'nin sureklilik kuralidir, sogurucu
     eslesmesinin degil.
+
+    TUR DUZEYI KAPI (C2, grup 9, 14.10.2026): `__post_init__` her kurulusta
+    `_yee_tur_kapisi`ni kosar -- `dataclasses.replace`, dogrudan kurulus,
+    `copy`/`deepcopy`/`pickle` (bkz. `medium._kurucudan_indirgeme`) dahil.
+    Sinadigi sey katsayilarin YEREL degismezleridir: dim = 1, sekiller (n,) /
+    (n - 1,), n >= 3, sonlu ve pozitif `courant` etiketi, her yuva sonlu,
+    sonum yuvalari |ca|, |da| <= 1 (kazanc deligi; `_sonlu_katsayi_kapisi`)
+    ve cb, db > 0. Diziler `bytes` tabanli salt okunur KOPYALARDIR (`Medium`
+    deseni). ESKIDEN kapi yalniz fabrikadaydi; OLCULDU (HEAD 448f808):
+    `replace(yc, ca=1.02 ca)`, `cb=1.5 cb`, `ca=nan`, `courant=-3`, `dim=2`,
+    kisa `ca` hepsi KABUL ediliyordu, ve `oblique_coefficients(...).main.cb[:]
+    *= 1.5` YERINDE yazma kamu `oblique_step`ini (vakum L = 201, PEC, S = 0.9,
+    tohumlu baslangic) 33. adimda 1e12 katina cikariyordu (`ObliqueCoefficients`
+    kapisi kurulusta kosmus, nesne ayni kalmisti).
+
+    KARARLILIK (OZDEGER) BU KAPIDA YOKTUR ve bu bir secimdir: `courant`
+    etiketini `_adim` hic okumaz, kararlilik ise katsayilarin tamaminin
+    ozelligidir. Kamu yolunda bir `YeeCoefficients`i adimlayan TEK tuketici
+    `ObliqueCoefficients.main`dir ve orada kesin ozdeger kapisi kosar
+    (`replace(main, cb=1.5 cb)` "KARARSIZ" ile reddedilir; `run_1d` ve
+    `yee_step_1d` katsayiyi kendisi kurar, `_adim` ozeldir). Ozdeger buraya
+    konsaydi esigi OLCEN testler (kapiyi atlayarak S > 1 kuran
+    `test_sema_cipalari` ve `test_arayuz` kuruculari) kendi olcumlerinin
+    kapisina takilirdi.
     """
 
     ca: np.ndarray
@@ -53,6 +77,14 @@ class YeeCoefficients:
     db: np.ndarray
     dim: int
     courant: float
+
+    def __post_init__(self) -> None:
+        for ad in ("ca", "cb", "da", "db"):
+            object.__setattr__(self, ad, _salt_okunur_kopya(getattr(self, ad), ad))
+        _yee_tur_kapisi(self, "1B", 1)
+
+    def __reduce__(self):
+        return _kurucudan_indirgeme(self)
 
 
 def _etkin_courant_kapisi(medium: Medium, courant: float, limit: float, yol: str) -> None:
@@ -126,6 +158,57 @@ def _sonlu_katsayi_kapisi(yol: str, **diziler: np.ndarray) -> None:
             )
 
 
+#: Tur kapisinin yuvalari ve beklenen sekilleri, (n,) ya da (nx, ny) cinsinden: "e" tam
+#: hucre, "x"/"y" o eksende bir eksik. Pozitif olmasi gereken yuvalar ayri (cb, db, dbx, dby).
+_TUR_YUVALARI = {
+    1: (("ca", "e"), ("cb", "e"), ("da", "x"), ("db", "x")),
+    2: (("ca", "e"), ("cb", "e"), ("dax", "y"), ("dbx", "y"), ("day", "x"), ("dby", "x")),
+}
+_POZITIF_YUVALAR = ("cb", "db", "dbx", "dby")
+
+
+def _yee_tur_kapisi(co, yol: str, dim: int) -> None:
+    """`YeeCoefficients` / `YeeCoefficients2D`nin TUR DUZEYI kapisi (C2, grup 9).
+
+    Yerel degismezler: `dim` etiketi, sekiller (eksen basina >= 3 hucre),
+    sonlu ve pozitif `courant` etiketi, `_sonlu_katsayi_kapisi` (sonluluk ve
+    |a| <= 1 kazanc kapisi) ve S/eps ile S/mu yuvalarinin (cb, db; 2B'de dbx,
+    dby) pozitifligi. Fabrika (`yee_coefficients[_2d]`) bu kapiyi kurulusla
+    BIRLIKTE kosar; kendi `_sonlu_katsayi_kapisi` cagrisi buraya tasindi (tek
+    kaynak, iki kez kosmaz). Negatif cb: kayipsiz operator negatif ozdeger
+    alir ve sema |a| <= 1'e ragmen ustel buyur. Kararlilik ozdegeri bu
+    kapida YOKTUR; gerekce `YeeCoefficients` dokstringinde.
+    """
+    if isinstance(co.dim, bool) or co.dim != dim:
+        raise InvalidInputError(f"{yol} katsayilarinin dim etiketi {dim} olmali, verilen: {co.dim!r}")
+    taban = np.shape(co.ca)
+    if len(taban) != dim or min(taban) < 3:
+        raise InvalidInputError(
+            f"{yol} katsayi sekilleri tutarsiz: `ca` {dim}B ve eksen basina >= 3 hucre olmali, "
+            f"verilen: {taban}"
+        )
+    for ad, tur in _TUR_YUVALARI[dim]:
+        beklenen = tuple(n - 1 if (tur == "x" and i == 0) or (tur == "y" and i == 1) else n
+                         for i, n in enumerate(taban))
+        if np.shape(getattr(co, ad)) != beklenen:
+            raise InvalidInputError(
+                f"{yol} katsayi sekilleri tutarsiz: `{ad}` {beklenen} olmali, verilen: "
+                f"{np.shape(getattr(co, ad))}"
+            )
+    S = co.courant
+    if isinstance(S, bool) or not isinstance(S, (int, float, np.integer, np.floating)) \
+            or not (np.isfinite(S) and S > 0.0):
+        raise InvalidInputError(f"{yol} katsayilarinin `courant` etiketi sonlu ve > 0 olmali, verilen: {S!r}")
+    diziler = {ad: getattr(co, ad) for ad, _ in _TUR_YUVALARI[dim]}
+    _sonlu_katsayi_kapisi(yol, **diziler)
+    for ad in _POZITIF_YUVALAR:
+        if ad in diziler and not np.all(diziler[ad] > 0.0):
+            raise InvalidInputError(
+                f"{yol} guncelleme katsayisi `{ad}` her yerde pozitif olmali (S/eps ya da S/mu), "
+                f"en kucugu {float(np.min(diziler[ad]))!r} -- kapi kapali yonde reddeder."
+            )
+
+
 def yee_coefficients(
     medium: Medium, *, courant: float, boundary
 ) -> YeeCoefficients:
@@ -164,7 +247,7 @@ def yee_coefficients(
     d_h = 0.5 * (d_e[:-1] + d_e[1:])
     da = (1.0 - d_h) / (1.0 + d_h)
     db = (courant / mu_h) / (1.0 + d_h)
-    _sonlu_katsayi_kapisi("1B", ca=ca, cb=cb, da=da, db=db)
+    # Sonluluk + kazanc kapisi (`_sonlu_katsayi_kapisi`) tipin kendisinde kosar (C2).
     return YeeCoefficients(ca=ca, cb=cb, da=da, db=db, dim=1, courant=courant)
 
 
@@ -230,7 +313,10 @@ def yee_step_1d(
     Katsayilar her cagride yeniden kurulur; cok adimli kosumlar icin
     `run_1d` kullanilir (o katsayilari BIR KEZ kurar). Olculdu (N = 2400,
     4000 adim, tekrarlarin en iyisi): `yee_step_1d` 0.117-0.118 s, `run_1d`
-    0.030-0.031 s -- uc bagimsiz olcumde oran 3.79 / 3.81 / 3.92 kat. Yani
+    0.030-0.031 s -- uc bagimsiz olcumde oran 3.79 / 3.81 / 3.92 kat. Kapilar
+    eklendikce oran buyudu (yeniden olculdu 14.10.2026, ayni pencere: HEAD
+    448f808'de 0.157-0.163 s / 0.031 s, 5.05-5.28 kat; C2 tur kapisi ve salt
+    okunur kopyayla 0.214-0.216 s / 0.031-0.032 s, 6.71-6.90 kat). Yani
     `yee_step_1d` bir aciklik yuzudur, sicak yol degildir; ama IKISI DE
     `_adim`den gecer, dolayisiyla sicak yolun semasi bu fonksiyonunkiyle
     AYNIDIR.
@@ -382,6 +468,13 @@ class YeeCoefficients2D:
     `pec_mask` bir IC iletken maskesidir ve cekirdek onun NE OLDUGUNU bilmez:
     dairesel bosluk mu, kare kutu mu, hicbiri mi -- gordugu tek sey bool bir
     dizidir. `sigma` ile ayni gerekce.
+
+    TUR DUZEYI KAPI (C2, grup 9): 1B'deki `_yee_tur_kapisi`nin aynisi (sekiller,
+    etiketler, sonluluk, |ca|, |dax|, |day| <= 1, cb/dbx/dby > 0) ve `pec_mask`
+    (nx, ny) bool. 1B'den FARKI, beyanli: diziler salt okunur KOPYALANMAZ.
+    Bir 2B katsayi nesnesini adimlayan kamu tuketicisi yoktur (`run_2d` ve
+    `yee_step_2d` kendisi kurar, `_adim_2d` ozeldir); 1B'de kopya gerekiyordu
+    cunku `ObliqueCoefficients.main` kamu `oblique_step`ine gider.
     """
 
     ca: np.ndarray
@@ -393,6 +486,18 @@ class YeeCoefficients2D:
     pec_mask: np.ndarray
     dim: int
     courant: float
+
+    def __post_init__(self) -> None:
+        _yee_tur_kapisi(self, "2B", 2)
+        maske = self.pec_mask
+        if not isinstance(maske, np.ndarray) or maske.dtype != bool or maske.shape != np.shape(self.ca):
+            raise InvalidInputError(
+                f"2B katsayilarinin pec_mask'i {np.shape(self.ca)} sekilli bool dizi olmali, "
+                f"verilen: {np.shape(maske)} / {getattr(maske, 'dtype', type(maske).__name__)}"
+            )
+
+    def __reduce__(self):
+        return _kurucudan_indirgeme(self)
 
 
 def yee_coefficients_2d(medium: Medium, *, courant: float, boundary) -> YeeCoefficients2D:
@@ -449,7 +554,7 @@ def yee_coefficients_2d(medium: Medium, *, courant: float, boundary) -> YeeCoeff
         day=(1.0 - d_hy) / (1.0 + d_hy),
         dby=(courant / mu_y) / (1.0 + d_hy),
     )
-    _sonlu_katsayi_kapisi("2B", **katsayi)
+    # Sonluluk + kazanc kapisi tipin kendisinde kosar (C2; `_yee_tur_kapisi`).
     return YeeCoefficients2D(**katsayi, pec_mask=mask, dim=2, courant=courant)
 
 

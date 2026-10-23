@@ -28,13 +28,13 @@ import numpy as np
 from qlab.engine.hf.factory import ScanResult, run_scan
 from qlab.engine.tdse import factory
 from qlab.engine.tdse.grid import Grid1D
-from qlab.engine.tdse.propagator import evolve
+from qlab.engine.tdse.propagator import evolve_olcumlu
 # `_run_md`in surukleme kapisi ("en az 2 kayit gerekir", `InvalidInputError`)
 # G5'ten beri `md/factory.py::energy_drift`te firlatilir; Modul 3H'de burada
 # import EDILMEMIS oldugu icin yakalanmayan bir `NameError` veriyordu ve
 # mesaj kullaniciya HIC ulasmiyordu (`tests/test_run.py` o dali tetikler).
 from qlab.errors import QLabError
-from qlab.provenance import Provenance
+from qlab.provenance import Provenance, etiket_genisligi
 from qlab.scenario.loader import load_scenario
 from qlab.scenario.schema import (
     BridgeScenario,
@@ -69,12 +69,12 @@ def _run_loaded(scenario) -> RunResult | ScanResult:
 
     grid, potential, psi0, propagator = factory.build(scenario)
 
-    frames, times = evolve(
+    frames, times, uniterlik = evolve_olcumlu(
         propagator, psi0, n_steps=scenario.n_steps, save_every=scenario.save_every
     )
 
     final_norm = float(np.sum(np.abs(frames[-1]) ** 2) * grid.dx)
-    provenance = factory.provenance_for(scenario, norm_deviation=abs(final_norm - 1.0))
+    provenance = factory.provenance_for(scenario, abs(final_norm - 1.0), uniterlik)
     return RunResult(scenario, grid, potential, frames, times, provenance)
 
 
@@ -201,8 +201,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{result.scenario.name}: {len(result.values)} nokta -> {args.output}")
     else:
         print(f"{result.scenario.name}: {len(result.times)} kare -> {args.output}")
+    genislik = etiket_genisligi()  # C5: GUI ile ayni kaynak (provenance.etiket_genisligi)
     for label, value in result.provenance.as_lines():
-        print(f"  {label:<14} {value}")
+        print(f"  {label:<{genislik}} {value}")
     return 0
 
 
@@ -240,8 +241,15 @@ def _run_tb(scenario: TBScenario, output: str | None) -> int:
 
     print(f"{scenario.name}: {model.n_orbital} bant, {len(izgara)} k-noktası")
     print(f"  İletkenlik    : {hukum.describe()}")
+    # C5'in kalanı (V12, grup 9 düzeltici, 23.10.2026): bu dal ve `_run_md` de sütunu
+    # `etiket_genisligi()`den okur. Eskiden sabit 14'tü: `_run_md`nin sevk panellerinde
+    # (tb_zincir_md, h2_aimd, argon_nvt) ':' {14, 16} iki sütundaydı ("Yakınsama tanısı"
+    # 16 karakter); bu daldaki zincir_tb paneli 14'te, elle hizalı "İletkenlik" başlığı
+    # 16'daydı. Bekleten iki test ayrıştırıcısı (`tests/tb/test_tb_scenario.py::_panel`
+    # sabit `[16:]`, `tests/md/test_md_scenario.py` B10 `s[:14]`/`s[16:]`) ilk ": "e çevrildi.
+    genislik = etiket_genisligi()
     for etiket, deger in provenance.as_lines():
-        print(f"{etiket:<14}: {deger}")
+        print(f"{etiket:<{genislik}}: {deger}")
 
     if output is not None:
         # Task 6'nın modülü BURADA import edilir -- Task 7 tek başına commit
@@ -307,8 +315,9 @@ def _run_downfold(scenario: DownfoldScenario, output: str | None) -> int:
             f"Delta={p.delta:+.6f}  {hoplamalar}  "
             f"<S^2>={p.s_squared:.6f}  E_UHF={p.energy_uhf:+.6f}"
         )
+    genislik = etiket_genisligi()
     for etiket, deger in provenance.as_lines():
-        print(f"{etiket:<14}: {deger}")
+        print(f"{etiket:<{genislik}}: {deger}")
 
     if output is not None:
         np.savez(
@@ -384,8 +393,9 @@ def _run_spin(scenario: SpinScenario, output: str | None) -> int:
             f"chi={yuk.susceptibility[i]:.6f}  {isi}  "
             f"tau={yuk.tau_int[i]:.2f}{isaret}"
         )
+    genislik = etiket_genisligi()
     for etiket, deger in provenance.as_lines():
-        print(f"{etiket:<14}: {deger}")
+        print(f"{etiket:<{genislik}}: {deger}")
 
     if output is not None:
         alanlar = {
@@ -469,8 +479,9 @@ def _run_em(scenario: EMScenario, output: str | None) -> int:
         else f"{merdiven.verdict} — {HUKUM_VERILMEDI}"
     )
     print(f"  merdiven hükmü: {hukum}")
+    genislik = etiket_genisligi()
     for etiket, deger in provenance.as_lines():
-        print(f"{etiket:<16}: {deger}")
+        print(f"{etiket:<{genislik}}: {deger}")
 
     if output is not None:
         alanlar = {
@@ -579,8 +590,9 @@ def _run_grav(scenario: GravScenario, output: str | None) -> int:
             f"  taban {f.value:.6e}  {oran:<18} {f.verdict:<9}"
             f"{f.label}{isaret}"
         )
+    genislik = etiket_genisligi()
     for etiket, deger in provenance.as_lines():
-        print(f"{etiket:<16}: {deger}")
+        print(f"{etiket:<{genislik}}: {deger}")
 
     if output is not None:
         np.savez(
@@ -677,8 +689,9 @@ def _run_bridge(scenario: BridgeScenario, output: str | None) -> int:
     if yuk.tutarsizliklar:
         for sorun in yuk.tutarsizliklar:
             print(f"  TABLO ≠ KOD          {sorun}")
+    genislik = etiket_genisligi()
     for etiket, deger in provenance.as_lines():
-        print(f"{etiket:<16}: {deger}")
+        print(f"{etiket:<{genislik}}: {deger}")
 
     if output is not None:
         kenarlar = sorted(yuk.kenarlar)
@@ -807,8 +820,9 @@ def _run_md(scenario: MDScenario, output: str | None) -> int:
         omega_max_frame0=omega0, omega_max_path_frames=omega_yol,
         path_frames=yol_kareleri, n_constraints=kisit, **kararlilik
     )
+    genislik = etiket_genisligi()  # V12: `_run_tb` ile aynı (gerekçe orada)
     for etiket, deger in provenance.as_lines():
-        print(f"{etiket:<14}: {deger}")
+        print(f"{etiket:<{genislik}}: {deger}")
 
     if output is not None:
         # Task 13'ün modülü BURADA import edilir: Task 12 tek başına

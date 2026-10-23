@@ -30,6 +30,7 @@ saniyenin altında (en uzunu HF kısa koşusu ~0.6 s).
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
 import numpy as np
@@ -37,12 +38,15 @@ import pytest
 import yaml
 
 import qlab.engine.md.factory as fabrika
-from qlab.engine.md.factory import build, energy_drift, energy_oscillation, provenance_for
+from qlab.engine.md.factory import build, energy_drift, energy_oscillation, omega_max_frame0, provenance_for
+from qlab.engine.md.forcefields import HartreeFockGradient
 from qlab.engine.md.integrator import Trajectory, run
+from qlab.engine.md.state import MDState
 from qlab.errors import InvalidInputError
 from qlab.run import main
 from qlab.scenario.loader import load_scenario
 from qlab.scenario.schema import MDScenario
+from qlab.units import amu_to_electron_mass
 
 _SENARYOLAR = Path(__file__).resolve().parents[2] / "scenarios"
 _M_H = 1.00782503207
@@ -249,9 +253,10 @@ def test_D2iic_PAY_FORMULU_S_x_min_1_bolu_omega_dt_L_ve_HUKUM_DEGISMEZ():
     """Pay = S x min(1, 1/(omega*dt x L)), L = (n_steps + 1) // min(10, n_steps + 1).
     n_steps 99 -> L 10; omega_yol 0.05, dt 10 -> omega*dt 0.5 -> kat 0.2; S 0.04 ->
     pay 0.008. Sürüklenme eşik + 0.99 pay -> AYRILAMIYOR, eşik + 1.01 pay -> eski
-    metin; ikisinde de ✗ (kapı hükmü DEĞİŞTİRMEZ). omega*dt x L <= 1 ya da omega
-    `nan` -> kaba sınır (kat 1); S `nan` -> "payı bilinmiyor"; sürüklenme geçerse
-    kapı sessiz. HF dalı aynı metni basar.
+    metin; ikisinde de ✗ (kapı hükmü DEĞİŞTİRMEZ). omega*dt x L <= 1 -> kaba sınır
+    (kat 1); omega `nan` -> B8'den (grup 9) beri kaba sınır DEĞİL, "ayrılıp
+    ayrılamadığı da YARGILANAMAZ" (test_B8_...); S `nan` -> "payı bilinmiyor";
+    sürüklenme geçerse kapı sessiz. HF dalı aynı metni basar.
     Sınırın kendisi (sürüklenme - pay == eşik, IEEE'de tam kurulur) AYRILAMIYOR,
     bir ulp üstü değil.
     KIRMA: L = n_steps // 10 (9, pay 0.0089) / 2 / (omega*dt x L) / kapı ✓ basar /
@@ -268,10 +273,9 @@ def test_D2iic_PAY_FORMULU_S_x_min_1_bolu_omega_dt_L_ve_HUKUM_DEGISMEZ():
         assert "sürüklenme eşiğin üstünde" in canli
         if ayrilamaz:
             assert "pay 8.000e-03 (S x 0.2)" in canli, canli
-    # Kaba sınır: omega*dt x L <= 1 (omega_yol 1e-3 -> 0.1) ve omega nan -> kat 1.
-    for w in (1e-3, float("nan")):
-        p = provenance_for(tb, energy_drift=esik + 0.99 * 0.04, **(ortak | dict(omega_max_path_frames=w)))
-        assert "pay 4.000e-02 (S x 1)" in p.convergence_diagnosis, w
+    # Kaba sınır: omega*dt x L <= 1 (omega_yol 1e-3 -> 0.1) -> kat 1 (omega nan: test_B8_...).
+    p = provenance_for(tb, energy_drift=esik + 0.99 * 0.04, **(ortak | dict(omega_max_path_frames=1e-3)))
+    assert "pay 4.000e-02 (S x 1)" in p.convergence_diagnosis
     p = provenance_for(tb, energy_drift=esik + 0.01, **(ortak | dict(energy_oscillation=float("nan"))))
     assert "S sonlu değil, salınımın payı bilinmiyor" in p.convergence_diagnosis
     gecen = provenance_for(tb, energy_drift=esik, **ortak).convergence_diagnosis.split(" GRİ BÖLGE")[0]
@@ -336,3 +340,140 @@ def test_D2v_TABAN_FORMULU_c_eps_max_mutlak_ENERJI_SINIRDA_YARGILANAMAZ():
         assert s(ust, tmin, tmax) == pytest.approx(1e-3 / ust, rel=1e-12)
     assert np.isnan(s(1.0, float("nan"), 2.0)) and np.isnan(s(1.0, -2.0, float("nan")))
     assert np.isnan(s(0.0, 0.0, 0.0))
+
+
+# ------------------------------------- B8 (grup 9): ölçülemeyen omega, gürültülü HF --
+
+
+def _hf_h2(r: float) -> tuple[MDScenario, MDState]:
+    hf = MDScenario(
+        name="b8", force_field={"kind": "hartree_fock", "params": {"symbols": ["H", "H"], "basis": "sto-3g"}},
+        initial={"positions_bohr": [[0.0, 0.0, 0.0], [0.0, 0.0, r]], "masses_amu": [_M_H, _M_H]},
+        thermostat=None, dt=5.0, n_steps=2,
+    )
+    m = amu_to_electron_mass(np.array([_M_H, _M_H]))
+    return hf, MDState(positions=np.array([[0.0, 0.0, 0.0], [0.0, 0.0, r]]), velocities=np.zeros((2, 3)), masses=m)
+
+
+def test_B8_GURULTULU_HF_HESSIANI_OLCULEMEDI_nan_TEMIZ_HF_SAYI():
+    """`_omega_max`: HF'de lambda_max <= 60 x u (u = eps |E| / (h s m_min), sayısal
+    gradyanın gürültü tabanı) ise omega ÖLÇÜLEMEDİ -> `nan`. ÇIPA: bağımsız referans
+    aynı geometrinin temiz (h 1e-5) Hessian'ı. ÖLÇÜLDÜ (bu makine, H2/STO-3G):
+    r 1.2 -- h 1e-12 / 1e-13'te lambda / u 2.7 / 1.6; HEAD omega 0.0604 / 0.1486
+    basıyordu (temizi 0.03156: 1.9 / 4.7 kat). r 1.8 -- h 1e-10'da lambda / u 12.5
+    (HEAD 0.01277, %4.5 hata, ama tabanda hata öngörülemez: aynı tabanda %93900'e
+    kadar ölçüldü), h 1e-9'da 112 (0.012118, temizden %0.8) -> SAYI kalır.
+    BANT KİLİDİ (12.5 < c < 112, ölçülmüş iki hücreden; c = 60): tabanın katını
+    10'a indiren ya da 1000'e çıkaran mutant kırmızı. Sayılar gürültüdür ve OpenBLAS'a
+    bağlıdır, ama iki hücrenin c'ye uzaklığı 4.8 ve 1.9 kat. 5 Hessian, ~0.5 s.
+    KIRMA (mut.py): taban yok (yalnız lambda <= 0) / c 1 / c 10 / c 1000 -> kırmızı.
+    """
+    for r, temiz_h, olculemez, sayi in ((1.2, 1e-5, (1e-12, 1e-13), None), (1.8, 1e-5, (1e-10,), 1e-9)):
+        hf, durum = _hf_h2(r)
+        temiz = omega_max_frame0(hf, durum, HartreeFockGradient(symbols=("H", "H"), step=temiz_h))
+        assert np.isfinite(temiz) and temiz > 0.0
+        for h in olculemez:
+            w = omega_max_frame0(hf, durum, HartreeFockGradient(symbols=("H", "H"), step=h))
+            assert np.isnan(w), (r, h, w, temiz)
+        if sayi is not None:
+            w = omega_max_frame0(hf, durum, HartreeFockGradient(symbols=("H", "H"), step=sayi))
+            assert abs(w / temiz - 1.0) < 0.05, (r, sayi, w, temiz)
+
+
+_M_T = 3.01604928  # trityum, amu
+
+
+def test_B8_TABAN_EN_KUCUK_KUTLEYI_okur_ESIT_OLMAYAN_KUTLE_HT():
+    """V9 (grup 9 düzeltici, 23.10.2026): tabandaki m_min KİLİDİ. Kütle ağırlıklı Hessian'da
+    gürültü d H / sqrt(m_i m_j) en çok en HAFİF atomun bloğunda büyür; taban onu okumalı.
+    Yukarıdaki testler yalnız EŞİT kütleli H2 kullanıyordu: `kutle.min()` -> `kutle.max()`
+    mutantı (V_B8_01) hayattaydı. HT (H2'nin elektronik yapısı, kütleler 1.0078 / 3.0160,
+    oran 2.993; ucuz -- LiH aynı kilidi Hessian başına ~3 s'de verirdi, ölçüldü).
+    ÖLÇÜLDÜ (bu makine, r 1.8): h 5e-10'da lambda / u_min 38.1 -> nan (c = 60'ın 1.57 kat
+    altı); m_max ile u 2.993 kat küçülür, lambda / u_max 114 -> SAYI (60'ın 1.90 kat üstü).
+    h 1e-9'da lambda / u_min 75.3 -> SAYI, temizden %0.7. ÇAPA: aynı geometrinin temiz
+    (h 1e-5) Hessian'ı, 0.009980. 3 Hessian, ~0.6 s.
+    """
+    r = 1.8
+    hf = MDScenario(
+        name="b8-ht", force_field={"kind": "hartree_fock", "params": {"symbols": ["H", "H"], "basis": "sto-3g"}},
+        initial={"positions_bohr": [[0.0, 0.0, 0.0], [0.0, 0.0, r]], "masses_amu": [_M_H, _M_T]},
+        thermostat=None, dt=5.0, n_steps=2,
+    )
+    m = amu_to_electron_mass(np.array([_M_H, _M_T]))
+    durum = MDState(positions=np.array([[0.0, 0.0, 0.0], [0.0, 0.0, r]]), velocities=np.zeros((2, 3)), masses=m)
+
+    def omega(h):
+        return omega_max_frame0(hf, durum, HartreeFockGradient(symbols=("H", "H"), step=h))
+
+    temiz = omega(1e-5)
+    assert np.isfinite(temiz) and temiz > 0.0
+    w = omega(5e-10)
+    assert np.isnan(w), (w, temiz)
+    w = omega(1e-9)
+    assert abs(w / temiz - 1.0) < 0.05, (w, temiz)
+
+
+def test_B8_TB_POZITIF_MODSUZ_HESSIAN_OLCULEMEDI_nan(tmp_path):
+    """TB dimeri kesmenin ötesinde (d 5 > r_cut 3.8): Hessian tam sıfır, pozitif mod yok
+    -> `nan` (YARGILANAMAZ). HEAD 0.0 döndürüyordu ve omega*dt ölçütü onunla ✓ geçiyordu.
+    Kesmenin içinde (d = r_e) sayı kalır. KIRMA: `lam > taban` yerine `lam >= taban` ya da
+    eski `sqrt(max(lam, 0))` -> 0.0, kırmızı."""
+    for r, beklenen_sayi in ((5.0, False), (_TB_RE, True)):
+        senaryo = load_scenario(_yaz(tmp_path / f"d{r}.yaml", _tb_dimer(r)))
+        durum, alan, _ = build(senaryo)
+        w = omega_max_frame0(senaryo, durum, alan)
+        assert bool(np.isfinite(w)) is beklenen_sayi, (r, w)
+    assert w == pytest.approx(_TB_OMEGA0, rel=1e-9)
+
+
+@pytest.mark.parametrize("w", [0.0, -0.0, float("nan")], ids=["sifir", "eksi-sifir", "nan"])
+def test_B8_provenance_OLCULEMEYEN_omega_YARGILANAMAZ_AYRIM_da_YARGILANAMAZ(w):
+    """Doğrudan API: omega <= 0 (-0.0 dahil) ya da `nan` ölçüt ✓ GEÇEMEZ (HEAD'de 0 ve -0.0
+    eşiğin altında sayılıyordu); sürüklenme ✗ iken "AYRILAMIYOR" basılmaz -- pay omega'dan
+    kestirilir, omega ölçülemeyince tanı "ayrılıp ayrılamadığı da YARGILANAMAZ" der. TB
+    ve HF aynı metni basar. Kontrol: ölçülmüş omega (0.05) ile D2-ii-c değişmedi.
+    KIRMA: `> 0.0` koşulu kare 0'dan ya da yoldan kalkar / AYRILAMIYOR kapısı yol_sonlu'ya
+    bakmaz (HEAD) / tanılardan yeni dal kalkar -> kırmızı.
+    """
+    hf, _ = _hf_h2(1.4)
+    hf = dataclasses.replace(hf, dt=10.0, n_steps=99)
+    for sen, esik in ((_tb_senaryo(99), fabrika._TB_DRIFT_TOLERANCE), (hf, fabrika._MD_DRIFT_TOLERANCE)):
+        ortak = dict(energy_oscillation=0.04, omega_max_frame0=1e-9, omega_max_path_frames=0.05)
+        assert provenance_for(sen, energy_drift=1e-9, **ortak).converged
+        kare0 = provenance_for(sen, energy_drift=1e-9, **(ortak | dict(omega_max_frame0=w)))
+        assert not kare0.converged and "a priori tanı YARGILANAMAZ" in kare0.convergence_diagnosis
+        yol = provenance_for(sen, energy_drift=1e-9, **(ortak | dict(omega_max_path_frames=w)))
+        assert not yol.converged and "tanısı YARGILANAMAZ" in yol.convergence_diagnosis
+        surukle = provenance_for(sen, energy_drift=esik + 0.99 * 0.008, **(ortak | dict(omega_max_path_frames=w)))
+        canli = surukle.convergence_diagnosis.split(" GRİ BÖLGE")[0]
+        assert "AYRILAMIYOR" not in canli and "ayrılıp ayrılamadığı da YARGILANAMAZ" in canli, canli
+        olculmus = provenance_for(sen, energy_drift=esik + 0.99 * 0.008, **ortak).convergence_diagnosis
+        assert "AYRILAMIYOR (YARGILANAMAZ: " in olculmus.split(" GRİ BÖLGE")[0]
+
+
+def test_B8_KAMU_YOLU_GURULTULU_HF_20_ADIM_omega_nan_AYRILAMIYOR_YOK(tmp_path, capsys):
+    """h2_aimd + gradyan adımı 1e-13 (sonlu fark gürültüsü), 20 adım. HEAD 448f808: kare-0 ve
+    yol omega*dt 0.000e+00 (ölçüt ✓ geçiyordu) ve sürüklenme ✗'ine (1.115e-01) "AYRILAMIYOR"
+    deniyordu (kaba sınır). Şimdi ikisi `nan` (YARGILANAMAZ), AYRILAMIYOR yok, hüküm ✗.
+    """
+    satir = _panel(_sevk("h2_aimd", n_steps=20, parametre={"step": 1e-13}), tmp_path, capsys, "b8")
+    yakinsama = satir["Yakınsama"]
+    assert "✗" in yakinsama and "energy_drift=1.115e-01," in yakinsama
+    assert "omega_dt_frame0=nan," in yakinsama and "omega_dt_path_frames=nan," in yakinsama
+    canli = _canli(satir)
+    assert "AYRILAMIYOR" not in canli and "ayrılıp ayrılamadığı da YARGILANAMAZ" in canli, canli
+    assert "a priori tanı YARGILANAMAZ" in canli and "yol karesinin tanısı YARGILANAMAZ" in canli
+
+
+@pytest.mark.slow
+def test_B8_KAMU_YOLU_GURULTULU_HF_400_ADIM_EKSI_SIFIR_BASILMAZ(tmp_path, capsys):
+    """Grup 7 c.md madde 2'nin kendi hücresi: h2_aimd + gradyan adımı 1e-13, 400 adım. HEAD
+    448f808 yol karesi omega'sı için `-0.000e+00` basıyordu (lambda_max -0.0, max(-0.0, 0.0)
+    = -0.0) ve gerçek 400 adımlık sürüklenmeye (4.295e-01) "AYRILAMIYOR" diyordu. ~3.5 s."""
+    satir = _panel(_sevk("h2_aimd", n_steps=400, parametre={"step": 1e-13}), tmp_path, capsys, "b8u")
+    yakinsama = satir["Yakınsama"]
+    assert "✗" in yakinsama and "energy_drift=4.295e-01," in yakinsama and "-0.000e+00" not in yakinsama
+    assert "omega_max_path_frames=nan," in yakinsama
+    canli = _canli(satir)
+    assert "AYRILAMIYOR" not in canli and "ayrılıp ayrılamadığı da YARGILANAMAZ" in canli, canli

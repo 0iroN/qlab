@@ -185,16 +185,16 @@ def _yakinsama_satirlari(out: str) -> tuple[str, str | None]:
     return yakinsama, tani
 
 
-def test_main_MASKELI_TDSE_paneli_X_ve_YARGILANMADI_basar(tmp_path, capsys):
-    """KAMU YOLU (B5, 11.10.2026): maskeli bir TDSE koşusu CLI panelinde ✗
-    basar ve "Yakınsama tanısı" satırı YARGILANMADI ile başlar.
-
-    Maske normu kasten düşürür ve evolve() o koşuda norm kontrolünü atlar,
-    yani üniterlik HİÇ ÖLÇÜLMEZ. Eskiden panel maskeli koşuda her zaman ✓
-    basıyordu (ölçüldü: 64000 adımlık maskeli tünelleme koşusunda %99.99
-    norm kaybının yanına ✓). Aynı küçük senaryonun MASKESİZ hâli aynı yoldan
-    ✓ basar ve tanı satırı taşımaz -- yani ✗'i maskeden başka bir şey
-    üretmiyor (her koşuyu ✗ yapan bir mutant da kırmızıya döner)."""
+def test_main_MASKELI_TDSE_paneli_MASKE_ONCESI_UNITER_ADIM_hukmunu_basar(tmp_path, capsys):
+    """KAMU YOLU (B5 11.10.2026 -> B5-U 14.10.2026): maskeli TDSE koşusunun
+    paneli maske öncesi üniter adım normunun hükmünü basar ve tanı satırı
+    neyin yargılandığını söyler. Maske normu kasten düşürür; |N - 1| orada
+    ölçüt olamaz (B5: ✗ YARGILANMADI; daha önce %99.99 kaybın yanına ✓).
+    `run.py` artık `evolve_olcumlu` ile her adımda maskeden ÖNCE ‖Uψ‖²/‖ψ‖²
+    ve norm bütçesini ölçer; kusursuz adımda ✓. Aynı küçük senaryonun
+    MASKESİZ hâli ✓ basar ve tanı satırı taşımaz. Ölçümü provenance_for'a
+    geçirmeyen bir mutant paneli yeniden ✗ YARGILANMADI yapar ve kırmızıdır
+    (ölçüldü 14.10.2026: bu küçük senaryoda adım oranı yuvarlama tabanında)."""
     maskeli = tmp_path / "maskeli.yaml"
     maskeli.write_text(SMALL_SCENARIO + "absorbing_width_bohr: 10.0\n", encoding="utf-8")
     maskesiz = tmp_path / "maskesiz.yaml"
@@ -202,15 +202,90 @@ def test_main_MASKELI_TDSE_paneli_X_ve_YARGILANMADI_basar(tmp_path, capsys):
 
     assert run.main([str(maskeli), "-o", str(tmp_path / "m.npz")]) == 0
     yakinsama, tani = _yakinsama_satirlari(capsys.readouterr().out)
-    assert yakinsama.startswith("✗"), yakinsama
-    assert "observed_norm_drop=" in yakinsama
-    assert tani is not None and tani.startswith("YARGILANMADI:"), tani
+    assert yakinsama.startswith("✓"), yakinsama
+    assert "observed_norm_drop=" in yakinsama and "premask_step_deviation=" in yakinsama
+    assert tani is not None and tani.startswith("maske öncesi üniter adım normu yargılandı"), tani
 
     assert run.main([str(maskesiz), "-o", str(tmp_path / "s.npz")]) == 0
     yakinsama, tani = _yakinsama_satirlari(capsys.readouterr().out)
     assert yakinsama.startswith("✓"), yakinsama
     assert "norm_deviation=" in yakinsama
     assert tani is None
+
+
+def test_C5_CLI_TDSE_panelinde_tani_satiriyla_TEK_DEGER_SUTUNU(tmp_path, capsys):
+    """C5 (grup 9): ana yol (TDSE / HF taraması) `  {etiket:<W} {deger}` basar ve W artık
+    `provenance.etiket_genisligi()`dir -- GUI'nin `format_panel`iyle AYNI kaynak.
+
+    ÖLÇÜLDÜ (HEAD 448f808, bu maskeli küçük koşu): W = 14 iken 16 karakterlik
+    "Yakınsama tanısı" satırının değeri 19. sütunda, öteki dört satırınki 17.'de
+    başlıyordu. Beklenen satırlar aynı koşunun beyanından üretilir; metin kopyalanmaz.
+    """
+    from qlab.provenance import etiket_genisligi
+    from qlab.scenario.loader import load_scenario
+
+    maskeli = tmp_path / "maskeli.yaml"
+    maskeli.write_text(SMALL_SCENARIO + "absorbing_width_bohr: 10.0\n", encoding="utf-8")
+    assert run.main([str(maskeli), "-o", str(tmp_path / "m.npz")]) == 0
+    basilan = capsys.readouterr().out.splitlines()
+    beyan = run._run_loaded(load_scenario(maskeli)).provenance.as_lines()
+    assert "Yakınsama tanısı" in dict(beyan)
+    genislik = etiket_genisligi()
+    assert basilan[1:] == [f"  {etiket:<{genislik}} {deger}" for etiket, deger in beyan]
+    assert {2 + genislik + 1} == {
+        len(s) - len(s[2 + len(e):].lstrip(" ")) for s, (e, _) in zip(basilan[1:], beyan)
+    }
+
+
+def test_C5_run_py_panel_donguleri_SEKIZI_de_TEK_KAYNAKTAN():
+    """SINIF: KAYNAK KİLİDİ (transkripsiyon). `as_lines()` basan sekiz döngünün sekizi de
+    sütunu `etiket_genisligi()`den okur. V12 (grup 9 düzeltici, 23.10.2026): `_run_tb` ve
+    `_run_md` sabit 14'te bekliyordu -- sevk edilen tb_zincir_md / h2_aimd / argon_nvt
+    panellerinde ':' {14, 16} iki sütundaydı; davranış kilidi
+    `test_V12_SEVK_md_tb_PANELLERI_TEK_SUTUNDA`."""
+    import re
+
+    kaynak = Path(run.__file__).read_text(encoding="utf-8")
+    genislikler = sorted(re.findall(r"\{(?:label|etiket):<([^}]+)\}", kaynak))
+    assert genislikler == ["{genislik"] * 8, genislikler
+    assert kaynak.count("genislik = etiket_genisligi()") == 8
+
+
+@pytest.mark.parametrize("ad", ["tb_zincir_md", "h2_aimd", "argon_nvt", "zincir_tb"])
+def test_V12_SEVK_md_tb_PANELLERI_TEK_SUTUNDA(ad, tmp_path, capsys):
+    """KAMU YOLU (V12, grup 9 düzeltici, 23.10.2026): sevk edilen md (`_run_md`) ve tb bant
+    (`_run_tb`, `zincir_tb`) panelleri tek ':' sütununda (`etiket_genisligi()`, bugün 16).
+    ÖLÇÜLDÜ (tam sevk koşusu, `python -m qlab.run`): HEAD 448f808'de ve düzeltmeden önceki
+    ağaçta üç md panelinde {14, 16} -- tanı satırı 16'da, öteki 5 / 7 / 5 satır 14'te; C5
+    bu üç paneli düzeltmemişti. `zincir_tb`de tanı satırı yok, panel düzgün 14'teydi (elle
+    hizalı "İletkenlik" başlığının ':'si 16'da). Hiza adım sayısından bağımsızdır: md
+    koşusu 4 adıma kısaltılır."""
+    import dataclasses
+
+    import yaml
+
+    from qlab.provenance import Provenance, StabilityVerdict, etiket_genisligi
+
+    d = yaml.safe_load((Path(run.__file__).resolve().parents[2] / "scenarios" / f"{ad}.yaml")
+                       .read_text(encoding="utf-8"))
+    if "n_steps" in d:
+        d.update(n_steps=4, save_every=2)
+    yol = tmp_path / f"{ad}.yaml"
+    yol.write_text(yaml.safe_dump(d, allow_unicode=True), encoding="utf-8")
+    assert run.main([str(yol), "-o", str(tmp_path / f"{ad}.npz")]) == 0
+
+    # Panel satırı: girintisiz ve etiketi `as_lines()`in söz dağarcığında (tüm alanlar dolu).
+    ornek = {f.name: StabilityVerdict(stable=True, lowest_eigenvalue=None, n_rotations=0)
+             if "StabilityVerdict" in str(f.type) else ""
+             for f in dataclasses.fields(Provenance) if f.default is None}
+    sozluk = {e for e, _ in Provenance(method="", approximations=(), neglected=(), expected_error="",
+                                         converged=True, **ornek).as_lines()}
+    panel = [s for s in capsys.readouterr().out.splitlines()
+             if s and not s.startswith(" ") and s.split(":", 1)[0].strip() in sozluk]
+    assert len(panel) >= 5, panel
+    if ad != "zincir_tb":
+        assert any(s.startswith("Yakınsama tanısı") for s in panel), panel
+    assert {s.index(":") for s in panel} == {etiket_genisligi()}, panel
 
 
 def test_main_reports_point_count_for_hf_scan(hf_scenario_file, tmp_path, capsys):

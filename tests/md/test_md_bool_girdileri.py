@@ -24,10 +24,14 @@ import pytest
 
 import qlab.run as run_modulu
 from qlab.engine.md.factory import build
-from qlab.errors import ScenarioError
+from qlab.engine.md.forcefields import Harmonic, HartreeFockGradient, LennardJones, Morse
+from qlab.engine.md.thermostats import Langevin, NoseHoover
+from qlab.errors import InvalidInputError, ScenarioError
 from qlab.scenario.loader import load_scenario
 from qlab.scenario.schema import MDScenario
 from qlab.units import KB_HARTREE_PER_KELVIN
+
+from .h2_morse_sabitleri import H2_A, H2_DE, H2_RE
 
 _SEVK = Path(__file__).resolve().parents[2] / "scenarios"
 _TB = (_SEVK / "tb_zincir_md.yaml").read_text(encoding="utf-8").replace("n_steps: 400", "n_steps: 4")
@@ -125,6 +129,9 @@ def _tb_senaryo(kelvin=631.6, initial=None) -> MDScenario:
     pytest.param(np.complex128(631.6), id="np.complex128"),
     pytest.param(10**400, id="10**400"),
     pytest.param([[631.6], [631.6, 1.0]], id="duzensiz-liste"),
+    # B4 (grup 9): 0 boyutlu NESNE dizisi; HEAD 448f808'de 1 K ve 631.6 K diye geciyordu.
+    pytest.param(np.array(True, dtype=object), id="0d-nesne-bool"),
+    pytest.param(np.array("631.6", dtype=object), id="0d-nesne-dize"),
 ])
 def test_KELVIN_numpy_bool_karmasik_tasma_DOGRUDAN_senaryoda_ScenarioError(kelvin):
     """`MDScenario(...)` dogrudan kurulunca `build` tek bekcidir (YAML bu tipleri uretmez)."""
@@ -133,8 +140,8 @@ def test_KELVIN_numpy_bool_karmasik_tasma_DOGRUDAN_senaryoda_ScenarioError(kelvi
 
 
 def test_KELVIN_numpy_GERCEL_KABUL_deger_aynen():
-    """Kontrol: `np.float64` ve 0 boyutlu gercel dizi gecer; kT = K * k_B."""
-    for kelvin in (np.float64(631.6), np.array(631.6), 631.6):
+    """Kontrol: `np.float64`, 0 boyutlu gercel dizi (B4: nesne dizisi de) gecer; kT = K * k_B."""
+    for kelvin in (np.float64(631.6), np.array(631.6), 631.6, np.array(631.6, dtype=object)):
         alan = build(_tb_senaryo(kelvin))[1]
         assert alan.kT_hartree == 631.6 * KB_HARTREE_PER_KELVIN
 
@@ -239,3 +246,80 @@ def test_initial_numpy_bool_ve_karmasik_OGE_DOGRUDAN_senaryoda_ScenarioError(ana
     )
     with pytest.raises(ScenarioError, match=f"initial.{anahtar}"):
         build(senaryo)
+
+
+# ------------------------- B3 (grup 9): sinif DOGRUDAN kurulunca bool kapisi --
+
+#: Her sinifin gecerli kurulumu. OLCULDU (HEAD 448f808): bu alanlarda bool
+#: (True / np.True_ / np.array(True)) 54 hucrenin 43'unde SESSIZCE kabul ediliyordu.
+_SINIF_GECERLI = {
+    Harmonic: dict(k=0.5, center=np.zeros((1, 3))),
+    Morse: dict(d_e=H2_DE, r_e=H2_RE, a=H2_A),
+    LennardJones: dict(epsilon=3.79e-4, sigma=6.43, box_length=32.4, cutoff=16.0),
+    HartreeFockGradient: dict(symbols=("H", "H"), step=1e-5, max_bond_bohr=21.0),
+    Langevin: dict(target_temperature_kelvin=300.0, friction=1e-3, seed=1),
+    NoseHoover: dict(target_temperature_kelvin=300.0, relaxation_time=100.0, chain_length=1, n_dof=3),
+}
+_SINIF_ALANLARI = [(s, a) for s, d in _SINIF_GECERLI.items() for a in d if a != "symbols"]
+
+
+@pytest.mark.parametrize(("sinif", "alan"), _SINIF_ALANLARI, ids=[f"{s.__name__}.{a}" for s, a in _SINIF_ALANLARI])
+@pytest.mark.parametrize("deger", [
+    pytest.param(True, id="True"),
+    pytest.param(np.True_, id="np.True_"),
+    pytest.param(np.array(True), id="0d-bool-dizi"),
+    pytest.param(np.array(True, dtype=object), id="0d-nesne-bool"),
+])
+def test_B3_SINIF_DOGRUDAN_kurulunca_BOOL_InvalidInputError_ALANI_ADIYLA(sinif, alan, deger):
+    """Kuvvet alani ve termostat siniflari kamu API'sidir (`observable/bridge_obs.py`
+    `Morse`u dogrudan kurar): kapi fabrikada (`_senaryo_nesnesi`) ve SINIFTA.
+
+    HEAD'de: 43 hucre kabul (deger 1 diye kullanilir); LJ `box_length` YANLIS nedenle
+    (L/2 kapisi), NH `chain_length` / Langevin `seed` (numpy bool) ham `TypeError`.
+    KIRMA (mut.py): herhangi bir sinifin `_bool_kapisi` cagrisi kaldirilinca kirmizi.
+    """
+    with pytest.raises(InvalidInputError, match=rf"{sinif.__name__}\.{alan} sayı olmalı"):
+        sinif(**(_SINIF_GECERLI[sinif] | {alan: deger}))
+
+
+@pytest.mark.parametrize(("sinif", "alan"), _SINIF_ALANLARI, ids=[f"{s.__name__}.{a}" for s, a in _SINIF_ALANLARI])
+@pytest.mark.parametrize("deger", [
+    pytest.param("0.5", id="dize"),
+    pytest.param(b"0.5", id="bytes"),
+    pytest.param(np.array("0.5"), id="0d-U-dizi"),
+    pytest.param(np.array(b"0.5"), id="0d-S-dizi"),
+    pytest.param(np.array("0.5", dtype=object), id="0d-nesne-dize"),
+])
+def test_V13_SINIF_DOGRUDAN_kurulunca_DIZE_InvalidInputError_ALANI_ADIYLA(sinif, alan, deger):
+    """V13 (grup 9 duzeltici, 23.10.2026): B3'un kapsami bool/karmasikti. OLCULDU (HEAD 448f808
+    ve duzeltmeden onceki agac ayni): `Morse(d_e='0.17')`, `LennardJones(cutoff='4')`,
+    `Langevin(friction='2e-5')`, `NoseHoover(relaxation_time='100')` ham `TypeError` ("ufunc
+    'isfinite' not supported"), `QLabError` DEGIL. Artik adli `InvalidInputError`, alanin adiyla.
+    KIRMA: `_bool_kapisi`ndaki dize dali kaldirilinca kirmizi."""
+    with pytest.raises(InvalidInputError, match=rf"{sinif.__name__}\.{alan} sayı olmalı: dize"):
+        sinif(**(_SINIF_GECERLI[sinif] | {alan: deger}))
+
+
+def test_V13_ic_ice_DIZE_merkez_SESSIZCE_SAYI_OLMAZ():
+    """`Harmonic(center=[['0', 0, 0]])` duzeltmeden once HATASIZ kuruluyordu: `np.asarray(...,
+    dtype=float)` dizeyi 0.0 bohr yapiyordu (olculdu 23.10.2026, HEAD'de de)."""
+    with pytest.raises(InvalidInputError, match=r"Harmonic\.center sayı olmalı: dize"):
+        Harmonic(k=0.5, center=[["0", 0, 0]])
+    with pytest.raises(InvalidInputError, match=r"Harmonic\.center sayı olmalı: dize"):
+        Harmonic(k=0.5, center=np.array([[b"0", b"0", b"0"]]))
+
+
+def test_B3_SINIF_KAPISI_ic_ice_BOOL_ve_KARMASIK_ve_GECERLI_deger_AYNEN():
+    """`Harmonic(center=[[True, 0, 0]])` HEAD'de 1.0 bohr'luk merkez kuruyordu; karmasik da
+    reddedilir. Asiri reddetmeye karsi: gecerli numpy sayilari kabul ve SAKLANAN deger
+    verilenin KENDISI (kapi donusturmez -> sevk ciktilari bit bit ayni)."""
+    with pytest.raises(InvalidInputError, match=r"Harmonic\.center sayı olmalı"):
+        Harmonic(k=0.5, center=[[True, 0, 0]])
+    with pytest.raises(InvalidInputError, match=r"Morse\.d_e sayı olmalı"):
+        Morse(d_e=np.complex128(0.17), r_e=1.4, a=1.0)
+    for sinif, gecerli in _SINIF_GECERLI.items():
+        nesne = sinif(**gecerli)
+        for alan, deger in gecerli.items():
+            if alan not in ("center", "symbols"):
+                assert getattr(nesne, alan) is deger, (sinif.__name__, alan)
+    assert Morse(d_e=np.float64(0.17), r_e=np.int64(2), a=np.array(1.0)).r_e == 2

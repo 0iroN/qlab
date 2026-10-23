@@ -11,6 +11,8 @@ gibi zayıf bir kanıtla yetinilmez.
 import dataclasses
 import os
 import re
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -75,6 +77,27 @@ def test_panel_lines_are_aligned():
     lines = [line for line in format_panel(PROVENANCE).splitlines() if line.strip()]
     columns = {line.index(":") for line in lines if ":" in line}
     assert len(columns) == 1, "etiket sütunu hizalı olmalı"
+
+
+def test_C5_panel_EN_UZUN_ETIKETLE_de_TEK_SUTUN_ve_sutun_CLI_ile_AYNI_KAYNAKTAN():
+    """C5 (grup 9): 16 karakterlik "Yakınsama tanısı" satırı varken de tek sütun.
+
+    `test_panel_lines_are_aligned` tanı satırı OLMAYAN bir beyanla sınıyordu ve
+    sabit 14'lük sütun orada yeşildi; ÖLÇÜLDÜ (HEAD 448f808): tanı + dış kararlılık
+    satırlı beyanda ':' sütunları {14, 16}. Sütun artık `etiket_genisligi()`den
+    (CLI'ın da okuduğu tek kaynak) gelir.
+    """
+    from qlab.provenance import StabilityVerdict, etiket_genisligi
+
+    sv = StabilityVerdict(stable=False, lowest_eigenvalue=-0.45, n_rotations=1, channel="dis")
+    tam = dataclasses.replace(
+        PROVENANCE, convergence_diagnosis="YARGILANMADI: maskeli koşu", external_stability=sv,
+        window="ızgara 256", sampling="1000 örnek",
+    )
+    satirlar = format_panel(tam).splitlines()
+    assert any(s.startswith("Yakınsama tanısı") for s in satirlar)
+    assert {s.index(": ") for s in satirlar} == {etiket_genisligi()}
+    assert all(s[: etiket_genisligi()].rstrip() == e for s, (e, _) in zip(satirlar, tam.as_lines()))
 
 
 # ---------------------------------------------------------------------------
@@ -458,3 +481,189 @@ def test_panel_genislik_degisince_yuksekligini_YENIDEN_hesapliyor():
     )
     assert panel._text.verticalScrollBar().maximum() == 0, "ikisinde de sığmalı"
     panel.close()
+
+
+# ---------------------------------------------------------------------------
+# C4 (grup 9): yükseklik YERLEŞİMDEN okunur, `fontMetrics().lineSpacing()`ten değil.
+#
+# Gerçek Windows platformunda yazı tipi motoru kesirli satır aralığı veriyor ve
+# satırları tamsayı `lineSpacing`ten GENİŞ diziyor (Consolas 9 pt, %150: 14.0312 /
+# 14, satır adımı ~15.2 px); eski formül (satır × lineSpacing + bir satır pay)
+# kırpılmayan beyanda bir satırı kaydırmada bırakıyordu. Ölçüm `transparency.
+# TransparencyPanel._gereken_yukseklik` dokstringinde.
+
+
+def _gomulu_panel(max_height: int):
+    """Panel, 3B görünümün yerini tutan esneyen bir kardeşle bir QMainWindow'da.
+
+    Tek başına duran bir `QGroupBox` çocuğuna mevcut alanın TAMAMINI veriyor
+    (bkz. `test_panel_genislik_degisince_...`): yükseklik formülünün hatası
+    ancak panel `minimumHeight`'ına indiğinde -- orbital penceresindeki gibi --
+    görünür. Ölçüldü (gerçek Windows, aynı beyan): tek panelde görünür alan 436 px
+    ve 0 gizli satır, QMainWindow'da 260 px ve 1 gizli satır.
+    """
+    pencere = QtWidgets.QMainWindow()
+    panel = TransparencyPanel(max_height=max_height)
+    merkez = QtWidgets.QWidget()
+    dizilis = QtWidgets.QVBoxLayout(merkez)
+    dizilis.addWidget(QtWidgets.QLabel("3B"), 1)
+    dizilis.addWidget(panel)
+    pencere.setCentralWidget(merkez)
+    return pencere, panel
+
+
+@requires_offscreen
+@pytest.mark.parametrize("punto", [14, 18])
+def test_C4_YUKSEKLIK_YERLESIMDEN_satir_adimi_lineSpacingten_genisken_de_KAYDIRMASIZ(punto):
+    """SINIF: EKRANSIZ BENZETİM (regresyon pini) -- Windows ölçümünün ilişkisini kurar.
+
+    Ekransız platform tamsayı ölçü verdiği için gerçek kusuru üretemez (0/18).
+    Aynı İLİŞKİ (yerleşimin satır adımı > widget'ın `lineSpacing`'i) belgenin
+    varsayılan yazı tipi widget'ınkinden ayrılarak kurulur: widget `lineSpacing`
+    14 kalır, belge 22 / 28 px aralıkla dizilir. ÖLÇÜLDÜ (HEAD 448f808, 900 px):
+    14 pt'de eski formül 164 px istiyor, panel 192 px'te kalıyor ve 2 satır
+    gizli; 18 pt'de 178 px / 5 satır gizli. Yerleşimden okunan formül 235 / 323
+    px istiyor, 0 gizli.
+    """
+    from PySide6 import QtGui
+
+    pencere, panel = _gomulu_panel(600)
+    try:
+        panel.set_provenance(PROVENANCE)
+        pencere.resize(900, 950)
+        pencere.show()
+        _qapp.processEvents()
+        panel._text.document().setDefaultFont(QtGui.QFont("Consolas", punto))
+        assert QtGui.QFontMetrics(panel._text.document().defaultFont()).lineSpacing() > (
+            panel._text.fontMetrics().lineSpacing()
+        ), "benzetimin öncülü: belgenin satır adımı widget'ın lineSpacing'inden büyük"
+        panel._yuksekligi_icerige_uydur()
+        _qapp.processEvents()
+        assert panel._gereken_yukseklik() <= panel._max_height, "kırpılmayan beyan olmalı"
+        assert panel._text.verticalScrollBar().maximum() == 0, (
+            f"kırpılmayan beyanda gizli satır kaldı (gereken {panel._gereken_yukseklik()} px)"
+        )
+    finally:
+        pencere.close()
+
+
+_C4_ALT_SUREC = r'''
+import dataclasses, json
+from PySide6 import QtCore, QtGui, QtWidgets
+app = QtWidgets.QApplication([])
+from qlab.app.transparency import TransparencyPanel
+from qlab.provenance import Provenance, StabilityVerdict
+TEMEL = Provenance(
+    method="TDSE split-operator (Strang), 1B, dt=0.02",
+    approximations=("tek parçacık", "periyodik sınır koşulu (FFT)"),
+    neglected=("elektron-elektron etkileşimi", "spin"),
+    expected_error="O(dt^2) ~ 4.0e-04 hartree mertebesi",
+    converged=True,
+    diagnostics={"norm_deviation": 3.2e-13, "steps": 8000},
+)
+sonuc = []
+for n in (6, 9, 12):
+    beyan = dataclasses.replace(
+        TEMEL,
+        approximations=tuple(f"yaklaşım {i}: " + "ölçülmüş bir sapma " * 3 for i in range(n)),
+        neglected=tuple(f"ihmal {i} " + "x" * 60 for i in range(n // 2)),
+        stability=StabilityVerdict(stable=True, lowest_eigenvalue=0.12, n_rotations=4),
+        convergence_diagnosis="tanı " * 30,
+    )
+    for genislik in (600, 700, 800):
+        pencere = QtWidgets.QMainWindow()
+        pencere.setAttribute(QtCore.Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+        panel = TransparencyPanel(max_height=600)
+        merkez = QtWidgets.QWidget()
+        dizilis = QtWidgets.QVBoxLayout(merkez)
+        dizilis.addWidget(QtWidgets.QLabel("3B"), 1)
+        dizilis.addWidget(panel)
+        pencere.setCentralWidget(merkez)
+        panel.set_provenance(beyan)
+        pencere.resize(genislik, 950)
+        pencere.show()
+        for _ in range(10):
+            app.processEvents()
+        sonuc.append([n, genislik, panel._gereken_yukseklik(), panel._max_height,
+                      panel._text.verticalScrollBar().maximum(), app.platformName(),
+                      panel._text.devicePixelRatioF(), pencere.isVisible(), panel._text.logicalDpiY(),
+                      panel._text.fontMetrics().lineSpacing(),
+                      QtGui.QFontMetricsF(panel._text.font()).lineSpacing()])
+        pencere.close()
+print(json.dumps(sonuc))
+'''
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(sys.platform != "win32", reason="gerçek 'windows' platform eklentisi yalnız Windows'ta var")
+def test_C4_GERCEK_WINDOWS_PLATFORMUNDA_KIRPILMAYAN_BEYAN_KAYDIRMASIZ():
+    """SINIF: GERÇEK PLATFORM ÖLÇÜMÜ (regresyon pini). EKRANDA HİÇBİR ŞEY GÖRÜNMEZ.
+
+    Ayrı bir süreçte `QT_QPA_PLATFORM=windows` (gerçek platform eklentisi ve yazı
+    tipi motoru) ve `WA_DontShowOnScreen` (pencere yerleşir ama ekrana
+    çizilmez). Ölçek makineden bağımsız sabitlenir: `QT_ENABLE_HIGHDPI_SCALING=0`
+    + `QT_SCALE_FACTOR=1.5` her ekranda DPR 1.5 verir, `QT_FONT_DPI=96` punto ->
+    piksel dönüşümünü sabitler. Üçüncüsü ŞART (ölçüldü 23.10.2026): ölçekleme
+    kapalıyken Qt yazı tipi için birincil ekranın Windows DPI'ını kullanır;
+    birincil ekran %150 iken (mantıksal DPI 144) Consolas 9 pt 18 px oluyor
+    (lineSpacing 22 / 21.06), beyanların 6/9'u 600 px kutuyu aşıyor ve test
+    öncülünde düşüyordu; üstelik orada tamsayı aralık kesirliden BÜYÜK olduğu
+    için eski formül kusuru hiç üretmiyordu. `QT_FONT_DPI=96` ile yerli %150
+    ile aynı ölçü: DPI 96, 12 px, lineSpacing 14 / 14.03125 (öncül olarak
+    sınanır). ÖLÇÜLDÜ (23.10.2026, bu düzenek: 3 beyan x 3 genişlik, 600 px
+    kutu): eski formülle (HEAD 448f808) 9 kırpılmayan durumun 9'unda
+    `scrollBar().maximum() > 0`, düzeltmeyle 0/9. Daha geniş tarama (6 beyan x
+    6 genişlik, 800 px kutu; ayırt edici = metin kutusu formülün verdiği
+    yükseklikte olan 24 durum): eski formül %150 ve %125'te 22/24, yerli %150'de
+    22/24, %100'de ve ekransızda 0 gizli satırlı; düzeltmeyle her ortamda 0.
+    """
+    import json
+    import subprocess
+
+    import qlab
+
+    src = str(Path(qlab.__file__).resolve().parents[1])
+    ortam = dict(
+        os.environ,
+        QT_QPA_PLATFORM="windows",
+        QT_ENABLE_HIGHDPI_SCALING="0",
+        QT_SCALE_FACTOR="1.5",
+        QT_FONT_DPI="96",
+        PYTHONIOENCODING="utf-8",
+        PYTHONPATH=src + os.pathsep + os.environ.get("PYTHONPATH", ""),
+    )
+    r = subprocess.run(
+        [sys.executable, "-c", _C4_ALT_SUREC], env=ortam, capture_output=True,
+        text=True, encoding="utf-8", timeout=180,
+    )
+    assert r.returncode == 0, r.stderr[-3000:]
+    satirlar = json.loads(r.stdout.strip().splitlines()[-1])
+    assert {(s[5], s[6], s[7], s[8]) for s in satirlar} == {("windows", 1.5, True, 96)}, satirlar
+    # Öncül: kesirli yazı tipi motoru (kusurun koşulu; ekransızda 14.0 / 14).
+    assert all(s[10] > s[9] for s in satirlar), satirlar
+    kirpilmayan = [s for s in satirlar if s[2] <= s[3]]
+    assert len(kirpilmayan) == len(satirlar) == 9, satirlar  # 600 px kutuya hepsi sığar
+    gizli = [s for s in kirpilmayan if s[4] != 0]
+    assert gizli == [], f"kırpılmayan beyanda gizli satır (beyan, genişlik, gereken, kutu, sb.max): {gizli}"
+
+
+@requires_offscreen
+def test_ENT_GUI_MASKELI_TDSE_paneli_MASKE_ONCESI_UNITER_ADIM_hukmunu_basar():
+    """KAMU YOLU, GUI (B5-U, grup 9 entegrasyonu 23.10.2026): maskeli TDSE
+    penceresi `evolve_olcumlu`nun ölçümünü `provenance_for`a geçirir; panel ✓
+    basar ve tanı satırı maske öncesi üniter adım normunun yargılandığını söyler.
+    Ölçümü geçirmeyen bir `app/main.py` paneli yeniden ✗ YARGILANMADI yapar ve bu
+    test kırmızıdır -- test eklenmeden önce o mutant ilgili hızlı şeritte HAYATTA
+    kalıyordu (ölçüldü 23.10.2026, grup9 `mut_entegrasyon`). CLI karşılığı
+    `tests/test_run.py`dedir; maskesiz pencere yukarıdaki panel testindedir."""
+    window = TDSEWindow(dataclasses.replace(_small_scenario(), absorbing_width_bohr=10.0))
+    satirlar = {}
+    for satir in window._panel.text().splitlines():
+        etiket, _, deger = satir.partition(":")
+        satirlar[etiket.strip()] = deger.strip()
+    assert satirlar["Yakınsama"].startswith("✓"), satirlar["Yakınsama"]
+    assert "premask_step_deviation=" in satirlar["Yakınsama"]
+    assert satirlar["Yakınsama tanısı"].startswith(
+        "maske öncesi üniter adım normu yargılandı"
+    ), satirlar["Yakınsama tanısı"]
+    window.close()
