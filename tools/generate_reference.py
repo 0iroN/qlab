@@ -1,6 +1,6 @@
 """PySCF'ten referans degerleri uretir. Excalibur'da (Linux) BIR KEZ kosulur.
 
-    ssh oiron@192.168.1.45
+    ssh <kullanici>@<linux-makine>
     python3 -m venv ~/pyscfenv && ~/pyscfenv/bin/pip install pyscf numpy
     ~/pyscfenv/bin/python generate_reference.py --out reference/
 
